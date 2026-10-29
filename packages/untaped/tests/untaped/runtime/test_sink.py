@@ -12,6 +12,7 @@ from contextlib import AbstractContextManager, redirect_stderr
 from typing import Any
 
 import pytest
+from pydantic import BaseModel
 from rich.text import Text
 
 from core_test_support.runtime.run import quiet
@@ -25,12 +26,13 @@ from untaped.runtime.sink import (
     failure_exit_code,
 )
 from untaped.screen.core import Cmd, Quit, Screen
+from untaped.sdk import Plugin
 from untaped.sdk._run import Run, recording, run_or_none
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui
 from untaped.sdk.diagnostic import Debug, Diagnostic, Failure, Message
 from untaped.sdk.errors import ConfigError, UntapedError
-from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO
+from untaped.sdk.testing import ScriptedPromptBackend, TtyStringIO, install
 
 _DEADLINE = 10.0
 
@@ -281,13 +283,24 @@ def test_a_kindless_diagnostic_is_refused() -> None:
         current_sink().emit(_Loose(message="x"))
 
 
-class _QuotaFailure(Failure, kind="acme-tools.quota_failure"):
+class _QuotaFailure(Failure):
     quota: int
+
+
+class _NoSettings(BaseModel):
+    """Acme configures nothing."""
+
+
+class Acme(Plugin):
+    """Lists ``_QuotaFailure``, so it is a line of its own."""
+
+    settings = _NoSettings
+    records = (_QuotaFailure,)
 
 
 def test_a_failure_subclass_counts_and_emit_counts_like_failure() -> None:
     with redirect_stderr(io.StringIO()):
-        with _opened():
+        with install(Acme).running():
             current_sink().emit(
                 _QuotaFailure(message="over", category="unavailable", system="acme", quota=3)
             )

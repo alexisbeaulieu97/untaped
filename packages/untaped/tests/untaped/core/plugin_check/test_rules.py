@@ -13,7 +13,7 @@ from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import kind_of
-from untaped.sdk.testing import PluginCheck, check_plugin, plugin_candidate
+from untaped.sdk.testing import PluginCheck, check_plugin, install, plugin_candidate
 
 # A plugin package outside src/untaped, one file per convention family:
 # a print (messages, one allowed), a Protocol outside the ports (structure)
@@ -261,7 +261,8 @@ def test_check_plugin_returns_typed_rows_of_the_composed_checks_only(
         ("conventions", "plugin-name", "fail"),
         ("conventions", "protocol-location", "fail"),
     }
-    assert kind_of(PluginCheck) == "untaped.plugin_check"
+    with install().running():
+        assert kind_of(PluginCheck) == "untaped.plugin_check"
     assert "severity" not in PluginCheck.model_fields
 
 

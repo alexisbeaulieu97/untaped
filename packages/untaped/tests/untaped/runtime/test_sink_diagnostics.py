@@ -258,7 +258,7 @@ def test_a_warning_alone_keeps_exit_0() -> None:
     assert _run(lambda: Diagnostics().warning("careful"), []).exit_code == 0
 
 
-class _Outcome(OutcomeRecord, kind="acme-tools.thing_outcome"):
+class _Outcome(OutcomeRecord):
     name: str
 
 

@@ -23,7 +23,7 @@ from untaped.sdk.diagnostic import (
     _is_none,
     _Omitted,
 )
-from untaped.sdk.fields import Column, Key
+from untaped.sdk.fields import Column, Key, Status
 from untaped.sdk.records import (
     AbsolutePath,
     CheckRecord,
@@ -35,7 +35,7 @@ from untaped.sdk.records import (
 )
 
 
-class TokenSource(Record, kind="untaped.token_source"):
+class TokenSource(Record):
     """Where one credential comes from (``auth status``), named without reading it.
 
     One row per credential for this run: its key, the step that answers
@@ -61,7 +61,7 @@ class TokenSource(Record, kind="untaped.token_source"):
     )
 
 
-class CredentialOutcome(OutcomeRecord, kind="untaped.credential_outcome"):
+class CredentialOutcome(OutcomeRecord):
     """What ``auth login`` or ``auth forget`` did to one stored credential (never the secret)."""
 
     plugin: Annotated[str, Column]
@@ -75,7 +75,7 @@ class CredentialOutcome(OutcomeRecord, kind="untaped.credential_outcome"):
     detail: _Omitted = None
 
 
-class StoredCredential(Record, kind="untaped.stored_credential"):
+class StoredCredential(Record):
     """One stored credential (``auth list``): what it is for and how it is read, not the secret."""
 
     id: Annotated[str, Column] = Field(
@@ -90,7 +90,7 @@ class StoredCredential(Record, kind="untaped.stored_credential"):
     )
 
 
-class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outcome"):
+class ConfigMigrationOutcome(OutcomeRecord):
     """One key ``config migrate`` renamed, dropped or deleted in one profile."""
 
     model_config = ConfigDict(serialize_by_alias=True)
@@ -104,7 +104,7 @@ class ConfigMigrationOutcome(OutcomeRecord, kind="untaped.config_migration_outco
     )
 
 
-class DoctorCheck(CheckRecord, kind="untaped.doctor_check"):
+class DoctorCheck(CheckRecord):
     """One ``doctor`` check; ``fix`` is the command that fixes it, as arguments."""
 
     check: Annotated[str, Column]
@@ -116,7 +116,7 @@ class DoctorCheck(CheckRecord, kind="untaped.doctor_check"):
     automatic: bool = Field(description="Whether `doctor fix` runs `fix` on its own.")
 
 
-class FixOutcome(OutcomeRecord, kind="untaped.fix_outcome"):
+class FixOutcome(OutcomeRecord):
     """What one fix ``doctor fix`` ran (or would run) did to the checks it covers."""
 
     fix: list[str]
@@ -146,7 +146,7 @@ class RegisteredTarget(BaseModel):
     item: Annotated[str | None, Field(exclude_if=_is_none)] = None
 
 
-class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
+class RegisterOutcome(OutcomeRecord):
     """What ``setup register`` did: ``registered``, ``unchanged``, ``removed`` or ``gone``.
 
     ``environment`` is the directory holding untaped's distribution,
@@ -155,6 +155,7 @@ class RegisterOutcome(OutcomeRecord, kind="untaped.register_outcome"):
     """
 
     holder: Annotated[RegisteredHolder | None, Field(exclude_if=_is_none)] = None
+    action: Annotated[str, Status(success=("removed",)), Column]
     environment: Annotated[str, Column]
     version: Annotated[str | None, Column]
     targets: Annotated[list[RegisteredTarget], Column]
@@ -164,7 +165,7 @@ PruneWhat = Literal["reference", "folder"]
 """What a ``setup prune`` row is about: an install's reference, or a plugin's folder."""
 
 
-class PruneOutcome(OutcomeRecord, TargetRecord, kind="untaped.prune_outcome"):
+class PruneOutcome(OutcomeRecord, TargetRecord):
     """What ``setup prune`` did, or would do, to one dead reference or leftover plugin folder.
 
     ``target_path`` is the reference file or the ``plugins/<name>/`` folder.
@@ -174,6 +175,7 @@ class PruneOutcome(OutcomeRecord, TargetRecord, kind="untaped.prune_outcome"):
     """
 
     what: PruneWhat
+    action: Annotated[str, Status(success=("removed",)), Column]
     detail: str
     bytes: int = Field(description="Its size on disk when it was listed.")
 
@@ -182,7 +184,7 @@ ProjectState = Literal["present", "unreadable", "missing", "unknown"]
 """Where a listed project stands; ``unknown`` is a record that can't be read."""
 
 
-class RecordedProject(Record, kind="untaped.recorded_project"):
+class RecordedProject(Record):
     """One project the home records (``project list``).
 
     ``path`` is its folder; ``holds`` the items it holds, per ``plugin.store``.
@@ -199,7 +201,7 @@ class RecordedProject(Record, kind="untaped.recorded_project"):
     detail: _Omitted = None
 
 
-class ProjectOutcome(OutcomeRecord, kind="untaped.project_outcome"):
+class ProjectOutcome(OutcomeRecord):
     """What ``project init`` did to one folder.
 
     ``action`` is ``created``, ``unchanged``, ``recorded`` (the home now
@@ -220,12 +222,12 @@ SetupActor = Literal["agent", "user"]
 """Who takes a ``setup plan`` step."""
 
 
-class SetupStep(Record, kind="untaped.setup_step"):
+class SetupStep(Record):
     """One step of ``setup plan``; ``run`` is the command that does it, as arguments."""
 
     step: Annotated[str, Column]
     plugin: str
-    state: Annotated[SetupState, Column]
+    state: Annotated[SetupState, Status(warning=("skipped",), error=("failed",)), Column]
     detail: Annotated[str, Column]
     run: Annotated[list[str], Column] = Field(
         description=(
@@ -237,7 +239,7 @@ class SetupStep(Record, kind="untaped.setup_step"):
     )
 
 
-class PluginCheck(CheckRecord, kind="untaped.plugin_check"):
+class PluginCheck(CheckRecord):
     """One finding of a plugin check (:func:`untaped.sdk.testing.check_plugin`)."""
 
     plugin: Annotated[str, Column]
@@ -252,35 +254,35 @@ class PluginCheck(CheckRecord, kind="untaped.plugin_check"):
     detail: Annotated[str, Column] = ""
 
 
-class ScaffoldOutcome(OutcomeRecord, TargetRecord, kind="untaped.scaffold_outcome"):
+class ScaffoldOutcome(OutcomeRecord, TargetRecord):
     """One file ``plugin new`` wrote (``created``) or would write (``planned``)."""
 
 
-class Skill(Record, kind="untaped.skill"):
+class Skill(Record):
     """A stub skill the installed plugins ship (``skills list``)."""
 
     name: Annotated[str, Key]
     description: str
 
 
-class InstalledSkill(TargetRecord, kind="untaped.installed_skill"):
+class InstalledSkill(TargetRecord):
     """An untaped-installed skill directory and whether it matches this version."""
 
     name: Annotated[str, Key, Column]
     target: Annotated[str, Column]
     scope: Annotated[str, Column]
-    state: Annotated[str, Column]
+    state: Annotated[str, Status(warning=("outdated",)), Column]
     target_path: Annotated[AbsolutePath, Column]
 
 
-class SkillOutcome(OutcomeRecord, TargetRecord, kind="untaped.skill_outcome"):
+class SkillOutcome(OutcomeRecord, TargetRecord):
     """What ``skills update`` or ``skills remove`` did to one installed skill."""
 
     name: Annotated[str, Column]
     target: Annotated[str, Column]
     scope: Annotated[str, Column]
     target_path: Annotated[AbsolutePath, Column]
-    action: Annotated[str, Column]
+    action: Annotated[str, Status(success=("removed",)), Column]
     error: _RowError = None
 
 

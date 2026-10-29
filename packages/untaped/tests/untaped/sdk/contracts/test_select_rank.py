@@ -383,14 +383,14 @@ def test_plugin_schema_prints_a_kinds_json_schema() -> None:
     assert set(schema["properties"]) == {"source", "title", "pages"}
 
 
-class _Gizmo(Record, kind="gizmo.thing"):
+class Thing(Record):
     """A thing only gizmo's records name."""
 
     size: int
 
 
 def test_plugin_schema_finds_a_kind_a_plugin_class_declares() -> None:
-    gizmo = make_plugin("gizmo", records=(_Gizmo,))
+    gizmo = make_plugin("gizmo", records=(Thing,))
     result = _run(["plugin", "schema", "gizmo.thing"], plugin_candidate(gizmo))
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout)["required"] == ["size"]

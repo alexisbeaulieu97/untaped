@@ -7,13 +7,14 @@ and a status; this module turns them into findings (``fail`` an error,
 The engine calls :class:`Conventions` directly, before it asks any provider:
 ``check_plugin`` composes, and no contract method may.
 
-Every id is in :data:`RULES`, so ``untaped lint rules`` lists what ran.
+Every id is in :data:`DECLARED`, so ``untaped lint rules`` lists what ran.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from untaped.sdk import InstalledPlugin, UsageError, installed_plugins
@@ -97,11 +98,26 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("live", "error", "Each filled method taking no arguments answers with valid items."),
 )
 
-RULES: tuple[Rule, ...] = tuple(
-    Rule(id=id_, reads=declared_kind(InstalledPlugin), severity=severity, summary=summary)
-    for id_, severity, summary in _TABLE
-)
-_BY_ID = {rule.id: rule for rule in RULES}
+
+@dataclass(frozen=True)
+class Declared:
+    """One id of the table: its row is built in a run, which names the kind it reads."""
+
+    id: str
+    severity: Severity
+    summary: str
+
+    def row(self) -> Rule:
+        return Rule(
+            id=self.id,
+            reads=declared_kind(InstalledPlugin),
+            severity=self.severity,
+            summary=self.summary,
+        )
+
+
+DECLARED: tuple[Declared, ...] = tuple(Declared(*each) for each in _TABLE)
+_BY_ID = {each.id: each for each in DECLARED}
 UNREADABLE = _BY_ID["unreadable-file"]
 """Also a ``Tree``'s: a file a rule asked for that isn't UTF-8."""
 
@@ -118,7 +134,7 @@ class Conventions:
     """The rules over an ``untaped.installed_plugin`` subject: the engine's own, not a provider."""
 
     def rules(self) -> list[Rule]:
-        return list(RULES)
+        return [each.row() for each in DECLARED]
 
     def findings(
         self,

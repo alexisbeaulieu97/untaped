@@ -21,6 +21,7 @@ from untaped.sdk import (
     HttpError,
     HttpTransportError,
     OutcomeRecord,
+    Plugin,
     Record,
     UntapedError,
     UtcTimestamp,
@@ -34,7 +35,7 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
-from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker, Install, install
 
 
 def test_clean_message_for_untaped_error() -> None:
@@ -360,7 +361,7 @@ def test_emit_single_pipe_emits_one_envelope(capsys: pytest.CaptureFixture[str])
     }
 
 
-class _Gadget(Record, kind="acme-tools.gadget"):
+class _Gadget(Record):
     name: str
     built_at: UtcTimestamp
 
@@ -369,13 +370,29 @@ class _Plain(Record):
     name: str
 
 
+class _NoSettings(BaseModel):
+    """Acme configures nothing."""
+
+
+class AcmeTools(Plugin):
+    """Lists ``_Gadget``, so it prints as ``acme-tools.gadget``."""
+
+    settings = _NoSettings
+    records = (_Gadget,)
+
+
+def _acme() -> Install:
+    return install(AcmeTools, names={AcmeTools: "acme-tools"})
+
+
 _BUILT = datetime(2026, 1, 2, 3, 4, 5, 250_000, tzinfo=UTC)
 
 
 def test_emit_reads_a_hyphenated_plugins_kind_from_its_records(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe")
+    with _acme().running():
+        emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe")
 
     assert json.loads(capsys.readouterr().out) == {
         "untaped": "1",
@@ -397,19 +414,20 @@ def test_emit_shows_timestamps_to_the_second_only_in_tables(
 def test_emit_kind_is_an_override_for_kind_less_rows_only(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    emit([_Plain(name="a")], fmt="pipe", kind="acme-tools.plain")
-    assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.plain"
-    emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.gadget")
-    assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.gadget"
+    with _acme().running():
+        emit([_Plain(name="a")], fmt="pipe", kind="acme-tools.plain")
+        assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.plain"
+        emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.gadget")
+        assert json.loads(capsys.readouterr().out)["kind"] == "acme-tools.gadget"
 
-    with pytest.raises(ValueError, match=r"emit\(kind='acme-tools\.other'\) on records of kind"):
-        emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.other")
+        with pytest.raises(ValueError, match=r"emit\(kind='acme-tools\.other'\) on records of"):
+            emit([_Gadget(name="a", built_at=_BUILT)], fmt="pipe", kind="acme-tools.other")
 
 
 def test_emit_rejects_rows_of_different_kinds() -> None:
     rows = [_Gadget(name="a", built_at=_BUILT), _Plain(name="b")]
 
-    with pytest.raises(ValueError, match="rows declare different kinds"):
+    with _acme().running(), pytest.raises(ValueError, match="rows declare different kinds"):
         emit(rows, fmt="pipe")
 
 
@@ -608,7 +626,7 @@ def test_emit_unknown_mapping_column_warns_but_renders(
     assert "warning: unknown column 'nmae'; valid columns: name, value" in captured.err
 
 
-class _Answer(Record, kind="acme-tools.answer"):
+class _Answer(Record):
     model_config = ConfigDict(extra="allow")
     __pydantic_extra__: dict[str, JsonValue] = PydanticField(init=False)
 

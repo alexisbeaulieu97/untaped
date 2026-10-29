@@ -8,7 +8,7 @@ from textwrap import dedent
 import pytest
 
 from untaped_lint.infrastructure.files import source_files
-from untaped_lint.providers.conventions import RULES, file_lines
+from untaped_lint.providers.conventions import DECLARED, file_lines
 from untaped_lint.providers.conventions.store_format import RULE, store_format_violations
 
 
@@ -161,5 +161,5 @@ def test_the_plugin_linter_runs_the_rule(tmp_path: Path) -> None:
         'import sqlite3\nsqlite3.connect(home() / "x.db")\n', encoding="utf-8"
     )
     assert _line(2) in file_lines("acme", source_dir, plugin="acme", plugins=[])
-    rule = next(rule for rule in RULES if rule.id == RULE)
+    rule = next(rule for rule in DECLARED if rule.id == RULE)
     assert rule.severity == "error"

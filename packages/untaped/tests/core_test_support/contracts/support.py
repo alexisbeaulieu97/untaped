@@ -22,7 +22,7 @@ from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.testing import plugin_candidate
 
 
-class Book(Issued, kind="shelf.book"):
+class Book(Issued):
     title: str
     pages: int = 0
 
@@ -56,12 +56,12 @@ BOOKS = contract_of(BookSource).methods["books"].cache
 BY_AUTHOR = contract_of(BookSource).methods["by_author"].cache
 
 
-class Volume(Record, kind="library.volume"):
+class Volume(Record):
     id: int
     name: str
 
 
-class SpecialVolume(Volume, kind="library.special_volume"):
+class SpecialVolume(Volume):
     signed: bool = False
 
 
@@ -130,17 +130,26 @@ def plugin(
     settings: type[BaseModel] = NoSettings,
     offers: Sequence[type] = (),
     fills: Sequence[type] = (),
+    records: Sequence[type] = (),
+    module: str = __name__,
 ) -> PluginCandidate:
-    """A plugin class named ``name`` holding ``offers`` and ``fills``, as a candidate."""
+    """A plugin class named ``name`` holding ``offers``, ``fills`` and ``records``, as a candidate.
+
+    The class lives in ``module``, whose package is the plugin's: a record
+    takes its kind from the plugin whose package defines it, and the fakes
+    here share one, which goes to the first of them by name. A test's own
+    plugin passes its module (``__name__``) so it claims none of theirs.
+    """
     cls = type(
         name.title().replace("-", ""),
         (Plugin,),
         {
             "__doc__": f"The {name} plugin.",
-            "__module__": __name__,
+            "__module__": module,
             "settings": settings,
             "offers": tuple(offers),
             "fills": tuple(fills),
+            "records": tuple(records),
         },
     )
     return PluginCandidate(distribution=f"untaped-{name}", name=name, target=cls)
@@ -151,7 +160,12 @@ def shelf_plugin() -> PluginCandidate:
 
 
 def library_plugin(*providers: type) -> PluginCandidate:
-    return plugin("library", settings=LibrarySettings, fills=providers or (Library,))
+    return plugin(
+        "library",
+        settings=LibrarySettings,
+        fills=providers or (Library,),
+        records=(SpecialVolume,),
+    )
 
 
 def shop_plugin() -> PluginCandidate:

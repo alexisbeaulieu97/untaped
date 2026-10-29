@@ -6314,7 +6314,6 @@ sdk untaped.sdk.Check.view(frame)  [experimental]
 sdk untaped.sdk.Check.view(width=) default=None  [experimental]
 sdk untaped.sdk.Check.with_error(text)  [experimental]
 sdk untaped.sdk.CheckRecord(*, status)
-sdk untaped.sdk.CheckRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.CheckRecord.status
 sdk untaped.sdk.Cmd(fn) callback(fn, 0)  [experimental]
 sdk untaped.sdk.Cmd(name@4=) default=""  [experimental]
@@ -6431,7 +6430,6 @@ sdk untaped.sdk.DataFile.write(value)  [experimental]
 sdk untaped.sdk.DataRead
 sdk untaped.sdk.Debug(*, message, logger)
 sdk untaped.sdk.Debug(hint=) default=None
-sdk untaped.sdk.Debug.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Debug.hint
 sdk untaped.sdk.Debug.level class
 sdk untaped.sdk.Debug.logger
@@ -6484,7 +6482,6 @@ sdk untaped.sdk.Diag.warning(hint=) default=None
 sdk untaped.sdk.Diag.warning(text)
 sdk untaped.sdk.Diagnostic(*, message)
 sdk untaped.sdk.Diagnostic(hint=) default=None
-sdk untaped.sdk.Diagnostic.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Diagnostic.hint
 sdk untaped.sdk.Diagnostic.level
 sdk untaped.sdk.Diagnostic.message
@@ -6626,7 +6623,6 @@ sdk untaped.sdk.Failure(fix_by=) default=None
 sdk untaped.sdk.Failure(hint=) default=None
 sdk untaped.sdk.Failure(item=) default=None
 sdk untaped.sdk.Failure(retryable=) default=false
-sdk untaped.sdk.Failure.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Failure.category
 sdk untaped.sdk.Failure.details
 sdk untaped.sdk.Failure.exit_code
@@ -6728,7 +6724,6 @@ sdk untaped.sdk.FreshnessRecord(outdated=) default=false
 sdk untaped.sdk.FreshnessRecord(partial=) default=false
 sdk untaped.sdk.FreshnessRecord(refresh_error=) default=None
 sdk untaped.sdk.FreshnessRecord(retry_at=) default=None
-sdk untaped.sdk.FreshnessRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.FreshnessRecord.attempted_at
 sdk untaped.sdk.FreshnessRecord.fields(freshness, *, max_age, now)
 sdk untaped.sdk.FreshnessRecord.max_age_seconds
@@ -6867,7 +6862,6 @@ sdk untaped.sdk.InstalledPlugin(requires=) default=[]
 sdk untaped.sdk.InstalledPlugin(root=) default=false
 sdk untaped.sdk.InstalledPlugin(source_dir=) default=None
 sdk untaped.sdk.InstalledPlugin(tests_dir=) default=None
-sdk untaped.sdk.InstalledPlugin.__init_subclass__(kind=) default=None
 sdk untaped.sdk.InstalledPlugin.distribution
 sdk untaped.sdk.InstalledPlugin.fills
 sdk untaped.sdk.InstalledPlugin.name
@@ -6881,7 +6875,6 @@ sdk untaped.sdk.InstalledPlugin.version
 sdk untaped.sdk.Interrupt()  [experimental]
 sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
-sdk untaped.sdk.Issued.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Issued.source
 sdk untaped.sdk.ItemStore(item=) default=<computed>  [experimental]
 sdk untaped.sdk.ItemStore(plugin, name, *, release, moved) callback(release, 1) callback(moved, 1)  [experimental]
@@ -6948,7 +6941,6 @@ sdk untaped.sdk.Matched.retryable
 sdk untaped.sdk.Matched.system class
 sdk untaped.sdk.Message(*, level, message)
 sdk untaped.sdk.Message(hint=) default=None
-sdk untaped.sdk.Message.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Message.hint
 sdk untaped.sdk.Message.level
 sdk untaped.sdk.Message.message
@@ -7077,7 +7069,6 @@ sdk untaped.sdk.OtherVersion.by  [experimental]
 sdk untaped.sdk.OtherVersion.file  [experimental]
 sdk untaped.sdk.OutcomeRecord(*, action)
 sdk untaped.sdk.OutcomeRecord(error=) default=None
-sdk untaped.sdk.OutcomeRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.OutcomeRecord.action
 sdk untaped.sdk.OutcomeRecord.error
 sdk untaped.sdk.OutcomeRecord.failed
@@ -7248,7 +7239,6 @@ sdk untaped.sdk.PrevField()  [experimental]
 sdk untaped.sdk.PreviewItem
 sdk untaped.sdk.Progress(*, message, label, phase, done, total, elapsed, state)
 sdk untaped.sdk.Progress(hint=) default=None
-sdk untaped.sdk.Progress.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Progress.done
 sdk untaped.sdk.Progress.elapsed
 sdk untaped.sdk.Progress.hint
@@ -7304,7 +7294,6 @@ sdk untaped.sdk.PromptChoice.value
 sdk untaped.sdk.Quit(result)  [experimental]
 sdk untaped.sdk.Quit.result  [experimental]
 sdk untaped.sdk.Record()
-sdk untaped.sdk.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.RefHolder(*, kind, name)  [experimental]
 sdk untaped.sdk.RefHolder.describe()  [experimental]
 sdk untaped.sdk.RefHolder.kind  [experimental]
@@ -7513,7 +7502,6 @@ sdk untaped.sdk.Stale(hint=) default=None
 sdk untaped.sdk.Stale(outdated=) default=false
 sdk untaped.sdk.Stale(partial=) default=false
 sdk untaped.sdk.Stale(retry_at=) default=None
-sdk untaped.sdk.Stale.__init_subclass__(kind=) default=None
 sdk untaped.sdk.Stale.age_seconds
 sdk untaped.sdk.Stale.attempted_at
 sdk untaped.sdk.Stale.cache
@@ -7665,7 +7653,6 @@ sdk untaped.sdk.Tags.view(width=) default=None  [experimental]
 sdk untaped.sdk.Tags.with_error(text)  [experimental]
 sdk untaped.sdk.TargetRecord(*, target_path)
 sdk untaped.sdk.TargetRecord(error=) default=None
-sdk untaped.sdk.TargetRecord.__init_subclass__(kind=) default=None
 sdk untaped.sdk.TargetRecord.error
 sdk untaped.sdk.TargetRecord.target_path
 sdk untaped.sdk.Terminal
@@ -7892,7 +7879,6 @@ sdk untaped.sdk.contracts.Errored.rank
 sdk untaped.sdk.contracts.Errored.reason
 sdk untaped.sdk.contracts.Issued()
 sdk untaped.sdk.contracts.Issued(source=) default=None
-sdk untaped.sdk.contracts.Issued.__init_subclass__(kind=) default=None
 sdk untaped.sdk.contracts.Issued.source
 sdk untaped.sdk.contracts.NoProviderReady(message, *, not_ready)
 sdk untaped.sdk.contracts.NoProviderReady(quarantined=) default=None
@@ -7954,7 +7940,6 @@ sdk untaped.sdk.contracts.Reason.unresolved_item_type = unresolved-item-type
 sdk untaped.sdk.contracts.Reason.unserialisable_signature = unserialisable-signature
 sdk untaped.sdk.contracts.Reason.unused_method = unused-method
 sdk untaped.sdk.contracts.Record()
-sdk untaped.sdk.contracts.Record.__init_subclass__(kind=) default=None
 sdk untaped.sdk.contracts.Skipped(plugin, reason, detail)
 sdk untaped.sdk.contracts.Skipped(rank@4=) default=None
 sdk untaped.sdk.contracts.Skipped.detail
@@ -8604,7 +8589,6 @@ sdk untaped.sdk.testing.PluginCandidate.requires_dist
 sdk untaped.sdk.testing.PluginCandidate.target
 sdk untaped.sdk.testing.PluginCheck(*, status, plugin, check, title)
 sdk untaped.sdk.testing.PluginCheck(detail=) default=""
-sdk untaped.sdk.testing.PluginCheck.__init_subclass__(kind=) default=None
 sdk untaped.sdk.testing.PluginCheck.check
 sdk untaped.sdk.testing.PluginCheck.detail
 sdk untaped.sdk.testing.PluginCheck.plugin

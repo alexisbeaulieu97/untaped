@@ -25,17 +25,17 @@ from untaped.runtime.registry import (
     candidate_distribution,
     declared_distributions,
 )
-from untaped.sdk.fields import Column
+from untaped.sdk.fields import Column, Status
 from untaped.sdk.records import AbsolutePath, Record
 
 _UNKNOWN = "unknown"
 
 
-class InstalledPlugin(Record, kind="untaped.installed_plugin"):
+class InstalledPlugin(Record):
     """One installed plugin: ready, or quarantined (then only its entry point names its package)."""
 
     name: Annotated[str, Column]
-    status: Annotated[Literal["ready", "quarantined"], Column]
+    status: Annotated[Literal["ready", "quarantined"], Status(success=("ready",)), Column]
     distribution: Annotated[str, Column]
     version: Annotated[str, Column]
     package: str | None = Field(default=None, description="Its import package (`untaped_awx`).")

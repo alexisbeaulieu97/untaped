@@ -18,7 +18,7 @@ from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, cached
 from untaped.sdk.testing import install
 
 
-class Tally(Issued, kind="tally.item"):
+class Tally(Issued):
     """An owner record that counts its validations."""
 
     validations: ClassVar[int] = 0

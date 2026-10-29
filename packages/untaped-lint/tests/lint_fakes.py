@@ -1,8 +1,8 @@
 """Fake record kinds and rule providers for lint's engine and command tests.
 
-Install them with ``install(LintPlugin, providers={"acme": [Acme]})``: the
-``providers`` key is the fake plugin's name, so ``acme``'s ids read
-``acme.<id>``.
+Install them with ``install(LintPlugin, Linttest, providers={"acme":
+[Acme]})``, ``Linttest`` from :mod:`lint_fake_records`: the ``providers``
+key is the fake plugin's name, so ``acme``'s ids read ``acme.<id>``.
 """
 
 from __future__ import annotations
@@ -11,27 +11,10 @@ import json
 from collections.abc import Iterator
 from typing import Any, ClassVar
 
+from lint_fake_records import Gadget, Widget
 from untaped.sdk import InstalledPlugin, Record, kind_of
 from untaped.sdk.contracts import Provider
 from untaped_lint.api import FileLocation, Finding, Linter, Rule, Rules, finding, rule, rule_row
-
-
-class Widget(Record, kind="linttest.widget"):
-    """A record two of acme's rules read."""
-
-    name: str
-
-
-class Gadget(Record, kind="linttest.gadget"):
-    """A record one of gizmo's rules reads."""
-
-    name: str
-
-
-class Sprocket(Record, kind="linttest.sprocket"):
-    """A record no rule reads."""
-
-    name: str
 
 
 @rule(severity="error")

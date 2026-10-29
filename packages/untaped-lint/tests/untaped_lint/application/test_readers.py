@@ -8,7 +8,8 @@ from typing import ClassVar
 
 import pytest
 
-from lint_fakes import Acme, Widget
+from lint_fake_records import Linttest, Widget
+from lint_fakes import Acme
 from untaped.sdk import ConfigError, Record
 from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import install
@@ -49,7 +50,9 @@ def _repo(root: Path, readers: str) -> Path:
 def test_a_reader_reads_only_the_files_its_globs_match(tmp_path: Path) -> None:
     WidgetFiles.handed.clear()
     root = _repo(tmp_path, "  widgets: ['specs/**/*.widget']\n")
-    with install(LintPlugin, providers={"widgets": [WidgetFiles], "acme": [Acme]}).running():
+    with install(
+        LintPlugin, Linttest, providers={"widgets": [WidgetFiles], "acme": [Acme]}
+    ).running():
         report = run(root=root)
     assert WidgetFiles.handed == [("specs/a.widget", "specs/b.widget")]
     assert sorted((each.rule, each.target) for each in report.findings) == [
@@ -63,7 +66,9 @@ def test_a_reader_reads_only_the_files_its_globs_match(tmp_path: Path) -> None:
 def test_a_reader_runs_only_where_the_file_names_it(tmp_path: Path) -> None:
     WidgetFiles.handed.clear()
     (tmp_path / ".git").mkdir()
-    with install(LintPlugin, providers={"widgets": [WidgetFiles], "acme": [Acme]}).running():
+    with install(
+        LintPlugin, Linttest, providers={"widgets": [WidgetFiles], "acme": [Acme]}
+    ).running():
         run(root=tmp_path)
     assert WidgetFiles.handed == []
 

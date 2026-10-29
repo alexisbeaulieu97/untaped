@@ -14,10 +14,10 @@ from untaped.runtime.command_lines import console_lines
 from untaped.sdk import Command, Plugin, Record
 from untaped.sdk.contracts import Contract, Provider
 from untaped.sdk.records import record_model
-from untaped.sdk.testing import plugin_candidate
+from untaped.sdk.testing import install, plugin_candidate
 
 
-class Widget(Record, kind="svc.widget"):
+class Widget(Record):
     """A widget, for a guide's YAML block."""
 
     name: str
@@ -158,7 +158,8 @@ def test_commands_after_a_kind_tagged_block_are_still_checked() -> None:
 
 
 def test_a_kind_tagged_yaml_block_validates_against_its_model() -> None:
-    assert record_model("svc.widget") is Widget
+    with install(make_plugin("svc", records=(Widget,))).running():
+        assert record_model("svc.widget") is Widget
     good = "```yaml svc.widget\nname: w\nsize: 2\n```"
     bad = "```yaml svc.widget\nsize: big\n```"
     unknown = "```yaml svc.gadget\nname: g\n```"

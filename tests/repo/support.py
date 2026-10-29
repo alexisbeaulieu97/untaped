@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import os
 import re
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 import pytest
 from release import baseline_tag  # scripts/release.py
 
 from untaped.sdk.git import run_git
+
+if TYPE_CHECKING:
+    from untaped.sdk._run import Composition
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES = REPO_ROOT / "packages"
@@ -33,6 +39,37 @@ FIRST_PARTY = (
     "recipe",
     "workspace",
 )
+
+#: The example plugins, by name and entry point target.
+EXAMPLES = (
+    ("hello", "untaped_hello.plugin:Hello"),
+    ("shelf", "untaped_shelf.plugin:Shelf"),
+    ("library", "untaped_library.plugin:Library"),
+)
+
+
+@contextmanager
+def everything_composed() -> Iterator[Composition]:
+    """A run composing every installed plugin and the examples: every kind there is."""
+    from untaped.runtime.registry import PluginCandidate, discover_candidates
+    from untaped.sdk._run import current_run
+    from untaped.sdk.testing import compose_with
+
+    sources = [str(path) for path in sorted(REPO_ROOT.glob("examples/*/src"))]
+    examples = [
+        PluginCandidate(distribution=f"untaped-{name}", name=name, target=target)
+        for name, target in EXAMPLES
+    ]
+    sys.path[:0] = sources
+    try:
+        with compose_with(*discover_candidates(), *examples) as result:
+            assert not result.quarantine, result.quarantine
+            composed = {plugin.spec.name for plugin in result.plugins}
+            assert {*FIRST_PARTY, *(name for name, _ in EXAMPLES)} <= composed, composed
+            yield current_run().composition
+    finally:
+        for source in sources:
+            sys.path.remove(source)
 
 
 def markdown_files() -> list[Path]:

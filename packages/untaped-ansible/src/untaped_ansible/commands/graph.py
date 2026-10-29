@@ -440,8 +440,12 @@ class GraphDocument(DependencyGraph):
     lowercase; labels keep the display casing.
     """
 
-    header: str = Field("", exclude=True)
-    """What the tree's first line says after the target: the data read and the depth."""
+    header: str = Field(
+        "",
+        exclude=True,
+        description="What the tree's first line says after the target: the data read and "
+        "the depth.",
+    )
 
 
 def _tree(document: GraphDocument) -> TreeGraph:

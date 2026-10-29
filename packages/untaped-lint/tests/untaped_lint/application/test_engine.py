@@ -6,18 +6,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from lint_fakes import (
-    Acme,
-    Gadget,
-    Gizmo,
-    Malformed,
-    MalformedRule,
-    Raising,
-    Sprocket,
-    Widget,
-    tall,
-    wide,
-)
+from lint_fake_records import Gadget, Linttest, Sprocket, Widget
+from lint_fakes import Acme, Gizmo, Malformed, MalformedRule, Raising, tall, wide
 from untaped.sdk import InstalledPlugin
 from untaped.sdk.testing import install
 from untaped_lint.api import Finding, Rules, finding, rule
@@ -30,7 +20,7 @@ pytestmark = pytest.mark.usefixtures("fresh_composition")
 def test_a_subject_reaches_only_the_rules_reading_its_kind() -> None:
     Acme.forget()
     Gizmo.forget()
-    with install(LintPlugin, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
         report = run([Widget(name="w")])
     assert sorted(each.rule for each in report.findings) == ["acme.tall", "acme.wide"]
     assert (Acme.asked, Gizmo.asked) == (["linttest.widget"], [])
@@ -40,7 +30,7 @@ def test_a_subject_reaches_only_the_rules_reading_its_kind() -> None:
 def test_a_kind_no_rule_reads_warns_once_and_asks_nobody() -> None:
     Acme.forget()
     Gizmo.forget()
-    with install(LintPlugin, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
         report = run([Sprocket(name="a"), Sprocket(name="b")])
     assert report.warnings == [
         "no installed rule reads linttest.sprocket records; see `untaped lint rules`"
@@ -50,7 +40,7 @@ def test_a_kind_no_rule_reads_warns_once_and_asks_nobody() -> None:
 
 
 def test_a_rule_that_raises_is_one_failure_row_and_the_others_still_count() -> None:
-    with install(LintPlugin, providers={"acme": [Raising]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Raising]}).running():
         report = run([Widget(name="w")])
     assert [each.rule for each in report.findings] == ["acme.wide"]
     (failure,) = report.failures
@@ -60,7 +50,7 @@ def test_a_rule_that_raises_is_one_failure_row_and_the_others_still_count() -> N
 
 
 def test_a_malformed_finding_is_counted_and_the_valid_ones_reported() -> None:
-    with install(LintPlugin, providers={"acme": [Malformed]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Malformed]}).running():
         report = run([Widget(name="w")])
     assert [(each.rule, each.target) for each in report.findings] == [("acme.wide", "a")]
     (failure,) = report.failures
@@ -69,7 +59,9 @@ def test_a_malformed_finding_is_counted_and_the_valid_ones_reported() -> None:
 
 def test_a_malformed_rule_is_dropped_and_its_provider_s_others_run() -> None:
     """A dotted id is malformed: the engine prefixes the key, so a provider never writes one."""
-    with install(LintPlugin, providers={"acme": [MalformedRule], "gizmo": [Gizmo]}).running():
+    with install(
+        LintPlugin, Linttest, providers={"acme": [MalformedRule], "gizmo": [Gizmo]}
+    ).running():
         report = run([Widget(name="w"), Gadget(name="g")])
     assert sorted(each.rule for each in report.findings) == ["acme.wide", "gizmo.default-branch"]
     (failure,) = report.failures
@@ -79,13 +71,13 @@ def test_a_malformed_rule_is_dropped_and_its_provider_s_others_run() -> None:
 
 
 def test_ids_are_prefixed_with_the_providing_plugin() -> None:
-    with install(LintPlugin, providers={"acme": [Gizmo]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Gizmo]}).running():
         report = run([Gadget(name="g")])
     assert [each.rule for each in report.findings] == ["acme.default-branch"]
 
 
 def test_a_bare_id_names_its_one_owner() -> None:
-    with install(LintPlugin, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Acme], "gizmo": [Gizmo]}).running():
         report = run([Widget(name="w")], select=["wide"])
     assert [each.rule for each in report.findings] == ["acme.wide"]
     assert not report.warnings
@@ -93,7 +85,7 @@ def test_a_bare_id_names_its_one_owner() -> None:
 
 def test_suppressions_and_selections_add_up() -> None:
     """``--ignore`` with a target glob, ``--select`` and an unknown id said once."""
-    with install(LintPlugin, providers={"acme": [Acme]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Acme]}).running():
         report = run(
             [Widget(name="legacy-a"), Widget(name="b")],
             select=["acme.wide", "acme.tall"],
@@ -110,7 +102,7 @@ class _Twice(Acme):
 
 
 def test_an_alias_of_a_listed_rule_runs_once() -> None:
-    with install(LintPlugin, providers={"acme": [_Twice]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [_Twice]}).running():
         report = run([Widget(name="w")])
     assert sorted(each.rule for each in report.findings) == ["acme.tall", "acme.wide"]
     assert not report.failures
@@ -121,7 +113,7 @@ class _SameId(Acme):
 
 
 def test_a_provider_with_two_rules_of_one_id_is_not_loaded() -> None:
-    with install(LintPlugin, providers={"acme": [_SameId]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [_SameId]}).running():
         report = run([Widget(name="w")])
     (failure,) = report.failures
     assert (failure.item, failure.details["reason"]) == ("acme", "duplicate-id")
@@ -147,7 +139,7 @@ class _MethodAlias(Rules):
 
 
 def test_an_alias_of_a_rule_method_runs_once() -> None:
-    with install(LintPlugin, providers={"acme": [_MethodAlias]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [_MethodAlias]}).running():
         report = run([Widget(name="w")])
     assert [each.rule for each in report.findings] == ["acme.wide"]
     assert not report.failures

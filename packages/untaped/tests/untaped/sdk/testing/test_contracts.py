@@ -113,7 +113,7 @@ def test_assert_fills_of_the_owners_model_needs_no_samples() -> None:
         assert_fills(Shop, samples=[Book(title="Dune")])
 
 
-class Leaky(Volume, kind="library.leaky"):
+class Leaky(Volume):
     """A record whose NaN ratio is written as JSON null: it can't round-trip."""
 
     ratio: float = 0.0
@@ -178,7 +178,7 @@ def test_assert_fills_refuses_a_contract_and_an_uncomposed_provider() -> None:
         assert_fills(Library, samples=[Volume(id=1, name="Dune")])
 
 
-class Item(Issued, kind="shelf.item"):
+class Item(Issued):
     name: str
     size: int = 0
 

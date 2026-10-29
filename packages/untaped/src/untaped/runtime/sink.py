@@ -1119,7 +1119,7 @@ class Diagnostics:
         return current_sink()
 
     def emit(self, diagnostic: Diagnostic) -> None:
-        """Emit any registered kind, core's or a plugin's own (``kind=`` declared)."""
+        """Emit any composed kind, core's or a plugin's own (listed in its ``records``)."""
         self._sink().emit(diagnostic)
 
     def info(

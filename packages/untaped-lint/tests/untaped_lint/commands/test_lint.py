@@ -9,18 +9,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from lint_fakes import (
-    Acme,
-    Gizmo,
-    NotAProvider,
-    Placing,
-    PluginReader,
-    Raising,
-    Sprocket,
-    WarnOnly,
-    Widget,
-    pipe,
-)
+from lint_fake_records import Linttest, Sprocket, Widget
+from lint_fakes import Acme, Gizmo, NotAProvider, Placing, PluginReader, Raising, WarnOnly, pipe
 from lint_test_support import Result, run
 from untaped.sdk import InstalledPlugin, Plugin
 from untaped.sdk.contracts import NotReady
@@ -178,7 +168,7 @@ def test_the_profile_ignore_flags_and_select_add_up() -> None:
 
 def test_doctor_warns_about_an_ignored_id_no_rule_declares() -> None:
     check = LintPlugin.ignore_ids
-    with install(LintPlugin, providers={"acme": [Acme]}).running():
+    with install(LintPlugin, Linttest, providers={"acme": [Acme]}).running():
         known = check.run(PluginContext(settings=LintSettings(ignore=["acme.wide"])))
         unknown = check.run(PluginContext(settings=LintSettings(ignore=["acme.wide", "nope"])))
     assert (known.ok, known.warn) == (True, False)

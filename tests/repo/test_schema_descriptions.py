@@ -18,11 +18,9 @@ docstring may stay beside it for what only a maintainer needs.
 from __future__ import annotations
 
 import ast
-import importlib
 import inspect
 import itertools
 import os
-import pkgutil
 import subprocess
 import sys
 import textwrap
@@ -31,8 +29,8 @@ from typing import get_args
 
 from pydantic import BaseModel, Field
 
-from repo.support import FIRST_PARTY, REPO_ROOT
-from untaped.sdk.records import Record, record_kinds
+from repo.support import REPO_ROOT, everything_composed
+from untaped.sdk.records import Record
 from untaped_awx.commands.controller import DOCUMENT_MODELS
 
 
@@ -88,16 +86,13 @@ def silent_fields(roots: Iterable[type[BaseModel]]) -> list[str]:
 
 
 def every_silent_field() -> list[str]:
-    """The silent fields once core, the first-party plugins and the examples are imported."""
-    sys.path[:0] = [str(path) for path in sorted(REPO_ROOT.glob("examples/*/src"))]
-    tops = ["untaped", *(f"untaped_{name}" for name in FIRST_PARTY)]
-    tops += [path.name for path in sorted(REPO_ROOT.glob("examples/*/src/*")) if path.is_dir()]
-    for top in tops:
-        package = importlib.import_module(top)
-        for info in pkgutil.walk_packages(package.__path__, f"{top}."):
-            if not info.name.endswith(".__main__"):
-                importlib.import_module(info.name)
-    return silent_fields([*record_kinds().values(), *DOCUMENT_MODELS.values()])
+    """The silent fields of every kind core, the first-party plugins and the examples compose."""
+    with everything_composed() as composition:
+        models = [composition.model_of(kind) for kind in composition.kinds.values()]
+    records = [
+        model for model in models if isinstance(model, type) and issubclass(model, BaseModel)
+    ]
+    return silent_fields([*records, *DOCUMENT_MODELS.values()])
 
 
 _TESTS = REPO_ROOT / "tests"

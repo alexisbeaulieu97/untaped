@@ -67,7 +67,6 @@ from untaped.sdk.network.credentials import (
     key_errors,
     key_fields,
 )
-from untaped.sdk.records import KindError
 from untaped.sdk.storage.cache import Cache, Filled
 from untaped.sdk.storage.store import Store
 
@@ -380,7 +379,6 @@ VALID_REASONS = frozenset(
         "bad-metadata",
         "bad-settings-keys",
         "duplicate-kind",
-        "foreign-kind",
         "bad-credential",
         "bad-plugin-class",
     }
@@ -858,8 +856,6 @@ def _check_own_declaration(spec: PluginSpec) -> None:
 def _check_factory(factory: Callable[[], App]) -> App:
     try:
         staged = factory()
-    except KindError as exc:
-        raise _Quarantine(exc.reason, str(exc)) from None
     except Exception as exc:
         raise _Quarantine("bad-app-factory", f"{type(exc).__name__}: {exc}") from None
     return staged
@@ -1356,8 +1352,6 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
     _check_requires_dist(candidate, state)
     try:
         spec = resolve_target(candidate.target)
-    except KindError as exc:
-        raise _Quarantine(exc.reason, str(exc), entry_point="") from None
     except Exception as exc:
         raise _Quarantine(
             "malformed-entry-point",

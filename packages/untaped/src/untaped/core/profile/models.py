@@ -38,7 +38,7 @@ class ProfileDeletePreview:
     top_level_keys: tuple[str, ...]
 
 
-class Profile(Record, kind="untaped.profile"):
+class Profile(Record):
     """One row of ``profile list``."""
 
     name: str
@@ -53,7 +53,7 @@ class PickedProfile(BaseModel):
     source: PickSource = Field(description="What picked it: `flag` (--profile) or `env`.")
 
 
-class ProfilePick(Record, kind="untaped.profile_pick"):
+class ProfilePick(Record):
     """``profile current``: the profiles the run layers over the base, in order."""
 
     name: str = Field(
@@ -62,7 +62,7 @@ class ProfilePick(Record, kind="untaped.profile_pick"):
     profiles: list[PickedProfile]
 
 
-class ProfileView(Record, kind="untaped.profile_view"):
+class ProfileView(Record):
     """``profile show``: one profile's settings, or the run's pick merged."""
 
     name: str = Field(description="The profile, or the pick comma-joined.")
@@ -71,7 +71,7 @@ class ProfileView(Record, kind="untaped.profile_view"):
     data: dict[str, Any] = Field(description="The settings, secrets shown as *** by default.")
 
 
-class ProfileOutcome(OutcomeRecord, kind="untaped.profile_outcome"):
+class ProfileOutcome(OutcomeRecord):
     """The result of ``profile create/delete/rename``.
 
     ``action`` is ``created``, ``deleted``, ``renamed``, or ``planned`` under

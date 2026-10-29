@@ -57,7 +57,7 @@ RACK = {
         from untaped.sdk.contracts import Contract, Issued, Record
 
 
-        class Item(Issued, kind="rack.item"):
+        class Item(Issued):
             name: str
 
 
@@ -127,7 +127,7 @@ BIN = {
         from untaped_rack.api import Item, ItemSource
 
 
-        class Box(Record, kind="bin.box"):
+        class Box(Record):
             id: int
             label: str
 

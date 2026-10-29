@@ -6,7 +6,7 @@ from pathlib import Path
 from textwrap import dedent
 
 from untaped_lint.infrastructure.files import source_files
-from untaped_lint.providers.conventions import RULES
+from untaped_lint.providers.conventions import DECLARED
 from untaped_lint.providers.conventions.deprecations import deprecation_violations
 
 
@@ -18,7 +18,7 @@ def _violations(tmp_path: Path, source: str) -> list[str]:
 
 
 def test_both_rules_are_declared() -> None:
-    assert {"mark-on-overload", "unwarned-parameter"} <= {rule.id for rule in RULES}
+    assert {"mark-on-overload", "unwarned-parameter"} <= {rule.id for rule in DECLARED}
 
 
 def test_a_mark_on_an_overload_is_a_violation(tmp_path: Path) -> None:

@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
@@ -31,7 +29,6 @@ from untaped.runtime.registry import (
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
-from untaped.sdk.records import DuplicateKindError, record_model
 
 
 @pytest.mark.parametrize(
@@ -323,16 +320,8 @@ def test_three_claimants_are_all_quarantined() -> None:
             make_candidate(make_plugin("github"), "a-dist", error=ImportError("no")),
             "malformed-entry-point",
         ),
-        (
-            make_candidate(
-                make_plugin("github"),
-                "a-dist",
-                error=DuplicateKindError("duplicate-kind: 'github.repo' is declared twice"),
-            ),
-            "duplicate-kind",
-        ),
     ],
-    ids=["provider-raises", "kind-declared-twice"],
+    ids=["provider-raises"],
 )
 def test_a_candidate_failing_its_own_checks_is_not_a_claimant(
     broken: PluginCandidate, reason: str
@@ -362,46 +351,3 @@ def test_a_name_with_an_at_says_it_is_reserved() -> None:
 def test_an_app_factory_must_be_callable() -> None:
     with pytest.raises(ConfigError, match="app_factory must be callable or None"):
         PluginSpec(name="bare", app_factory="not callable")  # type: ignore[arg-type]
-
-
-def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    (tmp_path / "untaped_kind_thief.py").write_text(
-        "from untaped.sdk import Record\n\n\n"
-        'class Stolen(Record, kind="untaped.setting"):\n'
-        "    key: str\n\n\n"
-        "def provide(): ...\n"
-    )
-    monkeypatch.syspath_prepend(tmp_path)
-    candidate = PluginCandidate(
-        distribution="thief-dist", name="thief", target="untaped_kind_thief:provide"
-    )
-
-    result = compose([candidate])
-
-    assert [(q.name, q.reason) for q in result.quarantine] == [("thief", "duplicate-kind")]
-    assert "untaped.core.config.models.Setting" in result.quarantine[0].detail
-
-
-@pytest.mark.parametrize("kind", ["github.thing", "untaped.thing"])
-def test_a_plugin_declaring_a_kind_under_another_name_is_quarantined(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
-) -> None:
-    (tmp_path / "untaped_toy.py").write_text(
-        "from untaped.sdk import Record\n\n\n"
-        f"class Bad(Record, kind={kind!r}):\n"
-        "    key: str\n\n\n"
-        "def provide(): ...\n"
-    )
-    monkeypatch.syspath_prepend(tmp_path)
-    monkeypatch.delitem(sys.modules, "untaped_toy", raising=False)
-    candidate = PluginCandidate(distribution="toy-dist", name="toy", target="untaped_toy:provide")
-
-    result = compose([candidate])
-
-    assert [(q.name, q.reason) for q in result.quarantine] == [("toy", "foreign-kind")]
-    detail = result.quarantine[0].detail
-    assert f"untaped_toy.Bad declares kind {kind!r}" in detail
-    assert "belongs to plugin 'toy'; " in detail
-    assert record_model(kind) is None
