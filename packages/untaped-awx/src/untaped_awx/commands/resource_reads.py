@@ -22,7 +22,7 @@ from untaped_awx.commands._options import (
     offers_with_scm,
     scope_values,
 )
-from untaped_awx.commands._selection import require_source, select, select_resources
+from untaped_awx.commands._selection import none_found, require_source, select, select_resources
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.names import name_fks
 from untaped_awx.commands.save_runner import save_selection, yaml_text
@@ -53,6 +53,7 @@ class _Read(ResourceCommand):
     def _rows(self, awx: AwxContext, records: list[dict[str, Any]]) -> Iterator[Record]:
         """``records`` as the kind's rows: SCM fields added, FKs named, secrets hidden."""
         spec = self.spec
+        self.output.empty(none_found(spec))
         if self.with_scm:
             records = add_scm_fields(
                 records, client=awx.repo, catalog=awx.catalog, warn=awx.diag.warning

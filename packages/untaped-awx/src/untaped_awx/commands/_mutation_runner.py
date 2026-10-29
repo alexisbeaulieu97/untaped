@@ -56,7 +56,7 @@ def preview_and_execute(
     """
     previews = [operation.preview for operation in plan.operations]
     if not previews:
-        ctx.diag.info("No matching resources; no changes.")
+        ctx.diag.info("no matching resources; nothing changed")
     changed = sum(outcome.action != "unchanged" for outcome in previews)
     question = f"{plan.mode.capitalize()} {plural(changed, 'resource')}?"
     if not gate.confirm(question, preview=lambda: preview_lines(previews), needed=changed > 0):

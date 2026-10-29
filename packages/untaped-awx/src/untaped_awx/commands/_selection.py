@@ -16,6 +16,7 @@ from untaped_awx.application.resources.selection import (
 from untaped_awx.commands._options import Selection
 from untaped_awx.commands.context import AwxContext, scope_for_command
 from untaped_awx.domain import ResourceSpec
+from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 
 def require_source(names: Sequence[str], selection: Selection, stdin: Stdin[Any]) -> None:
@@ -115,6 +116,9 @@ def select_resources(
     # Selected records already name their organization; later ancestry and
     # FK lookups reuse that instead of reading it again.
     ctx.fk.remember_summaries(item.record for item in selected)
-    if not selected:
-        ctx.diag.info(f"No matching {spec.kind} found.")
     return selected
+
+
+def none_found(spec: AwxResourceSpec) -> str:
+    """What a table says when a selection of ``spec``'s kind matched nothing."""
+    return f"No {spec.cli_name.replace('-', ' ')} found."

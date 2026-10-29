@@ -505,7 +505,7 @@ def test_editor_missing_configuration_is_clean_and_retained(
     monkeypatch.delenv("EDITOR", raising=False)
     result = run(["projects", "edit", "target", "--yes"])
     assert result.exit_code != 0
-    assert "VISUAL" in result.output and "retained" in result.output
+    assert "VISUAL" in result.output and "kept at" in result.output
     assert fake_aap.get_record("projects", 10)["description"] == "old"
 
 
