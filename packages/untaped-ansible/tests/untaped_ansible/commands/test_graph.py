@@ -1216,7 +1216,7 @@ def test_find_accepts_several_targets_roots_and_alias_targets(tmp_path: Path, mo
         (["find", "--stdin"], "requires an argument"),
         (["find", "a/b", "--stdin", "--format", "tree"], "tree"),
         (["deps", "acme/site", "--format", "mermaid"], "mermaid"),
-        (["impact", "acme/site", "--live"], "Unknown option"),
+        (["impact", "acme/site", "--live"], "unknown option"),
     ],
 )
 def test_task_command_usage_errors(args: list[str], message: str) -> None:

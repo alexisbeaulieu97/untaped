@@ -32,6 +32,7 @@ from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.sdk._cli import (
     follows_user_format,
     note_requested_format,
+    parse_error,
     raise_usage,
     requested_format,
     user_default_format,
@@ -718,7 +719,7 @@ def _parsed(app: App, tokens: list[str]) -> object:
         return _call(app, tokens)
     except CycloptsError as exc:
         note_requested_format(tokens)
-        raise_usage(str(exc))
+        raise_usage(parse_error(exc))
 
 
 def _call(app: App, tokens: list[str]) -> object:

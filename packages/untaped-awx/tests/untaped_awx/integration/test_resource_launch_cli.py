@@ -87,7 +87,7 @@ def test_workflow_launch_rejects_unsupported_flags(seeded_default_org: Any) -> N
     output = result.output + (result.stderr or "")
     assert "--verbosity" in output
     # options the kind's launch can't take are not its options
-    assert "Unknown option: --verbosity" in output
+    assert "unknown option: --verbosity" in output
 
 
 def test_launch_forwards_full_action_payload(

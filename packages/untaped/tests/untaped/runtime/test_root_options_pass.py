@@ -474,7 +474,7 @@ def test_a_value_taking_short_ending_a_cluster_reads_the_next_token_as_cyclopts_
     code, _, err = _outcome(argv, kept=kept, monkeypatch=monkeypatch, capsys=capsys)
 
     assert code == 2
-    assert "parameter -c requires an argument" in err
+    assert "-c requires an argument" in err
 
 
 @pytest.mark.usefixtures("fresh_composition", "_isolated_config")
