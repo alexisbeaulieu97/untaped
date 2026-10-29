@@ -53,11 +53,12 @@ class Follow(Command):
 
     lines: int = Field(2, description="How many lines.")
     fail: bool = Field(False, description="Fail after the first line.")
+    prefix: str = Field("line", description="What each line's text starts with.")
     output: Output[Line] = Output(stream=True, render={"quoted": _print_line})
 
     def run(self) -> Iterator[Line]:
         for n in range(self.lines):
-            yield Line(text=f"line-{n}", n=n)
+            yield Line(text=f"{self.prefix}-{n}", n=n)
             _went_on()
             if self.fail:
                 raise UntapedError("the log went away")
@@ -177,6 +178,11 @@ def test_a_streamed_pipe_is_one_envelope_per_row() -> None:
 def test_a_streamed_table_prints_its_header_once() -> None:
     result = _run("tool", "follow", "--lines", "3")
     assert result.stdout.splitlines() == ["text    n", "line-0  0", "line-1  1", "line-2  2"]
+
+
+def test_a_streamed_table_pads_wide_characters_by_the_cells_they_take() -> None:
+    result = _run("tool", "follow", "--prefix", "行")
+    assert result.stdout.splitlines() == ["text  n", "行-0  0", "行-1  1"]
 
 
 def test_a_stream_with_no_row_prints_nothing() -> None:

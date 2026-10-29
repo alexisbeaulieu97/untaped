@@ -10,7 +10,6 @@ from typing import Annotated, ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from untaped.sdk import Cache, Dir, Key, Retired, StateRows, installed_code, key
-from untaped_github.api import normalize_team_scopes
 
 DEFAULT_DEPENDENCY_PATHS = (
     "roles/requirements.yml",
@@ -196,6 +195,8 @@ SOURCE_DATA = Cache(
 
 def normalize_team_refs(teams: list[str], orgs: list[str]) -> list[str]:
     """Expand bare team slugs when the source has one unambiguous org."""
+    from untaped_github.api import normalize_team_scopes  # noqa: PLC0415 - not on every start
+
     return [f"{scope.org}/{scope.slug}" for scope in normalize_team_scopes(teams, orgs=tuple(orgs))]
 
 
