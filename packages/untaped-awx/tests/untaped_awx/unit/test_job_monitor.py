@@ -3,12 +3,13 @@
 Stubs the :class:`ResourceClient` so we can exercise the polling /
 pagination / terminal-detection logic without a real httpx round trip.
 The fake client is queue-driven: each test scripts what the next
-``request`` / ``request_text`` call should return, and the monitor
-walks the script until done.
+``request`` / ``request_text`` call (or ``paginate_path`` page) should
+return, and the monitor walks the script until done.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
@@ -45,6 +46,17 @@ class _FakeClient:
         if not self._json:
             return {"results": [], "next": None}
         return self._json.pop(0)
+
+    def paginate_path(
+        self, path: str, *, params: dict[str, str] | None = None, limit: int | None = None
+    ) -> Iterator[dict[str, Any]]:
+        """Each page is the next scripted response; its ``next`` is the next page's path."""
+        page = self.request("GET", path, params=params)
+        while True:
+            yield from page.get("results") or []
+            if not page.get("next"):
+                return
+            page = self.request("GET", page["next"])
 
     def request_text(
         self,

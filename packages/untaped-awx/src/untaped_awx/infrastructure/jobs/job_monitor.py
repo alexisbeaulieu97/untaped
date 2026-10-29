@@ -20,7 +20,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, urlparse
 
 from untaped.sdk import paginate_pages, plural
 from untaped_awx.domain import Job, JobEvent
@@ -32,7 +31,6 @@ if TYPE_CHECKING:
 
 SleepFn = Callable[[float], None]
 _EVENT_PAGE_SIZE = 200
-_EVENT_MAX_PAGES = 10_000
 _SETTLE_POLLS = 5
 """Extra polls a finished job's log gets while AWX still saves its events."""
 _TAIL_MAX_PAGES = 10
@@ -216,7 +214,9 @@ class PollingJobMonitor:
     ) -> Iterator[JobEvent]:
         """One read of every event after ``counter``, in counter order, across pages."""
         query = {**(params or {}), "counter__gt": str(counter), "order_by": "counter"}
-        for record in _follow_pages(self._client, _events_path(job), query):
+        # AWX caps a page; a busy job writes thousands of events between polls,
+        # so one read walks every page.
+        for record in self._client.paginate_path(_events_path(job), params=query):
             yield JobEvent.model_validate(record)
 
     def _read_into(
@@ -277,37 +277,3 @@ def _api_path_for(job: Job) -> str:
     if routes is None:
         raise AwxApiError(f"unsupported execution kind: {job.kind}")
     return routes.collection
-
-
-def _follow_pages(
-    client: RawHttpResourceClient,
-    path: str,
-    params: dict[str, str],
-) -> Iterator[dict[str, Any]]:
-    """Follow AWX pagination across one ``job_events`` poll cycle.
-
-    AWX caps ``page_size``; a busy job can produce thousands of events
-    in a 2-second window. We walk ``next`` (i.e. bump ``page``) until
-    the server says we're done so a single :meth:`stream_events` cycle
-    doesn't lose events to pagination.
-    """
-
-    def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
-        page_num = cursor or "1"
-        response = client.request(
-            "GET",
-            path,
-            params={**params, "page": page_num, "page_size": str(_EVENT_PAGE_SIZE)},
-        )
-        return list(response.get("results") or []), _next_page_cursor(response.get("next"))
-
-    yield from paginate_pages(fetch, limit=None, max_pages=_EVENT_MAX_PAGES)
-
-
-def _next_page_cursor(next_url: object) -> str | None:
-    if not isinstance(next_url, str) or not next_url:
-        return None
-    page_values = parse_qs(urlparse(next_url).query).get("page")
-    if not page_values:
-        return None
-    return page_values[0]
