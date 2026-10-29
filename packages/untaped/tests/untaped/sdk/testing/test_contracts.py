@@ -48,10 +48,10 @@ def _fresh_providers() -> Iterator[None]:
         yield
 
 
-def test_compose_with_offers_a_fake_to_the_owner_and_restores_the_composition() -> None:
+def test_compose_with_composes_a_fake_provider_and_restores_the_composition() -> None:
     before = compose(shelf_plugin())
     Kiosk.rows = [Book(title="Dune")]
-    with compose_with(shelf_plugin(), provides={"fake": [Kiosk()]}) as result:
+    with compose_with(shelf_plugin(), plugin("fake", fills=(Kiosk,))) as result:
         assert [plugin.spec.name for plugin in result.plugins] == ["untaped", "fake", "shelf"]
         [answer] = gather(BookSource.books, refresh=True)()
         assert isinstance(answer, Ok)
@@ -82,10 +82,6 @@ def test_compose_with_and_plugin_candidate_take_a_plugin_class() -> None:
 def test_compose_with_refuses_what_it_cannot_compose() -> None:
     with pytest.raises(LookupError, match="no installed plugin named 'nowhere'"):
         compose_with("nowhere").__enter__()
-    with pytest.raises(LookupError, match="no composed plugin declares BookSource"):
-        compose_with(plugin("other"), provides={"fake": [Kiosk()]}).__enter__()
-    with pytest.raises(TypeError, match="is not a provider"):
-        compose_with(shelf_plugin(), provides={"fake": [object()]}).__enter__()  # type: ignore[list-item]
 
 
 def test_assert_fills_passes_for_a_bridging_provider() -> None:

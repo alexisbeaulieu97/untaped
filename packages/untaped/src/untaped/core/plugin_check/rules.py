@@ -114,7 +114,7 @@ def _core_lines(checked: _Checked) -> list[str]:
         *help_tree_violations(checked.root, commands),
         *guide_violations(checked.root, composition(), spec),
         *stability_violations(checked.root, composition(), commands, spec=spec),
-        *undated_violations(spec),
+        *([] if checked.own is None else undated_violations(spec, checked.own)),
         *_sdk_deprecations(checked.package),
         *structure_class_violations(spec, checked.package, checked.source_dir),
     ]

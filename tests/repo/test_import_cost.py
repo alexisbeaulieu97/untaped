@@ -260,29 +260,6 @@ def test_testing_helpers_load_contracts_only_when_called() -> None:
     assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
 
 
-def test_help_and_plugin_list_never_call_a_providers_offer() -> None:
-    """A provider's ``provides`` function runs when a contract is first asked, never before."""
-    snippet = (
-        "import contextlib, io\n"
-        "from untaped.runtime import bootstrap\n"
-        "from untaped.runtime.registry import PluginSpec\n"
-        "from untaped.sdk.testing import plugin_candidate\n"
-        "def offer():\n"
-        "    raise AssertionError('provides was called')\n"
-        "def contracts():\n"
-        "    raise AssertionError('contracts was called')\n"
-        "owner = PluginSpec(name='shelf', contracts=contracts)\n"
-        "spec = PluginSpec(name='lend', provides={'shelf': offer})\n"
-        "found = [plugin_candidate(owner), plugin_candidate(spec)]\n"
-        "for argv in (['--help'], ['plugin', 'list']):\n"
-        "    app = bootstrap.build_root_app(candidates=found)\n"
-        "    with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(SystemExit):\n"
-        "        app.meta(argv)\n"
-        "assert not [m for m in sys.modules if m.startswith('untaped.sdk.contracts')]\n"
-    )
-    assert "prompt_toolkit" not in _loaded_heavy_modules(snippet)
-
-
 _LISTED_PROBE = (
     "import os, sys\n"
     "from untaped.runtime.bootstrap import build_root_app\n"

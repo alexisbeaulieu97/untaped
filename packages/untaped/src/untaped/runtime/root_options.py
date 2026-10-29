@@ -7,9 +7,7 @@ the selected command's token shapes from the declaration, so it takes a root
 option wherever it sits among a declared command's own options and never one
 the command reads as a value.
 With no declaration kept, dispatch reads the line the same way by the
-composition's. For a command still mounted through the 11.x seam, the pass
-takes only the leading ones, and the seam's dispatch takes the rest as before
-(:mod:`untaped.runtime.root_options_seam`). Also the rewriting of a command's
+composition's. Also the rewriting of a command's
 loose or deprecated spelling to its registered name, with the deprecation
 warnings. The bootstrap composition root uses this one implementation.
 """
@@ -166,8 +164,8 @@ class RootLine:
     #: (nor a ``--`` that only closed the leading ones).
     tokens: list[str]
     #: The line was read by a declared command's shape, so every root option in
-    #: it is taken and dispatch takes none. ``False`` for a command mounted
-    #: through the 11.x seam, or until dispatch reads a line the pass had no
+    #: it is taken and dispatch takes none. ``False`` for a word no declared
+    #: command holds, or until dispatch reads a line the pass had no
     #: declaration for.
     placed: bool = False
     #: Each root option applied, in line order.
@@ -212,8 +210,8 @@ class RootLine:
         ``untaped.ui.format``. The theme is the user's under text
         diagnostics. A first word the declaration doesn't hold is an unknown
         command only when the composed ``root`` app has no command for it
-        either; an 11.x seam command's line, or any such line without
-        ``root``, gets ``None``.
+        either; a line read with no declaration whose word ``root`` holds, or
+        any such line without ``root``, gets ``None``.
         """
         if not self.placed:
             word = self.tokens[0] if self.tokens else None
@@ -280,8 +278,8 @@ def _read_line(
     options, every root option that is not a value by the command's shape
     (an option's value, or an argument that takes a leading ``-``, such as a
     command line to run), a root letter of a short cluster included
-    (``-xv``). A first word ``declaration`` doesn't hold (an 11.x
-    seam command, or any word with no declaration) ends the walk there, with
+    (``-xv``). A first word ``declaration`` doesn't hold (an unknown
+    command, or any word with no declaration) ends the walk there, with
     only the leading root options taken. A line selecting no command at all
     (``untaped --help -v``) or a group without a command of its own has every
     root option taken.
@@ -379,7 +377,7 @@ class _LineWalk:
         """Walk the command words: whether ``declaration`` holds them, and their command.
 
         Root options between words are taken only when another command word
-        follows them, as an 11.x command's are: otherwise they are the first
+        follows them: otherwise they are the first
         tokens of the group's own command, and its walk reads them.
         """
         nodes: Sequence[_Node] = () if declaration is None else _root_nodes(declaration)
@@ -712,19 +710,13 @@ def dispatch_line(
     """Dispatch the command ``line`` holds; ``declaration`` is the composition's.
 
     A line the token pass had no declaration for is read now by
-    ``declaration``, as the pass reads one (:meth:`RootLine.read`). A placed
-    line holds no root option any more, so it parses once. Otherwise (an 11.x
-    seam command) the seam's dispatch takes the root options the pass left
-    (:func:`untaped.runtime.root_options_seam.dispatch_seam`).
+    ``declaration``, as the pass reads one (:meth:`RootLine.read`), so it
+    holds no root option any more and parses once.
     """
     with command_selection():
         if not line.placed:
             line.read(line.tokens, root_options, declaration)
-        if line.placed:
-            return _parsed(app, canonical_command_tokens(app, line.tokens))
-        from untaped.runtime.root_options_seam import dispatch_seam  # noqa: PLC0415 - it imports us
-
-        return dispatch_seam(app, line, root_options)
+        return _parsed(app, canonical_command_tokens(app, line.tokens))
 
 
 def _parsed(app: App, tokens: list[str]) -> object:

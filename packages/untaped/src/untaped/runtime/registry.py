@@ -433,7 +433,7 @@ VALID_REASONS = frozenset(
         "duplicate-doctor-check",
         "doctor-check-failed",
         "malformed-entry-point",
-        "not-a-spec",
+        "not-a-plugin-class",
         "bad-app-factory",
         "bad-metadata",
         "bad-settings-keys",
@@ -1660,26 +1660,30 @@ def candidate_entry_point(candidate: PluginCandidate) -> str:
 
 
 def _describe(value: object) -> str:
-    """How a ``not-a-spec`` detail names what an entry point resolved to."""
+    """How a ``not-a-plugin-class`` detail names what an entry point resolved to."""
     if callable(value):
         return f"the callable {getattr(value, '__qualname__', repr(value))!r}"
     return f"a {type(value).__name__}"
 
 
-def _module_of(candidate: PluginCandidate) -> str:
+def _package_of(candidate: PluginCandidate) -> str:
     target = candidate.target
     if isinstance(target, str) and ":" in target:
-        return target.partition(":")[0]
+        return target.partition(":")[0].partition(".")[0]
     return "untaped_" + candidate.name.replace("-", "_")
 
 
-def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec | type[Plugin]:
-    """Resolve one candidate's entry point to its ``PluginSpec`` or plugin class.
+def _class_name(candidate: PluginCandidate) -> str:
+    return "".join(part.capitalize() for part in candidate.name.split("-"))
 
-    The entry point names the spec itself (``untaped_acme:SPEC``) or a
-    12.0 plugin class (``untaped_acme.plugin:Acme``), which composition reads
-    with the other plugin classes (:func:`_mounted`); anything else, a
-    callable included, is ``not-a-spec`` and is never called.
+
+def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugin]:
+    """Resolve one candidate's entry point to its plugin class.
+
+    The entry point names the class (``untaped_acme.plugin:Acme``), which
+    composition reads with the other plugin classes (:func:`_mounted`);
+    anything else, an 11.x ``PluginSpec`` or a callable included, is
+    ``not-a-plugin-class`` and is never called.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
@@ -1707,21 +1711,13 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> PluginSpec
             failed.plugin_class = True
             raise
         return spec
-    if not isinstance(spec, PluginSpec):
-        raise _Quarantine(
-            "not-a-spec",
-            f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
-            f"names {_describe(spec)}, not a PluginSpec; name the module's SPEC constant "
-            f"('{_module_of(candidate)}:SPEC')",
-        )
-    _check_declaration(spec, state)
-    if candidate.name != spec.name:
-        raise _Quarantine(
-            "bad-metadata",
-            f"entry-point name {candidate.name!r} does not match plugin name {spec.name!r}",
-        )
-    _check_distribution(candidate)
-    return spec
+    what = "an 11.x PluginSpec" if isinstance(spec, PluginSpec) else _describe(spec)
+    raise _Quarantine(
+        "not-a-plugin-class",
+        f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
+        f"names {what}, not a plugin class; untaped 12.0 composes plugin classes: "
+        f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
+    )
 
 
 def _check_distribution(candidate: PluginCandidate) -> None:

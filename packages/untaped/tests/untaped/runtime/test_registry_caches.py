@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel
 
+from core_test_support.commands.support import make_plugin
 from core_test_support.contracts.support import BookSource
 from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime.registry import (
@@ -17,6 +18,7 @@ from untaped.runtime.registry import (
     compose,
     section_settings,
 )
+from untaped.sdk import Plugin
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage.cache import Cache
 
@@ -27,34 +29,25 @@ class HelloSettings(BaseModel):
     greeting: str = "hi"
 
 
-def _compose(spec: PluginSpec) -> CompositionResult:
-    return compose([make_candidate(spec)])
+def _compose(plugin: type[Plugin]) -> CompositionResult:
+    return compose([make_candidate(plugin)])
 
 
-def _reason(spec: PluginSpec) -> tuple[str, str]:
-    (record,) = _compose(spec).quarantine
+def _reason(plugin: type[Plugin]) -> tuple[str, str]:
+    (record,) = _compose(plugin).quarantine
     return record.reason, record.detail
 
 
+def _motd(*old: str) -> Cache[Any]:
+    """A fresh ``motd`` cache for each double: a block belongs to one plugin class."""
+    return Cache(label="message of the day", max_age=timedelta(hours=1), renamed_from=old)
+
+
 def test_a_plugin_composes_its_caches() -> None:
-    spec = PluginSpec(name="hello", settings=HelloSettings, caches=[MOTD])  # type: ignore[arg-type]
-    result = _compose(spec)
+    hello = make_plugin("hello", settings=HelloSettings, motd=_motd())
+    result = _compose(hello)
     assert result.quarantine == ()
-    assert result.plugins[1].spec.caches == (MOTD,)
-
-
-def test_a_cache_of_another_plugin_is_quarantined() -> None:
-    other = Cache("other", "motd", label="message of the day", max_age=timedelta(hours=1))
-    reason, detail = _reason(PluginSpec(name="hello", caches=(other,)))
-    assert reason == "foreign-cache"
-    assert "'other.motd'" in detail
-
-
-def test_a_cache_declared_twice_is_quarantined() -> None:
-    again = Cache("hello", "motd", label="another", max_age=timedelta(0))
-    reason, detail = _reason(PluginSpec(name="hello", caches=(MOTD, again)))
-    assert reason == "duplicate-cache"
-    assert "'motd' twice" in detail
+    assert [cache.qualified for cache in result.plugins[1].spec.caches] == ["hello.motd"]
 
 
 def test_caches_holds_only_caches() -> None:
@@ -91,11 +84,9 @@ class OwnOldKeyUnderCaches(BaseModel):
 
 
 def test_an_own_old_key_under_caches_collides_once_caches_are_injected() -> None:
-    plain = PluginSpec(name="hello", settings=OwnOldKeyUnderCaches)
+    plain = make_plugin("hello", settings=OwnOldKeyUnderCaches)
     assert _compose(plain).quarantine == ()
-    reason, detail = _reason(
-        PluginSpec(name="hello", settings=OwnOldKeyUnderCaches, caches=(MOTD,))
-    )
+    reason, detail = _reason(make_plugin("hello", settings=OwnOldKeyUnderCaches, motd=_motd()))
     assert reason == "bad-settings-keys"
     assert "caches, which untaped reserves" in detail
 
@@ -105,6 +96,11 @@ def _renamed(*old: str, settings: type[BaseModel] = HelloSettings) -> PluginSpec
         "hello", "motd", label="message of the day", max_age=timedelta(hours=1), renamed_from=old
     )
     return PluginSpec(name="hello", settings=settings, caches=(cache,))
+
+
+def _held(*old: str, settings: type[BaseModel] = HelloSettings) -> type[Plugin]:
+    """Plugin ``hello`` holding a ``motd`` cache renamed from ``old``."""
+    return make_plugin("hello", settings=settings, motd=_motd(*old))
 
 
 class Retiring(BaseModel):
@@ -117,9 +113,9 @@ class Retiring(BaseModel):
 @pytest.mark.parametrize(
     ("spec", "names"),
     [
-        (lambda: _renamed("greeting"), "clashes with the current setting 'greeting'"),
-        (lambda: _renamed("salutation", settings=Retiring), "'salutation' is in Retiring"),
-        (lambda: _renamed("motd_hours", settings=Retiring), "'motd_hours' is in Retiring"),
+        (lambda: _held("greeting"), "clashes with the current setting 'greeting'"),
+        (lambda: _held("salutation", settings=Retiring), "'salutation' is in Retiring"),
+        (lambda: _held("motd_hours", settings=Retiring), "'motd_hours' is in Retiring"),
     ],
 )
 def test_a_renamed_from_the_owner_holds_is_refused(spec: object, names: str) -> None:
@@ -130,11 +126,11 @@ def test_a_renamed_from_the_owner_holds_is_refused(spec: object, names: str) -> 
 
 
 def test_an_old_key_two_caches_rename_is_refused() -> None:
-    caches = tuple(
-        Cache("hello", name, label=name, max_age=timedelta(0), renamed_from=("ttl_seconds",))
+    caches = {
+        name: Cache(label=name, max_age=timedelta(0), renamed_from=("ttl_seconds",))
         for name in ("motd", "news")
-    )
-    reason, detail = _reason(PluginSpec(name="hello", caches=caches))
+    }
+    reason, detail = _reason(make_plugin("hello", settings=HelloSettings, **caches))
     assert reason == "bad-settings-keys"
     assert "'ttl_seconds' is renamed by both caches 'motd' and 'news'" in detail
 

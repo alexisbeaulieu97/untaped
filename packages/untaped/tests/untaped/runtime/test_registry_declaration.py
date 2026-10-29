@@ -275,11 +275,7 @@ def test_a_class_refused_before_the_mount_leaves_the_one_holding_its_name(toys: 
 
 def test_a_contested_name_stays_contested_on_a_second_start(toys: Path) -> None:
     toy = _package(toys, "toyplug")
-    other = PluginCandidate(distribution="untaped-other", name="toy", target="toyother:SPEC")
-    (toys / "toyother.py").write_text(
-        "from untaped.runtime.registry import PluginSpec\nSPEC = PluginSpec(name='toy')\n",
-        encoding="utf-8",
-    )
+    other = _package(toys, "toyother")  # another distribution's plugin named toy
     first = compose_root(candidates=[toy, other])
     _unload("toyplug")
     again = compose_root(candidates=[toy, other])

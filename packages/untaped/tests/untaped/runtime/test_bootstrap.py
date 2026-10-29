@@ -19,20 +19,20 @@ from importlib import metadata
 from pathlib import Path
 
 import pytest
-from cyclopts import App, Group
-from pydantic import BaseModel
+from cyclopts import App
+from pydantic import BaseModel, Field
 
-from core_test_support.runtime.plugin_harness import make_candidate, make_spec
+from core_test_support.commands.support import make_plugin
+from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime import bootstrap
 from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate, PluginSpec
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import get_settings, reset_config_registry
+from untaped.sdk import Command, Group, Plugin, Positional
 from untaped.sdk._app_context import app_context
-from untaped.sdk._cli import create_app, echo
 from untaped.sdk._run import is_quiet, is_verbose
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.projects import untaped_home
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 
@@ -43,32 +43,20 @@ class _ExtProfile(BaseModel):
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
 
-def _spec(name: str, app: App) -> PluginSpec:
-    def _factory() -> App:
-        return app
+class Who(Command[_ExtProfile]):
+    """Print the picked profile's token."""
 
-    return PluginSpec(
-        name=name,
-        app_factory=_factory,
-        settings=_ExtProfile,
-    )
+    def run(self) -> str:
+        return self.settings.token
 
 
-def _token_body_for(section: str) -> Callable[[], None]:
-    def _body() -> None:
-        echo(app_context().section(section, _ExtProfile).token)
-
-    return _body
-
-
-def _who_app(name: str, body: Callable[[], None]) -> App:
-    app = create_app(name=name, help=f"{name} plugin.")
-    app.command(body, name="who")
-    return app
+def _plugin(name: str) -> type[Plugin]:
+    """Plugin ``name`` whose ``who`` prints its picked profile's token."""
+    return make_plugin(name, settings=_ExtProfile, commands=(Who,))
 
 
 def _ext_candidate(calls: list[str]) -> PluginCandidate:
-    return make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
+    return make_candidate(_plugin("ext"), calls=calls)
 
 
 def _write_config(path: Path, text: str) -> None:
@@ -97,16 +85,16 @@ def test_composition_is_the_last_composed_result() -> None:
 def test_root_command_resolves_a_word_in_the_root_built_last() -> None:
     with pytest.raises(RuntimeError):
         bootstrap.root_command("doctor")
-    bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("ext"))])
+    bootstrap.build_root_app(candidates=[plugin_candidate(_plugin("ext"))])
     assert bootstrap.root_command("doctor") == "doctor"
     assert bootstrap.root_command("ext") == "ext"
     assert bootstrap.root_command("nope") is None
 
 
 def test_a_kept_composition_brings_back_the_root_built_before_it() -> None:
-    bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("ext"))])
+    bootstrap.build_root_app(candidates=[plugin_candidate(_plugin("ext"))])
     with bootstrap.kept_composition():
-        bootstrap.build_root_app(candidates=[plugin_candidate(make_spec("other"))])
+        bootstrap.build_root_app(candidates=[plugin_candidate(_plugin("other"))])
         assert bootstrap.root_command("ext") is None
     assert bootstrap.root_command("ext") == "ext"
 
@@ -152,7 +140,7 @@ def test_missing_version_metadata_is_config_error(monkeypatch: pytest.MonkeyPatc
 def test_discovery_runs_before_settings_registration(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[str] = []
     calls: list[str] = []
-    candidate = make_candidate(_spec("ext", _who_app("ext", _token_body_for("ext"))), calls=calls)
+    candidate = make_candidate(_plugin("ext"), calls=calls)
 
     def fake_discover(**kwargs: object) -> tuple[PluginCandidate, ...]:
         events.append("discover")
@@ -301,14 +289,19 @@ def test_root_options_apply_between_nested_command_names(
         _isolated_config, "format_version: 2\nprofiles:\n  work:\n    ext:\n      token: WT\n"
     )
 
-    def body() -> None:
-        echo(f"{app_context().section('ext', _ExtProfile).token} quiet={is_quiet()}")
+    class Who(Command[_ExtProfile]):
+        """Print the token and whether the run is quiet."""
 
-    ext = create_app(name="ext", help="ext plugin.")
-    grp = create_app(name="grp", help="A nested group.")
-    grp.command(body, name="who")
-    ext.command(grp, name="grp")
-    root = bootstrap.build_root_app(candidates=[make_candidate(_spec("ext", ext))])
+        def run(self) -> str:
+            return f"{self.settings.token} quiet={is_quiet()}"
+
+    class GrpGroup(Group):
+        """A nested group."""
+
+        commands = (Who,)
+
+    ext = make_plugin("ext", settings=_ExtProfile, commands=(GrpGroup,))
+    root = bootstrap.build_root_app(candidates=[make_candidate(ext)])
 
     result = CliInvoker().invoke(root.meta, argv)
 
@@ -336,12 +329,16 @@ def test_profile_value_may_equal_a_command_name(_isolated_config: Path) -> None:
 def test_root_options_after_end_of_options_reach_the_command(
     _isolated_config: Path,
 ) -> None:
-    def run(cmd: str, /) -> None:
-        echo(f"{cmd} profile={flag_pick()}")
+    class Run(Command):
+        """Echo the word and the run's profile pick."""
 
-    ext = create_app(name="ext", help="ext plugin.")
-    ext.command(run, name="run")
-    root = bootstrap.build_root_app(candidates=[make_candidate(_spec("ext", ext))])
+        cmd: Positional[str] = Field(description="The word.")
+
+        def run(self) -> str:
+            return f"{self.cmd} profile={flag_pick()}"
+
+    ext = make_plugin("ext", settings=_ExtProfile, commands=(Run,))
+    root = bootstrap.build_root_app(candidates=[make_candidate(ext)])
 
     result = CliInvoker().invoke(root.meta, ["ext", "run", "--", "--profile"])
     assert result.exit_code == 0, result.output
@@ -447,28 +444,15 @@ def test_bootstrap_has_no_standalone_composition_imports() -> None:
 def test_quarantined_providers_warn_and_the_root_boots(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    good = make_candidate(_spec("good", _who_app("good", _token_body_for("good"))))
-    built: list[str] = []
-
-    def rival_factory() -> App:
-        built.append("rival")
-        return create_app(name="rival", help="rival plugin.")
-
-    # Two providers claiming one name are both quarantined; neither is built.
+    good = make_candidate(_plugin("good"))
+    # Two providers claiming one name are both quarantined.
     rivals = [
-        make_candidate(
-            PluginSpec(
-                name="rival",
-                app_factory=rival_factory,
-                settings=_ExtProfile,
-            ),
-            distribution,
-        )
-        for section, distribution in (("rival", "example-dist"), ("rival2", "acme-dist"))
+        make_candidate(_plugin("rival"), distribution)
+        for distribution in ("example-dist", "acme-dist")
     ]
     # A first-party-style provider gets no special treatment when it raises.
     raising = make_candidate(
-        _spec("awx", App(name="awx")), "untaped", error=ImportError("settings module is broken")
+        _plugin("awx"), "untaped", error=ImportError("settings module is broken")
     )
     candidates = [good, *rivals, raising]
 
@@ -479,17 +463,14 @@ def test_quarantined_providers_warn_and_the_root_boots(
         ("rival", "acme-dist", "duplicate-name"),
         ("rival", "example-dist", "duplicate-name"),
     ]
-    assert built == []
-    for section in ("rival", "rival2"):
-        with pytest.raises(ConfigError):
-            app_context().section(section, _ExtProfile)
+    with pytest.raises(ConfigError):
+        app_context().section("rival", _ExtProfile)
     assert capsys.readouterr().err == ""  # composing warns about nothing; the root does
 
     root = bootstrap.build_root_app(candidates=candidates)
     assert "good" in root
     assert "awx" not in root
     assert "rival" not in root
-    assert built == []
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
@@ -656,160 +637,6 @@ def test_installed_wheel_reports_version_and_help(tmp_path: Path) -> None:
     assert "untaped" in helped.stdout
 
 
-def _counting_spec(
-    name: str, calls: list[str], *, help: str | None = None, result: object = None
-) -> PluginSpec:
-    def _factory() -> App:
-        calls.append(name)
-        if result is not None:
-            return result  # type: ignore[return-value]
-        return _who_app(name, _token_body_for(name))
-
-    return PluginSpec(
-        name=name,
-        app_factory=_factory,
-        settings=_ExtProfile,
-        help=help,
-    )
-
-
-def test_lazy_factory_runs_only_on_dispatch_and_once() -> None:
-    calls: list[str] = []
-    spec = _counting_spec("lazy", calls, help="Lazy plugin.")
-    root = bootstrap.build_root_app(candidates=(plugin_candidate(spec),))
-    assert calls == []
-
-    listed = CliInvoker().invoke(root.meta, ["--help"])
-    assert listed.exit_code == 0, listed.output
-    assert "Lazy plugin." in listed.stdout
-    assert calls == []
-
-    for _ in range(2):
-        result = CliInvoker().invoke(root.meta, ["lazy", "who"])
-        assert result.exit_code == 0, result.output
-        assert result.stdout.strip() == "default-token"
-    assert calls == ["lazy"]
-
-
-def test_eager_factories_are_called_once_per_composition() -> None:
-    first_calls: list[str] = []
-    second_calls: list[str] = []
-    first = make_candidate(_counting_spec("eager", first_calls))
-    second = make_candidate(_counting_spec("ext", second_calls))
-
-    root = bootstrap.build_root_app(candidates=[first, second])
-    for name in ("eager", "ext"):
-        result = CliInvoker().invoke(root.meta, [name, "who"])
-        assert result.exit_code == 0, result.output
-
-    assert first_calls == ["eager"]
-    assert second_calls == ["ext"]
-
-
-def _raising_spec(name: str, calls: list[str]) -> PluginSpec:
-    def _boom() -> App:
-        calls.append(name)
-        raise RuntimeError("cli import failed")
-
-    return PluginSpec(
-        name=name,
-        app_factory=_boom,
-        settings=_ExtProfile,
-        help=f"{name} plugin.",
-    )
-
-
-def test_a_failing_lazy_factory_fails_only_its_command_in_one_root() -> None:
-    bad_calls: list[str] = []
-    good_calls: list[str] = []
-    root = bootstrap.build_root_app(
-        candidates=[
-            plugin_candidate(_raising_spec("bad", bad_calls), distribution="bad-dist"),
-            plugin_candidate(_counting_spec("good", good_calls, help="Good plugin.")),
-        ]
-    )
-    assert bad_calls == [] and good_calls == []  # nothing built at startup
-    assert bootstrap.composition().quarantine == ()
-
-    bad = CliInvoker().invoke(root.meta, ["bad", "who"])
-    assert bad.exit_code == 4
-    assert "plugin 'bad' from 'bad-dist' could not build its commands" in bad.stderr
-    assert "cli import failed" in bad.stderr
-
-    good = CliInvoker().invoke(root.meta, ["good", "who"])
-    assert good.exit_code == 0, good.stderr
-    assert good_calls == ["good"]
-
-
-def test_a_failed_lazy_factory_runs_once_and_fails_every_dispatch() -> None:
-    calls: list[str] = []
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(_raising_spec("bad", calls))])
-    for argv in (["bad", "who"], ["bad", "--help"], ["bad"]):
-        result = CliInvoker().invoke(root.meta, argv)
-        assert result.exit_code == 4, argv
-        assert "cli import failed" in result.stderr
-    assert calls == ["bad"]
-
-
-def test_a_lazy_factory_returning_a_non_app_exits_4_on_help_too() -> None:
-    calls: list[str] = []
-    bad = _counting_spec("bad", calls, help="Bad plugin.", result="not-an-app")
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(bad)])
-    result = CliInvoker().invoke(root.meta, ["bad", "--help"])
-    assert result.exit_code == 4
-    assert "returned str, expected cyclopts App" in result.stderr
-
-
-def test_completion_survives_a_plugin_whose_lazy_factory_fails(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    bad_calls: list[str] = []
-    root = bootstrap.build_root_app(
-        candidates=[
-            plugin_candidate(_raising_spec("brokencap", bad_calls), distribution="bad-dist"),
-            plugin_candidate(_counting_spec("goodcap", [], help="Good plugin.")),
-        ]
-    )
-    capsys.readouterr()
-
-    # Through ``--install-completion``'s own path, which calls generate_completion.
-    installed = root.install_completion(
-        shell="bash", output=tmp_path / "untaped.bash", add_to_startup=False
-    )
-    script = installed.read_text()
-
-    assert "goodcap" in script
-    assert capsys.readouterr().err == ""
-    dispatched = CliInvoker().invoke(root.meta, ["brokencap", "who"])
-    assert dispatched.exit_code == 4
-    assert "cli import failed" in dispatched.stderr
-    assert bad_calls == ["brokencap"]
-
-
-@pytest.mark.parametrize(
-    "argv", [["bad", "who", "--format", "json"], ["bad", "--help", "--format=json"]]
-)
-def test_run_root_reports_a_failing_lazy_factory_as_json_with_exit_4(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    with pytest.raises(SystemExit) as failed:
-        bootstrap.run_root(
-            argv, candidates=[plugin_candidate(_raising_spec("bad", []), distribution="bad-dist")]
-        )
-    assert failed.value.code == 4
-    error = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
-    assert (error["level"], error["category"], error["system"], error["exit_code"]) == (
-        "error",
-        "config",
-        "bad",
-        4,
-    )
-    assert error["message"] == (
-        "plugin 'bad' from 'bad-dist' could not build its commands: "
-        "app factory of plugin 'bad' raised: cli import failed"
-    )
-
-
 #: Private cyclopts internals ``_LazyPluginCommand`` and ``apply_marks`` rely on. Drift here
 #: (a cyclopts upgrade within ``>=4.16,<5``) must fail loudly, not render oddly.
 _CYCLOPTS_PRIVATE_INTERNALS = (
@@ -860,10 +687,12 @@ def test_cyclopts_private_internals_used_by_lazy_mounts_exist() -> None:
     ("candidates", "expect_hint", "expect_quarantine"),
     [
         pytest.param([], True, False, id="bare"),
-        pytest.param([plugin_candidate(make_spec("demo"))], False, False, id="plugin"),
-        # entry-point/spec name mismatch
+        pytest.param([plugin_candidate(_plugin("demo"))], False, False, id="plugin"),
         pytest.param(
-            [make_candidate(make_spec("demo"), name="other")], False, True, id="quarantined"
+            [make_candidate(_plugin("demo"), error=RuntimeError("x"))],
+            False,
+            True,
+            id="quarantined",
         ),
     ],
 )
@@ -885,38 +714,6 @@ def test_root_help_install_hint(
 def test_bare_management_commands_work(argv: list[str]) -> None:
     root = bootstrap.build_root_app(candidates=[])
     assert CliInvoker().invoke(root.meta, argv).exit_code == 0
-
-
-@pytest.mark.usefixtures("home_run")
-def test_a_plugin_with_only_a_name_mounts_and_registers_nothing() -> None:
-    from untaped.core.commands.doctor import collect_doctor_rows
-    from untaped.runtime.settings import _CONFIG_REGISTRY
-
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(PluginSpec(name="bare"))])
-
-    assert [plugin.spec.name for plugin in bootstrap.composition().plugins] == ["untaped", "bare"]
-    assert "bare" not in root
-    assert "bare" not in _CONFIG_REGISTRY.profile_sections
-    assert "bare" not in _CONFIG_REGISTRY.state_sections
-    listed = CliInvoker().invoke(root.meta, ["plugin", "list", "--format", "json"])
-    assert [(row["name"], row["status"]) for row in json.loads(listed.stdout)] == [
-        ("bare", "ready"),
-        ("untaped", "ready"),
-    ]
-    rows = collect_doctor_rows(bootstrap.composition())
-    assert [row for row in rows if row["plugin"] == "bare"] == []
-
-
-def test_a_plugin_with_state_only_registers_its_state_section() -> None:
-    from untaped.runtime.settings import _CONFIG_REGISTRY
-
-    class _OnlyState(BaseModel):
-        last_run: str = ""
-
-    bootstrap.compose_root(candidates=[plugin_candidate(PluginSpec(name="kept", state=_OnlyState))])
-
-    assert _CONFIG_REGISTRY.state_sections["kept"] is _OnlyState
-    assert "kept" not in _CONFIG_REGISTRY.profile_sections
 
 
 class _ToolsProfile(BaseModel):
@@ -968,7 +765,7 @@ def test_no_plugin_can_claim_a_root_command() -> None:
     management = [name for name in root if not name.startswith("-")]
     assert {"auth", "plugin"} <= set(management)
     for name in management:
-        bootstrap.build_root_app(candidates=[make_candidate(make_spec(name))])
+        bootstrap.build_root_app(candidates=[make_candidate(_plugin(name))])
         assert [r.reason for r in bootstrap.composition().quarantine] == ["duplicate-name"], name
 
 
@@ -1008,12 +805,12 @@ def _panel_rows(root: App) -> dict[str, list[str]]:
         # `project` is experimental, so core's own commands fill that panel too.
         pytest.param([], ["Commands", "Experimental", "Global options"], id="bare"),
         pytest.param(
-            [plugin_candidate(make_spec("demo"))],
+            [plugin_candidate(_plugin("demo"))],
             ["Commands", "Plugins", "Experimental", "Global options"],
             id="eager",
         ),
         pytest.param(
-            [make_candidate(make_spec("demo"), name="other")],
+            [make_candidate(_plugin("demo"), error=RuntimeError("x"))],
             ["Commands", "Experimental", "Global options"],
             id="quarantined",
         ),
@@ -1023,56 +820,6 @@ def test_root_help_panels(candidates: list[PluginCandidate], panels: list[str]) 
     root = bootstrap.build_root_app(candidates=candidates)
 
     assert list(_panel_rows(root)) == panels
-
-
-def test_lazy_and_eager_plugins_both_list_in_plugins() -> None:
-    calls: list[str] = []
-    root = bootstrap.build_root_app(
-        candidates=[
-            plugin_candidate(_counting_spec("lazy", calls, help="Lazy plugin.")),
-            plugin_candidate(_counting_spec("eager", calls)),
-        ]
-    )
-
-    rows = _panel_rows(root)
-
-    assert rows["Plugins"] == ["eager", "lazy"]
-    assert "lazy" not in rows["Commands"] and "eager" not in rows["Commands"]
-    assert calls == ["eager"]  # the lazy one is listed without being built
-
-
-def test_a_failing_lazy_plugin_stays_in_plugins_after_it_runs() -> None:
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(_raising_spec("bad", []))])
-    assert _panel_rows(root)["Plugins"] == ["bad"]
-
-    assert CliInvoker().invoke(root.meta, ["bad", "who"]).exit_code == 4
-
-    assert _panel_rows(root)["Plugins"] == ["bad"]
-
-
-def test_a_plugin_apps_own_group_is_ignored_at_the_root() -> None:
-    app = _who_app("mine", _token_body_for("mine"))
-    app.group = (Group("Mine"),)
-    root = bootstrap.build_root_app(candidates=[plugin_candidate(_spec("mine", app))])
-
-    rows = _panel_rows(root)
-
-    assert rows["Plugins"] == ["mine"]
-    assert "Mine" not in rows
-
-
-def test_an_11x_command_runs_under_the_invocation_s_run() -> None:
-    from untaped.sdk._run import current_run
-
-    def _body() -> None:
-        echo(str(current_run().home))
-
-    root = bootstrap.build_root_app(
-        candidates=[plugin_candidate(_spec("ext", _who_app("ext", _body)))]
-    )
-    result = CliInvoker().invoke(root.meta, ["ext", "who"])
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == str(untaped_home())
 
 
 def test_a_home_that_does_not_resolve_is_reported_and_root_flags_still_print(
@@ -1091,7 +838,7 @@ def test_core_s_removals_name_untaped_s_own_major_and_a_plugin_s_its_distributio
     """The root binds no owner: a removal of one of core's keys reads ``12.0``."""
     from untaped.sdk.marks import owner, removal_text
 
-    bootstrap.compose_root(candidates=[make_candidate(make_spec(name="acme"), "untaped-acme")])
+    bootstrap.compose_root(candidates=[make_candidate(_plugin("acme"), "untaped-acme")])
     assert removal_text(12, owner("untaped")) == "12.0"
     assert removal_text(12, owner("acme")) == "untaped-acme 12.0"
 
@@ -1108,7 +855,7 @@ def test_core_s_behaviours_are_the_sdk_s_to_list_never_a_listing_of_its_class(
         raise AssertionError("a plugin declaring no behaviour had its blocks loaded")
 
     monkeypatch.setattr(mount, "_spelled_blocks", loaded)
-    result = bootstrap.compose_root(candidates=[make_candidate(make_spec(name="acme"))])
+    result = bootstrap.compose_root(candidates=[make_candidate(_plugin("acme"))])
     assert "untaped" not in marks._LISTINGS
     assert "acme" in marks._LISTINGS
     core = next(plugin.spec for plugin in result.plugins if plugin.root)

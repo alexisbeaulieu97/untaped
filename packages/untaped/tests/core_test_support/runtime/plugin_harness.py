@@ -110,16 +110,22 @@ def spec_target(
 ) -> object:
     """A candidate target resolving to ``spec``, to ``result``, or raising ``error``.
 
-    A plain spec is its own target; otherwise it is a ``module:SPEC`` string
-    naming a synthetic module whose ``SPEC`` attribute raises or returns, and
-    appends the spec's name to ``calls`` each time it is resolved.
+    A plain spec is its own target; otherwise it is a ``package.plugin:SPEC``
+    string naming a synthetic leaf module, as an installed plugin's entry point
+    does, whose ``SPEC`` attribute raises or returns, and appends the spec's
+    name to ``calls`` each time it is resolved.
     """
     if error is None and result is None and calls is None:
         return spec
-    name = f"untaped_test_target_{next(_TARGETS)}"
+    package = ModuleType(f"untaped_test_target_{next(_TARGETS)}")
+    package.__path__ = []
+    sys.modules[package.__name__] = package
+    name = f"{package.__name__}.plugin"
     module = ModuleType(name)
 
     def attribute(key: str) -> Any:
+        if key.startswith("__"):  # a module's own (``__path__``): it has none
+            raise AttributeError(key)
         if calls is not None:
             calls.append(plugin_name(spec))
         if error is not None:

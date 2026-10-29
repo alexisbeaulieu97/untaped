@@ -8880,7 +8880,6 @@ sdk untaped.sdk.testing.check_plugin(candidates=) default=None
 sdk untaped.sdk.testing.check_plugin(name)
 sdk untaped.sdk.testing.compose_with()
 sdk untaped.sdk.testing.compose_with(*plugins)
-sdk untaped.sdk.testing.compose_with(provides=) default=None
 sdk untaped.sdk.testing.current_memory_store()
 sdk untaped.sdk.testing.damage(cache, key)  [experimental]
 sdk untaped.sdk.testing.damage(partition=) default=None  [experimental]
