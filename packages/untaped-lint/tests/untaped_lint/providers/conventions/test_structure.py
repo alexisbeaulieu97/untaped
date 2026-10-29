@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
-from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.structure import structure_source_violations
 
 _CLEAN = {
@@ -24,11 +23,8 @@ _CLEAN = {
     "acme/cli.py": '''
         """Acme commands."""
 
-        from untaped.sdk import app_context
-
-
-        def settings() -> object:
-            return app_context().section("acme", object)
+        def hello() -> str:
+            return "hi"
         ''',
 }
 
@@ -40,13 +36,7 @@ def _violations(tmp_path: Path, files: dict[str, str]) -> list[str]:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dedent(body).lstrip(), encoding="utf-8")
     source_dir = tmp_path / "acme"
-    return structure_source_violations(
-        "acme",
-        "acme",
-        source_dir,
-        list(source_files(source_dir)),
-        tests_dir=tmp_path / "acme_tests",
-    )
+    return structure_source_violations("acme", source_dir, tests_dir=tmp_path / "acme_tests")
 
 
 def test_a_clean_package_has_no_violations(tmp_path: Path) -> None:
@@ -56,13 +46,6 @@ def test_a_clean_package_has_no_violations(tmp_path: Path) -> None:
 def test_a_package_without_errors_module_is_flagged(tmp_path: Path) -> None:
     files = {name: body for name, body in _CLEAN.items() if name != "acme/errors.py"}
     assert _violations(tmp_path, files) == ["acme/errors.py::errors-module"]
-
-
-def test_reading_another_plugin_section_is_flagged(tmp_path: Path) -> None:
-    cli = _CLEAN["acme/cli.py"].replace('"acme"', '"github"')
-    assert _violations(tmp_path, {**_CLEAN, "acme/cli.py": cli}) == [
-        "acme/cli.py::foreign-section::github"
-    ]
 
 
 def test_tests_importing_private_names_are_flagged(tmp_path: Path) -> None:

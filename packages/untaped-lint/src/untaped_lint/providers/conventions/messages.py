@@ -65,8 +65,8 @@ DEPRECATION_SHAPES = re.compile(
 """The shapes of a deprecation sentence, which only untaped's message helpers build."""
 
 _DEPRECATION_HINT = (
-    "build it from the mark: deprecated(removed_in=…), deprecated_alias(…, removed_in=…), "
-    "Renamed(…, removed_in=…), deprecated_behaviour(…, removed_in=…)"
+    "build it from the mark: deprecated(removed_in=…), Deprecated(replacement=…, removed_in=…), "
+    "Renamed(…, removed_in=…), DeprecatedBehaviour(removed_in=…)"
 )
 
 

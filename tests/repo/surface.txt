@@ -6213,16 +6213,6 @@ sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Activate()  [experimental]
 sdk untaped.sdk.Age
 sdk untaped.sdk.AllowHyphen
-sdk untaped.sdk.AppContext()
-sdk untaped.sdk.AppContext(settings_model@1=) default=<computed>
-sdk untaped.sdk.AppContext.diag
-sdk untaped.sdk.AppContext.http
-sdk untaped.sdk.AppContext.profile
-sdk untaped.sdk.AppContext.section(name, model_cls)
-sdk untaped.sdk.AppContext.settings
-sdk untaped.sdk.AppContext.settings_model
-sdk untaped.sdk.AppContext.ui()
-sdk untaped.sdk.AppContext.ui(strict=) default=true
 sdk untaped.sdk.Back()  [experimental]
 sdk untaped.sdk.BatchOutcome(cancelled@4=) default=false
 sdk untaped.sdk.BatchOutcome(failures@3=) default=[]
@@ -6428,7 +6418,6 @@ sdk untaped.sdk.Cycle.view(focused=) default=false  [experimental]
 sdk untaped.sdk.Cycle.view(frame)  [experimental]
 sdk untaped.sdk.Cycle.view(width=) default=None  [experimental]
 sdk untaped.sdk.Cycle.with_error(text)  [experimental]
-sdk untaped.sdk.DEPRECATED_OPTIONS
 sdk untaped.sdk.DataFile(path, model)  [experimental]
 sdk untaped.sdk.DataFile.at(model=) default=None  [experimental]
 sdk untaped.sdk.DataFile.at(path)  [experimental]
@@ -7252,32 +7241,6 @@ sdk untaped.sdk.PluginHandle.committed(root=) default=None
 sdk untaped.sdk.PluginHandle.dir
 sdk untaped.sdk.PluginHandle.home
 sdk untaped.sdk.PluginHandle.name
-sdk untaped.sdk.PluginSpec(app_factory@2=) default=None callback(0)
-sdk untaped.sdk.PluginSpec(caches@10=) default=[]
-sdk untaped.sdk.PluginSpec(contracts@8=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(credentials@12=) default=[]
-sdk untaped.sdk.PluginSpec(deprecations@13=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(doctor_checks@5=) default=[]
-sdk untaped.sdk.PluginSpec(help@6=) default=None
-sdk untaped.sdk.PluginSpec(name)
-sdk untaped.sdk.PluginSpec(provides@9=) default=<computed> callback(0)
-sdk untaped.sdk.PluginSpec(settings@3=) default=None
-sdk untaped.sdk.PluginSpec(skills@4=) default=[]
-sdk untaped.sdk.PluginSpec(stability@7=) default=None
-sdk untaped.sdk.PluginSpec(stores@11=) default=[]
-sdk untaped.sdk.PluginSpec.app_factory
-sdk untaped.sdk.PluginSpec.caches
-sdk untaped.sdk.PluginSpec.contracts()
-sdk untaped.sdk.PluginSpec.credentials
-sdk untaped.sdk.PluginSpec.deprecations()
-sdk untaped.sdk.PluginSpec.doctor_checks
-sdk untaped.sdk.PluginSpec.help
-sdk untaped.sdk.PluginSpec.name
-sdk untaped.sdk.PluginSpec.provides
-sdk untaped.sdk.PluginSpec.settings
-sdk untaped.sdk.PluginSpec.skills
-sdk untaped.sdk.PluginSpec.stability
-sdk untaped.sdk.PluginSpec.stores
 sdk untaped.sdk.Positional()
 sdk untaped.sdk.Pressed(id)  [experimental]
 sdk untaped.sdk.Pressed.id  [experimental]
@@ -7309,7 +7272,6 @@ sdk untaped.sdk.Project.holds(store)  [experimental]
 sdk untaped.sdk.Project.id  [experimental]
 sdk untaped.sdk.Project.locked()  [experimental]
 sdk untaped.sdk.Project.name  [experimental]
-sdk untaped.sdk.Project.plugin_dir(spec)  [experimental]
 sdk untaped.sdk.Project.release(dry_run=) default=false  [experimental]
 sdk untaped.sdk.Project.release(force=) default=[]  [experimental]
 sdk untaped.sdk.Project.release(items=) default=None  [experimental]
@@ -7538,10 +7500,6 @@ sdk untaped.sdk.SingleList.view(frame)  [experimental]
 sdk untaped.sdk.SingleList.view(width=) default=None  [experimental]
 sdk untaped.sdk.SingleList.window_rows  [experimental]
 sdk untaped.sdk.SingleList.with_error(text)  [experimental]
-sdk untaped.sdk.SkillAsset(description@2=) default=""
-sdk untaped.sdk.SkillAsset(name)
-sdk untaped.sdk.SkillAsset.description
-sdk untaped.sdk.SkillAsset.name
 sdk untaped.sdk.Source(*, plugin, kind)
 sdk untaped.sdk.Source(record=) default={}
 sdk untaped.sdk.Source.kind
@@ -7874,7 +7832,6 @@ sdk untaped.sdk.Viewport.start(rows)  [experimental]
 sdk untaped.sdk.Viewport.update(message, rows)  [experimental]
 sdk untaped.sdk.Written
 sdk untaped.sdk.ago_text(at, now)
-sdk untaped.sdk.app_context()
 sdk untaped.sdk.atomic_write(encoding=) default=utf-8
 sdk untaped.sdk.atomic_write(mode=) default=None
 sdk untaped.sdk.atomic_write(newline=) default=""
@@ -7894,7 +7851,6 @@ sdk untaped.sdk.code_version(distributions=) default=[]
 sdk untaped.sdk.code_version(extra=) default=[]
 sdk untaped.sdk.code_version(module)
 sdk untaped.sdk.command_line(command)
-sdk untaped.sdk.committed_path(spec, name, *, root)  [experimental]
 sdk untaped.sdk.connected_client(bearer=) default=None
 sdk untaped.sdk.connected_client(config, *, section, base_url)
 sdk untaped.sdk.connected_client(headers=) default=None
@@ -8025,10 +7981,6 @@ sdk untaped.sdk.current_project()  [experimental]
 sdk untaped.sdk.deprecated()
 sdk untaped.sdk.deprecated(removed_in=) default=None
 sdk untaped.sdk.deprecated(replacement=) default=None callback(*)
-sdk untaped.sdk.deprecated_alias(app, old, new)
-sdk untaped.sdk.deprecated_alias(removed_in=) default=None
-sdk untaped.sdk.deprecated_behaviour(name, *, removed_in)
-sdk untaped.sdk.deprecated_behaviour(replacement=) default=None
 sdk untaped.sdk.deprecated_parameters(function, /)
 sdk untaped.sdk.derive(**fields)
 sdk untaped.sdk.derive(base, name)
@@ -8318,10 +8270,7 @@ sdk untaped.sdk.paginate_offset(size_param=) default=limit
 sdk untaped.sdk.paginate_offset(start_param=) default=offset
 sdk untaped.sdk.paginate_pages(fetch, *, limit) callback(fetch, 1)
 sdk untaped.sdk.paginate_pages(max_pages=) default=100
-sdk untaped.sdk.plugin_dir(spec)
 sdk untaped.sdk.plugin_of(model)
-sdk untaped.sdk.plugin_path(*parts)
-sdk untaped.sdk.plugin_path(name)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
 sdk untaped.sdk.project_at(path)  [experimental]
@@ -8333,7 +8282,6 @@ sdk untaped.sdk.projects.Project.holds(store)  [experimental]
 sdk untaped.sdk.projects.Project.id  [experimental]
 sdk untaped.sdk.projects.Project.locked()  [experimental]
 sdk untaped.sdk.projects.Project.name  [experimental]
-sdk untaped.sdk.projects.Project.plugin_dir(spec)  [experimental]
 sdk untaped.sdk.projects.Project.release(dry_run=) default=false  [experimental]
 sdk untaped.sdk.projects.Project.release(force=) default=[]  [experimental]
 sdk untaped.sdk.projects.Project.release(items=) default=None  [experimental]

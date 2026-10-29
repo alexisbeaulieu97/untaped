@@ -17,7 +17,6 @@ from __future__ import annotations
 import importlib as _importlib
 import typing as _typing
 
-from untaped.runtime.registry import PluginSpec, SkillAsset, plugin_dir
 from untaped.runtime.settings import HttpSettings
 from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, TreeOutputFormat
@@ -30,14 +29,13 @@ from untaped.screen.picker import (
     PickResult,
     PickSetting,
 )
-from untaped.sdk._app_context import AppContext, app_context
 from untaped.sdk._batch import BatchOutcome, batch_apply, finish
 from untaped.sdk._cli import (
     raise_usage,
     resolve_each,
 )
 from untaped.sdk._concurrency import bounded_map
-from untaped.sdk._home import home, plugin_path
+from untaped.sdk._home import home
 from untaped.sdk._run import (
     Context,
     Diag,
@@ -130,13 +128,10 @@ from untaped.sdk.health.doctor import (
 )
 from untaped.sdk.health.marks import NeedsSetup, Suggest
 from untaped.sdk.marks import (
-    DEPRECATED_OPTIONS,
     Deprecated,
     DeprecatedBehaviour,
     UntapedDeprecationWarning,
     deprecated,
-    deprecated_alias,
-    deprecated_behaviour,
     deprecated_parameters,
     experimental,
 )
@@ -167,7 +162,6 @@ from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.projects import (
     Project,
     checkout_root,
-    committed_path,
     current_project,
     known_projects,
     nearest_pyproject,
@@ -386,21 +380,16 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "PluginHandle",
     # composition
     "PluginContext",
-    "PluginSpec",
     "InstalledPlugin",
     "installed_plugins",
     "DoctorCheck",
     "ExecutableCheck",
     "OnlineCheck",
     "DoctorResult",
-    "SkillAsset",
-    "plugin_dir",
     # settings and state
-    "AppContext",
     "ProjectStateRows",
     "RowExists",
     "StateRows",
-    "app_context",
     # output and records
     "CheckRecord",
     "Debug",
@@ -502,13 +491,11 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Refused",
     "ReleaseAsk",
     "UnknownHolder",
-    "committed_path",
     "current_project",
     "known_projects",
     "project_at",
     # the home
     "home",
-    "plugin_path",
     # caches and stores
     "Cache",
     "Dir",
@@ -547,7 +534,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "run_editor",
     # doctor checks
     # conventions
-    "DEPRECATED_OPTIONS",
     "Deprecated",
     "DeprecatedBehaviour",
     "ExitCode",
@@ -556,8 +542,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "UntapedDeprecationWarning",
     "ago_text",
     "deprecated",
-    "deprecated_alias",
-    "deprecated_behaviour",
     "deprecated_parameters",
     "experimental",
     "plural",

@@ -84,7 +84,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - `project`: its commands, the `untaped.recorded_project`, `untaped.project_outcome`
   and `untaped.hold_outcome` records, `.untaped/project.json` and project
   references, and `Project`, `current_project`, `project_at`,
-  `known_projects`, `committed_path`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
+  `known_projects`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
   `LetGo`, `Refused`, `HolderView`, `UnknownHolder` and `HolderState` in
   `untaped.sdk`, and `make_project`, `release_ask`, `move_ask` and
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
@@ -139,8 +139,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - A flag that goes away with no new spelling is marked deprecated the same
   way: `untaped <command> --deprecated --help` lists it under Deprecated
   options with that line, and using it warns until then.
-- A renamed command or flag keeps working as a hidden, deprecated alias until
-  the major its warning names, and the warning names the new spelling.
+- A renamed command keeps working as a hidden, deprecated alias until the
+  major its warning names, and the warning names the new spelling. A flag or
+  group has no alias: renaming one waits for the next major.
 - A renamed setting's old name, and its `UNTAPED_*` variable, keeps working
   as a renamed key until the major its warning names; see
   [Renamed settings](./configuration.md#renamed-settings).

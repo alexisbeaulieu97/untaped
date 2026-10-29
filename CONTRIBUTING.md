@@ -97,22 +97,24 @@ follows the [plugin rules](docs/reference/conventions.md) and uses this layout:
 
 ```
 packages/untaped-<name>/src/untaped_<name>/
-├── __init__.py        # SPEC: PluginSpec (with one-line help) + nullary build_app() (lazy CLI import; never build at import time)
-├── settings.py        # settings model + state model (field sets must be disjoint)
+├── __init__.py        # a one-line docstring naming the plugin class; imports nothing
+├── py.typed           # empty: the package ships its type hints
+├── plugin.py          # the Plugin class: settings, commands and blocks (the entry point's target)
+├── settings.py        # the settings model, and the Credential blocks it needs
+├── records.py         # the Record classes its commands print
 ├── api.py             # optional: declared public module other plugins may import
-├── cli/               # cyclopts commands (thin)
-├── application/       # use cases (orchestration); ports in application/ports.py
-├── domain/            # entities, value objects (pure, no I/O)
-├── infrastructure/    # external adapters (httpx clients, fs, …)
+├── commands/          # Command and Group classes (thin)
+├── application/       # optional: use cases (orchestration); ports in application/ports.py
+├── domain/            # optional: entities, value objects (pure, no I/O)
+├── infrastructure/    # optional: external adapters (httpx clients, fs, …)
 └── errors.py          # <Name>Error(UntapedError) and its subclasses
 ```
 
-1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, exposing
-   `SPEC` and `build_app`. Set
-   `SPEC.help` to the app's one-line help (see
+1. Add `packages/untaped-<name>/` with a copy of the root `LICENSE`, its
+   plugin class in `plugin.py` (see
    [Settings and the plugin class](docs/plugins.md#settings-and-the-plugin-class)).
 2. In its `pyproject.toml` (copy a sibling package's), add
-   `<name> = "untaped_<name>:SPEC"` under
+   `<name> = "untaped_<name>.plugin:<Name>"` under
    `[project.entry-points."untaped.plugins"]`.
 3. Add the `untaped[<name>]` extra to core and add the package to core's
    `all` extra, then `uv sync`.

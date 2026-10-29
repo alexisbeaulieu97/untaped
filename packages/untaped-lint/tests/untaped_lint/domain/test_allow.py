@@ -10,7 +10,6 @@ import pytest
 from untaped_lint.domain.allow import allows
 from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.layering import layering_violations
-from untaped_lint.providers.conventions.structure import structure_source_violations
 
 # Each flagged line allows its own rule or a different one.
 _PACKAGE = {
@@ -19,21 +18,14 @@ _PACKAGE = {
     "cli.py": """
         \"\"\"Allow demo commands.\"\"\"
 
-        from untaped.sdk import app_context
-
         a = b = None
-
-
-        def read() -> None:
-            app_context().section("other", object)  # untaped: allow foreign-section
-            app_context().section("elsewhere", object)  # untaped: allow layer
         """,
     "domain/__init__.py": '"""Allow demo domain."""',
     "domain/model.py": """
         \"\"\"Allow demo model.\"\"\"
 
         from allowdemo.cli import a  # untaped: allow layer
-        from allowdemo.cli import b  # untaped: allow foreign-section
+        from allowdemo.cli import b  # untaped: allow print
         """,
 }
 
@@ -52,13 +44,6 @@ def test_the_marker_suppresses_only_its_own_layer_violation(allowdemo: Path) -> 
     files = list(source_files(allowdemo))
     assert layering_violations("allowdemo", allowdemo, files) == [
         "allowdemo/domain/model.py::layer::domain -> allowdemo.cli"
-    ]
-
-
-def test_the_marker_suppresses_only_its_own_foreign_section_violation(allowdemo: Path) -> None:
-    files = list(source_files(allowdemo))
-    assert structure_source_violations("allowdemo", "allowdemo", allowdemo, files) == [
-        "allowdemo/cli.py::foreign-section::elsewhere"
     ]
 
 

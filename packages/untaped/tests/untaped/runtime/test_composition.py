@@ -42,7 +42,6 @@ from untaped.sdk import (
     TextOrStdin,
     Written,
     deprecated,
-    deprecated_behaviour,
     experimental,
     key,
 )
@@ -365,7 +364,7 @@ def test_every_owned_block_is_named_by_the_plugin_class() -> None:
         """Spelled."""
 
         settings = HelloSettings
-        old = deprecated_behaviour("old-way", removed_in=13)
+        old = DeprecatedBehaviour("old-way", deprecated(removed_in=13))
         Tok = Credential(key=HelloKey)
         Gone = DeprecatedBehaviour(removed_in=13)
 

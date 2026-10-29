@@ -23,17 +23,16 @@ from typing import Any
 import pytest
 
 from untaped.core.project_lifecycle import preview_check
-from untaped.runtime.registry import PluginSpec
 from untaped.sdk import projects
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
 from untaped.sdk.projects import (
     Project,
     anchor_state,
-    committed_path,
     current_project,
     find_root,
     holder_of,
     init,
+    plugin_committed_path,
     project_at,
     writing,
 )
@@ -677,10 +676,9 @@ def test_the_project_lock_is_re_entrant_and_shuts_out_other_threads(
     ("plugin", "name"),
     [("lint", "lint.yml"), ("lint", "lint"), ("lint", "lint/house.py"), ("awx", "awx")],
 )
-def test_committed_path_accepts_a_plugins_own_names(tmp_path: Path, plugin: str, name: str) -> None:
-    spec = PluginSpec(name=plugin)
-    assert committed_path(spec, name, root=tmp_path) == tmp_path / ".untaped" / name
-    assert committed_path(spec, name, root=Path()) == Path(".untaped") / name
+def test_committed_files_accept_a_plugins_own_names(tmp_path: Path, plugin: str, name: str) -> None:
+    assert plugin_committed_path(plugin, name, root=tmp_path) == tmp_path / ".untaped" / name
+    assert plugin_committed_path(plugin, name, root=Path()) == Path(".untaped") / name
 
 
 @pytest.mark.parametrize(
@@ -701,13 +699,6 @@ def test_committed_path_accepts_a_plugins_own_names(tmp_path: Path, plugin: str,
         "lint\\x",
     ],
 )
-def test_committed_path_refuses_another_plugins_and_cores_names(name: str) -> None:
+def test_committed_files_refuse_another_plugins_and_cores_names(name: str) -> None:
     with pytest.raises(ValueError, match=r"is not plugin lint's to name under \.untaped/"):
-        committed_path(PluginSpec(name="lint"), name, root=Path())
-
-
-def test_plugin_dir_is_under_the_projects_untaped_folder(tmp_path: Path) -> None:
-    project = make_project(tmp_path / "PROJ")
-    assert project.plugin_dir(PluginSpec(name="acme")) == (
-        project.root / ".untaped" / "plugins" / "acme"
-    )
+        plugin_committed_path("lint", name, root=Path())

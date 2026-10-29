@@ -2,7 +2,7 @@
 
 A plugin declares what a secret is for as a :class:`CredentialKey` (for awx:
 the server's URL and how its certificate is checked) and the secret itself as
-a :class:`Credential` listed in ``PluginSpec(credentials=)``. Core files each
+a :class:`Credential` its plugin class holds. Core files each
 credential under the key it is for and answers :meth:`Credential.get` from,
 in order:
 

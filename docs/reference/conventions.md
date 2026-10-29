@@ -22,8 +22,6 @@ A plugin also follows these rules:
 [`untaped lint`](#enforcement) flags part of this:
 
 - `plugin-name`: a distribution or import package not named after the plugin;
-- `foreign-section`: an `app_context().section(...)` call naming another
-  plugin's section as a string literal;
 - `layer`: an import against the layer direction, and `settings`: settings
   resolved outside `cli`;
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
@@ -123,8 +121,9 @@ a prompt, a stream the user asked to watch or output a flag asks for. Never `pri
 
 **Typed diagnostics.** Each stderr line has a `kind`. To add one, subclass
 `Message` or `Failure` (add fields, never levels), list it in your plugin
-class's `records` and emit it with `app_context().diag.emit(...)`. Relay another tool's
-output (a hook's stderr, a job log) with `diag.relay(text)`: it never counts.
+class's `records` and emit it with `self.ctx.diag.emit(...)`. Relay another
+tool's output (a hook's stderr, a job log) with `diag.relay(text)`: it never
+counts.
 
 ## Options
 
@@ -154,9 +153,8 @@ Rules for fields, which composition checks:
   per flag.
 - An argument can't be deprecated: deprecate an option, or the command.
 
-To rename a command, group or flag, keep the old spelling as a hidden alias,
-`deprecated_alias(parent_app, "me", "whoami", removed_in=12)` (a flag: `"--old"`,
-`"--new"` on the command's app), tested through `untaped.sdk.testing.invoke_root`;
+To rename a command, keep the old spelling as a hidden alias on its class,
+`aliases = (Deprecated(replacement="me", removed_in=12),)`;
 [Deprecating something](deprecation.md) covers every kind.
 
 Command names are kebab-case; use plural nouns for collections. A command
@@ -243,7 +241,7 @@ plugin's tests call `untaped_lint.testing.assert_clean(NAME)`. `import-boundary`
 and in [Depending on another plugin](#depending-on-another-plugin);
 `provides-requirement` the [ranges a provider declares](../plugins.md#filling-another-plugins-contract);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
-keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database under `plugin_dir()` through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
+keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
 `# untaped: allow <rule>` on the flagged node's first line allows one violation,
 except the stability rules, the settings rules, and the command, option and panel rules.
@@ -269,8 +267,8 @@ The sections above name the helper for each rule. Beyond those:
   the run reads them with `settings_of(Model)`, which validates only that
   section. A test reads them inside `install(Plugin).running()`.
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
-  setting and declare each secret as a `Credential` on the spec, and build
-  its client with
+  setting and declare each secret as a `Credential` on the plugin class,
+  and build its client with
   `self.ctx.http.client(self.settings, base_url=…, bearer=…)`; see
   [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
@@ -278,7 +276,7 @@ The sections above name the helper for each rule. Beyond those:
 - To keep a repository, use `RepoStore.for_url(url, plugin=..., error=...)`
   from `untaped_git.api`, not a bare repo or a root setting of your own:
   `plugin=` takes your plugin's name or what names it (a command's
-  `self.ctx.plugin`, an 11.x `SPEC`). Read blobs through
+  `self.ctx.plugin`). Read blobs through
   `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
 A row-producing command declares `Output[R]` and yields its records, which
@@ -341,9 +339,11 @@ as typed rows in a `StateRows` its plugin class holds
 ([Plugin state](../state.md)), in its own `state.yml`. The rows keep the
 file's stamp and lock, so never read or write the state file directly.
 
-A file in the plugin's folder an older release could not open is a [store](../caches.md#stores),
-a `Dir(layout=N)` opened through its `open()`; files people commit under `.untaped/` go through [`committed_path`](../projects.md#a-plugins-files-in-untaped),
-and items projects hold go in an [item store](../projects.md#holding-a-plugins-items).
+A file in the plugin's folder an older release could not open is a
+[store](../caches.md#stores), a `Dir(layout=N)` opened through its `open()`;
+files people commit under `.untaped/` go through [the handle's
+`committed`](../projects.md#a-plugins-files-in-untaped), and items projects
+hold go in an [item store](../projects.md#holding-a-plugins-items).
 
 ## Settings
 

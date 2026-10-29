@@ -19,8 +19,8 @@ conventions checks:
 - the removal version every deprecation names (``removed_in``), whose text
   :func:`removal_text` renders, and the one emitter of a deprecation on the
   sink, :func:`notify_deprecation`.
-- deprecated behaviours (:func:`deprecated_behaviour`), which have no object
-  to mark, so they carry a name and are listed on their spec.
+- deprecated behaviours (:class:`DeprecatedBehaviour`), which have no object
+  to mark, so the plugin class attribute holding one names it.
 
 Neither marker is, or subclasses, ``warnings.deprecated``: that one warns on
 every use and, on a settings field, becomes pydantic field deprecation.
@@ -260,9 +260,8 @@ DEPRECATED_OPTIONS = _DeprecatedGroup(
 )
 """The panel of a command's deprecated options, listed only under ``--deprecated``.
 
-A flag deprecated with no new spelling joins it beside its mark:
-``dry_run: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=12,
-replacement="--limit 1 --yes")] = False``. The root warns when any of its spellings is used.
+Mount puts a flag there from the ``deprecated(...)`` mark on its field; the
+root warns when any of its spellings is used.
 """
 
 
@@ -610,9 +609,7 @@ def listed_behaviours(result: CompositionResult) -> list[tuple[str, DeprecatedBe
         seen: set[str] = set()
         for item in listing():
             if not isinstance(item, DeprecatedBehaviour):
-                raise ConfigError(
-                    f"{name} deprecations lists {item!r}, not a deprecated_behaviour(...)"
-                )
+                raise ConfigError(f"{name} deprecations lists {item!r}, not a DeprecatedBehaviour")
             if item.name in seen:
                 raise ConfigError(f"{name} deprecations lists {item.name!r} twice")
             if id(item) in owners:
@@ -1181,9 +1178,10 @@ class DeprecatedBehaviour(OwnedBlock):
 
     A plugin class holding it names it: ``bare_ids =
     DeprecatedBehaviour(removed_in=13, replacement="--id NAME")`` is the
-    plugin's behaviour ``bare-ids``. The 11.x spelling is
-    :func:`deprecated_behaviour`, listed on the spec of the plugin that owns it
-    (``PluginSpec(deprecations=lambda: (ROW_KIND,))``). The surface writes
+    plugin's behaviour ``bare-ids``. Core's own behaviours, which are never
+    ``Core`` attributes, are named where they are declared
+    (``DeprecatedBehaviour("old-login", deprecated(removed_in=13))``) and listed
+    by ``_core_behaviours``. The surface writes
     ``behaviour <plugin>.<name>`` for a listed one, so the release check holds
     it to its date; a held one reaches the surface once it is read from the
     declaration, with the mount. A site never types the words: it names the subject and calls
@@ -1320,18 +1318,6 @@ class DeprecatedBehaviour(OwnedBlock):
             replacement=None if shown is None else shown.replace("`", ""),
         )
         warnings.warn(warning, stacklevel=stacklevel + 1)  # untaped: allow warnings-warn
-
-
-def deprecated_behaviour(
-    name: str, *, removed_in: int, replacement: str | None = None
-) -> DeprecatedBehaviour:
-    """Declare a deprecated behaviour: ``name`` (kebab-case), its removal major and replacement.
-
-    ``BARE_IDS = deprecated_behaviour("bare-ids", removed_in=13,
-    replacement="--id NAME")``. List it on the owning spec's
-    ``deprecations``; a plugin's ``removed_in`` is its own major.
-    """
-    return DeprecatedBehaviour(name, Deprecated(replacement=replacement, removed_in=removed_in))
 
 
 def _core_behaviours() -> Sequence[DeprecatedBehaviour]:

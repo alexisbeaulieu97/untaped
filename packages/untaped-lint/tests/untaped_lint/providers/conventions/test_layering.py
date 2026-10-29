@@ -44,11 +44,6 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
             ["acme/infrastructure/http.py::layer::infrastructure -> acme.application.ports"],
         ),
         (
-            "application/use.py",
-            "from untaped.sdk import app_context",
-            ["acme/application/use.py::settings::application -> app_context"],
-        ),
-        (
             "domain/model.py",
             "from untaped.sdk import settings_of",
             ["acme/domain/model.py::settings::domain -> settings_of"],
@@ -56,7 +51,7 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
         ("domain/model.py", "from acme.cli import build  # untaped: allow layer", []),
         (
             "cli/app.py",
-            "from untaped.sdk import app_context\nfrom acme.infrastructure import x",
+            "from untaped.sdk import settings_of\nfrom acme.infrastructure import x",
             [],
         ),
         (
@@ -79,7 +74,6 @@ def test_import_targets_resolve_relative_imports(statement: str, targets: list[s
         "layer-domain",
         "layer-application",
         "layer-infrastructure",
-        "settings",
         "settings-of",
         "allowed",
         "cli",

@@ -336,17 +336,8 @@ def settings_model(spec: PluginSpec) -> type[BaseModel]:
     return section_settings(spec) or _NoSettings
 
 
-def plugin_dir(spec: PluginSpec) -> Path:
-    """The directory a plugin keeps its own data in: ``~/.untaped/plugins/<name>/``.
-
-    It takes the spec rather than reading any ambient state, so it works
-    from any thread. The directory is not created.
-    """
-    return named_plugin_dir(spec.name)
-
-
 def named_plugin_dir(name: str) -> Path:
-    """:func:`plugin_dir` by the plugin's name, for core code that holds a name, not a spec."""
+    """The folder a plugin keeps its own data in, ``plugins/<name>/`` under the home, uncreated."""
     return plugins_root() / name
 
 

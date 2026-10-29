@@ -64,12 +64,6 @@ def home() -> Path:
     return path
 
 
-def plugin_path(name: str, *parts: str) -> Path:
-    """``home()/plugins/<name>/<parts>``, as spelled: a plugin's own default folder or file."""
-    folder = home() / PLUGINS_FOLDER / name
-    return folder / Path(*parts) if parts else folder
-
-
 def config_path() -> Path:
     """``config.yml`` at the home's root, expanded."""
     return (home() / CONFIG_FILE).expanduser()
@@ -82,5 +76,4 @@ __all__ = [
     "PLUGINS_FOLDER",
     "config_path",
     "home",
-    "plugin_path",
 ]

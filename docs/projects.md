@@ -128,13 +128,12 @@ the project root, as `uv` finds a project from a worktree inside it.
 ## Holding a plugin's items
 
 A plugin that keeps items for projects (workspace keeps their repos) is
-their owner: it declares an `ItemStore` on `PluginSpec.stores` (a 12.0
-plugin class declares `repos = Dir(items=RepoKey, release=..., moved=...)`,
-and `items()` is the store) and says how a project lets go of an item, and
-whether a moved project needs repair.
+their owner: its plugin class holds a `Dir` with `items=`, which says how a
+project lets go of an item and whether a moved project needs repair, and
+`items()` is its item store.
 
 ```python
-from untaped.sdk import ItemStore, LetGo, MoveAsk, Refused, ReleaseAsk
+from untaped.sdk import Dir, LetGo, Plugin, Refused, ReleaseAsk
 
 
 def _release(ask: ReleaseAsk[RepoKey]) -> LetGo[RepoKey] | Refused:
@@ -143,19 +142,20 @@ def _release(ask: ReleaseAsk[RepoKey]) -> LetGo[RepoKey] | Refused:
     return plan_release(ask)
 
 
-REPOS = ItemStore("acme", "repos", item=RepoKey, release=_release, moved=None)
+class Acme(Plugin):
+    repos = Dir(items=RepoKey, release=_release, moved=None)
 ```
 
-`project.hold(REPOS, key)` records a hold before the work that needs it, and
-`project.holds(REPOS)` lists them. `release` gets a `ReleaseAsk` with the
-item, the project and every other holder, and returns a `Refused` (a reason
-and a hint) or a `LetGo`: a `preview` line and an `apply` that runs after
-confirmation on a fresh ask, under the store's lock. `apply` may do less
-than the preview (another holder arrived), never more: when the fresh ask
-needs more, it returns a `Refused` and the hold stays. `moved` gets a
-`MoveAsk` naming where the project was (`moved_from`; after several moves
-not yet repaired, one ask per folder, oldest first), or is `None` when
-nothing outside the folder points into it. `project.release(REPOS)` runs
+`project.hold(Acme.repos.items(), key)` records a hold before the work that
+needs it, and `project.holds(Acme.repos.items())` lists them. `release` gets a
+`ReleaseAsk` with the item, the project and every other holder, and returns a
+`Refused` (a reason and a hint) or a `LetGo`: a `preview` line and an `apply`
+that runs after confirmation on a fresh ask, under the store's lock. `apply`
+may do less than the preview (another holder arrived), never more: when the
+fresh ask needs more, it returns a `Refused` and the hold stays. `moved` gets
+a `MoveAsk` naming where the project was (`moved_from`; after several moves
+not yet repaired, one ask per folder, oldest first), or is `None` when nothing
+outside the folder points into it. `project.release(Acme.repos.items())` runs
 the same steps for the plugin's own commands. `untaped.sdk.testing` has
-`make_project(path, holds=...)`, `release_ask`, `move_ask` and
-`plan_release` for unit tests.
+`make_project(path, holds=...)`, `release_ask`, `move_ask` and `plan_release`
+for unit tests.

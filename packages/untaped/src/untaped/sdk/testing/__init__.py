@@ -456,13 +456,10 @@ def invoke_cli(
     prompt_backend: PromptBackend | None = None,
     terminal: bool = False,
 ) -> CliResult:
-    """Invoke a Cyclopts app or launcher while capturing terminal streams.
+    """Invoke a composed root (``build_root_app(...)``) or a launcher, capturing its streams.
 
     A bare app is given the panels and help lines its marks ask for first, as
-    the root would when mounting it (a nested sub-app computes the path of its
-    replacement from its own name only). A mark on a ``PluginSpec`` is
-    applied only by a composed root, so assert a spec-marked plugin's help
-    through :func:`invoke_root`, not through its own app.
+    the root would when mounting it.
 
     Each invocation is its own: it runs under a child of the current run
     (an ``install(...).running()`` block's) with its own stderr output, so
@@ -758,8 +755,8 @@ def check_plugin(
     carry a check name and a ``status``, never a severity: a linter decides
     what each means. The conventions that read only the plugin's files are
     not run.
-    ``candidates`` replaces entry-point discovery, so an uninstalled spec can
-    be checked (:func:`plugin_candidate`). An unknown name is a
+    ``candidates`` replaces entry-point discovery, so an uninstalled plugin
+    class can be checked (:func:`plugin_candidate`). An unknown name is a
     :class:`~untaped.sdk.errors.UsageError`. Composing, it can't run inside a
     contract call.
     """

@@ -13,14 +13,14 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | Thing | Declaration |
 |---|---|
 | A command, group or plugin | `stability = deprecated(removed_in=3, replacement=Set)` on its class |
-| A renamed command or flag | `deprecated_alias(parent_app, "me", "whoami", removed_in=3)`; a flag: `deprecated_alias(command_app, "--old", "--new", removed_in=3)` |
-| A flag with no new spelling | `dry_run: Annotated[bool, Parameter(group=DEPRECATED_OPTIONS), deprecated(removed_in=3, replacement="--limit 1 --yes")] = False` on the command |
+| A renamed command | `aliases = (Deprecated(replacement="me", removed_in=3),)` on the renamed command's class, naming its old spelling |
+| A flag | `dry_run: Annotated[bool, deprecated(removed_in=3, replacement="--limit 1 --yes")] = Field(False, description="...")` on the command |
 | A setting | `old: Annotated[bool, deprecated(removed_in=3, replacement="acme.mode")] = False` |
 | A renamed setting key | `renamed_keys = {"old_key": Renamed("new_key", removed_in=3)}` on the section's model |
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 | A function or method of your Python API | `@deprecated(removed_in=3, replacement=new_api)` over `@warnings.deprecated("<its sentence>")`, under any `@classmethod`, `@staticmethod` or `@property` |
 | A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="kind= on the Record class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
-| A behaviour | `ROW_KIND = deprecated_behaviour("row-kind", removed_in=3, replacement="kind= on the Record class")`, listed with `PluginSpec(..., deprecations=lambda: (ROW_KIND,))` |
+| A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="kind= on the Record class")` on the plugin class |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
 3.0`. untaped's own plugins use untaped's majors, since they release in
@@ -29,15 +29,14 @@ release", but nothing can hold it to a date: `untaped lint` reports it
 (`lint.undated-deprecation`) and `untaped.sdk.testing.assert_surface` refuses it
 when you pass your `version=`.
 
-A behaviour has no object to mark, so it gets a name, and listing it on your
-spec gives it a `behaviour acme.row-kind` surface line (keep the import inside
-the function, as for `contracts`). Where the behaviour happens, name what goes
-and let it build the sentence: `ROW_KIND.notify("a row without a declared kind",
-key=...)` warns once per `key` on the command's stderr, `ROW_KIND.warn(...)`
-raises an `UntapedDeprecationWarning` from a Python API, and
-`ROW_KIND.sentence(...)` returns the text for a row of your own. Each takes
-`replacement=` for one site, `None` for none. A behaviour no spec lists reads
-as untaped's own, so list every one.
+A behaviour has no object to mark, so the attribute holding it names it:
+`row_kind` on `class Acme(Plugin)` is the surface line `behaviour
+acme.row-kind`. Where the behaviour happens, name what goes and let it build
+the sentence: `Acme.row_kind.notify("a row without a declared kind",
+key=...)` warns once per `key` on the command's stderr,
+`Acme.row_kind.warn(...)` raises an `UntapedDeprecationWarning` from a Python
+API, and `Acme.row_kind.sentence(...)` returns the text for a row of your
+own. Each takes `replacement=` for one site, `None` for none.
 
 A Python API callable carries two marks because each has its reader: untaped's
 dates it on the surface, and the `warnings.deprecated` literal is the only
@@ -48,17 +47,20 @@ warns through `@deprecated_parameters` whenever it is passed, its default
 value included, since the major that removes it makes any spelling of it an
 error (`lint.unwarned-parameter` reports a function without the decorator).
 
-A deprecated flag sits in `DEPRECATED_OPTIONS`, a panel `--help` lists only
-under `--deprecated`, where its help is its `Deprecated:` line; core puts it
-there from the mark on its field. Only an option can carry the mark:
-composition refuses it on an argument (`deprecated-argument`). Any spelling of the flag warns (`--dry-run`,
-`--no-dry-run`, `--dry-run=false`, a short flag), up to a `--`.
+A deprecated flag sits in a panel `--help` lists only under `--deprecated`,
+where its help is its `Deprecated:` line; core puts it there from the mark on
+its field. Only an option can carry the mark: composition refuses it on an
+argument (`deprecated-argument`). Any spelling of the flag warns
+(`--dry-run`, `--no-dry-run`, `--dry-run=false`, a short flag), up to a
+`--`. A renamed command keeps its old spelling as an alias; a flag or group
+has none, so renaming one waits for a major.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a
 setting key or prose; on a Python API, a function or class reads as its name
 (`` `new_api` ``). An alias and a renamed key name their new spelling
-themselves.
+themselves; in a command's `aliases`, `Deprecated(replacement=...)` holds the
+old spelling instead, the one that still works.
 
 ## What users see
 
@@ -104,7 +106,7 @@ cli untaped acme sync  [deprecated, removed in 12.0; use untaped acme pull]
 `tests/repo/test_surface.py` lets a deprecated line go only at its major,
 while that major's prep (an `upgrading` fragment) is open. A plugin in its
 own repository gets the first two checks from
-`assert_surface(SPEC, path, version=__version__)`.
+`assert_surface(Acme, path, version=__version__)`.
 
 ## Postponing
 

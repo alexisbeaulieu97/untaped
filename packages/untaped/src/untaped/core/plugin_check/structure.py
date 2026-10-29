@@ -17,7 +17,7 @@ For one plugin package this flags:
 
 These checks import the package and report ``<module>.<class>::<rule>``;
 they have no source line, so no inline marker can suppress them. The checks
-that read only the plugin's files (``errors-module``, ``foreign-section``,
+that read only the plugin's files (``errors-module``,
 ``private-test-import``) are the lint plugin's.
 """
 

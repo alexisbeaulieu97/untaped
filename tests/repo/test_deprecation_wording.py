@@ -43,8 +43,8 @@ def test_core_types_no_deprecation_sentence() -> None:
     found = core_violations()
     assert not found, (
         "every deprecation is a promise with a date, so its sentence comes from its mark "
-        "(deprecated(removed_in=…), deprecated_alias(…, removed_in=…), Renamed(…, removed_in=…), "
-        "deprecated_behaviour(…, removed_in=…)) or untaped.sdk.words:\n"
+        "(deprecated(removed_in=…), Deprecated(replacement=…, removed_in=…), "
+        "Renamed(…, removed_in=…), DeprecatedBehaviour(removed_in=…)) or untaped.sdk.words:\n"
         + "\n".join(f"  {line}" for line in found)
     )
 
@@ -69,8 +69,9 @@ def test_a_planted_sentence_fails(tmp_path: Path) -> None:
     (package / "messages.py").write_text("")
     assert core_violations(package) == [
         "untaped/m.py::hand-typed-deprecation::x is deprecated and will be removed in 12.0: "
-        "build it from the mark: deprecated(removed_in=…), deprecated_alias(…, removed_in=…), "
-        "Renamed(…, removed_in=…), deprecated_behaviour(…, removed_in=…)"
+        "build it from the mark: deprecated(removed_in=…), "
+        "Deprecated(replacement=…, removed_in=…), Renamed(…, removed_in=…), "
+        "DeprecatedBehaviour(removed_in=…)"
     ]
 
 
@@ -91,6 +92,6 @@ def test_core_allows_no_hand_typed_sentence() -> None:
     ]
     assert not found, (
         "core builds every deprecation sentence from a mark, so it needs no allow marker; "
-        "a behaviour uses deprecated_behaviour(...).sentence or .notify:\n"
+        "a behaviour uses its DeprecatedBehaviour's .sentence or .notify:\n"
         + "\n".join(f"  {path}" for path in found)
     )

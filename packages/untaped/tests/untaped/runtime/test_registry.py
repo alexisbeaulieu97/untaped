@@ -28,7 +28,6 @@ from untaped.runtime.registry import (
     _core_alone,
     compose,
     kept_declaration,
-    plugin_dir,
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
@@ -363,11 +362,6 @@ def test_a_name_with_an_at_says_it_is_reserved() -> None:
 def test_an_app_factory_must_be_callable() -> None:
     with pytest.raises(ConfigError, match="app_factory must be callable or None"):
         PluginSpec(name="bare", app_factory="not callable")  # type: ignore[arg-type]
-
-
-def test_a_plugin_keeps_its_data_under_its_own_name() -> None:
-    expected = Path.home() / ".untaped" / "plugins" / "acme-tools"
-    assert plugin_dir(PluginSpec(name="acme-tools")) == expected
 
 
 def test_a_plugin_whose_import_redeclares_a_kind_is_quarantined(

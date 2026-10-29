@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from untaped.runtime.settings import plugins_root
-from untaped.sdk import home, plugin_path
+from untaped.sdk import home
 from untaped.sdk._home import config_path
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.projects import _reserved
@@ -16,7 +16,6 @@ from untaped.sdk.projects import _reserved
 def test_the_home_is_dot_untaped_as_spelled_unless_moved(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_HOME", raising=False)
     assert home() == Path("~/.untaped")
-    assert plugin_path("acme", "db") == Path("~/.untaped/plugins/acme/db")
     assert config_path() == Path.home() / ".untaped" / "config.yml"
 
 
@@ -31,7 +30,6 @@ def test_untaped_home_moves_everything(tmp_path: Path, monkeypatch: pytest.Monke
     assert home() == tmp_path
     assert config_path() == tmp_path / "config.yml"
     assert plugins_root() == tmp_path / "plugins"
-    assert plugin_path("acme") == tmp_path / "plugins" / "acme"
 
 
 def test_a_home_under_tilde_is_kept_as_spelled(monkeypatch: pytest.MonkeyPatch) -> None:

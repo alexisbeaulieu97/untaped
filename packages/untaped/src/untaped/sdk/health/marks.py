@@ -7,7 +7,7 @@ what follows (``setup``, ``setup plan``, doctor's ``setup`` row, ``auth``):
   (a :class:`~untaped.sdk.network.credentials.CredentialKey` model included): the plugin
   can't be used until the field has a value. Nested models' fields count
   too, by their dotted path.
-- each :class:`~untaped.sdk.network.credentials.Credential` in ``PluginSpec(credentials=)``
+- each :class:`~untaped.sdk.network.credentials.Credential` its plugin class holds
   is a secret the plugin needs: set once :meth:`~untaped.sdk.network.credentials.Credential.answer`
   names a source. It is no setting: ``untaped auth login`` stores it.
 

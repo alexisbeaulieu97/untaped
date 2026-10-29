@@ -108,7 +108,7 @@ def removal_message(tag: str, gone: list[Line]) -> str:
         [
             f"Removed since {tag}, which every {major}.x release promises to keep:",
             *(f"  {line}" for line in gone),
-            "Keep the old spelling as a deprecated alias (deprecated_alias, renamed_keys,",
+            "Keep the old spelling as a deprecated alias (a command's aliases, renamed_keys,",
             f"Cache(renamed_from=), a deprecation warning) until {major + 1}.0, or move the "
             f"issue to the {major + 1}.0",
             "milestone, where it merges with an upgrading fragment.",
