@@ -169,6 +169,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
     "projects": (
         "HolderState",
         "HolderView",
+        "Initialized",
         "ItemStore",
         "LetGo",
         "MoveAsk",
@@ -177,8 +178,10 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "ReleaseAsk",
         "UnknownHolder",
         "current_project",
+        "init_project",
         "known_projects",
         "project_at",
+        "remove_project",
     ),
     "the home": ("home",),
     "caches and stores": (

@@ -46,7 +46,9 @@ def test_root_option_after_a_lazy_plugin_name_is_not_a_command(
 ) -> None:
     root = bootstrap.build_root_app(candidates=first_party_candidates)
 
-    result = CliInvoker().invoke(root.meta, ["workspace", "--profile", "nope", "list"])
+    result = CliInvoker().invoke(
+        root.meta, ["workspace", "--profile", "nope", "create", "J-1", "--empty"]
+    )
 
     assert result.exit_code == 2  # the picked profile is not defined: usage
     assert "Unknown command" not in result.stderr

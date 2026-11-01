@@ -2,24 +2,27 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
-from untaped.sdk import Key, UtcTimestamp
+from untaped.sdk import Key, Project, UtcTimestamp
 from untaped_workspace.domain.repo import Repo
 
 
 class RepoSpec(Repo):
-    """One repo in a workspace (its state row): the :class:`Repo` it was created from, frozen,
-    and how it is checked out.
+    """One repo of a workspace (its row in the project): the :class:`Repo` it was added from,
+    frozen, and how it is checked out.
 
-    The URL never changes after ``create``; ``untaped workspace repos resolve``
-    asks the repo's source again.
+    The URL never changes after it is added; ``untaped workspace repos
+    resolve`` asks the repo's source again.
     """
 
-    dir: str
+    dir: Annotated[str, Key]
+    """The worktree's folder, relative to the project's: the row's key."""
     branch: str | None
     """The workspace branch; ``None`` for a read-only (detached) checkout."""
     base: str
@@ -29,24 +32,69 @@ class RepoSpec(Repo):
         return self.branch is None
 
 
-class WorkspaceRecord(BaseModel):
-    """An active workspace as the plugin's state keeps it, one row per name."""
+class WorkspaceMeta(BaseModel):
+    """What makes a project a workspace: its row in the project's state.
+
+    ``created_by`` says who made the project: ``workspace`` (``create``, so
+    ``remove`` may remove the project too once nothing else is held) or
+    ``user`` (an existing project ``add`` was run in).
+    """
 
     model_config = ConfigDict(frozen=True)
 
     name: Annotated[str, Key]
+    created_by: Literal["workspace", "user"]
     created_at: UtcTimestamp
-    repos: tuple[RepoSpec, ...] = ()
+    archived_at: UtcTimestamp | None = None
 
 
-class ArchivedRecord(WorkspaceRecord):
-    """An archived workspace: its worktrees are gone, its record stays.
+class WorkspaceRecord(BaseModel):
+    """A workspace as a command sees it: a project, its meta row and its repos.
 
-    The archived rows are a list, not keyed: ``archive`` may keep a name twice.
+    ``meta`` is ``None`` for a project no workspace command has written to
+    yet: it has no repos, and its first ``add`` makes it a workspace.
     """
 
-    name: str
-    archived_at: UtcTimestamp
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
+
+    project: Project
+    meta: WorkspaceMeta | None = None
+    repos: tuple[RepoSpec, ...] = ()
+
+    @property
+    def name(self) -> str:
+        """The workspace's name: its meta row's, else the project's folder name."""
+        return self.meta.name if self.meta is not None else self.project.name
+
+    @property
+    def root(self) -> Path:
+        """The project's folder, where each repo's worktree is (``root / spec.dir``)."""
+        return self.project.root
+
+    @property
+    def archived(self) -> bool:
+        return self.meta is not None and self.meta.archived_at is not None
+
+
+#: ``user@host:path``, a clone URL without a scheme.
+_SCP = re.compile(r"^[^/@\s]+@[^/:\s]+:")
+
+
+class RepoKey(RootModel[str]):
+    """A repo as a project holds it through workspace: its repo store key, ``host/owner/name``.
+
+    A clone URL normalises to it (the https and ssh URLs of a repo are one
+    hold), and so does the key with ``.git``.
+    """
+
+    @field_validator("root")
+    @classmethod
+    def _normalised(cls, value: str) -> str:
+        from untaped_workspace.domain.naming import store_ident  # noqa: PLC0415 - a cycle
+
+        if "://" in value or _SCP.match(value):
+            return store_ident(value)
+        return value.removesuffix(".git")
 
 
 class RepoArg(BaseModel):

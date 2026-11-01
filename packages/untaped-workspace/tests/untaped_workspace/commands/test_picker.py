@@ -11,8 +11,8 @@ from untaped.sdk import Picked, PickItem, PickResult, UntapedError
 from untaped.sdk.contracts import Answers, Ok
 from untaped_workspace.api import Repo
 from untaped_workspace.commands.picker import build_request, name_validator, repo_args
-from untaped_workspace.domain.models import RepoArg, StoredRepo, WorkspaceRecord
-from untaped_workspace.infrastructure import StateWorkspaceStore
+from untaped_workspace.domain.models import RepoArg, StoredRepo
+from untaped_workspace.infrastructure import ProjectWorkspaceStore
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 
 
@@ -43,8 +43,10 @@ def test_repo_args_map_settings() -> None:
 
 
 def test_name_validator(tmp_path: Path) -> None:
-    store = StateWorkspaceStore()
-    store.create(WorkspaceRecord(name="taken", created_at=datetime(2026, 10, 1, tzinfo=UTC)))
+    store = ProjectWorkspaceStore()
+    store.start(tmp_path / "taken", "taken", at=datetime(2026, 10, 1, tzinfo=UTC))
+    gone = store.start(tmp_path / "gone", "gone", at=datetime(2026, 10, 1, tzinfo=UTC))
+    store.set_archived(gone, datetime(2026, 10, 2, tzinfo=UTC))
     (tmp_path / "old").mkdir()
     (tmp_path / "old" / "leftover.txt").write_text("x")
     (tmp_path / "empty").mkdir()
@@ -53,6 +55,7 @@ def test_name_validator(tmp_path: Path) -> None:
     assert check("empty") is None
     assert "invalid workspace name" in (check("a/b") or "")
     assert "already exists" in (check("taken") or "")
+    assert check("gone") is None  # create resumes an archived one
     assert "not empty" in (check("old") or "")
 
 

@@ -708,8 +708,12 @@ def _ask(
     return answer, None
 
 
-def preview_rows(plans: Sequence[Plan]) -> list[HoldOutcome]:
-    """The plans as rows, before anything is applied."""
+def preview_rows(plans: Sequence[Plan], *, force_hint: bool = True) -> list[HoldOutcome]:
+    """The plans as rows, before anything is applied.
+
+    ``force_hint`` adds core's ``--force ITEM`` to a refusal naming the item
+    would turn into a plan.
+    """
     rows = []
     for plan in plans:
         row = _row(plan, "planned", "")
@@ -734,7 +738,7 @@ def preview_rows(plans: Sequence[Plan]) -> list[HoldOutcome]:
             )
         elif isinstance(plan.answer, Refused):
             hint = plan.answer.hint
-            if plan.forceable and plan.owner is not None:
+            if force_hint and plan.forceable and plan.owner is not None:
                 hint = f"{hint}, or --force {plan.item}" if hint else f"--force {plan.item}"
             rows.append(
                 row.model_copy(
@@ -825,7 +829,9 @@ def release_rows(
     """The service for one owner's holds, without a prompt: ``Project.release`` and its kin.
 
     Refused or failed plans apply nothing and come back as their rows; a
-    dry run returns the preview.
+    dry run returns the preview. A refused row's hint is the owner's alone:
+    the caller's command says how its user overrides it (core's ``project
+    remove`` adds its own ``--force ITEM``).
     """
     seen = holder_view(holder)
     if not isinstance(seen, HolderView):
@@ -838,7 +844,7 @@ def release_rows(
     owners = owners if owners is not None else Owners.current()
     plans = plan_holds(seen, targets, force=named, owners=owners)
     if dry_run or any(plan.blocked for plan in plans):
-        return list(preview_rows(plans))
+        return list(preview_rows(plans, force_hint=False))
     return list(apply_plans(holder, plans, now=lambda: holder_view(holder)))
 
 

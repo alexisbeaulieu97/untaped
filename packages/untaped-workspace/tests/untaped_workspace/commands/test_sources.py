@@ -20,7 +20,7 @@ from untaped.sdk.contracts import NotReady, Source
 from untaped.sdk.testing import ManualClock, Ran, Running
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.api import Repo
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.infrastructure import LocalGitWorktrees
 from workspace_test_support import (
     Listing,
     Project,
@@ -33,6 +33,7 @@ from workspace_test_support import (
     rank,
     repo,
     run,
+    stored,
 )
 
 
@@ -67,7 +68,7 @@ def _listed(remote: GitRemote, **fields: object) -> Repo:
 
 
 def _nothing_created(workspace_env: Path) -> bool:
-    return StateWorkspaceStore().get("J-1") is None and not (workspace_env / "J-1").exists()
+    return stored("J-1") is None and not (workspace_env / "J-1").exists()
 
 
 def test_create_by_name_checks_out_the_repo_the_ready_provider_lists(
@@ -81,7 +82,7 @@ def test_create_by_name_checks_out_the_repo_the_ready_provider_lists(
     assert created.exit == 0, err(created)
     [row] = _rows(created)
     assert (row["repo"], row["action"], row["base"]) == ("acme/api", "created", "develop")
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [spec] = record.repos
     assert (spec.url, spec.source, spec.default_branch) == (api.url, GITHUB, "develop")
@@ -140,7 +141,7 @@ def test_a_typed_url_is_checked_out_under_its_full_path_without_asking_a_provide
         created = run(["create", "J-1", "--repo", api.url, "--format", "json"])
     assert created.exit == 0, err(created)
     assert [row["repo"] for row in _rows(created)] == ["acme/api"]
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [spec] = record.repos
     assert (spec.name, spec.url, spec.source) == ("acme/api", api.url, None)
@@ -216,7 +217,7 @@ def test_piped_records_of_a_providers_kind_go_through_its_bridge_without_listing
     ]
     assert [p.path for p in fake.bridged] == ["acme/api", "acme/web"]
     assert fake.listings == 0
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     sources = [spec.source for spec in record.repos]
     assert [(s.plugin, s.kind) for s in sources if s is not None] == [
@@ -244,7 +245,7 @@ def test_a_piped_workspace_repo_is_read_as_it_is(
     with providers(github=[github]):
         created = run(["create", "J-1", "--stdin", "--format", "json"], input=piped)
     assert created.exit == 0, err(created)
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [spec] = record.repos
     assert (spec.name, spec.url, spec.description, spec.source) == (
@@ -289,7 +290,7 @@ def test_piped_lines_are_names_or_urls(
             ["create", "J-1", "--stdin", "--format", "json"], input=f"acme/api\n{web.url}\n"
         )
     assert created.exit == 0, err(created)
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     assert [(s.name, s.source) for s in record.repos] == [("acme/api", GITHUB), ("acme/web", None)]
 
@@ -307,7 +308,7 @@ def test_a_workspace_works_from_its_saved_url_after_its_source_is_uninstalled(
     assert fetched.exit == 0, err(fetched)
     assert [row["state"] for row in _rows(fetched)] == ["ok"]
     assert git(workspace_env / "J-1" / "api", "rev-parse", "origin/main") == new
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].source == GITHUB
     resolved = run(["repos", "resolve", "J-1", "--format", "json"])
     assert resolved.exit == 0, err(resolved)
@@ -343,7 +344,7 @@ def test_resolve_saves_the_url_the_source_lists_now_and_rewrites_the_worktree_co
         ("acme/web", "unchanged", web.url, ""),
         ("acme/docs", "skipped", docs.url, "no source to ask"),
     ]
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     assert [(s.url, s.source) for s in record.repos] == [
         (ssh, GITHUB),
@@ -372,7 +373,7 @@ def test_resolve_keeps_the_old_url_when_the_worktree_cannot_be_configured(
         with providers(github=[listing(Repo(name="acme/api", url=ssh))]):
             failed = run(["repos", "resolve", "J-1", "--format", "json"])
     assert failed.exit != 0
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].url == api.url
 
     with providers(github=[listing(Repo(name="acme/api", url=ssh))]):
@@ -392,7 +393,7 @@ def test_resolve_saves_metadata_only_changes_without_reporting_them(
         resolved = run(["repos", "resolve", "J-1", "--format", "json"])
     assert resolved.exit == 0, err(resolved)
     assert [(r["action"], r["detail"]) for r in _rows(resolved)] == [("unchanged", "")]
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].description == "now described"
 
 
@@ -409,7 +410,7 @@ def test_resolve_refuses_a_url_of_another_store_repo(
     assert (row["action"], row["url"]) == ("failed", moved.url)
     assert "another store repo than" in str(row["detail"])
     assert "remove api from the workspace and add it again" in str(row["detail"])
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].url == api.url
 
 
@@ -468,7 +469,7 @@ def test_a_picked_repo_keeps_its_listed_project(
     with providers(forge=[fake]):
         created = run(["create", "J-1", "--repo", "acme/api"])
     assert created.exit == 0, err(created)
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     source = record.repos[0].source
     assert source is not None and (source.plugin, source.kind) == ("forge", "forge.project")

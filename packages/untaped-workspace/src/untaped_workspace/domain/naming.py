@@ -57,6 +57,12 @@ def repo_key(url: str) -> tuple[str, ...]:
     return store_key(url)
 
 
+def store_ident(url: str) -> str:
+    """``url``'s repo store key as one string, ``host/owner/name`` (no ``.git``)."""
+    key = repo_key(url)
+    return "/".join((*key[:-1], key[-1].removesuffix(".git")))
+
+
 def workspace_match(name: str, ident: str) -> bool:
     """Whether the repo ``name`` is what the user typed: ``owner/name`` (any depth) exactly,
     else a bare name against the last segment; case-insensitive."""

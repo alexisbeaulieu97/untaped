@@ -2,36 +2,38 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator
 from contextlib import nullcontext
 
 from pydantic import Field
 
 from untaped.sdk import NO_PROGRESS, Matched, Output, Positional, UsageError
+from untaped_workspace.application.archive import resume_hint
 from untaped_workspace.commands._workspace import NAME_HELP, WorkspaceCommand
-from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
-from untaped_workspace.infrastructure import StateWorkspaceStore
 from untaped_workspace.records import RepoStatus, Workspace
 
 
 class List(WorkspaceCommand):
-    """List active workspaces (or archived ones)."""
+    """List active workspaces (or archived ones): every project with workspace's rows.
+
+    Only projects whose folder is here now are read: a workspace's rows
+    live in its folder (`untaped project prune` handles a folder that is gone).
+    """
 
     archived: bool = Field(False, description="List archived workspaces instead.")
     output: Output[Workspace]
 
     def run(self) -> Iterator[Workspace]:
-        store = StateWorkspaceStore()
-        records: Sequence[WorkspaceRecord] = store.archived() if self.archived else store.active()
         self.output.empty("No workspaces found.")
-        root = self.workspaces_dir
-        for record in records:
+        for record in self.store().all():
+            if record.meta is None or record.archived != self.archived:
+                continue
             yield Workspace(
                 name=record.name,
                 repos=len(record.repos),
-                created_at=record.created_at,
-                archived_at=record.archived_at if isinstance(record, ArchivedRecord) else None,
-                target_path=root / record.name,
+                created_at=record.meta.created_at,
+                archived_at=record.meta.archived_at,
+                target_path=record.root,
             )
 
 
@@ -54,7 +56,15 @@ class Status(WorkspaceCommand):
     def run(self) -> Iterator[RepoStatus]:
         if self.all_ and self.name is not None:
             raise UsageError("--all cannot be combined with a workspace name")
-        records = StateWorkspaceStore().active() if self.all_ else [self.locate(self.name)]
+        if self.all_:
+            records = [record for record in self.store().all() if not record.archived]
+        else:
+            records = [self.locate(self.name)]
+            if records[0].archived:
+                self.ctx.diag.info(
+                    f"workspace {records[0].name} is archived; {resume_hint(records[0])}"
+                )
+                records = []
         status = self.status_reader(self.git_worktrees())
         task = self.ctx.diag.progress("Fetching repos") if self.fetch else nullcontext(NO_PROGRESS)
         with task as progress:
@@ -86,4 +96,4 @@ class Path(WorkspaceCommand):
     name: Positional[str | None] = Field(None, description=NAME_HELP)
 
     def run(self) -> str:
-        return str(self.workspace_dir(self.locate(self.name).name))
+        return str(self.locate(self.name).root)

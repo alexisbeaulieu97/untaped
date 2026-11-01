@@ -82,45 +82,42 @@ class RepoStatus(TargetRecord):
     )
 
 
-ArchiveAction = Literal["removed", "planned", "skipped", "failed"]
+ArchiveAction = Literal["removed", "archived", "planned", "skipped", "failed"]
 
 
 class ArchiveOutcome(OutcomeRecord, TargetRecord):
     """What ``archive`` did (or would do) for one repo."""
 
     workspace: str
-    repo: Annotated[str, Column] = Field(
-        description="Empty on the last row, the workspace directory itself."
-    )
-    action: Annotated[ArchiveAction, Column, Status(success=("removed",))] = Field(
+    repo: Annotated[str, Column] = Field(description="Empty on the last row, the workspace itself.")
+    action: Annotated[ArchiveAction, Column, Status(success=("removed", "archived"))] = Field(
         description=(
-            "`removed` or `failed` when it runs; `planned`, or `skipped` for a blocked "
-            "repo, on a preview or a refusal. The workspace row is `skipped` when other "
-            "files stay in its directory."
+            "`removed` or `failed` for a repo when it runs, and `archived` for the "
+            "workspace, whose folder stays; `planned`, or `skipped` for a blocked repo, "
+            "on a preview or a refusal."
         )
     )
     detail: Annotated[str, Column] = ""
 
 
-RemoveAction = Literal["planned", "released", "removed", "kept", "skipped", "failed"]
+RemoveAction = Literal["planned", "refused", "released", "removed", "kept", "failed"]
 
 
 class RemoveOutcome(OutcomeRecord, TargetRecord):
-    """What ``remove`` did (or would do) for one repo.
+    """What ``remove`` did (or would do) for one repo, then for the workspace itself.
 
-    ``released``: the repo store kept the repo for someone else (``detail``
-    names who); ``removed``: it went (``freed_bytes``); ``kept``: another
-    workspace still uses it, or a workspace worktree was added to it
-    meanwhile; ``skipped``: it is not in the repo store. On a preview or a
-    refusal: ``planned``, or ``skipped`` for a blocked repo. A last row with
-    an empty ``repo`` is the workspace itself.
+    A repo's row is its hold's: ``planned`` (``detail`` says what releasing
+    it does), ``refused`` (work would be lost; nothing is applied),
+    ``released`` (its worktree went, and the repo was released from the
+    repo store or kept for another project) or ``failed``. The last row of
+    each project, with an empty ``repo``: ``removed`` (the workspace's rows,
+    and the project when workspace made it), or ``kept``.
     """
 
     workspace: str
     repo: Annotated[str, Column]
-    action: Annotated[RemoveAction, Column, Status(success=("removed",))]
+    action: Annotated[RemoveAction, Column, Status(success=("removed", "released"))]
     detail: Annotated[str, Column] = ""
-    freed_bytes: int = Field(default=0, description="The space a `removed` repo took.")
 
 
 ResolveAction = Literal["updated", "unchanged", "skipped", "failed"]

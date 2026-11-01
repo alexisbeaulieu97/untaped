@@ -155,12 +155,15 @@ from untaped.sdk.plugin import Command, Group, Plugin, StubSkill, derive
 from untaped.sdk.plugin_records import InstalledPlugin, installed_plugins
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.projects import (
+    Initialized,
     Project,
     checkout_root,
     current_project,
+    init_project,
     known_projects,
     nearest_pyproject,
     project_at,
+    remove_project,
 )
 from untaped.sdk.prompt.editor import run_editor
 from untaped.sdk.prompt.prompts import PromptChoice
@@ -480,6 +483,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     # projects
     "HolderState",
     "HolderView",
+    "Initialized",
     "ItemStore",
     "LetGo",
     "MoveAsk",
@@ -488,8 +492,10 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "ReleaseAsk",
     "UnknownHolder",
     "current_project",
+    "init_project",
     "known_projects",
     "project_at",
+    "remove_project",
     # the home
     "home",
     # caches and stores

@@ -6096,6 +6096,7 @@ record untaped.token_source.section string
 record untaped.token_source.source string
 record untaped.token_source.step string?
 record workspace.archive_outcome  [experimental]
+record workspace.archive_outcome.action choice=archived  [experimental]
 record workspace.archive_outcome.action choice=failed  [experimental]
 record workspace.archive_outcome.action choice=planned  [experimental]
 record workspace.archive_outcome.action choice=removed  [experimental]
@@ -6110,13 +6111,12 @@ record workspace.remove_outcome  [experimental]
 record workspace.remove_outcome.action choice=failed  [experimental]
 record workspace.remove_outcome.action choice=kept  [experimental]
 record workspace.remove_outcome.action choice=planned  [experimental]
+record workspace.remove_outcome.action choice=refused  [experimental]
 record workspace.remove_outcome.action choice=released  [experimental]
 record workspace.remove_outcome.action choice=removed  [experimental]
-record workspace.remove_outcome.action choice=skipped  [experimental]
 record workspace.remove_outcome.action string  [experimental]
 record workspace.remove_outcome.detail string  [experimental]
 record workspace.remove_outcome.error Failure?  [experimental]
-record workspace.remove_outcome.freed_bytes integer  [experimental]
 record workspace.remove_outcome.repo string  [experimental]
 record workspace.remove_outcome.target_path string(format=path)  [experimental]
 record workspace.remove_outcome.workspace string  [experimental]
@@ -6869,6 +6869,12 @@ sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
+sdk untaped.sdk.Initialized(picked@4=) default=[]  [experimental]
+sdk untaped.sdk.Initialized(project, action, detail)  [experimental]
+sdk untaped.sdk.Initialized.action  [experimental]
+sdk untaped.sdk.Initialized.detail  [experimental]
+sdk untaped.sdk.Initialized.picked  [experimental]
+sdk untaped.sdk.Initialized.project  [experimental]
 sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
 sdk untaped.sdk.InstalledPlugin(fills=) default=[]
 sdk untaped.sdk.InstalledPlugin(package=) default=None
@@ -8118,6 +8124,8 @@ sdk untaped.sdk.hint(command)
 sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.home()
 sdk untaped.sdk.http_of(model)
+sdk untaped.sdk.init_project(new_id=) default=false  [experimental]
+sdk untaped.sdk.init_project(path)  [experimental]
 sdk untaped.sdk.installed_code()
 sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
@@ -8310,6 +8318,7 @@ sdk untaped.sdk.record_model(kind)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(field=) default=token
 sdk untaped.sdk.rejected_token_error(section, message)
+sdk untaped.sdk.remove_project(project)  [experimental]
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.run_editor(argv=) default=None
 sdk untaped.sdk.run_editor(path)
@@ -9437,12 +9446,18 @@ state untaped.credentials.key object default={}
 state untaped.credentials.label string default=""
 state untaped.credentials.name string
 state untaped.credentials.plugin string
-state workspace.archived ArchivedRecord[]  [experimental]
-state workspace.archived.archived_at string(format=date-time)  [experimental]
-state workspace.archived.created_at string(format=date-time)  [experimental]
-state workspace.archived.name string  [experimental]
-state workspace.archived.repos RepoSpec[] default=[]  [experimental]
-state workspace.workspaces WorkspaceRecord[]  [experimental]
-state workspace.workspaces.created_at string(format=date-time)  [experimental]
-state workspace.workspaces.name string  [experimental]
-state workspace.workspaces.repos RepoSpec[] default=[]  [experimental]
+state workspace.meta.archived_at string(format=date-time)? default=None  [experimental]
+state workspace.meta.created_at string(format=date-time)  [experimental]
+state workspace.meta.created_by choice=user  [experimental]
+state workspace.meta.created_by choice=workspace  [experimental]
+state workspace.meta.created_by string  [experimental]
+state workspace.meta.name string  [experimental]
+state workspace.worktrees.archived boolean default=false  [experimental]
+state workspace.worktrees.base string  [experimental]
+state workspace.worktrees.branch string?  [experimental]
+state workspace.worktrees.default_branch string? default=None  [experimental]
+state workspace.worktrees.description string? default=None  [experimental]
+state workspace.worktrees.dir string  [experimental]
+state workspace.worktrees.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
+state workspace.worktrees.source Source? default=None  [experimental]
+state workspace.worktrees.url string  [experimental]

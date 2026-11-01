@@ -85,7 +85,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - `project`: its commands, the `untaped.recorded_project`, `untaped.project_outcome`
   and `untaped.hold_outcome` records, `.untaped/project.json` and project
   references, and `Project`, `current_project`, `project_at`,
-  `known_projects`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
+  `known_projects`, `init_project` (with what it answers, `Initialized`),
+  `remove_project`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
   `LetGo`, `Refused`, `HolderView`, `UnknownHolder` and `HolderState` in
   `untaped.sdk`, and `make_project`, `release_ask`, `move_ask` and
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).

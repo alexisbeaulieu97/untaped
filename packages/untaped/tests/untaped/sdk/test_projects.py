@@ -261,6 +261,15 @@ def test_init_accepts_a_folder_under_the_default_workspaces_dir() -> None:
     assert done.action == "created"
 
 
+def test_init_accepts_a_folder_in_a_plugins_own_place() -> None:
+    """Workspace makes each workspace a project in its ``checkouts`` place under the home."""
+    done = init(Path.home() / ".untaped" / "plugins" / "workspace" / "checkouts" / "PROJ-1")
+    assert done.action == "created"
+    for place in ("workspace", "workspace/checkouts"):
+        with pytest.raises(UsageError, match="is untaped's own"):
+            init(Path.home() / ".untaped" / "plugins" / place)
+
+
 def test_projects_do_not_nest(tmp_path: Path) -> None:
     outer = make_project(tmp_path / "work" / "PROJ")
     with pytest.raises(UsageError, match="is already a project; projects don't nest"):

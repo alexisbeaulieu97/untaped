@@ -205,6 +205,29 @@ def replace_config_text(text: str, *, expected: str | None, path: Path | None = 
         get_settings.cache_clear()
 
 
+def record_project_pick(root: Path, names: Sequence[str]) -> bool:
+    """Record ``names`` as the ``profile:`` of the project at ``root``, unless it has one.
+
+    What ``project init`` does with the run's explicit pick, so the folder
+    keeps the environment it was made in. Returns whether it wrote.
+    """
+    if not names:
+        return False
+    wrote = False
+
+    def apply(data: dict[str, Any]) -> None:
+        nonlocal wrote
+        if "profile" not in data:
+            data["profile"] = names[0] if len(names) == 1 else list(names)
+            wrote = True
+
+    from untaped.runtime.folder_layer import project_config_path  # noqa: PLC0415 - reads settings
+    from untaped.runtime.config_read import load_project_config  # noqa: PLC0415
+
+    mutate_config(apply, project_config_path(root), load=load_project_config)
+    return wrote
+
+
 def set_at_path(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
     """Set ``data[path] = value`` in place, creating intermediate dicts."""
     cur = data
