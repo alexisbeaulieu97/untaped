@@ -11,8 +11,11 @@ A plugin also follows these rules:
   `api` module, declared (see
   [Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills and doctor checks.
-- Layering is `cli → application → domain`, with `infrastructure → domain`
-  (and, for typing only, the ports it implements); `domain` imports no layer.
+- `api.py`, `settings.py` and `records.py` never import `commands/`, directly
+  or through another module, so importing them never loads a command. The
+  plugin's own logic may import its commands (a hint spells one). Folders
+  such as `domain/`, `application/` and `infrastructure/` are optional; a
+  plugin that keeps them resolves settings in none of them.
 - Errors raise with a category and a system (see
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
 - Commands that ask before they write declare `confirm: Confirm`, which
@@ -22,8 +25,9 @@ A plugin also follows these rules:
 [`untaped lint`](#enforcement) flags part of this:
 
 - `plugin-name`: a distribution or import package not named after the plugin;
-- `layer`: an import against the layer direction, and `settings`: settings
-  resolved outside `cli`;
+- `layer`: a light module (`api.py`, `settings.py`, `records.py`) that
+  imports `commands/`, and `settings`: settings resolved in `domain/`,
+  `application/` or `infrastructure/`;
 - `errors-module`, `exception-base` and `error-system`: no `errors.py`, an
   exception that is not an `UntapedError`, or a plugin's base error
   class without a `system`.

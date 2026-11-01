@@ -15,17 +15,14 @@ from untaped_lint.providers.conventions.layering import layering_violations
 _PACKAGE = {
     "__init__.py": '"""Allow demo."""',
     "errors.py": '"""Allow demo errors."""',
-    "cli.py": """
-        \"\"\"Allow demo commands.\"\"\"
+    "commands/__init__.py": '"""Allow demo commands."""',
+    "commands/a.py": "a = None",
+    "commands/b.py": "b = None",
+    "api.py": """
+        \"\"\"Allow demo api.\"\"\"
 
-        a = b = None
-        """,
-    "domain/__init__.py": '"""Allow demo domain."""',
-    "domain/model.py": """
-        \"\"\"Allow demo model.\"\"\"
-
-        from allowdemo.cli import a  # untaped: allow layer
-        from allowdemo.cli import b  # untaped: allow print
+        from allowdemo.commands.a import a  # untaped: allow layer
+        from allowdemo.commands.b import b  # untaped: allow print
         """,
 }
 
@@ -43,15 +40,18 @@ def allowdemo(tmp_path: Path) -> Path:
 def test_the_marker_suppresses_only_its_own_layer_violation(allowdemo: Path) -> None:
     files = list(source_files(allowdemo))
     assert layering_violations("allowdemo", allowdemo, files) == [
-        "allowdemo/domain/model.py::layer::domain -> allowdemo.cli"
+        "allowdemo/api.py:4::layer::allowdemo.api -> allowdemo.commands.b"
     ]
 
 
 def test_a_keyed_marker_suppresses_the_rule(tmp_path: Path) -> None:
     source_dir = tmp_path / "allowdemo"
-    model = source_dir / "domain" / "model.py"
-    model.parent.mkdir(parents=True)
-    model.write_text("from allowdemo.cli import a  # untaped: allow lint.layer\n", encoding="utf-8")
+    (source_dir / "commands").mkdir(parents=True)
+    (source_dir / "commands" / "run.py").write_text("a = None\n", encoding="utf-8")
+    api = source_dir / "api.py"
+    api.write_text(
+        "from allowdemo.commands.run import a  # untaped: allow lint.layer\n", encoding="utf-8"
+    )
     assert layering_violations("allowdemo", source_dir, list(source_files(source_dir))) == []
 
 
