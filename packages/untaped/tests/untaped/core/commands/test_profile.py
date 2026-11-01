@@ -200,6 +200,7 @@ def test_current_lists_a_stacked_pick_with_each_source(
     assert json.loads(structured.stdout) == {
         "name": "prod,stage",
         "profiles": [{"name": "prod", "source": "env"}, {"name": "stage", "source": "flag"}],
+        "skipped": [],
     }
     assert structured.stderr == ""
 

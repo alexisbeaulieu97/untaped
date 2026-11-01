@@ -173,7 +173,7 @@ def read_listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listin
         rows: dict[str, list[SettingRow]] = {}
         for entry in entries:
             descriptor = descriptors[entry.key]
-            set_here = entry.source.kind in ("profile", "env")
+            set_here = entry.source.kind in ("project", "profile", "env")
             if entry.key in hidden or (entry.stability == "deprecated" and not set_here):
                 continue
             section = descriptor.path[0]

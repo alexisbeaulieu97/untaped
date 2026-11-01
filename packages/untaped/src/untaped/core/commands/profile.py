@@ -8,6 +8,7 @@ profiles ``UNTAPED_PROFILE`` and then ``--profile`` name over the base.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from pydantic import Field
 
@@ -20,7 +21,8 @@ from untaped.core.profile.models import (
     ProfilePick,
     ProfileView,
 )
-from untaped.core.profile.repository import ProfileFileRepository
+from untaped.core.profile.project_picks import ProjectPick, projects_picking
+from untaped.core.profile.repository import ProfileFileRepository, rewrite_project_picks
 from untaped.core.profile.use_cases import (
     CreateProfile,
     CurrentProfile,
@@ -30,11 +32,15 @@ from untaped.core.profile.use_cases import (
     ShowProfile,
 )
 from untaped.core.settings import CoreSettings
+from untaped.runtime.folder_layer import folder_layer
 from untaped.runtime.settings import get_settings_model, resolve_config_path
 from untaped.sdk._schema import redact_secrets, secret_field_paths
 from untaped.sdk.fields import Confirm, DryRun, Output, Positional
 from untaped.sdk.plugin import Command, Group
-from untaped.sdk.words import command_line, q
+from untaped.sdk.words import command_line, plural, q
+
+if TYPE_CHECKING:
+    from untaped.sdk._run import Diag
 
 
 class List(Command[CoreSettings]):
@@ -81,10 +87,11 @@ class Show(Command[CoreSettings]):
 class Current(Command[CoreSettings]):
     """Print the picked profiles, comma-joined: one line for a shell prompt or --profile.
 
-    The pick is UNTAPED_PROFILE's profiles, then the root --profile
-    option's; default (the base alone) when neither names one. In raw and
-    table forms, what picked them (flag, env or fallback) goes to stderr;
-    structured forms list each profile with its source.
+    The pick is the project's profile: (in a project), then UNTAPED_PROFILE's
+    profiles, then the root --profile option's; default (the base alone)
+    when none names one. In raw and table forms, what picked them (project,
+    env, flag or fallback) goes to stderr; structured forms list each
+    profile with its source.
 
     Examples:
         $ untaped profile current
@@ -98,9 +105,11 @@ class Current(Command[CoreSettings]):
         if self.output.format in ("raw", "table"):
             sources = ", ".join(dict.fromkeys(pick.source for pick in picks)) or "fallback"
             self.ctx.diag.info(f"(source: {sources})")
+        folder = folder_layer()
         return ProfilePick(
             name=",".join(pick.name for pick in picks) or "default",
             profiles=[PickedProfile(name=pick.name, source=pick.source) for pick in picks],
+            skipped=list(folder.skipped) if folder is not None else [],
         )
 
 
@@ -136,6 +145,9 @@ class Create(Command[CoreSettings]):
 class Delete(Command[CoreSettings]):
     """Delete a profile (the base, default, is not one).
 
+    Projects whose profile: picks it drop it from their .untaped/config.yml;
+    the preview lists them.
+
     Examples:
         $ untaped profile delete stage --dry-run
         $ untaped profile delete stage --yes
@@ -149,26 +161,41 @@ class Delete(Command[CoreSettings]):
         unset = command_line(Unset.spelled())
         delete = DeleteProfile(ProfileFileRepository(), base_hint=f"remove its keys with `{unset}`")
         preview = delete.preview(self.name)
-        if not self.confirm(f"Delete profile {q(preview.name)}?", preview=lambda: _lines(preview)):
+        projects = projects_picking(self.name)
+        if not self.confirm(
+            f"Delete profile {q(preview.name)}?", preview=lambda: _lines(preview, projects)
+        ):
             return ProfileOutcome(name=self.name, action="planned")
         delete(self.name)
         self.ctx.diag.success(f"deleted profile: {self.name}")
+        _report_projects(self.ctx.diag, rewrite_project_picks(projects, self.name, None), projects)
         return ProfileOutcome(name=self.name, action="deleted")
 
 
-def _lines(preview: ProfileDeletePreview) -> list[str]:
+def _lines(preview: ProfileDeletePreview, projects: list[ProjectPick]) -> list[str]:
     return [
         f"config: {resolve_config_path()}",
         f"profile: {preview.name}",
         f"top-level keys: {', '.join(preview.top_level_keys) or '(none)'}",
+        *(f"project that picks it: {each.line}" for each in projects),
     ]
 
 
+def _report_projects(diag: Diag, left: list[ProjectPick], projects: list[ProjectPick]) -> None:
+    """One line for the projects whose ``profile:`` was rewritten, and one per project left."""
+    done = len(projects) - len(left)
+    if done:
+        diag.success(f"rewrote profile: in {plural(done, 'project')}")
+    for each in left:
+        diag.warning(f"profile: not rewritten in {each.line}")
+
+
 class Rename(Command[CoreSettings]):
-    """Rename a profile.
+    """Rename a profile, and the name in each project's profile: that picks it.
 
     Examples:
         $ untaped profile rename stage staging
+        $ untaped profile rename stage staging --dry-run
     """
 
     old_name: Positional[str] = Field(description="The profile's name now.")
@@ -180,8 +207,14 @@ class Rename(Command[CoreSettings]):
         RenameProfile(ProfileFileRepository())(
             self.old_name, self.new_name, dry_run=bool(self.dry_run)
         )
-        if not self.dry_run:
+        projects = projects_picking(self.old_name)
+        if self.dry_run:
+            for each in projects:
+                self.ctx.diag.info(f"would rewrite profile: in {each.line}")
+        else:
             self.ctx.diag.success(f"renamed profile: {self.old_name} → {self.new_name}")
+            left = rewrite_project_picks(projects, self.old_name, self.new_name)
+            _report_projects(self.ctx.diag, left, projects)
         return ProfileOutcome(
             name=self.new_name,
             previous_name=self.old_name,

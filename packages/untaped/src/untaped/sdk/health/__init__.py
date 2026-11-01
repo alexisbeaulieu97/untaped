@@ -15,12 +15,13 @@ if TYPE_CHECKING:
         OnlineCheck,
         PluginContext,
     )
-    from untaped.sdk.health.marks import NeedsSetup, Suggest
+    from untaped.sdk.health.marks import HomeOnly, NeedsSetup, Suggest
 
 __all__ = [
     "DoctorCheck",
     "DoctorResult",
     "ExecutableCheck",
+    "HomeOnly",
     "NeedsSetup",
     "OnlineCheck",
     "PluginContext",
@@ -41,6 +42,6 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "OnlineCheck",
                 "PluginContext",
             ),
-            "marks": ("NeedsSetup", "Suggest"),
+            "marks": ("HomeOnly", "NeedsSetup", "Suggest"),
         },
     )

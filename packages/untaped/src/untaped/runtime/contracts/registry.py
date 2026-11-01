@@ -50,6 +50,7 @@ from untaped.sdk.contracts._declare import (
 )
 from untaped.sdk.contracts._reasons import DoctorReason, QuarantineReason, Reason
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.network.credentials import is_folder_source
 from untaped.sdk.records import kind_of
 from untaped.sdk.words import command_line
 
@@ -584,11 +585,15 @@ class _Holder:
 
     @property
     def where(self) -> str:
-        return f" (set by {self.env})" if self.env else ""
+        if self.env:
+            return f" (set by {self.env})"
+        if self.profile is not None and is_folder_source(self.profile):
+            return f" (set by {self.profile}'s config.yml)"
+        return ""
 
     def fix(self, command: str) -> str | None:
-        """``command`` aimed at the holding profile; none when the environment sets it."""
-        if self.profile is None:
+        """``command`` aimed at the holding profile; none for the environment or a project."""
+        if self.profile is None or is_folder_source(self.profile):
             return None
         return f"--profile {self.profile} {command}"
 

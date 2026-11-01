@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel
@@ -39,6 +40,7 @@ class SettingsWriter(Protocol):
     def descriptor(self, key: str) -> FieldDescriptor: ...
     def provenance(self) -> dict[tuple[str, ...], str]: ...
     def own_value(self, key: str, *, profile: str | None = None) -> Any: ...
+    def written_file(self) -> Path: ...
 
     def update_value(
         self,

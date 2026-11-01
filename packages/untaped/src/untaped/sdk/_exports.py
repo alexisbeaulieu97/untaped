@@ -121,7 +121,7 @@ from untaped.sdk.health.doctor import (
     OnlineCheck,
     PluginContext,
 )
-from untaped.sdk.health.marks import NeedsSetup, Suggest
+from untaped.sdk.health.marks import HomeOnly, NeedsSetup, Suggest
 from untaped.sdk.marks import (
     Deprecated,
     DeprecatedBehaviour,
@@ -450,6 +450,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "HttpSettings",
     "HttpStatusError",
     "HttpTransportError",
+    "HomeOnly",
     "NeedsSetup",
     "NoCredential",
     "RetryPolicy",

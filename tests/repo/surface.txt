@@ -2659,6 +2659,7 @@ cli untaped config set --format choice=pipe
 cli untaped config set --format choice=raw
 cli untaped config set --format choice=table
 cli untaped config set --format choice=yaml
+cli untaped config set --project switch default=unset
 cli untaped config set --prompt switch default=unset
 cli untaped config set --stdin switch default=unset
 cli untaped config set KEY
@@ -2673,6 +2674,7 @@ cli untaped config unset --format choice=pipe
 cli untaped config unset --format choice=raw
 cli untaped config unset --format choice=table
 cli untaped config unset --format choice=yaml
+cli untaped config unset --project switch default=unset
 cli untaped config unset KEY
 cli untaped docs
 cli untaped docs --search VALUE default=unset
@@ -5789,6 +5791,7 @@ record untaped.PickedProfile
 record untaped.PickedProfile.name string
 record untaped.PickedProfile.source choice=env
 record untaped.PickedProfile.source choice=flag
+record untaped.PickedProfile.source choice=project
 record untaped.PickedProfile.source string
 record untaped.RegisteredHolder
 record untaped.RegisteredHolder.kind string
@@ -5951,6 +5954,7 @@ record untaped.profile_outcome.previous_name string?
 record untaped.profile_pick
 record untaped.profile_pick.name string
 record untaped.profile_pick.profiles PickedProfile[]
+record untaped.profile_pick.skipped string[]
 record untaped.profile_view
 record untaped.profile_view.data object
 record untaped.profile_view.name string
@@ -6773,6 +6777,7 @@ sdk untaped.sdk.HolderView.anchor  [experimental]
 sdk untaped.sdk.HolderView.holder  [experimental]
 sdk untaped.sdk.HolderView.label  [experimental]
 sdk untaped.sdk.HolderView.state  [experimental]
+sdk untaped.sdk.HomeOnly()
 sdk untaped.sdk.HttpClient()
 sdk untaped.sdk.HttpClient(auth=) default=None
 sdk untaped.sdk.HttpClient(base_url@1=) default=""
@@ -8070,6 +8075,7 @@ sdk untaped.sdk.health.ExecutableCheck.run
 sdk untaped.sdk.health.ExecutableCheck.spelled
 sdk untaped.sdk.health.ExecutableCheck.title
 sdk untaped.sdk.health.ExecutableCheck.where
+sdk untaped.sdk.health.HomeOnly()
 sdk untaped.sdk.health.NeedsSetup
 sdk untaped.sdk.health.OnlineCheck(*, probe) callback(probe, 0)
 sdk untaped.sdk.health.OnlineCheck(title=) default=None

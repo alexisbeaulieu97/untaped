@@ -28,11 +28,12 @@ from untaped.core.config.models import (
 )
 from untaped.core.config.ports import SettingsReader, SettingsWriter
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
-from untaped.runtime.settings import ContractName, ExtensionSettings, resolve_config_path
+from untaped.runtime.settings import ContractName, ExtensionSettings
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.health.deprecated_keys import rename_keys
 from untaped.sdk.marks import Deprecated, owner, removal_text, replacement_text, stability_name
+from untaped.sdk.network.credentials import is_folder_source
 from untaped.sdk.words import removal_phrase
 
 if TYPE_CHECKING:
@@ -87,7 +88,7 @@ class SetSetting:
         def update(target: str, current: Any) -> str:
             if expected is not _UNRESOLVED and current != expected:
                 raise ConfigError(
-                    f"{key} changed in profile {target} while it was open; nothing was written",
+                    f"{key} changed in {_where(target)} while it was open; nothing was written",
                     category="conflict",
                 )
             return value
@@ -97,14 +98,20 @@ class SetSetting:
         )
         if dry_run:
             return SettingChange(SettingOutcome(key=key, profile=target, action="planned"))
-        line = f"set {key} in profile {target}{_removed_note(removed)}"
+        line = f"set {key} in {_where(target)}{_removed_note(removed)}"
         return SettingChange(
             SettingOutcome(key=key, profile=target, action="updated"),
             (
-                ("success", f"{line} (config: {resolve_config_path()})"),
+                ("success", f"{line} (config: {self._repo.written_file()})"),
                 *_still_read(key, target, holder),
             ),
         )
+
+
+def _where(target: str) -> str:
+    """How a write names where it landed: ``profile prod`` or ``project PROJ-1``."""
+    source = Source.of(target)
+    return f"project {source.project}" if source.kind == "project" else f"profile {target}"
 
 
 def _holder(repo: SettingsWriter, key: str) -> str | None:
@@ -117,14 +124,25 @@ def _holder(repo: SettingsWriter, key: str) -> str | None:
 
 
 def _still_read(key: str, target: str, holder: str | None) -> tuple[Note, ...]:
-    """A line when a write to the base is hidden by ``holder``, a profile this run picks.
+    """A line when a write is hidden by ``holder``, a layer this run reads above ``target``.
 
     A named target is the one ``--profile`` names, the top of the pick, so
-    nothing layered over it can hide it.
+    nothing layered over it can hide it. The base can be hidden by a picked
+    profile or the project's file, and the project's file by a profile the
+    terminal picks.
     """
-    if target != DEFAULT_PROFILE or holder is None or holder == DEFAULT_PROFILE:
+    if holder is None or holder in (target, DEFAULT_PROFILE):
         return ()
-    return (("info", f"this run still reads {key} from profile {holder}, picked over the base"),)
+    if target != DEFAULT_PROFILE and not is_folder_source(target):
+        return ()
+    over = "the project's file" if is_folder_source(target) else "the base"
+    held = Source.of(holder)
+    where = (
+        f"project {held.project}'s config.yml"
+        if held.kind == "project"
+        else f"profile {held.profile}, picked"
+    )
+    return (("info", f"this run still reads {key} from {where} over {over}"),)
 
 
 class UnsetSetting:
@@ -142,7 +160,7 @@ class UnsetSetting:
         removed, target = self._repo.unset_value(
             key, profile=profile, dry_run=dry_run, on_spelling_removed=spellings.append
         )
-        where = f"in profile {target}"
+        where = f"in {_where(target)}"
         notes: tuple[Note, ...] = ()
         if not removed:
             notes = (("info", f"{key} was not set {where}"),)
@@ -502,7 +520,7 @@ class ListRankings:
 
 
 def _profile_label(profile: str) -> str:
-    return Source(kind="profile", profile=profile).label
+    return Source.of(profile).label
 
 
 class GetSetting:
@@ -730,7 +748,7 @@ def _resolve_source(
     if variable is not None:
         return Source(kind="env", variable=variable)
     if profile_name is not None:
-        return Source(kind="profile", profile=profile_name)
+        return Source.of(profile_name)
     if current is None and not (descriptor.has_default and descriptor.default is not None):
         return Source(kind="unset")
     return Source(kind="default")

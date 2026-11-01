@@ -11,6 +11,7 @@ model declares.
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, ClassVar
 
 import pytest
@@ -24,6 +25,7 @@ from untaped.runtime.settings import registered_profile_model
 from untaped.sdk import (
     Credential,
     CredentialKey,
+    HomeOnly,
     NeedsSetup,
     Suggest,
     TokenUrl,
@@ -92,6 +94,18 @@ class NoSettings(BaseModel):
     """Nothing to set."""
 
 
+class HomeOnlyInsideType(BaseModel):
+    store: Annotated[Path, HomeOnly()] | None = None
+
+
+class HomeOnlyOnModel(BaseModel):
+    server: Annotated[Server | None, HomeOnly()] = None
+
+
+class HomeOnlyOnLeaf(BaseModel):
+    store: Annotated[Path | None, HomeOnly()] = None
+
+
 def _alpha(settings: type[BaseModel] | None, **credentials: Credential[object]) -> PluginCandidate:
     """Plugin ``alpha`` with ``settings`` (none: an empty model) holding ``credentials``."""
     return plugin_candidate(make_plugin("alpha", settings=settings or NoSettings, **credentials))
@@ -112,6 +126,8 @@ def _token(key: type[CredentialKey] = Server) -> Credential[object]:
         (MarkedBool, "'enabled' is marked NeedsSetup but is not optional with a None default"),
         (MarkedWithDefault, "'base_url' is marked NeedsSetup but is not optional"),
         (MarkInsideType, "sits inside its type"),
+        (HomeOnlyInsideType, "the HomeOnly mark on setting 'store' sits inside its type"),
+        (HomeOnlyOnModel, "setting 'server' is a model; mark HomeOnly on its fields"),
     ],
 )
 def test_a_misplaced_mark_quarantines_its_plugin(model: type[BaseModel], says: str) -> None:
@@ -119,6 +135,10 @@ def test_a_misplaced_mark_quarantines_its_plugin(model: type[BaseModel], says: s
     assert record.reason == "bad-settings-keys"
     assert record.detail.startswith("plugin 'alpha': ")
     assert says in record.detail
+
+
+def test_home_only_fits_a_leaf_field() -> None:
+    assert _compose(_alpha(HomeOnlyOnLeaf)).quarantine == ()
 
 
 def test_needs_setup_fits_an_optional_model() -> None:

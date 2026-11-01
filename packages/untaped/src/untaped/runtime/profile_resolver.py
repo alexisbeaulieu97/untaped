@@ -6,15 +6,18 @@ profile resolution.
 
 The file's own keys are :data:`FILE_KEYS` (``format_version`` and
 ``profiles``); every other top-level key is a section of the **base**, which
-every run reads. A run picks named profiles (``UNTAPED_PROFILE``'s comma
-list, then the run's ``--profile`` pick), layered over the base in order.
+every run reads. A run picks named profiles (its project's ``profile:``,
+then ``UNTAPED_PROFILE``'s comma list, then the run's ``--profile`` pick),
+layered over the base in order; the project's own values sit just above
+its picks (:mod:`untaped.runtime.folder_layer`).
 :func:`resolve_profiles` returns:
 
 - ``effective``: a deep-merged dict of values (a later pick beats an earlier
   one, and every pick beats the base, per leaf).
 - ``provenance``: a flat ``leaf_path -> profile_name`` map naming the profile
-  that supplied each leaf in ``effective`` (``default`` for the base).
-  Missing entries mean the leaf came from the schema default.
+  that supplied each leaf in ``effective`` (``default`` for the base;
+  ``project:<name>`` for a project's own values, a spelling no profile name
+  can take). Missing entries mean the leaf came from the schema default.
 """
 
 from __future__ import annotations
@@ -23,18 +26,21 @@ import os
 import re
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from untaped.sdk._run import run_or_none
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.words import not_found
 
+if TYPE_CHECKING:
+    from untaped.runtime.folder_layer import FolderLayer
+
 ACTIVE_PROFILE_ENV = "UNTAPED_PROFILE"
 #: The base's name: what ``--profile default`` picks and what provenance calls it.
 DEFAULT_PROFILE = "default"
 
-#: What picked a profile: the root ``--profile`` option or ``UNTAPED_PROFILE``.
-PickSource = Literal["flag", "env"]
+#: What picked a profile: the project's ``profile:``, ``UNTAPED_PROFILE`` or ``--profile``.
+PickSource = Literal["project", "env", "flag"]
 
 #: A profile name: letters, digits and ``_`` first, then also ``.`` and ``-``.
 PROFILE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]*")
@@ -97,20 +103,60 @@ def flag_pick() -> tuple[str, ...]:
 def current_pick() -> tuple[Picked, ...]:
     """The profiles this run layers over the base, in order (later wins).
 
-    ``UNTAPED_PROFILE``'s names, then ``--profile``'s; a name picked twice
-    keeps its last place. ``--profile default`` sets the variable aside and
-    reads the base alone; ``UNTAPED_PROFILE=default`` adds nothing.
+    The project's ``profile:`` names the home defines, then
+    ``UNTAPED_PROFILE``'s, then ``--profile``'s; a name picked twice keeps
+    its last place. ``--profile default`` sets the others aside and reads
+    the base alone; ``UNTAPED_PROFILE=default`` sets the project's aside.
     """
+    return run_layers()[0]
+
+
+def run_layers() -> tuple[tuple[Picked, ...], FolderLayer | None]:
+    """:func:`current_pick`, and the project's layer whose own values this run reads.
+
+    The project's values sit above its picks and beneath the others, so
+    they stay read under ``--profile default``, which sets its picks aside.
+    """
+    from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - it imports this
+
+    folder = folder_layer()
     flag = flag_pick()
     if flag == (DEFAULT_PROFILE,):
-        return ()
+        return (), folder
     text = os.environ.get(ACTIVE_PROFILE_ENV)
     env = parse_pick(text, origin=ACTIVE_PROFILE_ENV) if text else ()
+    project = () if folder is None or env == (DEFAULT_PROFILE,) else folder.picks
     if env == (DEFAULT_PROFILE,):
         env = ()
-    picks = [Picked(name, "env") for name in env] + [Picked(name, "flag") for name in flag]
+    picks = [
+        *(Picked(name, "project") for name in project),
+        *(Picked(name, "env") for name in env),
+        *(Picked(name, "flag") for name in flag),
+    ]
     last = {pick.name: index for index, pick in enumerate(picks)}
-    return tuple(pick for index, pick in enumerate(picks) if last[pick.name] == index)
+    return tuple(pick for index, pick in enumerate(picks) if last[pick.name] == index), folder
+
+
+def explicit_pick() -> tuple[str, ...]:
+    """The names the run itself picks: ``UNTAPED_PROFILE``'s, then ``--profile``'s, no project's.
+
+    What ``project init`` records as a new project's ``profile:``; ``()``
+    when nothing picks, or the pick is ``default`` (the base alone).
+    """
+    return tuple(pick.name for pick in current_pick() if pick.source != "project")
+
+
+def settings_key() -> tuple[object, ...]:
+    """What a run's settings depend on beyond the home: its pick and its project's file.
+
+    Caches of resolved settings key on it, so a run in another project, or
+    after its project's file changed, reads its own.
+    """
+    picks, folder = run_layers()
+    return (
+        tuple(pick.name for pick in picks),
+        None if folder is None else (folder.file, folder.stamp),
+    )
 
 
 def picked_names() -> tuple[str, ...]:
@@ -205,25 +251,39 @@ def profile_entries(
             yield str(name), data, profile_path(str(name))
 
 
+@dataclass(frozen=True)
+class FolderValues:
+    """A project's own values, layered after the first ``at`` picks (its own)."""
+
+    at: int
+    source: str
+    """Their provenance: ``project:<name>``."""
+    sections: dict[str, Any]
+
+
 def resolve_profiles(
     config_data: dict[str, Any],
     *,
     picks: Sequence[str] = (),
+    folder: FolderValues | None = None,
 ) -> tuple[dict[str, Any], dict[tuple[str, ...], str]]:
     """Return ``(effective, provenance)`` from the parsed config dict.
 
     The base is layered first, then each of ``picks`` in order (``default``
-    is the base, already layered). Raises ``ConfigError`` as
-    :func:`named_profiles` does, and a usage ``ConfigError`` (exit 2, with
-    ``details.known``) when a pick names an undefined profile.
+    is the base, already layered), with ``folder``'s values after its first
+    ``folder.at`` picks. Raises ``ConfigError`` as :func:`named_profiles`
+    does, and a usage ``ConfigError`` (exit 2, with ``details.known``) when
+    a pick names an undefined profile.
     """
     profiles = named_profiles(config_data)
     check_defined(picks, profiles)
     effective: dict[str, Any] = {}
     provenance: dict[tuple[str, ...], str] = {}
     _layer(base_sections(config_data), DEFAULT_PROFILE, effective, provenance, ())
-    for name in picks:
-        if name != DEFAULT_PROFILE:
+    for index, name in enumerate((*picks, None)):
+        if folder is not None and index == folder.at:
+            _layer(folder.sections, folder.source, effective, provenance, ())
+        if name is not None and name != DEFAULT_PROFILE:
             _layer(profiles[name] or {}, name, effective, provenance, ())
     return effective, provenance
 

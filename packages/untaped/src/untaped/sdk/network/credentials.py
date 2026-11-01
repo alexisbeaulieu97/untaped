@@ -568,12 +568,17 @@ class Credential[K: CredentialKey](OwnedBlock):
         return self._refusal(key, what) if folder_chose(key) else None
 
     def _missing(self, key: K) -> NoCredential:
+        from untaped.runtime.profile_resolver import picked_names  # noqa: PLC0415
         from untaped.sdk.words import run_hint  # noqa: PLC0415
 
+        # The line names the run's pick (its project's included), so it files
+        # the credential for this same key wherever it is typed.
+        picks = picked_names()
+        login = f"--profile {','.join(picks)} {self.login}" if picks else self.login
         variable = f", or set {self.env[0]}" if self.env else ""
         return NoCredential(
             f"no {self.label} for {describe_key(key)}",
-            hint=f"{run_hint(self.login)}{variable}",
+            hint=f"{run_hint(login)}{variable}",
             system=self.plugin,
             details={"credential": self.qualified, "key": key_data(key)},
         )

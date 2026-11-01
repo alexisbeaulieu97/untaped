@@ -41,6 +41,7 @@ from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     FILE_KEYS,
     picked_names,
+    settings_key,
 )
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
@@ -724,6 +725,30 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
     return raw
 
 
+#: A project's ``config.yml``'s own top-level keys; every other key is a section.
+PROJECT_FILE_KEYS = frozenset({"format_version", "profile"})
+
+
+def load_project_config(yaml_file: Path) -> dict[str, Any]:
+    """Parse a project's ``.untaped/config.yml`` into a dict (``{}`` when absent or empty).
+
+    Its stamp is optional (a hand-written file may leave it out) and is
+    refused when newer than this release reads, as the home's is. A project
+    picks profiles and defines none, so ``profiles:`` and ``active:`` are
+    refused too. Raises :class:`ConfigError` (exit 4) naming the path.
+    """
+    raw = _read_yaml(yaml_file)
+    _check_stamp(raw, yaml_file, newest=FORMAT_VERSION)
+    for key in ("profiles", "active"):
+        if key in raw:
+            raise ConfigError(
+                f"`{key}:` in {yaml_file} is not read: a project picks the home's profiles "
+                "with `profile:` and defines none",
+                hint=f"move it to the home's config.yml, or delete the `{key}:` key",
+            )
+    return raw
+
+
 def _check_no_shared_state(folder: Path) -> None:
     """Refuse a folder holding 11.x's shared ``state.yml`` beside the config read from it.
 
@@ -883,17 +908,18 @@ def _build_settings() -> Settings:
         raise ConfigError(settings_error_message(exc, settings_cls)) from exc
 
 
-def _build_picked(_pick: tuple[str, ...]) -> Settings:
-    """The aggregate settings of the current context, whose pick is ``_pick`` (the cache key)."""
+def _build_picked(_key: tuple[object, ...]) -> Settings:
+    """The aggregate settings of the current context, whose :func:`settings_key` is ``_key``."""
     return _build_settings()
 
 
 class _SettingsGetter:
     """``get_settings``: the aggregate settings, cached per pick, uncached under a run's overlay.
 
-    The cache is keyed by the profiles the current run picks (:func:`picked_names`),
-    so runs that pick differently (a child run, a thread in one, an asyncio task
-    in another) each read their own entry and none ever clears another's. Under
+    The cache is keyed by the profiles the current run picks and its project's
+    file (:func:`settings_key`), so runs that pick differently (a child run, a
+    thread in one, an asyncio task in another) or run in another project each
+    read their own entry and none ever clears another's. Under
     a run carrying an overlay the settings are built fresh and never stored, so
     candidate values reach no cache. The key is the pick alone, not the home or
     the environment: a config write, registration or reset drops every pick's
@@ -907,7 +933,7 @@ class _SettingsGetter:
         """Return the aggregate settings of the current pick, cached."""
         if current_overlay() is not None:
             return _build_settings()
-        return self._cached(picked_names())
+        return self._cached(settings_key())
 
     def cache_clear(self) -> None:
         """Drop the cached settings of every pick."""

@@ -50,7 +50,12 @@ class PickedProfile(BaseModel):
     """One profile of the run's pick."""
 
     name: str
-    source: PickSource = Field(description="What picked it: `flag` (--profile) or `env`.")
+    source: PickSource = Field(
+        description=(
+            "What picked it: `project` (the project's profile:), `env` (UNTAPED_PROFILE) "
+            "or `flag` (--profile)."
+        )
+    )
 
 
 class ProfilePick(Record):
@@ -60,6 +65,10 @@ class ProfilePick(Record):
         description="The pick as one `--profile` value: the names comma-joined, else `default`."
     )
     profiles: list[PickedProfile]
+    skipped: list[str] = Field(
+        default_factory=list,
+        description="Profiles the project's profile: names that the home doesn't define.",
+    )
 
 
 class ProfileView(Record):

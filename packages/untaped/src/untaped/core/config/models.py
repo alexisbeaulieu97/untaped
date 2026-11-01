@@ -18,6 +18,7 @@ from untaped.sdk._schema import (
 )
 from untaped.sdk.fields import Column
 from untaped.sdk.marks import SettingStability, removal_text
+from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX
 from untaped.sdk.records import OutcomeRecord, Record, TableGlyph
 from untaped.sdk.words import removal_phrase
 
@@ -29,26 +30,38 @@ class Source:
     Resolution chain (high → low priority):
 
     - ``env``     — an ``UNTAPED_*`` environment variable.
+    - ``project`` — the project's ``.untaped/config.yml`` (``project`` names it).
     - ``profile`` — a YAML profile (``profile`` field names which one; ``default``
       is the base, labelled ``base``).
     - ``default`` — the schema default declared on the Pydantic model.
     - ``unset``   — no default, no value; the field is genuinely empty.
     """
 
-    kind: Literal["profile", "env", "default", "unset"]
+    kind: Literal["project", "profile", "env", "default", "unset"]
     profile: str | None = None
     variable: str | None = None
     """For ``env``: the variable's name (``UNTAPED_AWX__PAGE_SIZE``). ``label`` stays ``env``."""
+    project: str | None = None
+    """For ``project``: the project's name."""
 
     @property
     def label(self) -> str:
-        """Human-readable single-line form (``profile:prod``, ``base``, ``env``)."""
+        """Human-readable single-line form (``profile:prod``, ``base``, ``project:X``, ``env``)."""
+        if self.kind == "project":
+            return f"project:{self.project}"
         if self.kind != "profile":
             return self.kind
         return "base" if self.profile == DEFAULT_PROFILE else f"profile:{self.profile}"
 
     def __str__(self) -> str:
         return self.label
+
+    @classmethod
+    def of(cls, provenance: str) -> Source:
+        """The source a provenance label names: a project's file (``project:X``) or a profile."""
+        if provenance.startswith(FOLDER_SOURCE_PREFIX):
+            return cls(kind="project", project=provenance.removeprefix(FOLDER_SOURCE_PREFIX))
+        return cls(kind="profile", profile=provenance)
 
 
 @dataclass(frozen=True)

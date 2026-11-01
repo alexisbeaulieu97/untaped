@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.profile_resolver import pick_names, picked_names
+from untaped.runtime.profile_resolver import pick_names, settings_key
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import RunOutput, forced_diagnostics, opened
 from untaped.runtime.verbose import restore as restore_logging
@@ -85,14 +85,15 @@ def _given(home: Path) -> Callable[[], Path]:
 def _section_reader() -> Callable[[str, type[BaseModel]], BaseModel]:
     """A run's ``picks``: each section validated on first read, once for each pick it is read under.
 
-    Keyed by the pick, so a section read before a late ``--profile`` (one a
-    line read with no declaration kept takes once the root is composed) is
-    read again under the pick that follows.
+    Keyed by the pick and the project's file (:func:`settings_key`), so a
+    section read before a late ``--profile`` (one a line read with no
+    declaration kept takes once the root is composed) is read again under
+    the pick that follows.
     """
-    picked: dict[tuple[str, tuple[str, ...]], BaseModel] = {}
+    picked: dict[tuple[str, tuple[object, ...]], BaseModel] = {}
 
     def picks(section: str, model: type[BaseModel]) -> BaseModel:
-        key = (section, picked_names())
+        key = (section, settings_key())
         if key not in picked:
             picked[key] = get_config_section(section, model)
         return picked[key]

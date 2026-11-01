@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import Dir, key
+from untaped.sdk.health import HomeOnly
 
 
 class RecipeSettings(BaseModel):
@@ -18,7 +19,7 @@ class RecipeSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    library_dir: Path | None = Field(
+    library_dir: Annotated[Path | None, HomeOnly()] = Field(
         default=None,
         description=(
             "Directory holding installed recipe packs and backups; "
