@@ -9,8 +9,8 @@ The workspace lifecycle guide is on `untaped workspace --help` and
 `untaped docs workspace`. `workspace run --stdin` reads whole records only, so
 a piped row missing a field is refused before anything runs. Retired settings
 `workspace.cache_dir` and `workspace.protocol` are no longer recognised. The
-credential helper line a worktree's git config gets names no profile: the
-folder's project and `UNTAPED_PROFILE` pick it. `workspace create` and
+credential helper line a worktree's git config gets names no profile:
+`UNTAPED_PROFILE` picks it. `workspace create` and
 `workspace add` print their rows only: the workspace's path is no longer the
 last stdout line, so `cd "$(untaped -q workspace create ...)"` no longer
 works.
