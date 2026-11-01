@@ -55,6 +55,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from untaped.sdk import ErrorCategory, Failure, UntapedError, q
 from untaped_awx.domain.jobs.job import HostSummary, Job, JobEvent
 from untaped_awx.domain.suites.systems import (
+    AWX,
     CONTROLLER,
     CREDENTIALS,
     EXPECTATION,
@@ -299,7 +300,7 @@ def failure_system(error: BaseException, *, launching: bool) -> str:
     else is the controller's.
     """
     info = Failure.from_exception(error)
-    if info.system != "awx":
+    if info.system != AWX.name():
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):
         return CREDENTIALS

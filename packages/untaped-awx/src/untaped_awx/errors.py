@@ -21,13 +21,13 @@ from untaped.sdk import (
     not_found,
     q,
 )
-from untaped_awx.domain.suites.systems import SUITE
+from untaped_awx.domain.suites.systems import AWX, SUITE
 
 
 class AwxError(UntapedError):
     """Base class for every AWX plugin error (a ``failed`` error in ``awx``)."""
 
-    system = "awx"
+    system = AWX
 
 
 class AwxApiError(AwxError, HttpError):

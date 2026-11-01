@@ -51,6 +51,7 @@ from untaped.sdk import (
     GitCommandError,
     GitResult,
     ProgressHandle,
+    System,
     UntapedError,
     attribution,
     experimental,
@@ -321,7 +322,7 @@ class RepoStore:
                 raise self._error(
                     f"no repo store repository at {self._path} to keep {path.name} in",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 )
             try:
                 if value is None:
@@ -332,7 +333,7 @@ class RepoStore:
                 raise self._error(
                     f"could not write {path}: {exc.strerror or exc}",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 ) from exc
 
     def exists(self) -> bool:
@@ -406,7 +407,7 @@ class RepoStore:
                     f"could not create repo store directory {self._path.parent}: "
                     f"{exc.strerror or exc}",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 ) from exc
             # An empty template keeps a user's template hooks out of store repos.
             self._git(["init", "--bare", "--quiet", "--template=", str(self._path)], bare=False)

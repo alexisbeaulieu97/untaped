@@ -72,7 +72,7 @@ from untaped.runtime.redaction import redact_url_password
 from untaped.sdk._home import CORE
 from untaped.sdk._names import snake
 from untaped.sdk._run import is_verbose, run_or_none
-from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, UntapedError, fix_by
+from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, System, UntapedError, fix_by
 from untaped.sdk.words import ago_text, duration_text
 
 # --------------------------------------------------------------------------- #
@@ -565,7 +565,7 @@ class Failure(Diagnostic):
     @classmethod
     def plain(cls, text: str, *, hint: str | None = None) -> Failure:
         """A plain ``error:`` line: category ``failed``, system ``untaped``."""
-        return cls(category=ErrorCategory.FAILED, system="untaped", message=text, hint=hint)
+        return cls(category=ErrorCategory.FAILED, system=System.UNTAPED, message=text, hint=hint)
 
     def to_exception(self) -> UntapedError:
         """This failure as an error to raise again, with its attribution, hint and details."""

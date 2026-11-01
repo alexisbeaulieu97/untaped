@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from untaped.sdk import UntapedError
+from untaped.sdk import System, UntapedError
 
 
 class GitError(UntapedError):
     """Base for git plugin errors (remotes, credentials, the repo store)."""
 
-    system = "git"
+    system = System.GIT

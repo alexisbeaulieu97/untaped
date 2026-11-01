@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import ConfigError, GitCommandError, attribution, q, run_git
+from untaped.sdk import ConfigError, GitCommandError, System, attribution, q, run_git
 
 _TIMEOUT = 30.0
 
@@ -33,7 +33,9 @@ def _pushed_branch(cwd: Path | None, flag: str) -> str:
     # The full ref: ``--short`` answers ``heads/x`` when a tag ``x`` exists.
     local_ref = _git(cwd, "symbolic-ref", "--quiet", "HEAD", check=False)
     if not local_ref:
-        raise ConfigError(f"HEAD is detached; pass {flag} a branch, tag or commit", system="git")
+        raise ConfigError(
+            f"HEAD is detached; pass {flag} a branch, tag or commit", system=System.GIT
+        )
     branch = local_ref.removeprefix("refs/heads/")
     upstream = _git(
         cwd,
@@ -44,24 +46,24 @@ def _pushed_branch(cwd: Path | None, flag: str) -> str:
     remote, _, ref = upstream.partition("\0")
     if not remote or not ref:
         raise ConfigError(
-            f"branch {q(branch)} has no upstream; push it with git push -u", system="git"
+            f"branch {q(branch)} has no upstream; push it with git push -u", system=System.GIT
         )
     name = ref.removeprefix("refs/heads/")
     if remote == ".":
         raise ConfigError(
             f"branch {q(branch)} tracks local branch {name}; push it with git push -u",
-            system="git",
+            system=System.GIT,
         )
     listed = run_git(
         ["ls-remote", remote, ref], cwd=cwd, timeout=_TIMEOUT, capture=True, retry_transient=True
     ).text.split()
     if not listed:
-        raise ConfigError(f"{remote} has no {name}; push {branch} first", system="git")
+        raise ConfigError(f"{remote} has no {name}; push {branch} first", system=System.GIT)
     if listed[0] != head:
         raise ConfigError(
             f"HEAD {head[:12]} is not pushed: {remote} {name} is at {listed[0][:12]}; "
             f"push {branch} first",
-            system="git",
+            system=System.GIT,
         )
     return name
 

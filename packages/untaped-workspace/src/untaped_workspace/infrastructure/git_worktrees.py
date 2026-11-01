@@ -37,6 +37,7 @@ from untaped.sdk import (
     GitCommandError,
     GitResult,
     ProgressHandle,
+    System,
     UntapedError,
     attribution,
     plural,
@@ -571,7 +572,7 @@ def _delete_tree(path: Path) -> None:
         raise WorkspaceError(
             f"could not delete {path}: {exc.strerror or exc}",
             category="failed",
-            system="local",
+            system=System.LOCAL,
             hint="check its permissions and that no process holds it, then retry",
         ) from exc
 

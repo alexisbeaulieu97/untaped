@@ -43,6 +43,7 @@ from untaped.sdk import (
     ConfigError,
     ErrorCategory,
     Failure,
+    System,
     UntapedError,
     q,
 )
@@ -502,7 +503,7 @@ def _error(info: Failure) -> UntapedError:
 def _interrupted() -> Failure:
     return Failure(
         category=ErrorCategory.INTERRUPTED,
-        system="untaped",
+        system=System.UNTAPED,
         retryable=False,
         message="teardown interrupted",
     )

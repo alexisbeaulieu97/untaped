@@ -11,14 +11,14 @@ class; none of them is a ``ValueError``.
 
 from __future__ import annotations
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, System, UntapedError
 
 
 class RecipeError(UntapedError):
     """Base for recipe plugin errors: invalid local input unless a subclass says otherwise."""
 
     category = ErrorCategory.INVALID
-    system = "local"
+    system = System.LOCAL
 
 
 class RecipeNotFoundError(RecipeError):
@@ -79,7 +79,7 @@ class PackFetchError(RecipeError):
     """A git command fetching a pack source failed; raise it with the git error's attribution."""
 
     category = ErrorCategory.FAILED
-    system = "git"
+    system = System.GIT
 
 
 class UvMissingError(RecipeError):

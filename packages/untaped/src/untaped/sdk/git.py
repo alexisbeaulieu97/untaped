@@ -31,7 +31,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from untaped.sdk.errors import ErrorCategory, UntapedError
+from untaped.sdk.errors import ErrorCategory, System, UntapedError
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
 
 # Lowercased stderr fragments of transport failures that a later identical
@@ -104,7 +104,7 @@ class GitCommandError(UntapedError):
     ``auth`` (``permission`` for HTTP 403), with a hint.
     """
 
-    system = "git"
+    system = System.GIT
 
     def __init__(
         self,
@@ -385,7 +385,7 @@ def run_git(
 
     git_path = find_program(git)  # never a `git` planted in the folder git runs in
     if git_path is None:
-        raise GitCommandError(f"`{git}` not found on PATH", category="config", system="local")
+        raise GitCommandError(f"`{git}` not found on PATH", category="config", system=System.LOCAL)
     payload = stdin.encode() if isinstance(stdin, str) else stdin
     secrets = tuple(value for value in (auth_config or {}).values() if value)
     with _maybe_auth_include(auth_config) as include:

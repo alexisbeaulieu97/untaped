@@ -42,6 +42,7 @@ from untaped.sdk.errors import (
     ErrorCategory,
     NeedsYesError,
     OperationCancelledError,
+    System,
     UntapedError,
     UsageError,
     first_validation_error,
@@ -280,7 +281,9 @@ class File[M: BaseModel]:
             return self.model.model_validate(raw)
         except ValidationError as exc:
             raise ConfigError(
-                f"{self.path}: {first_validation_error(exc)}", category="invalid", system="local"
+                f"{self.path}: {first_validation_error(exc)}",
+                category="invalid",
+                system=System.LOCAL,
             ) from exc
 
     def save(self, model: M, *, replace: bool = False) -> None:
@@ -293,7 +296,7 @@ class File[M: BaseModel]:
             raise UntapedError(
                 f"{self.path} already exists; remove it or choose another path",
                 category=ErrorCategory.FAILED,
-                system="local",
+                system=System.LOCAL,
             )
         data = model.model_dump(mode="json", exclude_none=True)
         if self.path.suffix.lower() == ".json":

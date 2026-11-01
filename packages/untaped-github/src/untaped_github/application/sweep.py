@@ -15,6 +15,7 @@ from untaped.sdk import (
     Filled,
     NeverRefreshed,
     ProgressHandle,
+    System,
     UntapedError,
     UsageError,
     attribution,
@@ -741,7 +742,7 @@ def _filler(
             stopped.append(exc)
             raise
         except OSError as exc:
-            failed.append(GitCorpusError(str(exc) or type(exc).__name__, system="local"))
+            failed.append(GitCorpusError(str(exc) or type(exc).__name__, system=System.LOCAL))
             raise failed[-1] from exc
         return _Fetched(fetched_at=result.fetched_at)
 
