@@ -43,11 +43,10 @@ class Core(Plugin):
     records = CORE_RECORDS
     declaration = DECLARATION
     skill = StubSkill(
-        "Installs, sets up and diagnoses the `untaped` CLI itself (profiles, service "
-        "URLs and tokens, `setup plan`, `doctor`, output formats and installed agent "
-        "skills). Use when the user asks to install or set up untaped, configure or "
-        "switch a profile, connect a service (its URL and token), fix a failing "
-        "`untaped doctor`, or install untaped's skills for an agent."
+        "Installs, sets up and diagnoses the untaped CLI itself: profiles, service "
+        "URLs and tokens, setup, health checks, output formats and agent skills. Use when the user asks to install or set up untaped, configure "
+        "or switch a profile, connect a service (its URL and token), fix a failing "
+        "health check, or install untaped's skills for an agent."
     )
     config_permissions = CONFIG_PERMISSIONS
     unknown_keys = UNKNOWN_KEYS
