@@ -60,7 +60,7 @@ another plugin's domain fields.
   exits 1 naming its line. Pipe what an untaped command printed.
 - Kinds ending in `.summary` (`<plugin>.<noun>.summary`) are summary
   rows, not items.
-- Empty stdin is an error (`nothing received on stdin`), except for
+- Empty stdin is an error (`nothing received on stdin`, exit 1), except for
   `workspace run --stdin`, where it selects no repos.
 - `--stdin` and positional arguments cannot be combined (exit 2).
 - When stdin carries data, confirmation prompts read the terminal
@@ -123,7 +123,7 @@ line printed; `--verbose` prints every update and `--quiet` none.
 ```json
 {"level": "error", "kind": "untaped.failure", "category": "auth", "system": "awx", "retryable": false, "message": "AWX rejected the token (HTTP 401)", "hint": "run `untaped auth login awx`", "exit_code": 4, "details": {"status": 401, "url": "https://aap/api/v2/me/", "attempts": 1}, "fix_by": "user"}
 {"level": "error", "kind": "untaped.failure", "item": "Deploy", "category": "unavailable", "system": "awx", "retryable": true, "message": "HTTP 503 for https://aap/api/v2/job_templates/7/", "hint": null, "exit_code": 5, "details": {"status": 503, "url": "https://aap/api/v2/job_templates/7/", "attempts": 3}}
-{"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (2 * os.cpu_count())"}
+{"level": "warning", "kind": "untaped.message", "message": "--parallel 64 clamped to 16 (this command's cap)"}
 {"level": "warning", "kind": "untaped.deprecation", "id": "cli untaped acme me -> untaped acme whoami", "removed_in": 3, "distribution": "untaped-acme", "replacement": "untaped acme whoami", "hint": null, "message": "`untaped acme me` is deprecated and will be removed in untaped-acme 3.0; use `untaped acme whoami`"}
 {"level": "warning", "kind": "untaped.stale", "plugin": "library", "cache": "shelf.book_source_books", "key": "library:3f2a…", "refreshed_at": "2026-10-09T10:00:00Z", "age_seconds": 93600.0, "max_age_seconds": 3600, "partial": false, "outdated": false, "attempted_at": "2026-10-10T12:00:00Z", "retry_at": "2026-10-10T12:05:00Z", "error": {"category": "unavailable", "system": "library", "retryable": true, "message": "HTTP 503", "hint": null, "exit_code": 5, "details": {}}, "message": "library: refresh failed (HTTP 503); using data from 2026-10-09 10:00 UTC, 26 h old; next check after 12:05 UTC"}
 {"level": "progress", "kind": "untaped.progress", "label": "Refreshing source 'prod'", "phase": "probing refs", "done": 312, "total": 780, "elapsed": 9.0, "state": "running", "message": "Refreshing source 'prod' \u00b7 probing refs 312/780 (9s)"}

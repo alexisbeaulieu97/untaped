@@ -337,7 +337,7 @@ Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests, and
-`untaped.sdk.testing.assert_surface(Hello)` to keep its commands, settings
+`untaped.sdk.testing.assert_surface(Acme)` to keep its commands, settings
 and contracts from losing a line by accident (experimental).
 `untaped.sdk.testing.invoke_root(["acme", "hello"])` runs `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the

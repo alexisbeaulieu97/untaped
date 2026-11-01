@@ -80,7 +80,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   the `status.json` and `attention` files, and the `dotfiles.*` settings.
 - `lint`: its commands, its record kinds, the `lint.ignore` setting,
   `untaped_lint.api` (the `Linter` and `TreeReader` contracts, `Rules`,
-  `rule`, `finding`, `lint` and `lint_config`), `untaped_lint.testing`, and
+  `rule`, `finding`, `lint_report` and `lint_config`), `untaped_lint.testing`, and
   the rule ids lint declares. See [Lint](./lint.md).
 - `project`: its commands, the `untaped.recorded_project`, `untaped.project_outcome`
   and `untaped.hold_outcome` records, `.untaped/project.json` and project
