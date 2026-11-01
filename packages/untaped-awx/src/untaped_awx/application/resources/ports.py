@@ -1,10 +1,8 @@
 """Ports of the resource use cases (the "ports" of hexagonal architecture).
 
 Use cases depend on these — never on concrete infrastructure types — so
-they can be tested with simple stubs and so the project's
-``cli → application → domain``, ``infrastructure → domain`` import rule
-holds. Concrete adapters live in ``infrastructure/resources/`` and are wired
-together at the CLI composition root.
+they can be tested with simple stubs. Concrete adapters live in
+``infrastructure/resources/`` and are wired together by the commands.
 """
 
 from __future__ import annotations

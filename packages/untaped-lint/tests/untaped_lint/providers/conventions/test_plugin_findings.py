@@ -17,8 +17,8 @@ from untaped_lint.testing import run
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
 
-# A print (a file rule), a Protocol outside the ports (core), a domain -> cli
-# import (a file rule) and a distribution not named untaped-<name> (core).
+# A print (a file rule), a Protocol outside the ports (core), an api.py that
+# imports a command (a file rule) and a distribution not named untaped-<name> (core).
 _PLUGIN = {
     "demo_plugin/__init__.py": '"""Demo plugin."""\n',
     "demo_plugin/plugin.py": '''
@@ -29,7 +29,7 @@ _PLUGIN = {
         from pydantic import BaseModel, ConfigDict
 
         from untaped.sdk import Plugin
-        from demo_plugin.cli import Nuke
+        from demo_plugin.commands import Nuke
 
 
         class DemoSettings(BaseModel):
@@ -45,7 +45,7 @@ _PLUGIN = {
             commands = (Nuke,)
         ''',
     "demo_plugin/errors.py": '"""Demo errors."""\n',
-    "demo_plugin/cli.py": '''
+    "demo_plugin/commands/__init__.py": '''
         """Demo commands."""
 
         from __future__ import annotations
@@ -59,13 +59,18 @@ _PLUGIN = {
             def run(self) -> None:
                 print("nuked")
         ''',
+    "demo_plugin/api.py": '''
+        """Demo's Python API."""
+
+        from demo_plugin.commands import Nuke
+
+        __all__ = ["Nuke"]
+        ''',
     "demo_plugin/domain/__init__.py": '"""Demo domain."""\n',
     "demo_plugin/domain/model.py": '''
         """Demo model."""
 
         from typing import Protocol
-
-        from demo_plugin.cli import Nuke
 
 
         class Store(Protocol):
@@ -97,9 +102,9 @@ def test_core_rows_and_file_lines_become_findings(
     assert {finding.severity for finding in found} == {"error"}
     assert {finding.target for finding in found} == {"demo"}
     # A file rule's line becomes a location relative to the cwd, its detail the message.
-    assert by_rule["print"].location == FileLocation(path="demo_plugin/cli.py")
+    assert by_rule["print"].location == FileLocation(path="demo_plugin/commands/__init__.py")
     assert by_rule["print"].message == "print()"
-    assert by_rule["layer"].location == FileLocation(path="demo_plugin/domain/model.py")
+    assert by_rule["layer"].location == FileLocation(path="demo_plugin/api.py", line=3)
 
 
 def test_a_file_outside_the_cwd_is_shown_absolute(site: Site, tmp_path: Path) -> None:
@@ -107,7 +112,7 @@ def test_a_file_outside_the_cwd_is_shown_absolute(site: Site, tmp_path: Path) ->
     found = Conventions().findings(_plugin(site), candidates=_DEMO)
     [printed] = [finding for finding in found if finding.rule == "print"]
     assert isinstance(printed.location, FileLocation)
-    assert printed.location.path == (site / "demo_plugin" / "cli.py").as_posix()
+    assert printed.location.path == (site / "demo_plugin" / "commands" / "__init__.py").as_posix()
 
 
 def test_a_plugin_not_installed_is_one_finding(site: Site) -> None:
