@@ -104,8 +104,8 @@ class RefTarget(BaseModel):
 class RefHolder(BaseModel):
     """Who a reference is for: its ``kind`` and its ``name`` within that kind.
 
-    A registered install is ``RefHolder(kind="install", name=<12 hex digits>)``;
-    a later untaped may write other kinds (a project, say). Its file is
+    A registered install is ``RefHolder(kind="install", name=<12 hex digits>)``,
+    and a project holds its items as another kind. Its file is
     ``refs/<kind>-<name>.json``, as is: both are lower case and a kind has no
     ``-``, so no two holders share a file, even on a case-insensitive disk.
     """

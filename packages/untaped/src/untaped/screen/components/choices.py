@@ -30,7 +30,7 @@ from untaped.screen.components.draw import (
     role_style,
     window_start,
 )
-from untaped.screen.core import Cmd, Frame, Key
+from untaped.screen.core import Cmd, Frame, KeyPress
 from untaped.sdk.marks import experimental
 
 __all__ = ["Check", "Cycle", "ListItem", "MultiList", "Select", "SingleList"]
@@ -201,7 +201,7 @@ class Check:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Toggle on space; every other key, enter included, is left alone."""
-        if isinstance(message, Key) and message.name == " ":
+        if isinstance(message, KeyPress) and message.name == " ":
             return replace(self, value=not self.value, error=""), []
         return self, []
 
@@ -268,7 +268,7 @@ class Select:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Open on enter; while open move, pick on enter or close on esc."""
-        if not isinstance(message, Key) or not self.choices:
+        if not isinstance(message, KeyPress) or not self.choices:
             return self, []
         name = message.name
         if not self.open:
@@ -366,7 +366,7 @@ class SingleList:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Move the cursor, or pick the item under it on space or enter."""
-        if not isinstance(message, Key) or not self.items:
+        if not isinstance(message, KeyPress) or not self.items:
             return self, []
         cursor = self.cursor or 0
         moved = moved_to(message.name, cursor, len(self.items))
@@ -444,7 +444,7 @@ class MultiList:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Move the cursor, or toggle the item under it on space."""
-        if not isinstance(message, Key) or not self.items:
+        if not isinstance(message, KeyPress) or not self.items:
             return self, []
         cursor = self.cursor or 0
         moved = moved_to(message.name, cursor, len(self.items))
@@ -525,7 +525,7 @@ class Cycle:
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Step to the previous or next choice on left or right, wrapping at the ends."""
         if (
-            not isinstance(message, Key)
+            not isinstance(message, KeyPress)
             or message.name not in ("left", "right")
             or not self.choices
         ):

@@ -9,7 +9,6 @@ import sys
 import tomllib
 from typing import Any
 
-import pytest
 import release
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
@@ -153,21 +152,30 @@ def test_dependent_plugins_pin_their_siblings() -> None:
         assert pinned == [f"{dist}=={version}" for dist in ("untaped", *needs)]
 
 
-#: The first release where a ``SkillAsset`` without ``source`` is a stub.
-STUBS_SINCE = Version("11.1.0")
+def test_the_examples_need_this_major_of_untaped() -> None:
+    """Each example requires ``untaped`` in a range of exactly the core's major, ``>=X,<X+1``.
 
-
-def test_the_example_plugin_leaves_out_releases_without_stub_skills() -> None:
-    # untaped-hello's skill is a stub, which 11.0 refuses (its SkillAsset needs a source).
+    The release PR raises the ranges with the version, so a major bump fails here until it does.
+    """
     core = tomllib.loads((PACKAGES / "untaped" / "pyproject.toml").read_text(encoding="utf-8"))
-    if Version(core["project"]["version"]) < STUBS_SINCE:
-        pytest.skip("no release has stub skills yet, so the floor can't rise")
-    hello = REPO_ROOT / "examples" / "untaped-hello" / "pyproject.toml"
-    project = tomllib.loads(hello.read_text(encoding="utf-8"))["project"]
-    stale = [
-        line
-        for line in project["dependencies"]
-        if (requirement := Requirement(line)).name == "untaped"
-        and requirement.specifier.contains("11.0.0")
-    ]
-    assert not stale, f"raise examples/untaped-hello's floor to untaped>=11.1: {stale}"
+    version = Version(Version(core["project"]["version"]).base_version)
+    outside = (Version(f"{version.major - 1}.999.999"), Version(f"{version.major + 1}.0.0"))
+    wrong = []
+    for path in sorted((REPO_ROOT / "examples").glob("*/pyproject.toml")):
+        project = tomllib.loads(path.read_text(encoding="utf-8"))
+        groups = project.get("dependency-groups", {})
+        required = [Requirement(line) for line in project["project"]["dependencies"]]
+        if not any(requirement.name == "untaped" for requirement in required):
+            wrong.append(f"{path.relative_to(REPO_ROOT)}: no untaped requirement")
+        lines = [
+            *project["project"]["dependencies"],
+            *(each for group in groups.values() for each in group if isinstance(each, str)),
+        ]
+        for line in lines:
+            ranged = (requirement := Requirement(line)).specifier
+            if requirement.name == "untaped" and (
+                not ranged.contains(version) or any(map(ranged.contains, outside))
+            ):
+                wrong.append(f"{path.relative_to(REPO_ROOT)}: {line}")
+    major = f"untaped>={version.major}...,<{version.major + 1}"
+    assert not wrong, f"set each to {major}:\n" + "\n".join(wrong)

@@ -60,7 +60,7 @@ from untaped.runtime.settings import section_stabilities
 from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
 from untaped.screen.components.lists import ListEditor, MapEditor
-from untaped.screen.core import Cmd, Frame, Key
+from untaped.screen.core import Cmd, Frame, KeyPress
 from untaped.screen.fit import fit_text
 from untaped.sdk._schema import FieldDescriptor, bounds_text
 from untaped.sdk.errors import ConfigError, UsageError
@@ -457,7 +457,7 @@ class SectionPane:
             if updated is self.editing and not cmds:
                 return self, []
             return replace(self, editing=updated), list(cmds)
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self, []
         row = self.row
         if self.confirm:

@@ -44,7 +44,7 @@ class Awx(Plugin):
     skill = StubSkill(
         "Ansible Automation Platform (AAP) and AWX resources and jobs: job and workflow "
         "templates, inventories, projects and schedules, launching, syncing and following "
-        "jobs, export and apply documents, linting them, and `awx test` suites that prove a "
+        "jobs, export and apply documents, linting them, and test suites that prove a "
         "playbook, role or template change. Use when the work concerns AAP, AWX, Tower or an "
         "automation controller."
     )

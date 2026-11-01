@@ -34,7 +34,7 @@ from untaped.screen.components.draw import (
 )
 from untaped.screen.components.paths import complete_paths
 from untaped.screen.components.text import EditBuffer
-from untaped.screen.core import Cmd, Frame, Key, Paste
+from untaped.screen.core import Cmd, Frame, KeyPress, Paste
 from untaped.sdk.marks import experimental
 
 __all__ = ["NumberInput", "PathInput", "SecretInput", "TextInput"]
@@ -116,13 +116,13 @@ class TextInput:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Apply an editing key or a paste, or a completion key while the list is open."""
-        if isinstance(message, Key) and self.completing:
+        if isinstance(message, KeyPress) and self.completing:
             chosen = self._complete_key(message.name)
             if chosen is not None:
                 return chosen, []
         buffer = EditBuffer(self.value, _position(self.cursor, len(self.value)))
         match message:
-            case Key(name):
+            case KeyPress(name):
                 edited = buffer.key(name)
             case Paste(text):
                 edited = buffer.paste(text)
@@ -258,7 +258,7 @@ class SecretInput:
         """Apply an editing key or a paste."""
         buffer = EditBuffer(self.value.get_secret_value(), _position(self.cursor, len(self.value)))
         match message:
-            case Key(name):
+            case KeyPress(name):
                 edited = buffer.key(name)
             case Paste(text):
                 edited = buffer.paste(text)
@@ -373,7 +373,7 @@ class NumberInput:
         allowed = _INTEGER_CHARS if self.integer else _FLOAT_CHARS
         buffer = EditBuffer(self.text, _position(self.cursor, len(self.text)))
         match message:
-            case Key(name):
+            case KeyPress(name):
                 edited = buffer.key(name, allowed=allowed)
             case Paste(text):
                 edited = buffer.paste(text, allowed=allowed)

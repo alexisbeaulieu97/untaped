@@ -26,12 +26,11 @@ class Git(Plugin):
     version = DoctorCheck(title="git version", run=version_check)
     repo_store = DoctorCheck(title="git store", run=store_check)
     skill = StubSkill(
-        "untaped's Git plumbing: the credentials and proxy that plugins supply for "
-        "Git hosts, the credential helper in untaped's worktrees, and the repo store "
-        "where other plugins keep repositories. Use when a fetch or push in an "
-        "untaped worktree asks for credentials or fails to authenticate, or when the "
-        "work concerns where untaped keeps repositories, the disk they take, or the "
-        "Git version untaped needs."
+        "untaped's Git plumbing: the credentials and proxy plugins supply for Git "
+        "hosts, the credential helper in untaped's worktrees, and the repo store where "
+        "plugins keep repositories. Use when a fetch or push in an untaped worktree "
+        "fails to authenticate, or the work concerns where untaped keeps "
+        "repositories, their disk use, or the Git version untaped needs."
     )
 
 

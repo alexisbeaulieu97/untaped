@@ -14,7 +14,7 @@ from core_test_support.screen.gallery import (
 )
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.lists import Tree, TreeRow
-from untaped.screen.core import Cancel, Frame, Key
+from untaped.screen.core import Cancel, Frame, KeyPress
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -142,17 +142,17 @@ def test_collapsing_keeps_the_cursor_on_the_closed_row() -> None:
 def test_a_key_a_leaf_cannot_use_is_left_to_the_parent(key: str) -> None:
     leaf = _tree(cursor=2)
 
-    assert leaf.update(Key(key))[0] is leaf
+    assert leaf.update(KeyPress(key))[0] is leaf
 
 
 def test_the_same_object_comes_back_when_nothing_changes() -> None:
     tree = _tree()
 
-    assert tree.update(Key("up"))[0] is tree
+    assert tree.update(KeyPress("up"))[0] is tree
     assert tree.update("text")[0] is tree
-    assert tree.update(Key("left"))[0] is tree  # a closed top row has no parent
+    assert tree.update(KeyPress("left"))[0] is tree  # a closed top row has no parent
     empty = Tree("Empty", ())
-    assert empty.update(Key("down"))[0] is empty
+    assert empty.update(KeyPress("down"))[0] is empty
     assert empty.value == ""
     assert run_solo(tree, "esc").outcome == Cancel()
 

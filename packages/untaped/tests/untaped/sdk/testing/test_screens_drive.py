@@ -12,7 +12,7 @@ from rich.text import Text
 
 from core_test_support.screen.support import make_screen
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.screen.core import Binding, Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
+from untaped.screen.core import Binding, Cancel, Cmd, Frame, KeyPress, Paste, Quit, Resize, Screen
 from untaped.sdk.marks import Experimental, function_mark
 from untaped.sdk.testing import ScreenKeys, ScreenRun, drive_screen
 from untaped.sdk.testing.screens import rendered_text
@@ -32,15 +32,15 @@ class Loaded:
 
 def _update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
     match message:
-        case Key("up"):
+        case KeyPress("up"):
             return replace(model, count=model.count + 1), []
-        case Key("l"):
+        case KeyPress("l"):
             return model, [Cmd(lambda: Loaded("from disk"), name="load")]
-        case Key("s"):
+        case KeyPress("s"):
             return model, [Cmd(lambda: Loaded("saved"), write=True, name="save")]
-        case Key("q"):
+        case KeyPress("q"):
             return model, [Cmd.send(Quit(model.count))]
-        case Key("x"):
+        case KeyPress("x"):
             return model, [Cmd.send(Cancel())]
         case Paste(text):
             return replace(model, notes=(*model.notes, f"paste:{text}")), []
@@ -116,7 +116,7 @@ def test_commands_run_synchronously_in_order() -> None:
     order: list[str] = []
 
     def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
-        if message == Key("g"):
+        if message == KeyPress("g"):
             return model, [
                 Cmd(lambda: order.append("first"), name="first"),
                 Cmd(lambda: order.append("second"), name="second"),
@@ -140,7 +140,7 @@ def test_stubbed_commands_by_name() -> None:
     ran: list[str] = []
 
     def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
-        if message == Key("l"):
+        if message == KeyPress("l"):
             return model, [
                 Cmd(lambda: ran.append("real load") or Loaded("real"), name="load"),
                 Cmd(lambda: Loaded("untouched"), name="other"),
@@ -202,7 +202,7 @@ def test_a_single_character_is_a_key_and_a_space_is_the_space_bar() -> None:
         return model, []
 
     drive_screen(_screen(update=update), ["a", "7", " "])
-    assert seen == [Key("a"), Key("7"), Key(" ")]
+    assert seen == [KeyPress("a"), KeyPress("7"), KeyPress(" ")]
 
 
 def test_paste_and_resize_keys() -> None:
@@ -236,7 +236,7 @@ def test_drive_screen_is_marked_experimental() -> None:
 
 def test_commands_start_in_the_order_they_were_issued() -> None:
     def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
-        if message == Key("g"):
+        if message == KeyPress("g"):
             return model, [
                 Cmd(lambda: None, write=True, name="w"),
                 Cmd(lambda: None, name="b"),
@@ -250,7 +250,7 @@ def test_a_write_command_completes_before_the_run_returns() -> None:
     done: list[str] = []
 
     def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
-        if message == Key("s"):
+        if message == KeyPress("s"):
             return model, [
                 Cmd(lambda: done.append("written"), write=True, name="write"),
                 Cmd.send(Quit("quit while writing")),
@@ -273,7 +273,7 @@ def test_commands_see_the_callers_context() -> None:
     var: contextvars.ContextVar[str] = contextvars.ContextVar("drive_var", default="unset")
 
     def update(model: Counter, message: object) -> tuple[Counter, list[Cmd]]:
-        if message == Key("l"):
+        if message == KeyPress("l"):
             return model, [Cmd(lambda: Loaded(var.get()), name="read")]
         if isinstance(message, Loaded):
             return replace(model, notes=(message.text,)), []

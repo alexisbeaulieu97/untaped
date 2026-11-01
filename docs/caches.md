@@ -270,8 +270,10 @@ version, and the layouts its plugins' stores use. Each target is a `RefTarget`
 one per item, `{"plugin": "git", "store": "store", "item":
 "github.com/acme/pay"}`. Who the reference is for is a `RefHolder`
 (experimental), written as `{"kind": "install", "name": "3f9a1c2e8b7d"}` in
-`refs/install-3f9a1c2e8b7d.json`; the install is the only holder in 11.1, and
-it holds layouts. An install's reference also lists the plugins it composes,
+`refs/install-3f9a1c2e8b7d.json`. An install holds layouts, and a project
+holds the items it uses
+([Holding a plugin's items](./projects.md#holding-a-plugins-items)). An
+install's reference also lists the plugins it composes,
 `"plugins": ["acme", "git"]`, whose `plugins/<name>/` folders it uses; the
 list is always written, empty included, and a file without it doesn't say, so
 `setup prune` keeps every folder. Each start of an install compares its own

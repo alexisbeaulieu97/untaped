@@ -14,7 +14,7 @@ from untaped.sdk import Plugin, StubSkill
 from untaped_hello.commands.greet import DefaultGreeting, Greet
 from untaped_hello.commands.motd import Motd
 from untaped_hello.commands.say import Say
-from untaped_hello.settings import MOTD, HelloSettings
+from untaped_hello.settings import COPIES, MOTD, HelloSettings
 
 
 class Hello(Plugin):
@@ -24,8 +24,9 @@ class Hello(Plugin):
     commands = (Greet, Say, Motd)
     records = (DefaultGreeting,)
     motd = MOTD
+    copies = COPIES
     skill = StubSkill(
-        "Uses the example hello plugin through `untaped hello`. "
+        "Greetings and a message of the day from the example hello plugin. "
         "Use when demonstrating how an untaped plugin works."
     )
 

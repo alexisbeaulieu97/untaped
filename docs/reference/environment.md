@@ -12,9 +12,9 @@ Every environment variable `untaped` reads or sets.
 | `UNTAPED_DIAGNOSTICS` | `json` makes stderr diagnostics (errors, warnings, hints, info) JSON Lines for every format; `text` keeps text lines even with `--format json`, `yaml` or `pipe` (from the flag, `UNTAPED_FORMAT` or `untaped.ui.format`), which otherwise switch to JSON. Other values are ignored. See [stderr diagnostics](../scripting.md#stderr-diagnostics). |
 | `UNTAPED_CONFIG_LOCK_TIMEOUT` | Seconds to wait for the `config.yml` lock before a write fails. A non-negative number; default `5`. |
 | `UNTAPED_<SECTION>__<FIELD>` | Overrides one profile setting for this process, for example `UNTAPED_GITHUB__TOKEN` or `UNTAPED_UNTAPED__HTTP__TIMEOUT_SECONDS`. Nested fields add another `__`: `UNTAPED_GITHUB__SWEEP__PARALLEL`. A hyphen in a plugin name is an underscore: `UNTAPED_ACME_TOOLS__TOKEN`. |
-| `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when no override variable, stored login or old `github.token` setting answers (read as the GitHub CLI reads them). See [Tokens](../configuration.md#tokens). |
-| `JIRA_API_TOKEN` | Jira token used when no override variable, stored login or old `jira.token` setting answers (read as `jira-cli` reads it). |
-| `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when no override variable, stored login or old `awx.token` setting answers (read as the `ansible.controller` and `awx.awx` collections read them). |
+| `GH_TOKEN`, then `GITHUB_TOKEN` | GitHub token used when no override variable or stored login answers (read as the GitHub CLI reads them). See [Tokens](../configuration.md#tokens). |
+| `JIRA_API_TOKEN` | Jira token used when no override variable or stored login answers (read as `jira-cli` reads it). |
+| `CONTROLLER_OAUTH_TOKEN`, then `TOWER_OAUTH_TOKEN`, then `AAP_TOKEN` | AWX/AAP token used when no override variable or stored login answers (read as the `ansible.controller` and `awx.awx` collections read them). |
 
 A setting's source order is in
 [File and layout](../configuration.md#file-and-layout). The

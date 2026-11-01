@@ -1,9 +1,8 @@
 """Import boundary of a plugin: core only through the SDK, other plugins only through ``api``.
 
 A plugin's own source may import ``untaped`` only as one of the SDK modules
-(``untaped.sdk``, ``untaped.sdk.contracts``, ``untaped.sdk.testing`` and
-``untaped.sdk.testing.git``) or as ``untaped.core.api`` (the core commands a
-hint names), and another plugin only as that
+(``untaped.sdk`` and its groups, :data:`SDK_MODULES`) or as
+``untaped.core.api`` (the core commands a hint names), and another plugin only as that
 plugin's ``api`` module, and only when its distribution requires the
 other's (by default: the ``requires`` of its ``untaped.installed_plugin``
 record). Which packages are plugins

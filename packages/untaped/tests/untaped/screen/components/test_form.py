@@ -22,7 +22,7 @@ from untaped.screen.components.fields import Field
 from untaped.screen.components.form import Form, Submitted
 from untaped.screen.components.inputs import NumberInput, SecretInput, TextInput
 from untaped.screen.components.tabs import Tab, Tabs
-from untaped.screen.core import Activate, Cancel, Frame, Key, NextField, PrevField, Submit
+from untaped.screen.core import Activate, Cancel, Frame, KeyPress, NextField, PrevField, Submit
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -139,10 +139,10 @@ def test_enter_opens_a_select_before_it_submits() -> None:
 def test_a_key_nobody_uses_leaves_the_same_form() -> None:
     form = _form()
 
-    assert form.update(Key("ctrl-r"))[0] is form
+    assert form.update(KeyPress("ctrl-r"))[0] is form
     assert form.update("text")[0] is form
-    assert form.update(Key("up"))[0] is form
-    assert Form(()).update(Key("a"))[0].fields == ()
+    assert form.update(KeyPress("up"))[0] is form
+    assert Form(()).update(KeyPress("a"))[0].fields == ()
 
 
 # --- validation and submit ---------------------------------------------------------

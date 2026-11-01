@@ -48,9 +48,9 @@ uv lock --check                                 # lock file is current
   experimental `screen/` kit:
   - `sdk/` is what a plugin may import. Its groups are subpackages
     (`storage/`, `contracts/`, `network/`, `health/`, `prompt/`, `testing/`,
-    and the `git` and `projects` modules). Today a plugin imports the names
-    `untaped.sdk` exports, `untaped.sdk.contracts` and `untaped.sdk.testing`;
-    the other groups become importable as they list names, and a
+    and the `git` and `projects` modules). A plugin imports `untaped.sdk`, its
+    groups and `untaped.core.api`
+    ([SDK stability](docs/reference/conventions.md#sdk-stability)), and a
     `_`-prefixed module or name is never public. `sdk/` is moving off
     `runtime/` and `core/`: `tests/repo/test_layout.py` names each SDK module
     that still imports them, and the list only shrinks.
@@ -89,9 +89,9 @@ uv lock --check                                 # lock file is current
 
 ## Adding a first-party plugin
 
-A first-party plugin is treated like any third-party plugin: it uses only
-`untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing` and other plugins'
-declared `api` modules, and gets no special treatment in how it is loaded or
+A first-party plugin is treated like any third-party plugin: it imports only
+the modules [SDK stability](docs/reference/conventions.md#sdk-stability)
+lists and other plugins' declared `api` modules, and gets no special treatment in how it is loaded or
 what it may use, because any of them may move to its own repository. It
 follows the [plugin rules](docs/reference/conventions.md) and uses this layout:
 

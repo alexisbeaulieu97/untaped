@@ -29,7 +29,7 @@ from untaped.core.commands.setup_write import Candidate
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import active_settings_layout, load_settings_section
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.screen.core import Key, Paste, Quit, Screen
+from untaped.screen.core import KeyPress, Paste, Quit, Screen
 from untaped.screen.runtime import Runtime
 from untaped.sdk import Credential, CredentialKey, NeedsSetup, OnlineCheck, Plugin
 from untaped.sdk.errors import ConfigError
@@ -198,7 +198,7 @@ def _runtime() -> tuple[Runtime[SetupModel, SetupResult], FakeHost]:
 
 def _send(runtime: Runtime[SetupModel, SetupResult], host: FakeHost, keys: list[ScreenKey]) -> None:
     for key in keys:
-        runtime.send(key if isinstance(key, Paste) else Key(key))
+        runtime.send(key if isinstance(key, Paste) else KeyPress(key))
         host.deliver_all()
 
 

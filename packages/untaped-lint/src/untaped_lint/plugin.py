@@ -25,12 +25,11 @@ class LintPlugin(Plugin):
     records = (Tree,)
     ignore_ids = DoctorCheck(title="lint.ignore ids", run=ignore_ids_check)
     skill = StubSkill(
-        "untaped lint: a repository's conventions as rules (its own, named in "
+        "A repository's conventions as rules (its own, named in "
         "`.untaped/lint.yml`, each plugin's, and the checks every untaped plugin "
         "passes) and the findings they report, each with a rule id. Use when the work "
-        "is in a repository with `.untaped/lint.yml` or untaped plugins, when "
-        "`untaped lint` fails, or when the user explains a convention the code should "
-        "keep."
+        "is in a repository with `.untaped/lint.yml` or untaped plugins, when a lint "
+        "run fails, or when the user explains a convention the code should keep."
     )
 
 

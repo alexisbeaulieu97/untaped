@@ -22,7 +22,7 @@ from untaped.screen.core import (
     CmdError,
     Help,
     Interrupt,
-    Key,
+    KeyPress,
     NextField,
     Paste,
     PrevField,
@@ -178,12 +178,12 @@ def test_init_commands_are_issued_by_start() -> None:
 
 def test_command_result_is_delivered() -> None:
     def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("r"):
+        if message == KeyPress("r"):
             return model, [Cmd(lambda: Got("loaded"))]
         return logged(model, message)
 
     runtime, host = _runtime(Probe(handler))
-    runtime.send(Key("r"))
+    runtime.send(KeyPress("r"))
     assert runtime.model.log == ()
     host.deliver_all()
     assert runtime.model.log == (Got("loaded"),)
@@ -300,7 +300,7 @@ def test_a_write_issued_in_the_same_turn_as_quit_still_runs() -> None:
     ran: list[str] = []
 
     def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("s"):
+        if message == KeyPress("s"):
             return model, [
                 Cmd.send(Quit("saved")),
                 _cmd("write", lambda: ran.append("write")),
@@ -308,7 +308,7 @@ def test_a_write_issued_in_the_same_turn_as_quit_still_runs() -> None:
         return None
 
     runtime, host = _runtime(Probe(handler))
-    runtime.send(Key("s"))
+    runtime.send(KeyPress("s"))
     assert host.finishes == 0
     host.deliver_all()
     assert (ran, host.finishes) == (["write"], 1)
@@ -531,7 +531,7 @@ def test_update_runs_on_the_loop_thread_only() -> None:
     )
     runtime, host = _runtime(probe, FakeHost(threads=True))
     host.deliver(3)
-    runtime.send(Key("x"))
+    runtime.send(KeyPress("x"))
     host.join()
     assert set(probe.threads) == {threading.current_thread().name}
 
@@ -573,7 +573,7 @@ def test_messages_after_the_outcome_are_dropped_except_resize() -> None:
     probe = Probe(lambda model, message: logged(model, message))
     runtime, _host = _runtime(probe, FakeHost(threads=True))
     runtime.send(Cancel())
-    runtime.send(Key("x"))
+    runtime.send(KeyPress("x"))
     runtime.send(Resize(10, 5))
     assert probe.seen == []
     assert runtime.size == (10, 5)
@@ -582,8 +582,8 @@ def test_messages_after_the_outcome_are_dropped_except_resize() -> None:
 def test_unhandled_back_cancels() -> None:
     probe = Probe()
     runtime, host = _runtime(probe)
-    runtime.send(Key("esc"))
-    assert probe.seen == [Key("esc"), Back()]
+    runtime.send(KeyPress("esc"))
+    assert probe.seen == [KeyPress("esc"), Back()]
     assert runtime.outcome == Cancel(interrupted=False)
     assert host.finishes == 1
 
@@ -591,8 +591,8 @@ def test_unhandled_back_cancels() -> None:
 def test_unhandled_interrupt_cancels_interrupted() -> None:
     probe = Probe()
     runtime, _host = _runtime(probe)
-    runtime.send(Key("ctrl-c"))
-    assert probe.seen == [Key("ctrl-c"), Interrupt()]
+    runtime.send(KeyPress("ctrl-c"))
+    assert probe.seen == [KeyPress("ctrl-c"), Interrupt()]
     assert runtime.outcome == Cancel(interrupted=True)
 
 
@@ -603,7 +603,7 @@ def test_a_handled_back_does_not_cancel() -> None:
         return None
 
     runtime, host = _runtime(Probe(handler))
-    runtime.send(Key("esc"))
+    runtime.send(KeyPress("esc"))
     assert runtime.model.flag
     assert runtime.outcome is None
     assert host.finishes == 0
@@ -614,7 +614,7 @@ def test_a_back_answered_with_a_command_does_not_cancel() -> None:
         return (model, [Cmd.send(Paste("closed"))]) if isinstance(message, Back) else None
 
     runtime, _host = _runtime(Probe(handler))
-    runtime.send(Key("esc"))
+    runtime.send(KeyPress("esc"))
     assert runtime.outcome is None
 
 
@@ -625,7 +625,13 @@ def test_dispatch_order_is_component_then_binding_then_shared() -> None:
 
     def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
         # "x" is consumed by the focused component, which also takes "enter" before Activate.
-        if message in (Key("x"), Key("enter"), BindingMessage("x"), BindingMessage("y"), Submit()):
+        if message in (
+            KeyPress("x"),
+            KeyPress("enter"),
+            BindingMessage("x"),
+            BindingMessage("y"),
+            Submit(),
+        ):
             return logged(model, message)
         return None
 
@@ -635,17 +641,17 @@ def test_dispatch_order_is_component_then_binding_then_shared() -> None:
     )
     probe = Probe(handler, keys=keys)
     runtime, _host = _runtime(probe)
-    runtime.send(Key("x"))  # component handled it: the binding never fires
-    runtime.send(Key("y"))  # unhandled by the component: the binding fires
-    runtime.send(Key("enter"))  # the component took the key: no Activate
-    runtime.send(Key("ctrl-s"))  # nothing before it took ctrl-s: Submit
-    assert runtime.model.log == (Key("x"), BindingMessage("y"), Key("enter"), Submit())
+    runtime.send(KeyPress("x"))  # component handled it: the binding never fires
+    runtime.send(KeyPress("y"))  # unhandled by the component: the binding fires
+    runtime.send(KeyPress("enter"))  # the component took the key: no Activate
+    runtime.send(KeyPress("ctrl-s"))  # nothing before it took ctrl-s: Submit
+    assert runtime.model.log == (KeyPress("x"), BindingMessage("y"), KeyPress("enter"), Submit())
     assert probe.seen == [
-        Key("x"),
-        Key("y"),
+        KeyPress("x"),
+        KeyPress("y"),
         BindingMessage("y"),
-        Key("enter"),
-        Key("ctrl-s"),
+        KeyPress("enter"),
+        KeyPress("ctrl-s"),
         Submit(),
     ]
 
@@ -666,14 +672,14 @@ def test_each_shared_key_sends_its_message_after_the_component_passed(
 ) -> None:
     probe = Probe()
     runtime, _host = _runtime(probe)
-    runtime.send(Key(key))
-    assert probe.seen[:2] == [Key(key), message]
+    runtime.send(KeyPress(key))
+    assert probe.seen[:2] == [KeyPress(key), message]
 
 
 def test_an_unhandled_tab_or_enter_is_ignored() -> None:
     runtime, host = _runtime(Probe())
     for key in ("tab", "shift-tab", "enter", "ctrl-s", "up", "z"):
-        runtime.send(Key(key))
+        runtime.send(KeyPress(key))
     assert runtime.outcome is None
     assert host.finishes == 0
 
@@ -682,38 +688,38 @@ def test_a_binding_with_a_false_when_is_inactive_and_not_in_the_footer() -> None
     keys = (Binding("ctrl-r", "refresh", Paste("refresh"), when=lambda model: model.flag),)
 
     def handler(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        return (replace(model, flag=True), []) if message == Key("f") else None
+        return (replace(model, flag=True), []) if message == KeyPress("f") else None
 
     probe = Probe(handler, keys=keys)
     runtime, _host = _runtime(probe)
     assert "refresh" not in _frame(runtime)
-    runtime.send(Key("ctrl-r"))
+    runtime.send(KeyPress("ctrl-r"))
     assert Paste("refresh") not in probe.seen
-    runtime.send(Key("f"))  # the model now makes the binding active
+    runtime.send(KeyPress("f"))  # the model now makes the binding active
     assert "ctrl-r refresh" in _frame(runtime)
-    runtime.send(Key("ctrl-r"))
+    runtime.send(KeyPress("ctrl-r"))
     assert Paste("refresh") in probe.seen
 
 
 def test_a_footer_only_binding_is_not_dispatched() -> None:
     probe = Probe(keys=(Binding("up", "move", None),))
     runtime, _host = _runtime(probe)
-    runtime.send(Key("up"))
-    assert probe.seen == [Key("up")]
+    runtime.send(KeyPress("up"))
+    assert probe.seen == [KeyPress("up")]
     assert "up move" in _frame(runtime)
 
 
 def test_question_mark_opens_help_only_when_unhandled() -> None:
     def typing(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        return logged(model, message) if message == Key("?") else None
+        return logged(model, message) if message == KeyPress("?") else None
 
     typed, _host = _runtime(Probe(typing))
-    typed.send(Key("?"))
+    typed.send(KeyPress("?"))
     assert not typed.help_open
-    assert typed.model.log == (Key("?"),)
+    assert typed.model.log == (KeyPress("?"),)
 
     free, _host = _runtime(Probe())
-    free.send(Key("?"))
+    free.send(KeyPress("?"))
     assert free.help_open
 
 
@@ -724,7 +730,7 @@ def test_help_overlay_lists_every_active_binding_and_shared_key() -> None:
         Binding("ctrl-u", "hidden", Paste("u"), when=lambda model: False),
     )
     runtime, _host = _runtime(Probe(keys=keys))
-    runtime.send(Key("?"))
+    runtime.send(KeyPress("?"))
     frame = _frame(runtime)
     for key, label in (("ctrl-r", "refresh"), ("up", "move")):
         assert any(key in line and label in line for line in frame.splitlines())
@@ -737,11 +743,11 @@ def test_help_overlay_lists_every_active_binding_and_shared_key() -> None:
 def test_help_overlay_closes_and_swallows_other_keys(closer: str) -> None:
     probe = Probe()
     runtime, _host = _runtime(probe)
-    runtime.send(Key("?"))
-    runtime.send(Key("x"))
+    runtime.send(KeyPress("?"))
+    runtime.send(KeyPress("x"))
     runtime.send(Paste("pasted"))
-    assert probe.seen == [Key("?"), Help()]
-    runtime.send(Key(closer))
+    assert probe.seen == [KeyPress("?"), Help()]
+    runtime.send(KeyPress(closer))
     assert not runtime.help_open
     assert runtime.outcome is None
     assert "Keys" not in _frame(runtime)
@@ -750,9 +756,9 @@ def test_help_overlay_closes_and_swallows_other_keys(closer: str) -> None:
 def test_ctrl_c_in_the_help_overlay_closes_it_and_cancels_when_unhandled() -> None:
     probe = Probe()
     runtime, _host = _runtime(probe)
-    runtime.send(Key("?"))
-    runtime.send(Key("ctrl-c"))
-    assert probe.seen == [Key("?"), Help(), Interrupt()]
+    runtime.send(KeyPress("?"))
+    runtime.send(KeyPress("ctrl-c"))
+    assert probe.seen == [KeyPress("?"), Help(), Interrupt()]
     assert runtime.outcome == Cancel(interrupted=True)
 
 
@@ -765,8 +771,8 @@ def test_ctrl_c_in_the_help_overlay_reaches_a_screen_that_handles_interrupt() ->
         return None
 
     runtime, _host = _runtime(Probe(handler))
-    runtime.send(Key("?"))
-    runtime.send(Key("ctrl-c"))
+    runtime.send(KeyPress("?"))
+    runtime.send(KeyPress("ctrl-c"))
     assert runtime.model.flag
     assert not runtime.help_open
     assert runtime.outcome is None

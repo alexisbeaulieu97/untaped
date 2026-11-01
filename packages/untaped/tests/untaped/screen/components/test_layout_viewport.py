@@ -6,7 +6,7 @@ import pytest
 from rich.text import Text
 
 from untaped.screen.components.layout import Viewport, window, windowed
-from untaped.screen.core import Key, Paste
+from untaped.screen.core import KeyPress, Paste
 from untaped.sdk.marks import Experimental, function_mark
 from untaped.sdk.testing.screens import rendered_text
 
@@ -72,13 +72,13 @@ def test_scrolling_moves_by_rows_and_stays_inside_the_content() -> None:
 def test_keys_scroll_and_anything_else_is_the_same_object() -> None:
     viewport = Viewport(30, 5)
 
-    assert viewport.update(Key("down"), 10).offset == 6
-    assert viewport.update(Key("up"), 10).offset == 4
-    assert viewport.update(Key("home"), 10).offset == 0
-    assert viewport.update(Key("end"), 10).offset == 20
-    for message in (Key("a"), Key("enter"), Paste("x"), "text"):
+    assert viewport.update(KeyPress("down"), 10).offset == 6
+    assert viewport.update(KeyPress("up"), 10).offset == 4
+    assert viewport.update(KeyPress("home"), 10).offset == 0
+    assert viewport.update(KeyPress("end"), 10).offset == 20
+    for message in (KeyPress("a"), KeyPress("enter"), Paste("x"), "text"):
         assert viewport.update(message, 10) is viewport
-    assert Viewport(30).update(Key("up"), 10) == Viewport(30)  # at the top: nothing to do
+    assert Viewport(30).update(KeyPress("up"), 10) == Viewport(30)  # at the top: nothing to do
 
 
 def test_window_slices_a_long_list_around_the_cursor() -> None:
