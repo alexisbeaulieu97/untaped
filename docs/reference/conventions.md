@@ -341,10 +341,10 @@ as typed rows in a `StateRows` its plugin class holds
 file's stamp and lock, so never read or write the state file directly.
 
 A file in the plugin's folder an older release could not open is a
-[store](../caches.md#stores), a `Dir(layout=N)` opened through its `open()`;
-files people commit under `.untaped/` go through [the handle's
-`committed`](../projects.md#a-plugins-files-in-untaped), and items projects
-hold go in an [item store](../projects.md#holding-a-plugins-items).
+[store](../caches.md#stores), a `Dir(layout=N)` opened through its `open()`,
+and the setting locating shared data is [`HomeOnly()`](../projects.md#settings);
+files people commit under `.untaped/` go through [the handle's `committed`](../projects.md#a-plugins-files-in-untaped),
+and items projects hold go in an [item store](../projects.md#holding-a-plugins-items).
 
 ## Settings
 

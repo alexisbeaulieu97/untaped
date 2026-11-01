@@ -7,8 +7,9 @@ in order, the variable's names first and the later name winning.
 profile `--profile` names, else the base, never in what `UNTAPED_PROFILE`
 picks; `--profile a,b` on a write exits 2 with `details.profiles`. `profile
 current` prints the pick comma-joined (or `default`) and its `--format json`
-is `{name, profiles: [{name, source}]}`; `profile list` and `profile show`
-say `selected` instead of `active`; provenance labels the base `base`.
+is `{name, profiles: [{name, source}], skipped}`; `profile list` and
+`profile show` say `selected` instead of `active`; provenance labels the base
+`base`.
 Doctor's fix lines name the last picked profile, so a fix lands where the run
 reads it. Profile names are letters, digits, `_`, `.` and `-`, not starting
 with `.` or `-`; `profile create` and `rename` refuse others (exit 2). No

@@ -17,7 +17,7 @@ command runs and needs at least one row, so use it on a read command or add
 | `auth status` | `untaped.token_source` (one row per credential for this run: `key`, `step` `variable`, `stored` or `env`, `source`, `id`, or `refusal`) |
 | `profile list` | `untaped.profile` (`name`, `selected`, `keys`) |
 | `profile show` | `untaped.profile_view` (`name`, `selected`, `raw`, `data`: the settings, secrets `***` unless `--show-secrets`; `yaml` by default) |
-| `profile current` | `untaped.profile_pick` (`name`: the pick comma-joined, else `default`; `profiles`, each `name` and `source` `flag` or `env`; `raw` by default) |
+| `profile current` | `untaped.profile_pick` (`name`: the pick comma-joined, else `default`; `profiles`, each `name` and `source` `project`, `env` or `flag`; `skipped`, names a project picks that the home lacks; `raw` by default) |
 | `profile create`, `profile delete`, `profile rename` | `untaped.profile_outcome` |
 | `project list` | `untaped.recorded_project` (`name`, `path`, `state` `present`, `unreadable`, `missing` or `unknown`, `current`, `id`, `holds` (items per `plugin.store`), `detail`; experimental) |
 | `project init` | `untaped.project_outcome` (`name`, `path`, `id`, `action` `created`, `unchanged`, `recorded`, `repaired` or `new id`, `detail`; experimental) |
