@@ -6,16 +6,13 @@ the helper rather than your own version.
 
 A plugin also follows these rules:
 
-- A plugin imports only `untaped.sdk`, [`untaped.sdk.contracts`](../contracts.md)
-  and `untaped.sdk.testing` from `untaped`, and another plugin only through its
-  `api` module, declared (see
-  [Depending on another plugin](#depending-on-another-plugin)).
+- A plugin imports the `untaped` modules [SDK stability](#sdk-stability)
+  lists, and another plugin only through its declared `api` module
+  ([Depending on another plugin](#depending-on-another-plugin)).
 - A plugin reads and writes only its own config section, state, skills and doctor checks.
 - `api.py`, `settings.py` and `records.py` never import `commands/`, directly
-  or through another module, so importing them never loads a command. The
-  plugin's own logic may import its commands (a hint spells one). Folders
-  such as `domain/`, `application/` and `infrastructure/` are optional; a
-  plugin that keeps them resolves settings in none of them.
+  or not; the plugin's own logic may (a hint spells a command). Optional
+  `domain/`, `application/` and `infrastructure/` folders resolve no settings.
 - Errors raise with a category and a system (see
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
 - Commands that ask before they write declare `confirm: Confirm`, which
@@ -392,9 +389,12 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 
-`untaped.sdk`, `untaped.sdk.contracts` and `untaped.sdk.testing` are stable within a
-major release: a minor or patch release adds to them and never breaks them.
-Plugins import only these; other `untaped` modules are internal.
-A deprecated SDK attribute or callable is removed at the major its warning
-names ([Deprecating something](deprecation.md)).
-For what users can rely on, see [Versioning](../versioning.md).
+A plugin imports from `untaped` only `untaped.sdk`, its groups
+([`untaped.sdk.contracts`](../contracts.md), `untaped.sdk.git`,
+`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.projects`,
+`untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`,
+`untaped.sdk.testing.git`) and `untaped.core.api`, core's commands for a hint
+(`Login.spelled()`); `import-boundary` flags any other. The SDK modules are
+stable within a major (a minor adds, never breaks); `untaped.core.api`'s classes
+last as long as their commands; a `_` name is never public. A deprecated SDK name
+goes at the major its warning names ([Deprecating something](deprecation.md), [Versioning](../versioning.md)).
