@@ -17,7 +17,7 @@ from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components import lists
 from untaped.screen.components.choices import ListItem
 from untaped.screen.components.lists import SearchList
-from untaped.screen.core import Cancel, Frame, Key, Paste
+from untaped.screen.core import Cancel, Frame, KeyPress, Paste
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -246,25 +246,25 @@ def test_esc_clears_a_non_empty_query_and_then_backs_out() -> None:
 def test_a_key_that_changes_nothing_returns_the_same_object(key: str) -> None:
     component = SearchList("R", REPOS)
 
-    assert component.update(Key(key))[0] is component
+    assert component.update(KeyPress(key))[0] is component
 
 
 def test_other_messages_and_motion_at_the_edges_return_the_same_object() -> None:
     component = SearchList("R", REPOS)
 
     assert component.update("hello")[0] is component
-    assert component.update(Key("up"))[0] is component
-    assert component.update(Key("ctrl-u"))[0] is component  # an empty query stays empty
+    assert component.update(KeyPress("up"))[0] is component
+    assert component.update(KeyPress("ctrl-u"))[0] is component  # an empty query stays empty
     empty = SearchList("R", ())
-    assert empty.update(Key("down"))[0] is empty
-    assert empty.update(Key("enter"))[0] is empty
+    assert empty.update(KeyPress("down"))[0] is empty
+    assert empty.update(KeyPress("enter"))[0] is empty
 
 
 def test_an_edit_clears_a_stale_error() -> None:
     component = SearchList("R", REPOS).with_error("Pick one.")
 
-    assert component.update(Key("a"))[0].error == ""
-    assert component.update(Key("down"))[0].error == "Pick one."
+    assert component.update(KeyPress("a"))[0].error == ""
+    assert component.update(KeyPress("down"))[0].error == "Pick one."
     assert component.validate() == ""
 
 

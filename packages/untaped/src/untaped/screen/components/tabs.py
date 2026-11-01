@@ -22,7 +22,7 @@ from rich.text import Text
 from untaped.screen.components.box import field_box
 from untaped.screen.components.draw import inner_width, role_style, unboxed
 from untaped.screen.components.fields import Field
-from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
+from untaped.screen.core import Cmd, Frame, KeyPress, NextField, PrevField
 from untaped.screen.fit import fit_text
 from untaped.sdk.marks import experimental
 
@@ -94,7 +94,7 @@ class Tabs:
         """
         fields = self.current.fields
         if self.focus == 0:
-            if isinstance(message, Key) and message.name in ("left", "right"):
+            if isinstance(message, KeyPress) and message.name in ("left", "right"):
                 return self._switched(1 if message.name == "right" else -1), []
             if isinstance(message, NextField) and fields:
                 return replace(self, focus=1), []

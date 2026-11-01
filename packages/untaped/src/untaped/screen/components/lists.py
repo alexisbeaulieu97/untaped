@@ -44,7 +44,7 @@ from untaped.screen.components.draw import (
 )
 from untaped.screen.components.layout import window
 from untaped.screen.components.text import EditBuffer
-from untaped.screen.core import Cmd, Frame, Key, NextField, Paste, PrevField
+from untaped.screen.core import Cmd, Frame, KeyPress, NextField, Paste, PrevField
 from untaped.screen.fit import fit_text
 from untaped.screen.fuzzy import Ranked, rank
 from untaped.sdk.marks import experimental
@@ -159,7 +159,7 @@ class SearchList:
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Edit the query, move the cursor, or toggle or pick the row under it."""
         match message:
-            case Key(name):
+            case KeyPress(name):
                 return self._key(name), []
             case Paste(text):
                 return self._edited(EditBuffer(self.query, len(self.query)).paste(text)), []
@@ -346,7 +346,7 @@ class Tree:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Move the cursor, expand or collapse the row under it, or step to its parent."""
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self, []
         visible = self._on_screen
         if not visible:
@@ -471,7 +471,7 @@ class Tags:
         """Open the menu, remove the last badge, or (with the menu open) drive the menu."""
         if self.menu is not None:
             return self._in_menu(self.menu, message)
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self, []
         if message.name == "enter" and self._available():
             return replace(self, menu_open=True, menu=self._fresh_menu()), []
@@ -497,7 +497,7 @@ class Tags:
                     [],
                 )
             return replace(self, menu=updated), []
-        if isinstance(message, Key):
+        if isinstance(message, KeyPress):
             if message.name == "esc":
                 return replace(self, menu_open=False, menu=None), []
             if message.name == "enter":
@@ -613,7 +613,7 @@ class ListEditor:
         """Edit the open item, carry the picked-up one, or act on the row under the cursor."""
         if self.editing is not None:
             return self._edit(self.editing, message), []
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self, []
         if self.moving:
             return self._move(message.name), []
@@ -621,11 +621,11 @@ class ListEditor:
 
     def _edit(self, buffer: EditBuffer, message: object) -> Self:
         match message:
-            case Key("enter"):
+            case KeyPress("enter"):
                 return self._kept(buffer.text)
-            case Key("esc"):
+            case KeyPress("esc"):
                 return replace(self, editing=None, error="")
-            case Key(name):
+            case KeyPress(name):
                 edited = buffer.key(name)
             case Paste(text) if self.cursor == len(self.items) and "\n" in text.strip():
                 before, after = buffer.text[: buffer.cursor], buffer.text[buffer.cursor :]
@@ -786,7 +786,7 @@ class MapEditor:
         """Edit the open value, or act on the name under the cursor."""
         if self.editing is not None:
             return self._edit(self.editing, message), []
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self, []
         at, count = self.cursor, len(self.entries)
         moved = moved_to(message.name, at, count + 1)
@@ -804,11 +804,11 @@ class MapEditor:
 
     def _edit(self, buffer: EditBuffer, message: object) -> Self:
         match message:
-            case Key("enter"):
+            case KeyPress("enter"):
                 return self._kept(buffer.text)
-            case Key("esc"):
+            case KeyPress("esc"):
                 return replace(self, editing=None)
-            case Key(name):
+            case KeyPress(name):
                 edited = buffer.key(name)
             case Paste(text):
                 edited = buffer.paste(text)

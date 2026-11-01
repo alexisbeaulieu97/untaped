@@ -20,8 +20,7 @@ returns what the screen quits with:
 from dataclasses import dataclass, replace
 
 from rich.text import Text
-from untaped.screen.core import Key
-from untaped.sdk import Cmd, Frame, Quit, Screen
+from untaped.sdk import Cmd, Frame, KeyPress, Quit, Screen
 
 
 @dataclass(frozen=True)
@@ -31,9 +30,9 @@ class Model:
 
 def update(model: Model, message: object) -> tuple[Model, list[Cmd]]:
     match message:
-        case Key("enter"):
+        case KeyPress("enter"):
             return model, [Cmd.send(Quit(model.name))]
-        case Key(name) if len(name) == 1:
+        case KeyPress(name) if len(name) == 1:
             return replace(model, name=model.name + name), []
     return model, []
 
@@ -74,7 +73,7 @@ the same.
 
 ## Messages and keys
 
-`update` receives `Key(name)` (a printable character is its own name, a space
+`update` receives `KeyPress(name)` (a printable character is its own name, a space
 is `" "`; any other key is one of `up`, `down`, `left`, `right`, `home`, `end`,
 `tab`, `shift-tab`, `enter`, `esc`, `backspace`, `delete`, `ctrl-u`, `ctrl-w`,
 `ctrl-s`, `ctrl-c`, `ctrl-d` or `ctrl-r`, the names a `Binding` and `drive_screen` also

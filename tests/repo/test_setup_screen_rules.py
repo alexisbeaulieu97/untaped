@@ -22,7 +22,7 @@ from untaped.sdk._schema import walk_settings
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
 SCREEN = ("core/commands/setup_screen.py", "core/commands/setup_sections.py")
-#: The setup form, and the state behind it, which reads 11.0's token settings by name.
+#: The setup form, and the state behind it.
 CONNECTION = "core/commands/setup_connection.py"
 CONNECTION_KEYS = "core/commands/setup_state.py"
 ALLOWED_CONFIG = frozenset(
@@ -52,10 +52,6 @@ FILE_WRITERS = frozenset(
 ALLOWED_NAMES: dict[str, dict[str, str]] = {
     CONNECTION: {
         "url": "an acronym field labels write upper case (`Base URL`), not a setting's name",
-    },
-    CONNECTION_KEYS: {
-        name: "11.0's token settings, read from the file until 12.0 removes them"
-        for name in ("token", "token_command")
     },
 }
 

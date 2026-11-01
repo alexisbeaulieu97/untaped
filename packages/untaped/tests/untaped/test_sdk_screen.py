@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from rich.console import Group
 from rich.text import Text
 
-from untaped.screen.core import Key
+from untaped.screen.core import KeyPress
 from untaped.sdk import (
     Binding,
     Button,
@@ -49,7 +49,7 @@ class Toggle:
 
 
 def _update(model: Model, message: object) -> tuple[Model, Sequence[Cmd]]:
-    if isinstance(message, Key):
+    if isinstance(message, KeyPress):
         if message.name == "enter":
             return model, [Cmd.send(Quit(model.name.upper() if model.shout else model.name))]
         if len(message.name) == 1:

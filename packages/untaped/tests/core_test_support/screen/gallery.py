@@ -19,7 +19,7 @@ from untaped.screen.core import (
     Cmd,
     Frame,
     Interrupt,
-    Key,
+    KeyPress,
     NextField,
     Paste,
     PrevField,
@@ -55,7 +55,7 @@ def solo(component: Field, *, focused: bool = True, width: int | None = None) ->
         if field is model.field and not cmds:
             if isinstance(message, Activate | Submit | NextField | PrevField):
                 return replace(model, unhandled=(*model.unhandled, message)), []
-            if isinstance(message, Key | Paste | Resize | Back | Interrupt):
+            if isinstance(message, KeyPress | Paste | Resize | Back | Interrupt):
                 return model, []
             return replace(model, seen=(*model.seen, message)), []
         return replace(model, field=field), list(cmds)

@@ -7,16 +7,16 @@ has are its attributes. Its commands are classes, one module each under
 (`hello.greeting`), `Say` writes a record (`Salutation` in `records.py`, kind
 `hello.salutation` because `Say` prints it) and reads it back with `--stdin`,
 and `Motd` serves a file through a cache (`motd = MOTD` on the class, so
-`hello.caches.motd.max_age_seconds` tunes it), the way a plugin keeps what an
+`hello.caches.motd.max_age_seconds` tunes it) and keeps its copies in a
+folder of its own (`copies = COPIES`, a `Dir`), the way a plugin keeps what an
 upstream answered. The class also has a stub skill (`untaped skills install
 hello` writes it, and it sends the agent to `untaped docs hello`). The entry
 point names the class, `hello = "untaped_hello.plugin:Hello"`, in a leaf
 module so the rest of the package imports without the commands. Copy this
 directory to start a plugin of your own.
 
-It is not published, and the plugin class it uses is not in a released
-`untaped` yet: until the next major it runs only against a core built from this
-repository. Build the wheels from the repository root and install them by
+It is not published, and it needs `untaped` 12. To run it against this
+repository's core, build the wheels from the repository root and install them by
 path (the copy outside the repository keeps uv from treating it as part of
 the workspace):
 

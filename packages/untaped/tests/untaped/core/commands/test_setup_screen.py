@@ -53,7 +53,7 @@ from untaped.core.commands.setup_state import (
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
+from untaped.screen.core import Cancel, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
 from untaped.sdk import OnlineCheck, Plugin
 from untaped.sdk._app_context import app_context
@@ -396,7 +396,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
     runtime.start()
     for key in _keys("https://new", token="candidate", submit=False):
         runtime.send(_message(key))
-    runtime.send(Key("ctrl-s"))
+    runtime.send(KeyPress("ctrl-s"))
     host.deliver()  # the probe, on a worker thread, saw the candidate values
     assert seen == [("https://new/", "candidate")]
     # The main thread never saw them (the check dropped the cache; it was never filled).
@@ -413,7 +413,7 @@ def test_the_overlay_never_writes_and_never_changes_get_settings(
 
 
 def _message(key: ScreenKey) -> object:
-    return key if isinstance(key, Paste | Resize) else Key(key)
+    return key if isinstance(key, Paste | Resize) else KeyPress(key)
 
 
 def test_a_failed_check_leaves_the_files_and_the_cache_alone(
@@ -465,7 +465,7 @@ def test_a_save_while_a_check_runs_is_ignored(
 
     # Another try while the check runs: back to the list, in again, ctrl-s, enter.
     _send(runtime, ["esc", "enter", "ctrl-s", "enter", "tab", "enter"])
-    runtime.send(Key("ctrl-s"))
+    runtime.send(KeyPress("ctrl-s"))
 
     assert host.spawned == ["background"]  # still the one probe
     host.deliver_all()
@@ -948,11 +948,11 @@ def test_the_profile_field_cannot_be_edited_while_a_check_a_save_or_a_load_runs(
     assert on_field.focus == "profile"
     busy = replace(on_field, phase=phase)  # type: ignore[arg-type]
 
-    for message in (Key("x"), Paste("y")):
+    for message in (KeyPress("x"), Paste("y")):
         assert screen.update(busy, message) == (busy, [])
 
     # The same messages do edit it when nothing runs.
-    typed, _ = screen.update(on_field, Key("x"))
+    typed, _ = screen.update(on_field, KeyPress("x"))
     assert typed.profile.value == "defaultx"
 
 

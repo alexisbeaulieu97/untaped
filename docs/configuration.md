@@ -375,7 +375,7 @@ running as you, which can run the store's own command. Agents in particular
 should be denied reads of `~/.untaped/` and the password store in their
 harness.
 
-### Tokens from untaped 11.0
+### Tokens from untaped 11.x
 
 untaped 12.0 reads no token from `config.yml`: log in again with `untaped
 auth login <plugin>`.

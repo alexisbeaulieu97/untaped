@@ -1,7 +1,7 @@
 """The terminal adapter: the one module that imports prompt_toolkit.
 
 It runs a screen's :class:`~untaped.screen.runtime.Runtime` in a
-prompt_toolkit ``Application``: key presses become ``Key`` and ``Paste``
+prompt_toolkit ``Application``: key presses become ``KeyPress`` and ``Paste``
 messages, the runtime's Rich renderable is painted through one capture console
 (ANSI in a ``FormattedTextControl``), and commands run on threads that post
 their messages back to the event loop. A SIGTERM or SIGHUP ends the screen like an
@@ -40,7 +40,7 @@ from prompt_toolkit.output import ColorDepth, Output
 from prompt_toolkit.output.defaults import create_output
 
 from untaped.screen.color import ColorMode, detect_color, ptk_depth_name, rich_system
-from untaped.screen.core import Cancel, Key, Paste, Quit, Resize, Screen
+from untaped.screen.core import Cancel, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import CmdKind, Runtime, capture_console
 from untaped.sdk._theme import ThemeSpec
 
@@ -48,7 +48,7 @@ __all__ = ["TerminalHost", "build_application", "run_screen_on", "run_terminal_s
 
 type Outcome[R] = Quit[R] | Cancel
 
-#: prompt_toolkit key name -> the name a ``Key`` message carries.
+#: prompt_toolkit key name -> the name a ``KeyPress`` message carries.
 _KEYS: dict[str, str] = {
     "up": "up",
     "down": "down",
@@ -296,7 +296,7 @@ def _terminate(application: Application[Any], sig: signal.Signals) -> None:
 
 
 def _interrupt(application: Application[Any]) -> None:
-    """An external SIGINT (``kill -INT``): the ctrl-c *key* is a ``Key`` message instead."""
+    """An external SIGINT (``kill -INT``): the ctrl-c *key* is a ``KeyPress`` message instead."""
     if not application.is_done:
         application.exit(exception=KeyboardInterrupt())
 
@@ -309,7 +309,7 @@ def _bindings(*, on_sigint: Callable[[], None], send: Callable[[object], None]) 
     def feed(text: str) -> None:
         for char in text:
             if char.isprintable():
-                send(Key(char))
+                send(KeyPress(char))
 
     @bindings.add(Keys.SIGINT)
     def _interrupted(_event: KeyPressEvent) -> None:
@@ -332,6 +332,6 @@ def _bindings(*, on_sigint: Callable[[], None], send: Callable[[object], None]) 
 
 def _named(send: Callable[[object], None], name: str) -> Callable[[KeyPressEvent], None]:
     def handler(_event: KeyPressEvent) -> None:
-        send(Key(name))
+        send(KeyPress(name))
 
     return handler

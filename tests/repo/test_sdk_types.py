@@ -37,13 +37,13 @@ reveal_type(Cmd.send)  # line 17
 
 
 def edit(field: TextInput) -> str:
-    updated, _ = field.update(Key("a"))
+    updated, _ = field.update(KeyPress("a"))
     return updated.value
 
 
 reveal_type(TextInput("name").value)  # line 25
 
-from untaped.screen.core import Key  # noqa: E402
+from untaped.sdk import KeyPress  # noqa: E402
 """
 
 

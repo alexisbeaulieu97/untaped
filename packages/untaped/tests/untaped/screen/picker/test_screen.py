@@ -16,7 +16,7 @@ from rich.cells import cell_len
 
 from core_test_support.screen.gallery import render_styled, role
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.screen.core import Back, Cancel, Frame, Interrupt, Key, Paste, Quit
+from untaped.screen.core import Back, Cancel, Frame, Interrupt, KeyPress, Paste, Quit
 from untaped.screen.picker import (
     PickCatalog,
     PickItem,
@@ -821,7 +821,7 @@ def test_only_the_state_is_the_models_key_press() -> None:
     for key in ("w", "e", "b", "down", " "):
         state = handle(state, key)
     assert run.model == state
-    assert Key("w") == Key("w")
+    assert KeyPress("w") == KeyPress("w")
 
 
 def test_ctrl_r_while_a_refresh_runs_still_dismisses_the_error() -> None:

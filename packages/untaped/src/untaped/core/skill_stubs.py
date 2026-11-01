@@ -119,7 +119,7 @@ def render_stub(name: str, plugin: str, description: str) -> str:
     what = (
         "core's sections: its commands, the rows they print and its settings"
         if core
-        else "what to read first about it, and its sections: commands, files, rows and settings"
+        else "what to read first about it, and its sections"
     )
     fallback = "untaped --help" if core else f"untaped {plugin} --help"
     # A JSON string is a valid YAML double-quoted scalar.

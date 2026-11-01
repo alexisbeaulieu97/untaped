@@ -17,7 +17,7 @@ from untaped.screen.components.choices import ListItem
 from untaped.screen.components.form import Form, Submitted
 from untaped.screen.components.inputs import TextInput
 from untaped.screen.components.lists import SearchList, Tags
-from untaped.screen.core import Cancel, Frame, Key
+from untaped.screen.core import Cancel, Frame, KeyPress
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -196,13 +196,13 @@ def test_with_every_item_chosen_enter_has_nothing_to_open_and_goes_to_the_form()
 def test_keys_the_closed_field_has_no_use_for_return_the_same_object(key: str) -> None:
     tags = _tags(selected=("awx",))
 
-    assert tags.update(Key(" " if key == "space" else key))[0] is tags
+    assert tags.update(KeyPress(" " if key == "space" else key))[0] is tags
 
 
 def test_backspace_on_no_badges_and_other_messages_return_the_same_object() -> None:
     tags = _tags()
 
-    assert tags.update(Key("backspace"))[0] is tags
+    assert tags.update(KeyPress("backspace"))[0] is tags
     assert tags.update("text")[0] is tags
     assert tags.validate() == ""
 
@@ -210,13 +210,13 @@ def test_backspace_on_no_badges_and_other_messages_return_the_same_object() -> N
 def test_an_open_menu_hands_back_the_same_object_for_a_key_it_ignores() -> None:
     opened = _tags(menu_open=True)
 
-    assert opened.update(Key("left"))[0] is opened
-    assert opened.update(Key("tab"))[0] is opened
+    assert opened.update(KeyPress("left"))[0] is opened
+    assert opened.update(KeyPress("tab"))[0] is opened
 
 
 def test_enter_in_an_open_menu_with_nothing_to_pick_is_consumed() -> None:
-    opened = _tags(menu_open=True).update(Key("z"))[0]
-    after = opened.update(Key("enter"))[0]
+    opened = _tags(menu_open=True).update(KeyPress("z"))[0]
+    after = opened.update(KeyPress("enter"))[0]
 
     assert after == opened
     assert after.menu_open
@@ -225,8 +225,8 @@ def test_enter_in_an_open_menu_with_nothing_to_pick_is_consumed() -> None:
 def test_an_edit_clears_a_stale_error() -> None:
     tags = _tags(selected=("awx",)).with_error("Pick two.")
 
-    assert tags.update(Key("backspace"))[0].error == ""
-    assert tags.update(Key("enter"))[0].error == "Pick two."
+    assert tags.update(KeyPress("backspace"))[0].error == ""
+    assert tags.update(KeyPress("enter"))[0].error == "Pick two."
 
 
 # --- look --------------------------------------------------------------------------

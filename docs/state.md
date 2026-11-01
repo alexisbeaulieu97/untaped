@@ -16,8 +16,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, Key, Plugin, StateRows
-from untaped.sdk.fields import Positional
+from untaped.sdk import Command, Key, Plugin, Positional, StateRows
 
 
 class AcmeSettings(BaseModel):

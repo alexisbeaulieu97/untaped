@@ -12,5 +12,4 @@ defaults to `table`; one with another default (`profile show`, YAML) or no
 then `untaped.ui.format`. An error in a root option (a malformed `--profile`,
 `-v -q`) follows only `--format` and `UNTAPED_FORMAT`. An invalid
 `UNTAPED_FORMAT` under a command that reads it exits 2 before anything else
-runs, quarantine warnings included. A command a plugin still mounts the 11.x
-way keeps the behaviour it had.
+runs, quarantine warnings included.

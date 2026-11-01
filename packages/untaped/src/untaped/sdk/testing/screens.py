@@ -19,7 +19,7 @@ from untaped.screen.core import (
     KEY_NAMES,
     Cancel,
     Cmd,
-    Key,
+    KeyPress,
     Paste,
     Quit,
     Resize,
@@ -142,7 +142,7 @@ def _message(key: ScreenKey) -> object:
     if isinstance(key, Paste | Resize):
         return key
     if isinstance(key, str) and is_key_name(key):
-        return Key(key)
+        return KeyPress(key)
     raise ValueError(
         f"unknown key {key!r}; use a key name ({', '.join(KEY_NAMES)}), a single character "
         "(a space is ' '), Paste(...) or Resize(...)"

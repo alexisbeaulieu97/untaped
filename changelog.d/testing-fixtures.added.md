@@ -5,6 +5,6 @@ until a test scripts it: `terminal.answers(yes=True)`,
 with nothing scripted, `terminal.interrupts()` for Ctrl-C), the
 `credentials` fixture (the `MemoryCredentials` every test runs with:
 `credentials.set(Hello.token, key, "secret")`), `check(install(Hello))`
-(every failing row of `untaped plugin check` at once) and
+(every failing composition row at once) and
 `assert_surface(Hello)` (a plugin class, with the snapshot at
 `snapshots/surface.txt` beside the test unless `path=` says otherwise).

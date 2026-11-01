@@ -105,7 +105,7 @@ from untaped.screen.core import (
     CmdError,
     Frame,
     Interrupt,
-    Key,
+    KeyPress,
     NextField,
     Paste,
     PrevField,
@@ -546,7 +546,7 @@ class _Setup:
     # --- messages -------------------------------------------------------------
 
     def update(self, model: SetupModel, message: object) -> tuple[SetupModel, list[Cmd]]:
-        if isinstance(message, Key | Paste):
+        if isinstance(message, KeyPress | Paste):
             return self._edit(model, message)
         if isinstance(message, Activate | Back | Interrupt | NextField | PrevField | Submit):
             return self._shared(model, message)
@@ -601,14 +601,14 @@ class _Setup:
 
     # --- keys -----------------------------------------------------------------
 
-    def _edit(self, model: SetupModel, message: Key | Paste) -> tuple[SetupModel, list[Cmd]]:
+    def _edit(self, model: SetupModel, message: KeyPress | Paste) -> tuple[SetupModel, list[Cmd]]:
         if model.focus == "profile":
             if model.phase != "idle":
                 return model, []  # the field and the rows must agree: no typing mid-load or save
             field, cmds = model.profile.update(message)
             return (model if field is model.profile else replace(model, profile=field)), cmds
         if model.focus == "list":
-            if not isinstance(message, Key):
+            if not isinstance(message, KeyPress):
                 return model, []
             items = tuple(ListItem(row.name, row.name) for row in model.rows)
             moved, _ = SingleList("", items, value=model.name, cursor=model.selected).update(

@@ -981,8 +981,8 @@ class RepoStore:
         (``insteadOf`` over the store's label) and, for https, asks
         ``untaped git credential`` after the user's own helpers (instead of
         them with ``git.untaped_helper_only``). The helper line names no
-        profile: the folder's project and ``UNTAPED_PROFILE`` pick it, as
-        for any untaped command run there.
+        profile: ``UNTAPED_PROFILE`` picks it, as for any untaped command
+        run there.
         """
         worktree_config.write_worktree_config(self, worktree)
 

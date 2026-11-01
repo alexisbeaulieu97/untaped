@@ -9,7 +9,7 @@ TITLE`). The answers are kept in the cache the class holds as
 tunes it. `untaped_shelf.testing.conformance` is the check every provider
 must pass. Its provider counterpart is [`untaped-library`](../untaped-library).
 Neither is published, and like [`untaped-hello`](../untaped-hello/README.md)
-they run only against a core built from this repository until the next major.
+they need `untaped` 12.
 
 Install both into one virtualenv, beside an `untaped` wheel, the way
 `untaped-hello` describes, then run each package's `tests`. The tests mirror

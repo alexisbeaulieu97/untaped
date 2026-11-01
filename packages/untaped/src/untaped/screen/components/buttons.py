@@ -26,7 +26,7 @@ from rich.table import Table
 from rich.text import Text
 
 from untaped.screen.components.draw import role_style
-from untaped.screen.core import Activate, Cmd, Frame, Key
+from untaped.screen.core import Activate, Cmd, Frame, KeyPress
 from untaped.sdk.marks import experimental
 
 __all__ = ["BOX_ROWS", "Button", "Buttons", "Pressed"]
@@ -93,7 +93,7 @@ class Buttons:
 
     def update(self, message: object) -> tuple[Self, list[Cmd]]:
         """Move the focus on left and right; press the focused button on ``Activate``."""
-        if isinstance(message, Key) and message.name in ("left", "right") and self.items:
+        if isinstance(message, KeyPress) and message.name in ("left", "right") and self.items:
             focus = max(
                 0, min(self.focus + (1 if message.name == "right" else -1), len(self.items) - 1)
             )

@@ -7,9 +7,10 @@ optional. The root discovers plugins through the `untaped.plugins`
 entry-point group and owns everything else: there is no second console
 script, config command or profile command. See the [Glossary](../CONTRIBUTING.md#glossary).
 
-A plugin imports from `untaped.sdk` and nothing else in `untaped`, except
-`untaped.sdk.contracts` and `untaped.sdk.testing` for [contracts](./contracts.md);
-see [SDK stability](./reference/conventions.md#sdk-stability). Any plugin,
+A plugin imports from `untaped` only the SDK (`untaped.sdk` and its groups,
+such as `untaped.sdk.contracts` for [contracts](./contracts.md)) and
+`untaped.core.api`; [SDK stability](./reference/conventions.md#sdk-stability)
+lists them. Any plugin,
 first-party or not, may also import another plugin's declared `api` module,
 under the rules in
 [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
@@ -259,8 +260,8 @@ gitlab = "untaped_gitlab.plugin:Gitlab"
 `untaped lint` fails a plugin with no `untaped` range, or one that fills a
 contract of a plugin it doesn't require with a range. An installed owner outside the
 range quarantines its fills of that owner alone (`owner-out-of-range`). The
-provider imports only `untaped.sdk`, `untaped.sdk.contracts`, `untaped.sdk.testing`
-and the owner's `api` module.
+provider imports only the SDK (`untaped.sdk` and its groups) and the owner's
+`api` module.
 
 Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once the
 methods return, then run the plugin's tests and `untaped lint` in its directory.
@@ -336,7 +337,7 @@ Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests, and
-`untaped.sdk.testing.assert_surface(Hello)` to keep its commands, settings
+`untaped.sdk.testing.assert_surface(Acme)` to keep its commands, settings
 and contracts from losing a line by accident (experimental).
 `untaped.sdk.testing.invoke_root(["acme", "hello"])` runs `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the
