@@ -17,7 +17,8 @@ from untaped.sdk import (
     Stdin,
     UsageError,
 )
-from untaped_lint.commands._lint import Findings, LintCommand
+from untaped_lint.commands._lint import LintCommand
+from untaped_lint.findings import Findings
 from untaped_lint.records import Finding, Rule, ScaffoldOutcome
 from untaped_lint.settings import LintSettings
 
