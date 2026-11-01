@@ -45,7 +45,7 @@ from untaped.screen.core import (
     Cancel,
     Cmd,
     Frame,
-    Key,
+    KeyPress,
     NextField,
     PrevField,
     Quit,
@@ -284,7 +284,7 @@ def select_screen(
 
     def update(model: _Choose, msg: object) -> tuple[_Choose, list[Cmd]]:
         match msg:
-            case Key("enter"):
+            case KeyPress("enter"):
                 chosen = model.under_cursor
                 if chosen is None:
                     return model, []

@@ -20,7 +20,7 @@ from core_test_support.screen.gallery import (
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.choices import Check, ListItem, Select
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput
-from untaped.screen.core import Cancel, Frame, Key, NextField, Paste, Resize
+from untaped.screen.core import Cancel, Frame, KeyPress, NextField, Paste, Resize
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -29,7 +29,7 @@ THEMES = sorted(BUILTIN_THEMES)
 def _typed(component: Any, *keys: str) -> Any:
     """``component`` after ``keys`` were typed into it (no screen, so nothing else reacts)."""
     for key in keys:
-        component = component.update(Key(key))[0]
+        component = component.update(KeyPress(key))[0]
     return component
 
 
@@ -94,8 +94,8 @@ def test_pasted_text_lands_in_the_value_without_line_breaks() -> None:
 )
 @pytest.mark.parametrize(
     "message",
-    [Key("enter"), Key("esc"), Key("tab"), Key("shift-tab"), Key("ctrl-s"), Key("up"), Key("down"),
-     Key("ctrl-r"), NextField(), Resize(10, 10), "not a message"],
+    [*(KeyPress(name) for name in ("enter", "esc", "tab", "shift-tab", "ctrl-s", "up", "down")),
+     KeyPress("ctrl-r"), NextField(), Resize(10, 10), "not a message"],
 )  # fmt: skip
 def test_a_message_a_text_component_does_not_consume_returns_the_same_object(
     component: object, message: object
@@ -115,14 +115,14 @@ def test_a_message_a_text_component_does_not_consume_returns_the_same_object(
 def test_an_editing_key_that_changes_nothing_returns_the_same_object(
     component: object, key: str
 ) -> None:
-    assert component.update(Key(key))[0] is component  # type: ignore[attr-defined]
+    assert component.update(KeyPress(key))[0] is component  # type: ignore[attr-defined]
 
 
 def test_an_edit_clears_a_stale_error_but_a_caret_move_keeps_it() -> None:
     component = TextInput("Name", "ab").with_error("Taken.")
 
-    assert component.update(Key("left"))[0].error == "Taken."
-    assert component.update(Key("c"))[0].error == ""
+    assert component.update(KeyPress("left"))[0].error == "Taken."
+    assert component.update(KeyPress("c"))[0].error == ""
 
 
 def test_a_long_value_scrolls_to_keep_the_caret_in_view_and_unfocused_shows_the_start() -> None:
@@ -263,11 +263,11 @@ def test_typing_reopens_a_closed_completion_list() -> None:
 
 def test_up_and_down_without_a_list_and_at_the_ends_return_the_same_object() -> None:
     plain = TextInput("Name", "a")
-    assert plain.update(Key("down"))[0] is plain
+    assert plain.update(KeyPress("down"))[0] is plain
     open_list = _typed(TextInput("Fruit", complete=_fruit), "a")
-    assert open_list.update(Key("up"))[0] is open_list  # already on the first candidate
-    last = open_list.update(Key("down"))[0]
-    assert last.update(Key("down"))[0] is last
+    assert open_list.update(KeyPress("up"))[0] is open_list  # already on the first candidate
+    last = open_list.update(KeyPress("down"))[0]
+    assert last.update(KeyPress("down"))[0] is last
 
 
 def test_a_long_candidate_list_shows_a_window_around_the_choice() -> None:
@@ -570,9 +570,9 @@ def test_candidates_computed_for_other_text_are_never_offered_or_accepted() -> N
 def test_a_choice_past_the_candidates_is_held_to_the_last_one() -> None:
     opened = _typed(TextInput("Fruit", complete=_fruit), "a")
 
-    assert replace(opened, choice=9).update(Key("tab"))[0].value == "apricot"
-    assert replace(opened, choice=9).update(Key("down"))[0].choice == 1
-    assert replace(opened, choice=9).update(Key("up"))[0].choice == 0
+    assert replace(opened, choice=9).update(KeyPress("tab"))[0].value == "apricot"
+    assert replace(opened, choice=9).update(KeyPress("down"))[0].choice == 1
+    assert replace(opened, choice=9).update(KeyPress("up"))[0].choice == 0
 
 
 def test_a_number_paste_is_all_or_nothing() -> None:
@@ -620,18 +620,18 @@ def test_secret_draws_exactly_one_mask_per_character() -> None:
 
 def test_an_edit_clears_the_error_of_a_secret_a_check_and_a_select() -> None:
     secret = SecretInput("Token").with_error("Needed.")
-    assert secret.update(Key("left"))[0].error == "Needed."  # a caret move keeps it
-    assert secret.update(Key("a"))[0].error == ""
+    assert secret.update(KeyPress("left"))[0].error == "Needed."  # a caret move keeps it
+    assert secret.update(KeyPress("a"))[0].error == ""
     assert secret.update(Paste("abc"))[0].error == ""
 
     check = Check("Verify").with_error("Needed.")
-    assert check.update(Key("x"))[0] is check
-    assert check.update(Key(" "))[0].error == ""
+    assert check.update(KeyPress("x"))[0] is check
+    assert check.update(KeyPress(" "))[0].error == ""
 
     select = Select("Region", (ListItem("a", "A"), ListItem("b", "B")), "a").with_error("Needed.")
-    opened = select.update(Key("enter"))[0]
+    opened = select.update(KeyPress("enter"))[0]
     assert opened.error == "Needed."  # opening is not an edit
-    assert opened.update(Key("down"))[0].update(Key("enter"))[0].error == ""
+    assert opened.update(KeyPress("down"))[0].update(KeyPress("enter"))[0].error == ""
 
 
 def test_ctrl_w_with_a_trailing_space_removes_the_word_and_the_space() -> None:

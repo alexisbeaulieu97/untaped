@@ -6898,6 +6898,8 @@ sdk untaped.sdk.ItemStore.release  [experimental]
 sdk untaped.sdk.ItemStore.target(item)  [experimental]
 sdk untaped.sdk.Key
 sdk untaped.sdk.KeyJson
+sdk untaped.sdk.KeyPress(name)  [experimental]
+sdk untaped.sdk.KeyPress.name  [experimental]
 sdk untaped.sdk.KeyValue
 sdk untaped.sdk.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
 sdk untaped.sdk.LetGo.apply  [experimental]

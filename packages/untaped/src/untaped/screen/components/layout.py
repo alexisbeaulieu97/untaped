@@ -23,7 +23,7 @@ from rich.text import Text
 
 from untaped.screen.components.draw import role_style, unboxed, window_start
 from untaped.screen.components.fields import Field
-from untaped.screen.core import Cmd, Frame, Key, NextField, PrevField
+from untaped.screen.core import Cmd, Frame, KeyPress, NextField, PrevField
 from untaped.sdk.marks import experimental
 
 __all__ = ["WIDE", "Drawing", "Panes", "Viewport", "window", "windowed"]
@@ -85,7 +85,7 @@ class Viewport:
 
     def update(self, message: object, rows: int) -> Viewport:
         """Scroll on up, down, home and end; any other message gives back this same object."""
-        if not isinstance(message, Key):
+        if not isinstance(message, KeyPress):
             return self
         match message.name:
             case "up":

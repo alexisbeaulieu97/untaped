@@ -8,7 +8,7 @@ from rich.cells import cell_len
 from core_test_support.screen.gallery import gallery_fields, run_solo
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.components.form import Form, Submitted
-from untaped.screen.core import Key, NextField
+from untaped.screen.core import KeyPress, NextField
 
 THEMES = sorted(BUILTIN_THEMES)
 SIZES = [(100, 30), (60, 20)]
@@ -38,7 +38,7 @@ def test_every_builtin_theme_renders_the_gallery(theme: str, size: tuple[int, in
 
 def _tab(form: Form) -> Form:
     """``form`` after one tab press: the field's own use of the key, else ``NextField``."""
-    updated, _ = form.update(Key("tab"))
+    updated, _ = form.update(KeyPress("tab"))
     return updated if updated is not form else form.update(NextField())[0]
 
 

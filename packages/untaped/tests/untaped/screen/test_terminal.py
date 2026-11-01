@@ -24,7 +24,7 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen import terminal
-from untaped.screen.core import Cancel, Cmd, Frame, Key, Paste, Quit, Resize, Screen
+from untaped.screen.core import Cancel, Cmd, Frame, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.terminal import TerminalHost, build_application, run_terminal_screen
 
 THEME = BUILTIN_THEMES["default"]
@@ -74,9 +74,9 @@ class Typing:
             if handled is not None:
                 return handled  # type: ignore[return-value]
         match message:
-            case Key("enter"):
+            case KeyPress("enter"):
                 return model, [Cmd.send(Quit(model.text))]
-            case Key(name) if len(name) == 1:
+            case KeyPress(name) if len(name) == 1:
                 return replace(model, text=model.text + name), []
             case Paste(text):
                 return replace(model, text=model.text + text), []
@@ -148,7 +148,7 @@ def test_a_tiny_screen_runs_end_to_end() -> None:
     typing = Typing()
     outcome = _run(typing, "hi there" + ENTER)
     assert outcome == Quit("hi there")
-    assert typing.seen[0] == Key("h")
+    assert typing.seen[0] == KeyPress("h")
 
 
 def test_paste_arrives_as_one_message() -> None:
@@ -156,7 +156,7 @@ def test_paste_arrives_as_one_message() -> None:
     outcome = _run(typing, "\x1b[200~pasted text\x1b[201~" + ENTER)
     assert outcome == Quit("pasted text")
     assert [m for m in typing.seen if isinstance(m, Paste)] == [Paste("pasted text")]
-    assert not [m for m in typing.seen if isinstance(m, Key) and m.name != "enter"]
+    assert not [m for m in typing.seen if isinstance(m, KeyPress) and m.name != "enter"]
 
 
 def test_a_paste_keeps_printable_characters_only() -> None:
@@ -175,7 +175,7 @@ def test_named_keys_arrive_by_name() -> None:
     typing = Typing()
     keys = "\x1b[A\x1b[B\x1b[D\x1b[C\x1b[H\x1b[F\t\x1b[Z\x7f\x1b[3~\x15\x17\x04\x12" + ENTER
     _run(typing, keys)
-    names = [m.name for m in typing.seen if isinstance(m, Key)]
+    names = [m.name for m in typing.seen if isinstance(m, KeyPress)]
     assert names == [
         "up",
         "down",
@@ -197,13 +197,18 @@ def test_named_keys_arrive_by_name() -> None:
 
 def test_the_ctrl_c_key_is_a_message_the_screen_can_handle() -> None:
     def handle(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("ctrl-c"):
+        if message == KeyPress("ctrl-c"):
             return replace(model, text=model.text + "!"), []
         return None
 
     typing = Typing(extra=handle)
     assert _run(typing, "a\x03\x13" + ENTER) == Quit("a!")
-    assert [m.name for m in typing.seen if isinstance(m, Key)] == ["a", "ctrl-c", "ctrl-s", "enter"]
+    assert [m.name for m in typing.seen if isinstance(m, KeyPress)] == [
+        "a",
+        "ctrl-c",
+        "ctrl-s",
+        "enter",
+    ]
 
 
 def test_the_escape_timeout_is_short() -> None:
@@ -256,7 +261,7 @@ def test_an_external_sigint_interrupts() -> None:
         pytest.skip("prompt_toolkit handles SIGINT only on the main thread")
 
     def interrupt(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("x"):
+        if message == KeyPress("x"):
             return model, [
                 Cmd(lambda: os.kill(os.getpid(), signal.SIGINT))
             ]  # what `kill -INT` does
@@ -284,7 +289,7 @@ def test_the_sigint_binding_exits_with_keyboard_interrupt() -> None:
 
 def test_a_screen_that_raises_ends_the_run_with_its_error() -> None:
     def explode(_model: Model, message: object) -> None:
-        if message == Key("x"):
+        if message == KeyPress("x"):
             raise RuntimeError("update blew up")
 
     with pytest.raises(RuntimeError, match="update blew up"):
@@ -518,7 +523,7 @@ def test_a_write_command_survives_quit() -> None:
         return None
 
     def on_key(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("w"):
+        if message == KeyPress("w"):
             return model, [Cmd(write, write=True, name="write")]
         return None
 
@@ -550,7 +555,7 @@ def test_a_suspend_command_runs_with_the_screen_left() -> None:
         return Late()
 
     def on_message(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("s"):
+        if message == KeyPress("s"):
             return model, [Cmd(suspended, suspend=True, name="suspended")]
         if isinstance(message, Late):
             return replace(model, text="resumed"), []
@@ -581,7 +586,7 @@ def test_a_late_background_result_after_quit_is_ignored() -> None:
         return Late()
 
     def on_key(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
-        if message == Key("b"):
+        if message == KeyPress("b"):
             return model, [Cmd(slow, name="slow")]
         return None
 

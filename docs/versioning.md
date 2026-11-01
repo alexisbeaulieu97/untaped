@@ -24,11 +24,12 @@ them. For two installs that disagree about a renamed setting, see
   [configuration reference](./reference/config.md).
 - Environment variables:
   [environment variables](./reference/environment.md).
-- The `untaped.sdk`, `untaped.sdk.contracts` and `untaped.sdk.testing` surface, for
+- The modules a plugin imports, which
+  [SDK stability](./reference/conventions.md#sdk-stability) lists, for
   [plugin authors](./plugins.md), except the
   [experimental](#experimental) objects listed below.
 - Spellings `untaped` writes outside its own process, such as the Git
-  credential helper (`untaped git credential`, with `--profile` before it)
+  credential helper (`untaped git credential`)
   in the worktrees it creates, and the `untaped docs` addresses the stub
   skills name, even if hidden.
 
@@ -104,7 +105,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
   files a store names are stable from the start: users keep them. See
   [Stores](./caches.md#stores).
 - Screens: the runtime in `untaped.sdk` (`Screen`, `Binding`, `Cmd`, `Frame`,
-  `Footer` and the message classes `Key` (from `untaped.screen.core`),
+  `Footer` and the message classes `KeyPress`,
   `Paste`, `Resize`, `CmdError`, `Quit`, `Cancel`, `Back`, `Interrupt`,
   `NextField`, `PrevField`, `Activate`, `Submit` and `Help`), the components
   (`Field`, `TextInput`, `PathInput`, `SecretInput`, `NumberInput`, `Check`,
@@ -165,4 +166,4 @@ model or a base of it) or from a file, also gets an owner line naming its
 required fields and a `default=` line per optional field. Models nested in a
 kind are listed as `record <plugin>.<ClassName>`. Core's stderr kinds
 (`untaped.failure`, `untaped.progress`...) are listed with their `level`; a
-plugin's kinds are listed once the plugin is a 12.0 plugin class.
+plugin's kinds are listed from its declaration.

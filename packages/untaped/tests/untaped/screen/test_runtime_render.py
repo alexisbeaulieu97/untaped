@@ -9,7 +9,7 @@ from rich.text import Text
 
 from core_test_support.screen.support import Probe, make_screen
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.screen.core import Binding, Frame, Key, Screen
+from untaped.screen.core import Binding, Frame, KeyPress, Screen
 from untaped.screen.runtime import Runtime, SyncHost, capture_console
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.testing.screens import rendered_text
@@ -83,7 +83,7 @@ def test_a_long_footer_is_cut_with_the_ellipsis() -> None:
 def test_the_help_overlay_follows_the_themes_border() -> None:
     plain = Runtime(_screen("x"), SyncHost(), theme=BUILTIN_THEMES["plain"], size=(40, 14))
     plain.start()
-    plain.send(Key("?"))
+    plain.send(KeyPress("?"))
     text = rendered_text(plain.renderable(), 40, 14)
     assert "+-" in text
     assert text.isascii()
@@ -93,7 +93,7 @@ def test_the_help_overlay_without_a_border_draws_no_box() -> None:
     theme = ThemeSpec(border="none")
     runtime = Runtime(_screen("x"), SyncHost(), theme=theme, size=(40, 14))
     runtime.start()
-    runtime.send(Key("?"))
+    runtime.send(KeyPress("?"))
     text = rendered_text(runtime.renderable(), 40, 14)
     assert not any(char in text for char in "+|─│╭╮╰╯┌┐└┘")
     assert "esc" in text
@@ -104,7 +104,7 @@ def test_the_help_overlay_names_the_space_bar() -> None:
     screen = make_screen(keys=(Binding(" ", "toggle", object()),))
     runtime = Runtime(screen, SyncHost(), theme=BUILTIN_THEMES["default"], size=(40, 14))
     runtime.start()
-    runtime.send(Key("?"))
+    runtime.send(KeyPress("?"))
     lines = rendered_text(runtime.renderable(), 40, 14).splitlines()
     # The pinned footer (the last line) also says "space toggle"; look at the overlay only.
     overlay = lines[:-1]

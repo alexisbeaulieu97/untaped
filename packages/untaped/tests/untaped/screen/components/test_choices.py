@@ -19,7 +19,7 @@ from untaped.screen.components.buttons import Button, Buttons, Pressed
 from untaped.screen.components.choices import Check, Cycle, ListItem, MultiList, Select, SingleList
 from untaped.screen.components.inputs import NumberInput, SecretInput, TextInput
 from untaped.screen.components.tabs import Tab, Tabs
-from untaped.screen.core import Activate, Cancel, Frame, Key, NextField, PrevField
+from untaped.screen.core import Activate, Cancel, Frame, KeyPress, NextField, PrevField
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -104,13 +104,13 @@ def test_enter_on_a_closed_select_with_nothing_to_open_is_left_to_the_form() -> 
 def test_select_cursor_starts_on_the_value_and_clamps_at_the_ends() -> None:
     select = Select("Region", REGIONS, "eu-central", open=True)
     assert select.cursor == 2
-    assert select.update(Key("up"))[0].cursor == 1
+    assert select.update(KeyPress("up"))[0].cursor == 1
     first = Select("Region", REGIONS, "us-east", open=True)
-    assert first.update(Key("up"))[0] is first
+    assert first.update(KeyPress("up"))[0] is first
     last = Select("Region", REGIONS, "ap-southeast", open=True)
-    assert last.update(Key("down"))[0] is last
-    assert last.update(Key("home"))[0].cursor == 0
-    assert first.update(Key("end"))[0].cursor == 3
+    assert last.update(KeyPress("down"))[0] is last
+    assert last.update(KeyPress("home"))[0].cursor == 0
+    assert first.update(KeyPress("end"))[0].cursor == 3
 
 
 def test_select_marks_the_chosen_value_and_highlights_the_cursor() -> None:
@@ -235,8 +235,8 @@ def test_a_list_cursor_never_leaves_its_items() -> None:
     assert SingleList("O", OUTPUTS, "table", cursor=99).cursor == 2
     assert SingleList("O", (), "").cursor == 0
     component = SingleList("O", OUTPUTS, "table")
-    assert component.update(Key("up"))[0] is component
-    assert component.update(Key("down"))[0].cursor == 1
+    assert component.update(KeyPress("up"))[0] is component
+    assert component.update(KeyPress("down"))[0].cursor == 1
 
 
 # --- MultiList --------------------------------------------------------------------
@@ -303,8 +303,8 @@ def test_check_toggles_on_space_only_and_leaves_enter_to_the_form() -> None:
     assert field_of(run).value is True  # enter does not toggle
     assert run.model.unhandled == (Activate(),)  # it reaches the form: activate or submit
     component = Check("Verify TLS")
-    assert component.update(Key("x"))[0] is component
-    assert component.update(Key("esc"))[0] is component
+    assert component.update(KeyPress("x"))[0] is component
+    assert component.update(KeyPress("esc"))[0] is component
 
 
 def test_check_uses_the_plain_symbols_in_the_plain_theme() -> None:
@@ -350,9 +350,9 @@ def test_cycle_holds_any_values_and_shows_their_labels() -> None:
 def test_cycle_ignores_every_other_key_and_has_nothing_to_cycle_without_choices() -> None:
     component = Cycle("Format", ("a", "b"), "a")
     for key in ("up", "enter", "x", " "):
-        assert component.update(Key(key))[0] is component
+        assert component.update(KeyPress(key))[0] is component
     empty = Cycle("Format", (), "")
-    assert empty.update(Key("right"))[0] is empty
+    assert empty.update(KeyPress("right"))[0] is empty
 
 
 def test_cycle_draws_the_theme_tokens() -> None:
@@ -397,7 +397,7 @@ def test_plain_choice_frames_are_pure_ascii() -> None:
 @pytest.mark.parametrize("index", range(7))
 def test_an_unrelated_message_returns_the_same_object(index: int) -> None:
     component = _all()[index]
-    for message in (Key("ctrl-r"), Key("tab"), Key("ctrl-s"), Activate(), "other"):
+    for message in (KeyPress("ctrl-r"), KeyPress("tab"), KeyPress("ctrl-s"), Activate(), "other"):
         result, cmds = component.update(message)  # type: ignore[attr-defined]
         assert result is component
         assert cmds == []
@@ -535,9 +535,9 @@ def test_tabs_value_is_the_active_tab_and_its_fields_and_validation_covers_only_
 
 def test_left_and_right_change_the_tab_only_while_the_header_has_focus() -> None:
     tabs = _token_tabs()
-    assert tabs.update(Key("right"))[0].active == "enter"
-    assert tabs.update(Key("left"))[0] is tabs  # already on the first tab
-    assert _token_tabs(active="env").update(Key("right"))[0].active == "env"
+    assert tabs.update(KeyPress("right"))[0].active == "enter"
+    assert tabs.update(KeyPress("left"))[0] is tabs  # already on the first tab
+    assert _token_tabs(active="env").update(KeyPress("right"))[0].active == "env"
 
     run = run_solo(_token_tabs(active="command"), "tab", "left", "left", "x")  # in the field
     assert field_of(run).active == "command"
@@ -632,11 +632,11 @@ def test_buttons_activate_sends_pressed() -> None:
 
 def test_buttons_move_with_left_and_right_and_ignore_everything_else() -> None:
     buttons = _buttons()
-    assert buttons.update(Key("left"))[0] is buttons
-    assert buttons.update(Key("right"))[0].focus == 1
+    assert buttons.update(KeyPress("left"))[0] is buttons
+    assert buttons.update(KeyPress("right"))[0].focus == 1
     for key in ("up", "tab", "x", " ", "esc"):
-        assert buttons.update(Key(key))[0] is buttons
-    assert buttons.update(Key("enter"))[0] is buttons  # enter is Activate's, after the keys
+        assert buttons.update(KeyPress(key))[0] is buttons
+    assert buttons.update(KeyPress("enter"))[0] is buttons  # enter is Activate's, after the keys
     assert Buttons(()).update(Activate()) == (Buttons(()), [])
     assert Buttons(()).value == ""
 

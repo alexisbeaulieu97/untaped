@@ -18,7 +18,7 @@ from untaped.screen.components.choices import ListItem, SingleList
 from untaped.screen.components.form import Form
 from untaped.screen.components.inputs import TextInput
 from untaped.screen.components.layout import MIN_PANE_WIDTH, WIDE, Panes
-from untaped.screen.core import Frame, Key, NextField, PrevField
+from untaped.screen.core import Frame, KeyPress, NextField, PrevField
 from untaped.sdk.marks import Experimental, function_mark
 
 THEMES = sorted(BUILTIN_THEMES)
@@ -216,10 +216,10 @@ def test_a_command_from_a_pane_reaches_the_screen() -> None:
 def test_unused_messages_return_the_same_object() -> None:
     panes = _panes(focus=1)
 
-    assert panes.update(Key("up"))[0] is panes
-    assert panes.update(Key("ctrl-r"))[0] is panes
+    assert panes.update(KeyPress("up"))[0] is panes
+    assert panes.update(KeyPress("ctrl-r"))[0] is panes
     assert panes.update("text")[0] is panes
-    assert _panes().update(Key("ctrl-r"))[0].focus == 0
+    assert _panes().update(KeyPress("ctrl-r"))[0].focus == 0
     assert panes.update(NextField())[0].focus == 1  # the form uses it: its next field
     assert panes.update(PrevField())[0].focus == 0  # the form is at its first field: the list
 
@@ -308,7 +308,7 @@ def test_a_pane_can_be_a_drawing_of_a_model_the_screen_owns() -> None:
     assert seen[0][2] is True  # the focused pane is told so
     assert panes.value == {"left": "", "right": ""}
     assert panes.validate() == ""
-    assert panes.update(Key("x")) == (panes, [])  # a drawing takes no input, and nothing moves
+    assert panes.update(KeyPress("x")) == (panes, [])  # a drawing takes no input, and nothing moves
     moved, _ = panes.update(NextField())
     assert moved.focus == 1  # tab passes on to the other pane like any component that ignores it
     assert moved.left is draw

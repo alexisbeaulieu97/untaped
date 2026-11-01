@@ -12,7 +12,7 @@ from typing import TextIO
 import pytest
 from cyclopts import App
 
-from untaped.screen.core import Cancel, Cmd, Key, Quit, Screen
+from untaped.screen.core import Cancel, Cmd, KeyPress, Quit, Screen
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.sdk._cli import report_errors
 from untaped.sdk._theme import ThemeSpec
@@ -36,9 +36,9 @@ from untaped.sdk.testing import CliInvoker, ScreenKeys, ScriptedTerminal, TtyStr
 
 def _screen(title: str = "Name it") -> Screen[str, str]:
     def update(model: str, message: object) -> tuple[str, Sequence[Cmd]]:
-        if message == Key("enter"):
+        if message == KeyPress("enter"):
             return model, [Cmd.send(Quit(model))]
-        if isinstance(message, Key) and len(message.name) == 1:
+        if isinstance(message, KeyPress) and len(message.name) == 1:
             return model + message.name, []
         return model, []
 

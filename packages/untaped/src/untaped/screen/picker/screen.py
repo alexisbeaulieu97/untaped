@@ -40,7 +40,7 @@ from untaped.screen.core import (
     Frame,
     Help,
     Interrupt,
-    Key,
+    KeyPress,
     NextField,
     Paste,
     PrevField,
@@ -148,7 +148,7 @@ def _update(
 ) -> tuple[PickerState, list[Cmd]]:
     cmds: list[Cmd] = []
     match message:
-        case Key(name):
+        case KeyPress(name):
             new = _key(state, name)
         case Paste(text):
             new = paste(state, text)

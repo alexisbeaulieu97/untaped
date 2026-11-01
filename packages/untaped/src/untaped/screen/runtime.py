@@ -45,7 +45,7 @@ from untaped.screen.core import (
     Footer,
     Frame,
     Help,
-    Key,
+    KeyPress,
     Paste,
     Quit,
     Resize,
@@ -205,7 +205,7 @@ class Runtime[M, R]:
             return
         if isinstance(message, Quit | Cancel):
             self.outcome = message
-        elif isinstance(message, Key):
+        elif isinstance(message, KeyPress):
             self._key(message.name)
         elif isinstance(message, Paste) and self.help_open:
             return
@@ -224,7 +224,7 @@ class Runtime[M, R]:
         if self.help_open:
             self._help_key(name)
             return
-        if self._update(Key(name)):
+        if self._update(KeyPress(name)):
             return
         for binding in self._active_bindings():
             if binding.key == name:

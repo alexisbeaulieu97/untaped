@@ -23,15 +23,15 @@ from prompt_toolkit.input.defaults import create_input  # noqa: E402
 from prompt_toolkit.output.defaults import create_output  # noqa: E402
 
 from untaped.runtime.theme import BUILTIN_THEMES  # noqa: E402
-from untaped.screen.core import Cancel, Cmd, Frame, Key, Quit, Screen  # noqa: E402
+from untaped.screen.core import Cancel, Cmd, Frame, KeyPress, Quit, Screen  # noqa: E402
 from untaped.screen.terminal import run_terminal_screen  # noqa: E402
 
 
 def _screen(layout: str) -> Screen[str, str]:
     def update(model: str, message: object) -> tuple[str, list[Cmd]]:
-        if message == Key("enter"):
+        if message == KeyPress("enter"):
             return model, [Cmd.send(Quit(model))]
-        if isinstance(message, Key) and len(message.name) == 1:
+        if isinstance(message, KeyPress) and len(message.name) == 1:
             return model + message.name, []
         return model, []
 

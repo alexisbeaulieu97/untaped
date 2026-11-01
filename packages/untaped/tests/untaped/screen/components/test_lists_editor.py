@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from core_test_support.screen.gallery import field_of, lines, run_solo
 from untaped.screen.components.lists import ListEditor, MapEditor, MapEntry
-from untaped.screen.core import Key, Paste
+from untaped.screen.core import KeyPress, Paste
 
 
 def _list(*items: str, **kwargs: object) -> ListEditor:
@@ -107,8 +107,8 @@ def test_a_paste_keeps_what_was_typed_and_names_a_refused_line() -> None:
 def test_enter_on_done_and_esc_are_left_to_the_screen() -> None:
     done = _list("a", cursor=2)
 
-    assert done.update(Key("enter"))[0] is done
-    assert done.update(Key("esc"))[0] is done
+    assert done.update(KeyPress("enter"))[0] is done
+    assert done.update(KeyPress("esc"))[0] is done
 
 
 def test_a_long_list_shows_a_window_around_the_cursor() -> None:
@@ -187,8 +187,8 @@ def test_enter_on_done_and_esc_are_left_to_the_screen_for_a_map() -> None:
     done = _map(cursor=2)
 
     assert done.rows == 3
-    assert done.update(Key("enter"))[0] is done
-    assert done.update(Key("esc"))[0] is done
+    assert done.update(KeyPress("enter"))[0] is done
+    assert done.update(KeyPress("esc"))[0] is done
 
 
 def test_an_unset_name_says_so_and_kept_empty_is_set_blank() -> None:

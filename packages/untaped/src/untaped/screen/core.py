@@ -39,7 +39,7 @@ __all__ = [
     "Frame",
     "Help",
     "Interrupt",
-    "Key",
+    "KeyPress",
     "NextField",
     "Paste",
     "PrevField",
@@ -53,7 +53,7 @@ __all__ = [
     "key_label",
 ]
 
-#: Key names a ``Key`` message can carry besides a printable character (which is
+#: Key names a ``KeyPress`` message can carry besides a printable character (which is
 #: its own name; the space bar is ``" "``).
 KEY_NAMES: tuple[str, ...] = (
     "up",
@@ -142,7 +142,7 @@ def is_inline(cmd: Cmd) -> bool:
 
 @experimental
 @dataclass(frozen=True)
-class Key:
+class KeyPress:
     """A key press, by name (see :data:`KEY_NAMES`; a printable character is its own name)."""
 
     name: str
