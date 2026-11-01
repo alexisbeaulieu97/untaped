@@ -290,11 +290,10 @@ class RepoStore:
 
         Found, absent, unreadable or a newer untaped's (:data:`~untaped.sdk.DataRead`);
         ``Found.refreshed_at`` is the freshness :meth:`write_private` was given.
-        A file with no stamp is 11.0's, which wrote the same fields at the top level.
         """
         from untaped.sdk import read_data_file  # noqa: PLC0415  # the data file loads on first use
 
-        return read_data_file(private_file(self._path, self._plugin), model, unstamped="accept")
+        return read_data_file(private_file(self._path, self._plugin), model)
 
     @experimental
     def write_private(

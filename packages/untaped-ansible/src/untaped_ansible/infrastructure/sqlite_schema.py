@@ -156,11 +156,10 @@ create index if not exists idx_variable_listing_file
 def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], None]) -> None:
     """Create dependency index tables on a fresh database.
 
-    Databases stamped with the current ``SCHEMA_VERSION`` pass through
-    (one from before ``schema_meta`` gets its stamp). An older one this
-    version only adds to (its version is at least ``ADDITIVE_SINCE``) gets
-    the new tables in place, keeping its rows; any other older (or
-    unstamped) database is a stale cache: its tables are dropped and
+    Databases stamped with the current ``SCHEMA_VERSION`` pass through. An
+    older one this version only adds to (its version is at least
+    ``ADDITIVE_SINCE``) gets the new tables in place, keeping its rows; any
+    other older database is a stale cache: its tables are dropped and
     recreated empty, with a ``warn`` to refresh saved sources. A database
     written by a newer untaped release opens when its ``additive_since`` is
     at most this release's ``SCHEMA_VERSION`` (it only added tables or
@@ -169,8 +168,6 @@ def ensure_schema(db: sqlite3.Connection, path: Path, *, warn: Callable[[str], N
     """
     version = int(db.execute("pragma user_version").fetchone()[0])
     if version == SCHEMA_VERSION:
-        if _additive_since(db) is None:
-            _stamp(db)
         return
     if version > SCHEMA_VERSION:
         additive_since = _additive_since(db)
@@ -218,16 +215,6 @@ create table if not exists schema_meta (
 );
 insert or replace into schema_meta (id, additive_since) values (1, {ADDITIVE_SINCE});
 """
-
-
-def _stamp(db: sqlite3.Connection) -> None:
-    """Stamp an index from before ``schema_meta``; a read-only one is read unstamped."""
-    try:
-        db.executescript(f"begin;\n{_STAMP_SQL}\ncommit;")
-    except sqlite3.OperationalError as exc:
-        if "readonly" not in str(exc):
-            raise
-        db.rollback()
 
 
 def _additive_since(db: sqlite3.Connection) -> int | None:

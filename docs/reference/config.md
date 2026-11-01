@@ -172,30 +172,15 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
-| `ansible.git_fetch_concurrency` | `UNTAPED_ANSIBLE__GIT_FETCH_CONCURRENCY` | `ansible.git_fetch_parallel` | retired |
-| `ansible.probe_concurrency` | `UNTAPED_ANSIBLE__PROBE_CONCURRENCY` | `ansible.probe_parallel` | retired |
-| `ansible.cache_dir` | `UNTAPED_ANSIBLE__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
-| `ansible.git_blob_filter` | `UNTAPED_ANSIBLE__GIT_BLOB_FILTER` | none | deleted in 11.0; the repo store is blobless |
-| `ansible.git_clone_protocol` | `UNTAPED_ANSIBLE__GIT_CLONE_PROTOCOL` | none | deleted in 11.0; set github.git_protocol: ssh to keep ssh |
-| `ansible.git_fetch_depth` | `UNTAPED_ANSIBLE__GIT_FETCH_DEPTH` | none | deleted in 11.0; the repo store fetches full history |
 | `ansible.index_path` | `UNTAPED_ANSIBLE__INDEX_PATH` | none | deleted in 12.0; ansible.index_dir names the folder that holds the index |
-| `ansible.repo_cache_path` | `UNTAPED_ANSIBLE__REPO_CACHE_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
-| `ansible.stale_after` | `UNTAPED_ANSIBLE__STALE_AFTER` | none | deleted in 11.0; use ansible.caches.source_data.max_age_seconds |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | none | deleted in 12.0; use ansible.caches.source_data.max_age_seconds |
 | `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | retired |
-| `awx.test_timeout` | `UNTAPED_AWX__TEST_TIMEOUT` | `awx.test_timeout_seconds` | retired |
 | `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | retired |
-| `github.sweep.sync_concurrency` | `UNTAPED_GITHUB__SWEEP__SYNC_CONCURRENCY` | `github.sweep.parallel` | retired |
-| `github.cache_dir` | `UNTAPED_GITHUB__CACHE_DIR` | none | deleted in 11.0; the repo store lives under git.store_dir |
-| `github.corpus_path` | `UNTAPED_GITHUB__CORPUS_PATH` | none | deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir |
-| `github.inventory.max_age_seconds` | `UNTAPED_GITHUB__INVENTORY__MAX_AGE_SECONDS` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
-| `github.inventory.path` | `UNTAPED_GITHUB__INVENTORY__PATH` | none | deleted in 11.0; workspace keeps the repos github lists for workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default (ctrl-r in its picker refreshes them) |
 | `github.sweep.max_age_seconds` | `UNTAPED_GITHUB__SWEEP__MAX_AGE_SECONDS` | none | deleted in 12.0; use github.caches.sweep.max_age_seconds |
 | `github.token` | `UNTAPED_GITHUB__TOKEN` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `github.token_command` | `UNTAPED_GITHUB__TOKEN_COMMAND` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
 | `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
-| `recipe.library_root` | `UNTAPED_RECIPE__LIBRARY_ROOT` | `recipe.library_dir` | retired |
 
 ## See also
 

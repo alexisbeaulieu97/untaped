@@ -127,26 +127,6 @@ def test_remove_drops_every_record_of_the_name() -> None:
     assert [record.name for record in store.archived()] == ["other"]
 
 
-def test_a_workspace_made_before_11_from_a_url_untaped_now_refuses_still_loads() -> None:
-    """10.x took local paths and ``http://`` URLs; such a workspace still loads and removes."""
-    store = StateWorkspaceStore()
-    store.create(WorkspaceRecord(name="w", created_at=T0))
-    store.create(WorkspaceRecord(name="other", created_at=T0))
-    store.add_repos("other", [SPEC])
-    rows = read_rows(WORKSPACES)
-    rows[1]["repos"][0]["url"] = "/srv/git/api.git"
-    write_rows(WORKSPACES, rows)
-    store.add_repos(
-        "w",
-        [SPEC.model_copy(update={"url": "http://git.example/acme/web.git", "dir": "web"})],
-    )
-
-    assert [spec.url for spec in store.get("other").repos] == ["/srv/git/api.git"]  # type: ignore[union-attr]
-    assert [spec.url for spec in store.get("w").repos] == ["http://git.example/acme/web.git"]  # type: ignore[union-attr]
-    store.remove("other")
-    assert [record.name for record in store.active()] == ["w"]
-
-
 def test_a_newer_installs_fields_survive_adding_a_repo() -> None:
     write_rows(
         WORKSPACES,

@@ -511,8 +511,7 @@ def _names(names: list[str]) -> list[str]:
 class CorpusMeta(BaseModel):
     """github's private file in a store repo: what ``list_repos`` reads offline.
 
-    When the copy was fetched is the file's freshness, not a field. An 11.0
-    file kept it as ``fetched_at``, which is ignored: that copy refetches once.
+    When the copy was fetched is the file's freshness, not a field.
     """
 
     repo: str = ""

@@ -102,23 +102,10 @@ def test_a_missing_file_or_folder_is_absent(tmp_path: Path) -> None:
     assert read_data_file(tmp_path / "file" / "below.json", Mark) == Absent()
 
 
-def test_an_unstamped_file_is_read_in_the_models_shape_when_accepted(tmp_path: Path) -> None:
-    """11.0 wrote its files without a stamp, in the shape its model reads."""
-    file = tmp_path / "untaped-workspace.json"
-    file.write_text('{"history": "complete"}', encoding="utf-8")
-    assert read_data_file(file, Mark, unstamped="accept") == Found(Mark(history="complete"))
-
-
-def test_a_plain_string_untaped_is_data_unless_it_is_a_legacy_stamp(tmp_path: Path) -> None:
+def test_a_plain_string_untaped_is_no_stamp(tmp_path: Path) -> None:
     file = tmp_path / "project.json"
     file.write_text('{"untaped": "1", "id": "3f9c0a1b2d4e"}', encoding="utf-8")
     assert read_data_file(file, Strict) == Unreadable("has no 'untaped' stamp")
-    accepted = read_data_file(file, Strict, unstamped="accept")
-    assert isinstance(accepted, Unreadable) and "untaped" in accepted.reason  # data, forbidden
-    assert read_data_file(file, Strict, legacy_stamps=("1",)) == Found(Strict(id="3f9c0a1b2d4e"))
-    assert read_data_file(file, Strict, legacy_stamps=("2",)) == Unreadable(
-        "has no 'untaped' stamp"
-    )
 
 
 class Clashing(BaseModel):

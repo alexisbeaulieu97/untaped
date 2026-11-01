@@ -5,7 +5,7 @@ written through ``RepoStore.read_private``/``write_private`` with its own
 model. git decides when the file is created and deleted, never what is in
 it: a field git named would break the day its owner renamed it. So
 untaped_git uses no key that is a field of a model another first-party
-plugin passes to ``read_private``, nor 11.0's ``fetched_at``.
+plugin passes to ``read_private``.
 """
 
 from __future__ import annotations
@@ -18,8 +18,6 @@ import pytest
 
 from repo.support import FIRST_PARTY, PACKAGES
 
-#: Fields 11.0's private files held that no model names any more.
-LEGACY = frozenset({"fetched_at"})
 #: Models the scan must find, so a change in how plugins call it can't empty it.
 EXPECTED = frozenset({"BackfillMark", "CorpusMeta"})
 
@@ -109,7 +107,7 @@ def _keys(tree: ast.Module) -> Iterator[tuple[int, str]]:
 
 def test_git_names_no_field_of_another_plugins_private_file() -> None:
     models: set[str] = set()
-    fields = set(LEGACY)
+    fields: set[str] = set()
     for plugin in FIRST_PARTY:
         if plugin == "git":
             continue

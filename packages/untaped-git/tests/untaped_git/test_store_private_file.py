@@ -34,16 +34,8 @@ def test_a_typed_value_round_trips_with_its_freshness(store_for: StoreFor) -> No
     assert isinstance(found, Found)
     assert (found.value, found.refreshed_at) == (Listing(repo="acme/app"), refreshed)
     data = json.loads(_file(store_for, "github").read_text(encoding="utf-8"))
-    assert data["repo"] == "acme/app"  # at the top level, where 11.0 read it
+    assert data["repo"] == "acme/app"  # at the top level
     assert _file(store_for, "github").stat().st_mode & 0o777 == 0o600
-
-
-def test_an_11_0_file_with_no_stamp_reads_in_its_shape(store_for: StoreFor) -> None:
-    store = store_for("github")
-    store.fetch(branches=["main"])
-    _file(store_for, "github").write_text('{"repo": "acme/app", "archived": true}\n')
-
-    assert store.read_private(Listing) == Found(Listing(repo="acme/app", archived=True))
 
 
 @pytest.mark.parametrize(
