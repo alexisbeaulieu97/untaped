@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
-from untaped.sdk import Command, Message
+from untaped.core.api import Set
+from untaped.sdk import Command, Message, key, run_hint
 from untaped_hello.settings import HelloSettings
 
 
@@ -23,7 +24,7 @@ class Greet(Command[HelloSettings]):
             self.ctx.diag.emit(
                 DefaultGreeting(
                     message="this is the default greeting",
-                    hint="set your own with `untaped config set hello.greeting TEXT`",
+                    hint=run_hint(Set.spelled(key(HelloSettings).greeting, "TEXT")),
                     setting="hello.greeting",
                 )
             )

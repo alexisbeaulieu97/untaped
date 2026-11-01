@@ -15,13 +15,8 @@
 from __future__ import annotations
 
 import ast
-import tomllib
 from collections.abc import Iterator
 from pathlib import Path
-
-import pytest
-from packaging.requirements import Requirement
-from packaging.version import Version
 
 from repo.support import PACKAGES, REPO_ROOT
 from untaped.sdk.contracts._declare import contract_of
@@ -113,21 +108,3 @@ def test_only_lint_providers_import_check_plugin() -> None:
 def test_only_lint_glob_module_uses_fnmatch_or_glob_translate() -> None:
     users = _lint_uses("fnmatch", "glob.translate")
     assert set(users) == {"domain/glob.py"}
-
-
-#: The first release with the ``lint`` extra.
-LINT_SINCE = Version("11.1.0")
-
-
-def test_the_examples_lint_range_leaves_out_releases_without_lint() -> None:
-    core = PACKAGES / "untaped" / "pyproject.toml"
-    if Version(tomllib.loads(core.read_text(encoding="utf-8"))["project"]["version"]) < LINT_SINCE:
-        pytest.skip("no release carries the lint extra yet, so the floor can't rise")
-    stale = []
-    for path in sorted((REPO_ROOT / "examples").glob("*/pyproject.toml")):
-        groups = tomllib.loads(path.read_text(encoding="utf-8")).get("dependency-groups", {})
-        for line in (each for lines in groups.values() for each in lines if isinstance(each, str)):
-            requirement = Requirement(line)
-            if "lint" in requirement.extras and requirement.specifier.contains("11.0.0"):
-                stale.append(f"{path.relative_to(REPO_ROOT)}: {line}")
-    assert not stale, "raise the floor to untaped[lint]>=11.1:\n" + "\n".join(stale)

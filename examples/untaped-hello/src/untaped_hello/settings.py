@@ -7,10 +7,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Cache
+from untaped.sdk import Cache, Dir
 
 #: The message of the day, kept from ``hello.motd_path`` (hello's stand-in upstream).
 MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
+#: The copies the cache serves: ``plugins/hello/copies/`` under the home.
+COPIES = Dir()
 
 
 class HelloSettings(BaseModel):

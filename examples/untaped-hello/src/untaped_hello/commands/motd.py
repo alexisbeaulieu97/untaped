@@ -6,17 +6,21 @@ import hashlib
 from functools import partial
 from pathlib import Path
 
+from untaped.core.api import Set
 from untaped.sdk import (
     Command,
+    ConfigError,
     Filled,
     ProgressHandle,
     Refresh,
     atomic_write,
+    key,
     plural,
+    run_hint,
     shown_path,
 )
 from untaped_hello.errors import HelloError
-from untaped_hello.settings import MOTD, HelloSettings
+from untaped_hello.settings import COPIES, MOTD, HelloSettings
 
 
 class Motd(Command[HelloSettings]):
@@ -31,10 +35,9 @@ class Motd(Command[HelloSettings]):
     def run(self) -> str:
         source = self.settings.motd_path
         if source is None:
-            raise HelloError(
-                "hello.motd_path is not set",
-                category="config",
-                hint="set it with `untaped config set hello.motd_path FILE`",
+            raise ConfigError(
+                "no message of the day file is set",
+                hint=run_hint(Set.spelled(key(HelloSettings).motd_path, "FILE")),
             )
         # the key is the file itself: each file, in any profile, keeps its own copy
         shown, source = shown_path(source.expanduser()), source.expanduser().resolve()
@@ -49,7 +52,7 @@ class Motd(Command[HelloSettings]):
 
     def _copy(self, source: Path) -> Path:
         digest = hashlib.sha256(str(source).encode()).hexdigest()[:16]
-        return self.ctx.plugin.dir / "motd" / f"{digest}.txt"
+        return COPIES.path / f"{digest}.txt"
 
 
 def _fill(source: Path, copy: Path, _key: str, _progress: ProgressHandle) -> Filled:
