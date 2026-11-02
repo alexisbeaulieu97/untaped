@@ -1,4 +1,4 @@
-"""Each plugin's ref namespace, workspace's plain-clone exception, and name checks."""
+"""Each plugin's ref namespace, the plain-clone layout a plugin declares, and name checks."""
 
 from __future__ import annotations
 
@@ -20,8 +20,17 @@ def test_a_plugin_namespace() -> None:
     assert layout.prunable("tags/v1")
 
 
-def test_workspace_is_a_plain_clone() -> None:
-    layout = layout_for("workspace")
+def test_a_plugin_named_anything_is_namespaced_unless_it_declares_plain() -> None:
+    assert layout_for("workspace").roots == (
+        "refs/untaped/workspace/heads/",
+        "refs/untaped/workspace/tags/",
+    )
+    assert not layout_for("workspace").plain
+
+
+def test_the_declared_plain_clone_layout() -> None:
+    layout = layout_for("trees", plain=True)
+    assert layout.plain
     assert layout.roots == ("refs/remotes/origin/", "refs/tags/")
     assert layout.relative("refs/remotes/origin/main") == "heads/main"
     assert layout.relative(ORIGIN_HEAD) is None

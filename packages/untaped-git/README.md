@@ -34,7 +34,7 @@ untaped git store
 
 A plugin's own delete or remove command releases a repository: its refs,
 file and worktrees go, and the repository itself goes once no other plugin,
-hand-added worktree, branch or stash holds it.
+hand-added worktree, branch, tag or stash holds it.
 
 In the worktrees untaped creates, Git asks `untaped git credential` for the
 host's credentials, after your own credential helpers. When an old keychain

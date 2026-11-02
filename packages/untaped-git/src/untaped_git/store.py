@@ -2,9 +2,9 @@
 
 Layout: ``<git.store_dir>/<host>/<path>.git``, keyed by
 :func:`~untaped_git.url.store_key`, so the https and ssh URLs of one
-repo are one directory. Workspace, github's sweep and ansible keep their refs
-in the same repo, each in its own namespace
-(:mod:`untaped_git.namespace`), and the store holds the same thing for
+repo are one directory. Plugins keep their refs in the same repo, each in its
+own namespace or, for one plugin per repo that declares it, the plain-clone
+layout (:mod:`untaped_git.namespace`), and the store holds the same thing for
 all of them: every commit and tree of the refs any consumer asked for, and the
 blobs a consumer read. Consumers say what they read (refs, paths or history);
 the store decides how objects are fetched and kept, so nothing here takes a
@@ -53,7 +53,7 @@ from untaped.sdk import (
     experimental,
 )
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
-from untaped_git import store_release, worktree_config
+from untaped_git import plain_clone, store_release, worktree_config
 from untaped_git.delta import RefDelta, diff_refs
 from untaped_git.host_auth import host_config
 from untaped_git.hosts import HostAuth
@@ -143,7 +143,11 @@ class RepoStore:
 
     Build it with :meth:`for_url` or :meth:`owned_by`, which also resolve
     the host's credentials and ``git.untaped_helper_only``; a handle built
-    directly has neither. Writers (``fetch``, ``prefetch`` and what calls it,
+    directly has neither. ``plain_clone=True`` declares the plain-clone layout
+    (:mod:`untaped_git.namespace`): the plugin's refs are ``origin/*`` and the
+    repo's tags, so its worktrees work as in a clone; one plugin per repo
+    holds it, and another plugin declaring it is refused (a conflict) while
+    that one still has refs or worktrees there. Writers (``fetch``, ``prefetch`` and what calls it,
     ``delete_refs``, ``write_worktree_config``, ``release``) hold the repo's
     lock, and the fetching ones create the repo when it is missing; ``refs``,
     ``ls_tree`` and a handle's ``run`` only read and do not.
@@ -157,12 +161,12 @@ class RepoStore:
         plugin: str,
         error: type[UntapedError],
         map_error: Callable[[GitCommandError], UntapedError] | None = None,
+        plain_clone: bool = False,
     ) -> None:
         self._path = path
         self._url = url
         self._plugin = plugin
-        self._layout = layout_for(plugin)
-        self._plain = self._layout.heads == "refs/remotes/origin/"
+        self._layout = layout_for(plugin, plain=plain_clone)
         self._error = error
         self._map_error = map_error
         self._resolved: tuple[HostAuth | None] | None = None
@@ -181,13 +185,21 @@ class RepoStore:
         plugin: str,
         error: type[UntapedError],
         map_error: Callable[[GitCommandError], UntapedError] | None = None,
+        plain_clone: bool = False,
         auth: Callable[[str], HostAuth | None] | None = None,
         warn: Callable[[str], None] | None = None,
         helper_only: bool = False,
         sleep: Callable[[float], None] = time.sleep,
     ) -> Self:
         """A handle with its knobs: what :meth:`for_url` resolves, or a test's own."""
-        store = cls(path, url=url, plugin=plugin, error=error, map_error=map_error)
+        store = cls(
+            path,
+            url=url,
+            plugin=plugin,
+            error=error,
+            map_error=map_error,
+            plain_clone=plain_clone,
+        )
         store._auth = auth
         store._warn = warn or _diag.warning
         store._helper_only = helper_only
@@ -202,12 +214,14 @@ class RepoStore:
         plugin: object,
         error: type[UntapedError],
         map_error: Callable[[GitCommandError], UntapedError] | None = None,
+        plain_clone: bool = False,
     ) -> Self:
         """The store repo of ``url`` for ``plugin`` under ``git.store_dir``.
 
         ``error`` is the plugin's error class: every failure is raised as one,
         keeping git's category (``map_error`` maps a ``GitCommandError``
-        itself instead).
+        itself instead). ``plain_clone`` declares the plain-clone layout (see
+        the class docstring).
         """
         from untaped_git.hosts import resolve_host  # noqa: PLC0415  # contracts load lazily
         from untaped_git.settings import git_settings, store_root  # noqa: PLC0415
@@ -220,6 +234,7 @@ class RepoStore:
             plugin=_plugin_name(plugin),
             error=error,
             map_error=map_error,
+            plain_clone=plain_clone,
             auth=resolve_host,
             helper_only=settings.untaped_helper_only,
         )
@@ -231,6 +246,7 @@ class RepoStore:
         *,
         error: type[UntapedError],
         map_error: Callable[[GitCommandError], UntapedError] | None = None,
+        plain_clone: bool = False,
     ) -> list[Self]:
         """Every store repo holding ``plugin``'s private file, as ``plugin`` sees it.
 
@@ -254,6 +270,7 @@ class RepoStore:
                     plugin=name,
                     error=error,
                     map_error=map_error,
+                    plain_clone=plain_clone,
                     auth=resolve_host,
                     helper_only=settings.untaped_helper_only,
                 )
@@ -393,7 +410,9 @@ class RepoStore:
         """Create the repo when missing and reconcile its policy; ``True`` when created.
 
         ``fetch``, ``prefetch`` and ``checkout`` call it first under the lock,
-        so the next of them also finishes an interrupted release.
+        so the next of them also finishes an interrupted release. A
+        plain-clone handle records its plugin as the layout's holder here, or
+        is refused when another plugin holds it.
         """
         store_release.remove_removing(self)
         marked = self._config_get(RELEASE_MARK) if self.exists() else None
@@ -421,8 +440,10 @@ class RepoStore:
         for key, value in POLICY.items():
             if current.get(key.lower()) != [value]:
                 self._git(["config", "--local", "--replace-all", key, value])
+        if self._layout.plain:
+            plain_clone.claim(self)
         if "remote.origin.fetch" in current:
-            # A 10.x workspace repo's shared refspec: each worktree carries its own now.
+            # A 10.x repo's shared refspec: each worktree carries its own now.
             self._git(["config", "--local", "--unset-all", "remote.origin.fetch"])
             if worktree_entries(self._path):
                 worktree_config.enable_worktree_config(self)
@@ -436,8 +457,9 @@ class RepoStore:
     ) -> Released | Removed:
         """Say this plugin no longer needs the repo; it goes when nobody else holds it.
 
-        Deletes the plugin's refs (workspace's: ``refs/remotes/origin/*``, its
-        ``HEAD`` and ``refs/tags/*``, as with a deleted clone), its private
+        Deletes the plugin's refs (with the plain-clone layout's record:
+        ``refs/remotes/origin/*``, its ``HEAD`` and ``refs/tags/*``, as with a
+        deleted clone, and then the record), its private
         file, its worktrees and the local ``branches`` named (``refs/heads/*``
         the caller's own rules let go; one a worktree has checked out is
         refused before anything changes). Then, when another plugin's refs,
@@ -482,6 +504,8 @@ class RepoStore:
         if not refs:
             return
         with self._locked():
+            if self._layout.plain and self.exists():
+                plain_clone.claim(self, record=False)
             self._delete(refs)
 
     # ── fetch ──────────────────────────────────────────────────────────────
@@ -501,7 +525,7 @@ class RepoStore:
         :data:`DEFAULT_FETCH_BATCH_SIZE`; a call with globs only goes straight
         to git. ``prune=True`` deletes every ref of the namespace the call's
         names don't cover, and every covered ref the remote no longer has
-        (never workspace's tags, never ``refs/remotes/origin/HEAD``). A call
+        (never the plain-clone layout's tags, never ``refs/remotes/origin/HEAD``). A call
         with no names does nothing, ``prune`` included: dropping a whole
         namespace is ``delete_refs``' job. Returns what changed in the namespace.
         ``progress`` hears ``listing refs``, then ``fetching refs`` with the
@@ -523,7 +547,7 @@ class RepoStore:
                 stderr = self._fetch_listed(
                     branches, tags, prune=prune, before=before, progress=progress
                 )
-            if self._plain:
+            if self._layout.plain:
                 self._write_origin_head(branches, tags)
             after = self._namespace()
             delta = diff_refs(before, after)
@@ -618,7 +642,7 @@ class RepoStore:
         return self._network(argv, timeout=SLOW_TIMEOUT, retry=True).stderr
 
     def _write_origin_head(self, branches: Sequence[str], tags: Sequence[str]) -> None:
-        """Point workspace's ``refs/remotes/origin/HEAD`` at the remote's default branch.
+        """Point ``refs/remotes/origin/HEAD`` (plain-clone layout) at the default branch.
 
         The branch is the recorded ``untaped.defaultBranch`` (``default_branch()``
         records it); with none recorded, or one whose ref a prune removed
@@ -922,7 +946,7 @@ class RepoStore:
                 argv = ["--detach", str(path), ref]
             self._git(["worktree", "add", "--quiet", *argv], env=_NO_LAZY)
             worktree_config.write_owner_config(self, path)
-            if branch is not None and ref.startswith("refs/remotes/origin/") and self._plain:
+            if branch is not None and ref.startswith("refs/remotes/origin/") and self._layout.plain:
                 # The refspec that makes origin/<x> a tracking ref exists only now.
                 self._git(["branch", "--quiet", f"--set-upstream-to={ref}"], cwd=path)
             if lock_reason is not None:
@@ -980,7 +1004,7 @@ class RepoStore:
     def write_worktree_config(self, worktree: Path) -> None:
         """Write the worktree's own config: owner, refspec, filter, URL and credential helper.
 
-        Workspace calls it at create and on every ``status --fetch``: a
+        A consumer calls it after adding a worktree and after each fetch: a
         user's ``git fetch``/``push`` there uses this handle's URL
         (``insteadOf`` over the store's label) and, for https, asks
         ``untaped git credential`` after the user's own helpers (instead of

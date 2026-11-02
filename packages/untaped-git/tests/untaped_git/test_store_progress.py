@@ -47,7 +47,7 @@ def test_a_globs_only_fetch_is_one_phase_without_counts(
     remote.commit("a.txt", "a\n")
     progress = _Recorder()
 
-    store_for("workspace").fetch(branches=["*"], tags=["*"], progress=progress)
+    store_for("workspace", plain_clone=True).fetch(branches=["*"], tags=["*"], progress=progress)
 
     assert progress.updates == [(None, "fetching refs", None, None)]
 

@@ -442,7 +442,7 @@ def test_cache_delete_leaves_a_repo_other_plugins_still_use(
     """S25: github lets go of a repo ansible and workspace share; theirs stays intact."""
     url = str(_populate(source_repo, "acme/api")["acme/api"]["clone_url"])
     RepoStore.for_url(url, plugin="ansible", error=GitCorpusError).fetch(branches=["main"])
-    workspace = RepoStore.for_url(url, plugin="workspace", error=GitCorpusError)
+    workspace = RepoStore.for_url(url, plugin="workspace", error=GitCorpusError, plain_clone=True)
     workspace.fetch(branches=["main"])
     trees = [tmp_path / "ws" / "one", tmp_path / "ws" / "two"]
     for tree in trees:

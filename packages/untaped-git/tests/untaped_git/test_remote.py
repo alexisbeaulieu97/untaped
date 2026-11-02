@@ -136,7 +136,7 @@ def test_an_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
 def test_default_branch_is_recorded_and_heals_after_a_rename(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path
 ) -> None:
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     root = tmp_path / "store"
     ensure(store)
     assert default_branch(remote.url, root=root, auth=lambda _: None) == "main"
@@ -166,7 +166,7 @@ def test_a_fetch_without_the_default_branch_asks_nothing_more(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     remote.branch("feature")
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     store.fetch(branches=["feature"])  # origin/main never exists: origin/HEAD can't resolve
 
     trace = tmp_path / "trace.json"
