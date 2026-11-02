@@ -20,7 +20,8 @@ startup the root composes the plugins in this order:
    plugin class in a leaf module (`untaped_acme.plugin:Acme`); anything
    else, an 11.x `PluginSpec` included, is quarantined (`not-a-plugin-class`).
    A target that names nothing is `malformed-entry-point`; an exception while
-   importing the plugin's module is `import-failed`.
+   importing the plugin's module is `import-failed`, unless it is a name of
+   untaped or another plugin the owner doesn't have, which is `uses-missing`.
 4. **Validation.** The declaration is checked: reserved names, duplicate
    names, skills and doctor checks, and the settings model's
    [renamed keys](./reference/conventions.md#renaming-a-setting).
