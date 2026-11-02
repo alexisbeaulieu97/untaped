@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, TypeGuard
 
 from cyclopts import App
@@ -1401,7 +1401,7 @@ def _missed_loading(
 
 def _source_of(module: str, file: str) -> str:
     """``module``'s file as the reader's records say it: from the folder holding its package."""
-    tail = "/__init__.py" if file.endswith("__init__.py") else ".py"
+    tail = "/__init__.py" if PurePath(file).name == "__init__.py" else ".py"
     return module.replace(".", "/") + tail
 
 

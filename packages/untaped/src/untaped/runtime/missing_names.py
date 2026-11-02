@@ -14,9 +14,13 @@ it from the exception itself, never from its text:
   ``model_validate`` on data a user wrote is their mistyped key, never this.
 
 The plugin is the one owning the deepest frame in a plugin's package; the
-frames after it may only be the import machinery or a ``__getattr__`` hook
-(or that ``__init__``), so a name the owner's own code misses stays the
-owner's bug. The owner is untaped or another plugin's distribution, found
+frames after it may only be the import machinery, a module's or pydantic's
+``__getattr__`` (or that ``__init__``), so a name the owner's own code
+misses stays the owner's bug, as does a name the module lists in
+``__all__`` and fails to give. A submodule the plugin never imported, a
+nested model's field and a module right under ``untaped`` (where nested
+plugins live) are the plugin's slip or a plugin not installed, not a name
+removed. The owner is untaped or another plugin's distribution, found
 by the name's module; a library's name, or the plugin's own, is a bug and
 stays one. The name is spelled by the module plugins import it from
 (:func:`~untaped.sdk._parameter_marks.public_name`).
@@ -27,15 +31,19 @@ composition's import of a plugin's class read it.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 import traceback
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from types import FrameType, ModuleType
+from types import CodeType, FrameType, ModuleType
 from typing import TYPE_CHECKING
 
 from untaped.sdk.errors import ErrorCategory, UntapedError
 
 if TYPE_CHECKING:
+    from pydantic import ValidationError
+
     from untaped.runtime.plugin_uses import Owner
     from untaped.runtime.registry import CompositionResult
 
@@ -138,17 +146,19 @@ def _name(exc: BaseException, tail: list[FrameType]) -> tuple[str, str] | None:
 
     if isinstance(exc, ValidationError):
         return _field(exc, tail)
-    if not all(_machinery(frame) for frame in tail):
+    hooks = _hooks(exc)
+    if not all(_machinery(frame, hooks) for frame in tail):
         return None
     if isinstance(exc, AttributeError):
         return _attribute(exc.obj, exc.name)
     if isinstance(exc, ModuleNotFoundError):
-        return None if exc.name is None else (exc.name, exc.name)
+        return _module_gone(exc.name)
     if isinstance(exc, ImportError):
         name_from = getattr(exc, "name_from", None)
-        if exc.name is None or not isinstance(name_from, str):
+        module = sys.modules.get(exc.name or "")
+        if module is None or not isinstance(name_from, str) or _listed(module, name_from):
             return None
-        return exc.name, f"{exc.name}.{name_from}"
+        return module.__name__, f"{module.__name__}.{name_from}"
     return None
 
 
@@ -158,36 +168,97 @@ def _attribute(obj: object, name: str | None) -> tuple[str, str] | None:
     if obj is None or name is None:
         return None
     if isinstance(obj, ModuleType):
+        if _listed(obj, name) or _submodule(obj, name):
+            return None
         return obj.__name__, f"{obj.__name__}.{name}"
     cls = obj if isinstance(obj, type) else type(obj)
     return cls.__module__, f"{public_name(cls)}.{name}"
 
 
-def _field(exc: object, tail: list[FrameType]) -> tuple[str, str] | None:
-    """A model's fields the plugin passed its ``__init__`` that the model doesn't have."""
+def _listed(module: ModuleType, name: str) -> bool:
+    """Whether ``module`` says it has ``name``: then failing to give it is the owner's bug."""
+    listed = getattr(module, "__all__", ())
+    return isinstance(listed, (list, tuple)) and name in listed
+
+
+def _submodule(module: ModuleType, name: str) -> bool:
+    """Whether ``name`` is a submodule of ``module`` the plugin didn't import: its own slip."""
+    if not hasattr(module, "__path__"):
+        return False
+    try:
+        return importlib.util.find_spec(f"{module.__name__}.{name}") is not None
+    except Exception:  # a finder failing: say nothing rather than guess
+        return True
+
+
+def _module_gone(name: str | None) -> tuple[str, str] | None:
+    """A missing module whose parent is a regular package already loaded (not a namespace).
+
+    A module right under ``untaped`` is where a plugin nested in untaped's
+    package lives (``untaped.plugins``); core's own modules plugins use are
+    deeper (``untaped.sdk.…``), so one missing there is a plugin not
+    installed, not a name core removed.
+    """
+    parent_name = "" if name is None else name.rpartition(".")[0]
+    parent = sys.modules.get(parent_name)
+    if name is None or parent is None or getattr(parent, "__file__", None) is None:
+        return None
+    if parent_name == "untaped":
+        return None
+    return name, name
+
+
+def _field(exc: ValidationError, tail: list[FrameType]) -> tuple[str, str] | None:
+    """A model's own fields the plugin passed its ``__init__`` that the model doesn't have."""
     from pydantic import BaseModel  # noqa: PLC0415
 
     from untaped.sdk._parameter_marks import public_name  # noqa: PLC0415 - on an error only
 
-    errors = exc.errors()  # type: ignore[attr-defined]
-    if not errors or any(each["type"] != "extra_forbidden" for each in errors):
+    errors = exc.errors()
+    # A keyword the plugin wrote: a field of the model itself, not one nested in a value.
+    if not errors or any(
+        each["type"] != "extra_forbidden" or len(each["loc"]) != 1 for each in errors
+    ):
         return None
     if len(tail) != 1 or tail[0].f_code is not BaseModel.__init__.__code__:
         return None
     model = type(tail[0].f_locals.get("self"))
-    fields = sorted({str(each["loc"][0]) for each in errors if each["loc"]})
+    fields = sorted({str(each["loc"][0]) for each in errors})
     spelled = ", ".join(f"{public_name(model)}({field}=)" for field in fields)
     return model.__module__, spelled
 
 
-def _machinery(frame: FrameType) -> bool:
-    """Whether ``frame`` only looks a name up: the import system, or a ``__getattr__`` hook."""
+def _machinery(frame: FrameType, hooks: set[CodeType]) -> bool:
+    """Whether ``frame`` only looks a name up: the import system, or one of ``hooks``."""
     module = _module(frame)
-    return (
-        module == "importlib"
-        or module.startswith("importlib.")
-        or frame.f_code.co_name == "__getattr__"
-    )
+    return module == "importlib" or module.startswith("importlib.") or frame.f_code in hooks
+
+
+def _hooks(exc: BaseException) -> set[CodeType]:
+    """The lookup hooks a miss of ``exc`` may pass through.
+
+    A module's ``__getattr__`` (its names, a lazy table's included) and
+    pydantic's, which only adds a model's private and extra attributes. A
+    class's own ``__getattr__`` decides what exists as it likes
+    (``key(Model).field``), so a miss there says nothing about what its owner
+    removed.
+    """
+    from pydantic import BaseModel  # noqa: PLC0415
+
+    if isinstance(exc, AttributeError):
+        owner = exc.obj
+    elif isinstance(exc, ImportError):
+        owner = sys.modules.get(exc.name or "")
+    else:
+        return set()
+    if isinstance(owner, ModuleType):
+        hook = owner.__dict__.get("__getattr__")
+        code = getattr(hook, "__code__", None)
+        return {code} if isinstance(code, CodeType) else set()
+    if isinstance(owner, BaseModel) or (isinstance(owner, type) and issubclass(owner, BaseModel)):
+        code = getattr(vars(BaseModel).get("__getattr__"), "__code__", None)
+        return {code} if isinstance(code, CodeType) else set()
+    return set()
 
 
 def _module(frame: FrameType) -> str:

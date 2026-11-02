@@ -57,15 +57,28 @@ _SHELF = {
             tint: str = "white"
 
 
+        class Frame(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+
+            shade: Shade = Shade()
+
+
+        class Knob:
+            def __getattr__(self, name: str) -> object:
+                raise AttributeError(f"a knob has no {name}")
+
+
         def bulb() -> Bulb:
             return Bulb()
         ''',
+    "untaped_shelf/fittings/__init__.py": "",
+    "untaped_shelf/fittings/kinds.py": "SCREW = 'E27'\n",
     "untaped_shelf/api.py": '''
         """What a plugin may import from shelf."""
 
-        from untaped_shelf._bulbs import Bulb, Shade, bulb
+        from untaped_shelf._bulbs import Bulb, Frame, Knob, Shade, bulb
 
-        __all__ = ["Bulb", "Shade", "bulb"]
+        __all__ = ["Bulb", "Frame", "Knob", "Shade", "bulb", "ghost"]
         ''',
 }
 
@@ -189,6 +202,7 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
     )
     result = _invoke(found, "acme", "poke")
     assert isinstance(result.exception, AttributeError)
+    assert result.stderr.count("warning: acme:") == 1  # the root's boundary and the mount's
     assert result.stderr.splitlines()[0] == (
         "warning: acme: it uses untaped_shelf.api.Bulb.dim, which untaped-shelf 3.2 doesn't have: "
         "untaped-acme may need a newer untaped-shelf than it declares"
@@ -203,15 +217,33 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "from untaped_shelf.api import Shade\n\n"
         "def poke():\n    Shade.model_validate({'hue': 3})\n",
         "def poke():\n    None.spin()\n",
+        "from untaped_shelf.api import Knob\n\ndef poke():\n    Knob().twist\n",
+        "from untaped.sdk import key\nfrom untaped_acme.plugin import AcmeSettings\n\n"
+        "def poke():\n    key(AcmeSettings).sever\n",
+        "from untaped_shelf.api import Frame\n\ndef poke():\n    Frame(shade={'hue': 3})\n",
+        "import untaped_shelf.fittings\n\ndef poke():\n    untaped_shelf.fittings.kinds\n",
+        "from untaped_shelf import api\n\ndef poke():\n    getattr(api, 'ghost')\n",
+        "import importlib\n\ndef poke():\n    importlib.import_module('untaped.plugins.lamp')\n",
     ],
-    ids=["own-object", "library", "user-data", "none"],
+    ids=[
+        "own-object",
+        "library",
+        "user-data",
+        "none",
+        "class-hook",
+        "setting-key",
+        "nested-field",
+        "unimported-submodule",
+        "listed-but-broken",
+        "namespace-module",
+    ],
 )
 def test_anything_else_stays_the_error_it_is(site: Site, poke: str) -> None:
     found = _install(site, poke)
     result = _invoke(found, "acme", "poke")
     assert result.exception is not None
     assert result.exit_code != 4
-    assert "can't run this" not in result.stderr
+    assert "can't run this" not in result.stderr, result.stderr
 
 
 def test_a_name_gone_while_the_plugin_loads_disables_it_as_out_of_date(site: Site) -> None:
@@ -228,3 +260,9 @@ def test_a_name_gone_while_the_plugin_loads_disables_it_as_out_of_date(site: Sit
         "quarantined [uses-missing]: untaped-acme 1.0: untaped_acme/plugin.py:3 uses "
         f"untaped_shelf.lamps, which {_OUT_OF_DATE}; upgrade untaped-acme, or remove it"
     ) in " ".join(result.stderr.split())
+
+
+def test_a_run_of_another_composition_is_judged_by_nothing(site: Site) -> None:
+    found = _install(site, "def poke():\n    pass\n")
+    assert _invoke(found, "acme", "poke").exit_code == 0
+    assert bootstrap.attached() is None  # outside the root's run: the testing kit's, a check's
