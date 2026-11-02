@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from untaped.sdk import ErrorCategory, HttpError, UntapedError, rejected_token_error
-from untaped_github.errors import GithubGraphqlError
+from untaped_github.errors import GITHUB, GithubGraphqlError
 
 __all__ = [
     "github_failures",
@@ -76,7 +76,7 @@ def github_failures() -> Iterator[None]:
     except UntapedError as exc:
         if is_auth_failure(exc):
             raise rejected_token_error(
-                "github", "GitHub rejected the configured token (HTTP 401)", cause=exc
+                GITHUB, "GitHub rejected the configured token (HTTP 401)", cause=exc
             ) from exc
         if is_rate_limit_failure(exc):
             exc.category = ErrorCategory.UNAVAILABLE

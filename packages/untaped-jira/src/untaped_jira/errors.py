@@ -31,11 +31,14 @@ from untaped.sdk import (
 )
 from untaped_jira.settings import JiraSettings
 
+JIRA = Service(JiraSettings)
+"""Jira as an error's ``system``: the name the plugin runs under."""
+
 
 class JiraError(UntapedError):
     """Base for Jira plugin failures."""
 
-    system = Service(JiraSettings)
+    system = JIRA
 
 
 class JiraApiError(JiraError):
@@ -69,9 +72,7 @@ def to_jira_error(
     """The typed error for one failed Jira call (``noun``/``name`` name its target)."""
     status = err.status_code
     if status == 401:
-        return rejected_token_error(
-            Service(JiraSettings).name(), "Jira rejected the token (HTTP 401)", cause=err
-        )
+        return rejected_token_error(JIRA, "Jira rejected the token (HTTP 401)", cause=err)
     detail = _jira_detail(err.body)
     if status == 404 and noun is not None and name is not None:
         message = not_found(noun, name)

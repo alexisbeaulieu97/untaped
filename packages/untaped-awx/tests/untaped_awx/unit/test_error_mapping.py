@@ -52,14 +52,17 @@ def test_http_errors_map_to_awx_errors(
 ) -> None:
     summary = "dns failure" if status is None else f"HTTP {status} for /x"
     raw = HttpError(summary, status_code=status, url="/x", body=body)
-    mapped = to_awx_error(raw)
+    with installed().running():  # a 401's hint names the credential awx declares
+        mapped = to_awx_error(raw)
+        with pytest.raises(error), map_awx_errors():
+            raise raw
     assert type(mapped) is error
     assert message in str(mapped)
     if isinstance(mapped, AwxApiError):
         assert mapped.status_code == status
         assert not hasattr(mapped, "status")
-    with pytest.raises(error), map_awx_errors():
-        raise raw
+    if status == 401:
+        assert mapped.hint == _TOKEN_HINT.removeprefix("hint (your step): ")
 
 
 @pytest.mark.parametrize(
