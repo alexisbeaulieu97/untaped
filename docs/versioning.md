@@ -156,7 +156,8 @@ their files, last two majors after their deprecation:
 - Only a security fix removes one early, with a Security changelog entry.
 
 A record kind's fields, and everything else on this page, keep the one-major
-rule. `assert_surface(Plugin, version=...)` checks the same rules for a
+rule; a model that is both (a record or settings model a plugin's `api`
+exports) keeps the longer window. `assert_surface(Plugin, version=...)` checks the same rules for a
 plugin's own names, so a plugin that runs it promises plugins built on it
 the same.
 

@@ -132,8 +132,7 @@ def test_no_stable_surface_removed(generated: str) -> None:
     gone = [
         line
         for line in removed(parse(recorded), parse(generated))
-        if not (line.plugin_facing and two_majors(tag))
-        and not removal_exempt(line, target, tag)
+        if not removal_exempt(line, target, tag)
         and line.text not in MINOR_WAIVERS.get(tag, frozenset())
     ]
     assert not gone, removal_message(tag, gone)
@@ -159,10 +158,17 @@ def test_names_plugins_use_last_two_majors(generated: str) -> None:
 
 
 def test_an_early_removal_ships_a_security_note() -> None:
-    fragments = [path.name for path in (REPO_ROOT / "changelog.d").glob("*.security.md")]
+    notes = [
+        path.read_text(encoding="utf-8")
+        for path in (REPO_ROOT / "changelog.d").glob("*.security.md")
+    ]
     for tag, lines in EARLY_REMOVALS.items():
-        assert all(reason.strip() for reason in lines.values()), f"{tag}: each needs its reason"
-        assert fragments, f"{tag}: an early removal needs a changelog.d/<slug>.security.md"
+        for text, reason in lines.items():
+            assert reason.strip(), f"{tag}: {text} needs its reason"
+            subject = Line(text).key.split(" ")[1].partition("(")[0]
+            assert any(subject in note for note in notes), (
+                f"{tag}: {text} goes early, so a changelog.d/<slug>.security.md names {subject}"
+            )
 
 
 def test_one_rule_for_names_plugins_use() -> None:

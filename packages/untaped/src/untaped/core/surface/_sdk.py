@@ -604,15 +604,21 @@ def _is_protocol(cls: type) -> bool:
 
 
 def field_marks(cls: object) -> dict[str, Deprecated]:
-    """Each field of pydantic model ``cls`` marked ``Annotated[..., deprecated(...)]``."""
+    """Each field of pydantic model ``cls`` marked ``Annotated[..., deprecated(...)]``.
+
+    Keyed by the field's name and by its alias, which the model's signature
+    (its constructor's parameter line) uses.
+    """
     if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
         return {}
-    return {
-        name: mark
-        for name, info in cls.model_fields.items()
-        for mark in info.metadata
-        if isinstance(mark, Deprecated)
-    }
+    marks: dict[str, Deprecated] = {}
+    for name, info in cls.model_fields.items():
+        mark = next((each for each in info.metadata if isinstance(each, Deprecated)), None)
+        if mark is None:
+            continue
+        aliases = (info.alias, info.validation_alias)
+        marks.update(dict.fromkeys([name, *(a for a in aliases if isinstance(a, str))], mark))
+    return marks
 
 
 def _extra_lines(subject: str, cls: type, mark: LineMark | None) -> list[Line]:
@@ -627,7 +633,7 @@ def _extra_lines(subject: str, cls: type, mark: LineMark | None) -> list[Line]:
         return []
     extra = cls.model_config.get("extra") or "ignore"
     if extra == "ignore":
-        marked = sorted(field_marks(cls))
+        marked = sorted(set(field_marks(cls)) & set(cls.model_fields))
         if marked:
             raise SurfaceError(
                 f"{subject}.{marked[0]} carries a deprecation mark, but {subject} ignores "

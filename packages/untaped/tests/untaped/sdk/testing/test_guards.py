@@ -144,3 +144,18 @@ def test_an_experimental_name_changes_only_by_a_new_one(
     lines_now.append(Line("sdk untaped_lamp.api.dim(level, fade)", "experimental"))
     with pytest.raises(AssertionError, match=r"changes only by a new name"):
         assert_surface(Lamp, path, version="2.1.0")
+
+
+@pytest.mark.parametrize(("version", "ok"), [("3.0.0rc1", True), ("3.0.0", True), ("2.1.0", False)])
+def test_another_line_goes_at_a_major_or_when_due(
+    tmp_path: Path, lines_now: list[Line], version: str, ok: bool
+) -> None:
+    path = _snapshot(tmp_path / "surface.txt", Line("cli lamp dim"))
+    if ok:
+        assert_surface(Lamp, path, version=version)
+        assert path.read_text(encoding="utf-8") == render([])
+    else:
+        with pytest.raises(
+            AssertionError, match=r"a minor keeps it; deprecate it with removed_in=3"
+        ):
+            assert_surface(Lamp, path, version=version)

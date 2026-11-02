@@ -17,8 +17,10 @@ def _due(major: int = 13) -> DeprecatedMark:
         ("sdk untaped.sdk.old(x)", True),
         ("contract acme.items.list() -> Item[]", True),
         ("convention entry-point untaped.plugins", True),
-        ("record acme.Item", True),  # a kind's own name: users write it into their files
-        ("record acme.Item.name string", False),
+        ("record acme.item", True),  # a kind's own name: users write it into their files
+        ("record acme.item.name string", False),
+        ("record acme.item(name)", False),  # its required fields
+        ("record acme.Location", False),  # a model nested in a kind
         ("cli untaped acme list", False),
         ("cfg acme.mode string", False),
         ("state acme.items.name string", False),
@@ -31,7 +33,7 @@ def test_which_lines_plugins_build_on(text: str, facing: bool) -> None:
 @pytest.mark.parametrize(
     ("text", "key", "parameter"),
     [
-        ("sdk m.f(a, *, b) callback(b, 1)", "sdk m.f()", None),
+        ("sdk m.f(a, *, b) callback(b, 1)", "sdk m.f", None),
         ("sdk m.f(n=) default=1", "sdk m.f(n=)", ("m.f", "n")),
         ("sdk m.f(n@2=) default=1", "sdk m.f(n=)", ("m.f", "n")),
         ("sdk m.f(n@1/=) default=1", "sdk m.f(n=)", ("m.f", "n")),
@@ -41,11 +43,13 @@ def test_which_lines_plugins_build_on(text: str, facing: bool) -> None:
             "contract o.c.m(limit=)",
             ("o.c.m", "limit"),
         ),
-        ("contract o.c.m(name: string) -> Item?", "contract o.c.m()", None),
-        ("sdk m.C base=untaped.sdk.Record", "sdk m.C base=", None),
+        ("contract o.c.m(name: string) -> Item?", "contract o.c.m", None),
+        ("sdk m.C base=untaped.sdk.Record", "sdk m.C base=untaped.sdk.Record", None),
         ("sdk m.C extra=forbid", "sdk m.C extra=", None),
-        ("sdk m.Kind choice=a", "sdk m.Kind choice=", None),
-        ("sdk m.Color.RED = red", "sdk m.Color.RED =", None),
+        ("sdk m.Kind choice=a", "sdk m.Kind choice=a", None),
+        ("sdk m.C.size()", "sdk m.C.size", None),
+        ("sdk m.C implement=read", "sdk m.C implement=", None),
+        ("sdk m.Color.RED = red", "sdk m.Color.RED", None),
         ("sdk m.C.size class", "sdk m.C.size", None),
         ("contract o.Item.name string", "contract o.Item.name", None),
         ("sdk m.C.size", "sdk m.C.size", None),
@@ -66,8 +70,8 @@ def test_a_line_s_name_apart_from_its_shape(
         (Line("sdk untaped.sdk.old(x)", DeprecatedMark(13)), False),
         (Line("sdk untaped.sdk.old(x)", DeprecatedMark(14)), True),
         (Line("contract acme.items.list() -> Item[]", DeprecatedMark(13)), False),
-        (Line("record acme.Item", DeprecatedMark(13)), False),
-        (Line("record acme.Item.name string", DeprecatedMark(13)), True),  # fields: one major
+        (Line("record acme.item", DeprecatedMark(13)), False),
+        (Line("record acme.item.name string", DeprecatedMark(13)), True),  # fields: one major
         (Line("cli untaped acme list", DeprecatedMark(13)), True),
     ],
     ids=str,
@@ -89,6 +93,11 @@ def test_a_date_already_shown_is_the_shortening_rule_s_business() -> None:
 
 def test_no_recorded_line_still_needs_the_window() -> None:
     assert broken([], [Line("sdk m.new(x)", DeprecatedMark(13))], major=12)
+
+
+def test_an_experimental_name_deprecated_later_may_go_at_any_date() -> None:
+    recorded = [Line("sdk m.f(x)", "experimental")]
+    assert broken(recorded, [Line("sdk m.f(x)", DeprecatedMark(13))], major=12) == []
 
 
 # --- go only when due ---------------------------------------------------------------------
@@ -160,6 +169,33 @@ def test_an_experimental_name_respelled_in_place_fails() -> None:
     current = [Line("sdk m.f(n=) default=2", "experimental")]
     (message,) = broken(recorded, current, major=12)
     assert message.startswith("sdk m.f(n=) default=1  [experimental]: an experimental name")
+
+
+@pytest.mark.parametrize(
+    ("recorded", "current"),
+    [
+        ([Line("sdk m.C.size", "experimental")], [Line("sdk m.C.size()", "experimental")]),
+        ([Line("sdk m.C.size()", "experimental")], [Line("sdk m.C.size", "experimental")]),
+        ([Line("sdk m.E.A = a", "experimental")], [Line("sdk m.E.A = b", "experimental")]),
+    ],
+    ids=["attribute-to-method", "method-to-attribute", "enum-value"],
+)
+def test_an_experimental_name_keeps_its_kind_and_value(
+    recorded: list[Line], current: list[Line]
+) -> None:
+    assert broken(recorded, current, major=12)
+
+
+def test_an_experimental_choice_or_base_is_one_name_each() -> None:
+    recorded = [
+        Line("sdk m.Kind choice=warning", "experimental"),
+        Line("sdk m.C base=x", "experimental"),
+    ]
+    current = [
+        Line("sdk m.Kind choice=info", "experimental"),
+        Line("sdk m.C base=y", "experimental"),
+    ]
+    assert broken(recorded, current, major=12) == []
 
 
 _X: LineMark = "experimental"

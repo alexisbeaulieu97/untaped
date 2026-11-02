@@ -61,8 +61,16 @@ def broken(
 
 
 def short_windows(recorded: Sequence[Line], current: Sequence[Line], major: int) -> list[Line]:
-    """Plugin-facing lines first deprecated since ``recorded``, dated before ``major + 2``."""
-    marked = {line.identity for line in recorded if line.deprecation is not None}
+    """Plugin-facing lines first deprecated since ``recorded``, dated before ``major + 2``.
+
+    A line ``recorded`` marked experimental promised nothing, so it may go at
+    any date.
+    """
+    marked = {
+        line.identity
+        for line in recorded
+        if line.deprecation is not None or line.mark == "experimental"
+    }
     return sorted(
         line
         for line in current
@@ -77,7 +85,12 @@ def short_windows(recorded: Sequence[Line], current: Sequence[Line], major: int)
 def _gone(
     recorded: Sequence[Line], current: Sequence[Line], major: int, waived: Collection[str]
 ) -> list[str]:
-    owners = {line.key for line in current}
+    # a callable's owner line: its required parameters, keyed by its subject
+    owners = {
+        line.key
+        for line in current
+        if line.parameter is None and line.text.startswith(f"{line.key}(")
+    }
     texts = {line.text for line in current}
     found: list[str] = []
     for line in removed(recorded, current):
@@ -94,7 +107,7 @@ def _gone(
         if parameter is None:
             continue
         callable_, name = parameter
-        if f"{line.area} {callable_}()" not in owners:
+        if f"{line.area} {callable_}" not in owners:
             continue  # it went with its callable
         if any(f"{line.area} {callable_} {extra}" in texts for extra in _FIELDS_MAY_GO):
             continue  # a model field: the caller gets a clear error, or keeps the value

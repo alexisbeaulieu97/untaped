@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import UntapedError
 from untaped.sdk._parameter_marks import deprecated_parameters
@@ -215,6 +215,7 @@ class Strict(BaseModel):
 
     name: str
     old: Annotated[int, deprecated(removed_in=14, replacement="name")] = 0
+    gone: Annotated[int, deprecated(removed_in=14)] = Field(0, alias="Gone")
 
 
 class Loose(BaseModel):

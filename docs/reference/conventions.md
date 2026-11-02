@@ -395,6 +395,6 @@ A plugin imports from `untaped` only `untaped.sdk`, its groups
 `untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`,
 `untaped.sdk.testing.git`) and `untaped.core.api`, core's commands for a hint
 (`Login.spelled()`); `import-boundary` flags any other. A `_` name is never
-public; any other name of these modules, or of a plugin's `api`, goes only
-two majors after its deprecation
+public; any other name of these modules, or of a plugin's `api` and
+`testing`, goes only two majors after its deprecation
 ([Names plugins use](../versioning.md#names-plugins-use)).

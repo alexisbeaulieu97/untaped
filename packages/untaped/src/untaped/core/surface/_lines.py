@@ -19,6 +19,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from untaped.sdk.diagnostic import KIND_PATTERN
+
 #: The line format this generator reads and writes. A PR that respells
 #: existing lines bumps it and teaches :func:`upgrade` the old spelling.
 #: Format 2 added the dated deprecation mark. Format 3 gives each optional
@@ -31,7 +33,7 @@ HEADER = "# untaped surface"
 _SEPARATOR = "  ["
 _PLUGIN_FACING = frozenset({"sdk", "contract", "convention"})
 _SUBJECT = re.compile(r"^(?:sdk|contract) [\w.]+")
-_SHAPE_WORD = re.compile(r"^ (base=|implement=|abstract=|extra=|choice=|=)")
+_SHAPE_WORD = re.compile(r"^ (implement=|abstract=|extra=)")
 _PARAMETER = re.compile(
     r"^(?:sdk|contract) (?P<callable>[\w.]+)\("
     r"(?:(?P<name>\w+)(?:@\d+/?)?=|(?P<variadic>\*{1,2}\w+))\)"
@@ -99,23 +101,27 @@ class Line:
     def plugin_facing(self) -> bool:
         """Whether plugins build on this line, so it lasts two majors after deprecation.
 
-        The ``sdk`` (the SDK and each plugin's ``api`` and ``testing`` modules),
-        ``contract`` and ``convention`` areas, and a record kind's own name
-        (``record <plugin>.<Kind>``), which users write into their files. The
-        only list of these areas; every other line keeps the one-major rule.
+        The ``sdk`` (the SDK, ``untaped.core.api`` and each plugin's ``api`` and
+        ``testing`` modules), ``contract`` and ``convention`` areas, and a record
+        kind's own name (``record github.repo``, in the kind grammar), which
+        users write into their files; a kind's fields and the models nested in
+        it (``record jira.IssueLink``) keep one major. The only list of these;
+        every other line keeps the one-major rule.
         """
         if self.area in _PLUGIN_FACING:
             return True
-        return self.area == "record" and " " not in self.text.removeprefix("record ")
+        return self.area == "record" and bool(KIND_PATTERN.match(self.text.removeprefix("record ")))
 
     @property
     def key(self) -> str:
         """The line's name without its shape: what a respelling in place keeps.
 
-        An owner line keeps ``<area> <subject>()``, a parameter line
-        ``<area> <subject>(<name>=)``, a ``base=``, ``implement=``, ``extra=``,
-        ``choice=`` or ``=`` line its subject and that word; any other line is
-        its whole text but the shape after the subject.
+        A parameter line keeps ``<area> <callable>(<name>=)``; an ``implement=``,
+        ``abstract=`` or ``extra=`` line its subject and that word; any other
+        ``sdk`` or ``contract`` line its subject alone, so an attribute that
+        became a method, a respelled signature or a retyped field keeps its key.
+        A ``choice=`` or ``base=`` line names one value each, so its key is its
+        whole text, as is every line of another area.
         """
         parameter = self.parameter
         if parameter is not None:
@@ -125,8 +131,8 @@ class Line:
         if found is None:
             return self.text
         rest = self.text[found.end() :]
-        if rest.startswith("("):
-            return f"{found[0]}()"
+        if rest.startswith((" choice=", " base=")):
+            return self.text
         word = _SHAPE_WORD.match(rest)
         return f"{found[0]} {word[1]}" if word else found[0]
 

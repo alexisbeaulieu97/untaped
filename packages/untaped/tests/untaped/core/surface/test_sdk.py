@@ -245,7 +245,9 @@ def test_a_model_says_whether_its_fields_may_go_and_dates_a_field(lines: set[str
     assert _of(lines, "Strict") == [
         f"sdk {_NAME}.Strict extra=forbid",
         f"sdk {_NAME}.Strict(*, name)",
+        f"sdk {_NAME}.Strict(Gone=) default=0  [deprecated, removed in 14.0]",  # its alias
         f"sdk {_NAME}.Strict(old=) default=0  [deprecated, removed in 14.0; use name]",
+        f"sdk {_NAME}.Strict.gone  [deprecated, removed in 14.0]",
         f"sdk {_NAME}.Strict.name",
         f"sdk {_NAME}.Strict.old  [deprecated, removed in 14.0; use name]",
     ]

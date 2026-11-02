@@ -244,8 +244,8 @@ class _Composed:
         """
         mark = self.marks[plugin.name]
         if plugin.root:
-            # core's ``api`` (commands a plugin names in a hint) is plugin-facing too
-            return dict.fromkeys((*SDK_MODULES, "untaped.core.api"), mark)
+            # core is a plugin of itself: its ``api`` (commands named in hints) is promised too
+            return dict.fromkeys((*SDK_MODULES, *plugin_sdk_modules("untaped.core")), mark)
         return dict.fromkeys(plugin_sdk_modules(plugin.decl.package), mark)
 
 
