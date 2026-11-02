@@ -28,7 +28,6 @@ if TYPE_CHECKING:
         FreshnessRecord,
         NeverRefreshed,
         Served,
-        code_version,
     )
     from untaped.sdk.storage.data_file import (
         Absent,
@@ -76,7 +75,6 @@ __all__ = [
     "UnknownHolder",
     "Unreadable",
     "atomic_write",
-    "code_version",
     "dir_bytes",
     "file_lock",
     "read_structured_file",
@@ -94,7 +92,6 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "FreshnessRecord",
                 "NeverRefreshed",
                 "Served",
-                "code_version",
             ),
             "data_file": (
                 "Absent",

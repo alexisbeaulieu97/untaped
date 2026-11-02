@@ -47,7 +47,8 @@ from untaped.sdk.diagnostic import Stale
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.records import Issued, Source, kind_of
-from untaped.sdk.storage.cache import CallState, NeverRefreshed, call_state
+from untaped.sdk.storage._serve_scope import CallState, call_state
+from untaped.sdk.storage.cache import NeverRefreshed
 from untaped.sdk.words import command_line
 
 _LOG = logging.getLogger("untaped.contracts")

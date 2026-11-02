@@ -208,9 +208,11 @@ _STARTUP_PROBE = (
 #: since then reached 123 and 664. Splitting the SDK's command-line module
 #: by owner leaves its run and default-format parts on the start, without
 #: the row rendering: 124 and 665, 2026-11-02, so the budget goes to 127 and
-#: the total to 668.
-_TOTAL_BUDGET = 668
-_UNTAPED_BUDGET = 127
+#: the total to 668. Splitting the cache into its files, its serving and its
+#: call scope adds three modules, each read by every serve: 127 and 668,
+#: 2026-11-02, so the budget goes to 130 and the total to 671.
+_TOTAL_BUDGET = 671
+_UNTAPED_BUDGET = 130
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.

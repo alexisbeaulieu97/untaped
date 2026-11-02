@@ -8,10 +8,10 @@ from typing import TYPE_CHECKING, Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import experimental
+from untaped.sdk import experimental, installed_code
 from untaped.sdk.health import NeedsSetup
 from untaped.sdk.network import Credential, CredentialKey, TlsVerify
-from untaped.sdk.storage import Cache, code_version
+from untaped.sdk.storage import Cache
 
 if TYPE_CHECKING:
     from untaped_awx.domain.lint.resources import Resources
@@ -82,26 +82,11 @@ class AwxSettings(BaseModel):
         return v.rstrip("/") + "/"
 
 
-def _resources_version() -> str:
-    """The version of what a controller snapshot holds: its model and the code that fills it.
-
-    A snapshot filled by other code is outdated, so an edit to the loader, its
-    resolution, its redaction, the export it builds on or the snapshot's model
-    (or an upgrade of either distribution) reads the controller again on the
-    next run.
-    """
-    return ":".join(
-        (
-            code_version(
-                "untaped_awx.domain.lint.resources", distributions=("untaped-awx", "untaped-lint")
-            ),
-            code_version("untaped_awx.application.lint.controller"),
-            code_version("untaped_awx.application.lint.resolution"),
-            code_version("untaped_awx.domain.lint.secrets"),
-            code_version("untaped_awx.application.resources.save_resource"),
-            code_version("untaped_awx.application.resources.references"),
-        )
-    )
+#: The version of what a controller snapshot holds: its model and the code that fills it.
+#: A snapshot filled by other code is outdated, so any change to untaped-awx (its loader,
+#: resolution, redaction, kind specs and the export it builds on) or to untaped-lint
+#: reads the controller again on the next run.
+_RESOURCES_VERSION = installed_code("untaped_awx", "untaped_lint")
 
 
 def _resources_model() -> type[Resources]:
@@ -119,7 +104,7 @@ def _resources_model() -> type[Resources]:
 RESOURCES = Cache(
     label="controller resources",
     max_age=timedelta(hours=1),
-    version=_resources_version,
+    version=_RESOURCES_VERSION,
     model=_resources_model,
     split="none",
 )
