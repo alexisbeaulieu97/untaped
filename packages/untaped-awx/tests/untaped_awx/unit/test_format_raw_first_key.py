@@ -13,7 +13,8 @@ import pytest
 
 from untaped_awx.commands.test import case_row
 from untaped_awx.domain import WorkflowNode
-from untaped_awx.domain.suites.suite import CaseResult, Suite
+from untaped_awx.domain.suites.results import CaseResult
+from untaped_awx.domain.suites.suite import Suite
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 from untaped_awx.infrastructure.resources.specs import ALL_SPECS
 from untaped_awx.records import JobEventRow, JobRecord

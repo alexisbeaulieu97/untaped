@@ -22,13 +22,8 @@ from untaped_awx.application.suites.resolver import ResolveCasePayload
 from untaped_awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.suites.case_failure import CaseFailure, FailureEvidence
-from untaped_awx.domain.suites.suite import (
-    Baseline,
-    Case,
-    Suite,
-    SuiteRunOutcome,
-    TemplateBinding,
-)
+from untaped_awx.domain.suites.results import Baseline, SuiteRunOutcome
+from untaped_awx.domain.suites.suite import Case, Suite, TemplateBinding
 from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import ActionResponseError, LaunchPromptError
 from untaped_awx.infrastructure import AwxResourceCatalog

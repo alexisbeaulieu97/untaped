@@ -38,7 +38,8 @@ from untaped_awx.domain.suites.case_failure import (
     FailedTask,
     failure,
 )
-from untaped_awx.domain.suites.suite import Approvals, ExpectationResult, NodeExpectation
+from untaped_awx.domain.suites.expectations import ExpectationResult, NodeExpectation
+from untaped_awx.domain.suites.suite import Approvals
 from untaped_awx.domain.suites.systems import EXPECTATION, SUITE
 from untaped_awx.domain.suites.workflow_run import (
     APPROVAL,

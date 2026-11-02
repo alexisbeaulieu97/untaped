@@ -10,18 +10,9 @@ from pydantic import ValidationError
 from untaped.sdk import ErrorCategory
 from untaped_awx.domain import JobEvent
 from untaped_awx.domain.suites.case_failure import FailedTask, failure
-from untaped_awx.domain.suites.suite import (
-    Case,
-    CaseResult,
-    Expectation,
-    HostBounds,
-    NodeExpectation,
-    RefSentinel,
-    Suite,
-    SuiteRunOutcome,
-    TemplateBinding,
-    VariableSpec,
-)
+from untaped_awx.domain.suites.expectations import Expectation, HostBounds, NodeExpectation
+from untaped_awx.domain.suites.results import CaseResult, SuiteRunOutcome
+from untaped_awx.domain.suites.suite import Case, RefSentinel, Suite, TemplateBinding, VariableSpec
 
 
 def test_variable_spec_is_required_unless_it_has_a_default() -> None:

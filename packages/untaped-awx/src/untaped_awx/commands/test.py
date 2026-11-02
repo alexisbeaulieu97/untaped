@@ -36,16 +36,18 @@ from untaped_awx.commands._options import OrganizationScope, SourceRef
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.suite_options import TestCases, TestExamples, TestResults, TestSuites
 from untaped_awx.domain.suites.case_failure import CaseFailure
-from untaped_awx.domain.suites.suite import (
-    JOB_TEMPLATE,
-    WORKFLOW_TEMPLATE,
+from untaped_awx.domain.suites.results import (
     Baseline,
-    Case,
     CaseResult,
     CaseStatus,
     Change,
-    Suite,
     SuiteRunOutcome,
+)
+from untaped_awx.domain.suites.suite import (
+    JOB_TEMPLATE,
+    WORKFLOW_TEMPLATE,
+    Case,
+    Suite,
     TemplateBinding,
     select_cases,
 )
