@@ -226,14 +226,14 @@ def test_sync_refetches_git_sources_at_the_recorded_rev(
     _write_pack(upstream, name="alpha")
     fetched: list[tuple[str, str | None]] = []
 
-    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+    commits = iter([_OLD_SHA, _NEW_SHA])
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path, plugin: object) -> str:
         fetched.append((url, rev))
         shutil.copytree(upstream, dest)
-        return dest
+        return next(commits)
 
     monkeypatch.setattr(packs_commands, "fetch_pack_source", fake_fetch)
-    commits = iter([_OLD_SHA, _NEW_SHA])
-    monkeypatch.setattr(packs_commands, "checkout_commit", lambda checkout: next(commits))
     url = "https://example.test/alpha.git"
     added = run(["packs", "add", url, "--rev", "v1", "--format", "json"])
     assert added.exit_code == 0, added.output
@@ -277,13 +277,13 @@ def test_sync_confirmation_shows_the_commit_move_and_changed_hook_code(
     _write_pack(upstream, name="alpha")
     _add_hook(upstream)
 
-    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+    commits = iter([_OLD_SHA, _NEW_SHA, _NEW_SHA])
+
+    def fake_fetch(url: str, *, rev: str | None, dest: Path, plugin: object) -> str:
         shutil.copytree(upstream, dest)
-        return dest
+        return next(commits)
 
     monkeypatch.setattr(packs_commands, "fetch_pack_source", fake_fetch)
-    commits = iter([_OLD_SHA, _NEW_SHA, _NEW_SHA])
-    monkeypatch.setattr(packs_commands, "checkout_commit", lambda checkout: next(commits))
     url = "https://example.test/alpha.git"
     assert run(["packs", "add", url, "--rev", "main"]).exit_code == 0
     module = upstream / "src" / "alpha_hooks" / "tweak.py"
@@ -315,12 +315,11 @@ def test_sync_records_a_moved_commit_when_content_is_unchanged(
         upstream, source=url, rev="main", commit=recorded, name="alpha", force=False
     )
 
-    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+    def fake_fetch(url: str, *, rev: str | None, dest: Path, plugin: object) -> str:
         shutil.copytree(upstream, dest)
-        return dest
+        return _NEW_SHA
 
     monkeypatch.setattr(packs_commands, "fetch_pack_source", fake_fetch)
-    monkeypatch.setattr(packs_commands, "checkout_commit", lambda checkout: _NEW_SHA)
 
     dry_run = run(["packs", "sync", "alpha", "--dry-run", "--format", "json"])
     unchanged_commit = PackLibrary(library_dir=library_dir()).packs()[0].commit
@@ -447,12 +446,11 @@ def test_sync_does_not_stamp_its_commit_on_a_pack_replaced_during_its_fetch(
         upstream, source=url, rev="main", commit=_OLD_SHA, name="alpha", force=False
     )
 
-    def fake_fetch(url: str, *, rev: str | None, dest: Path) -> Path:
+    def fake_fetch(url: str, *, rev: str | None, dest: Path, plugin: object) -> str:
         shutil.copytree(upstream, dest)
-        return dest
+        return _NEW_SHA
 
     monkeypatch.setattr(packs_commands, "fetch_pack_source", fake_fetch)
-    monkeypatch.setattr(packs_commands, "checkout_commit", lambda checkout: _NEW_SHA)
     other = "https://example.test/other.git"
     _replace_during_fetch(monkeypatch, upstream, source=other)
 
