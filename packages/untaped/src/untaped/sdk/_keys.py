@@ -185,6 +185,19 @@ def model_in(annotation: object) -> type[BaseModel] | None:
     return models[0] if len(models) == 1 else None
 
 
+def is_nested_model(annotation: object) -> bool:
+    """Whether ``annotation`` is a model a settings walk steps into (``Model``, ``Model | None``).
+
+    Its settings are the ones inside it; a union with anything else
+    (``Model | str``) is one setting, as ``walk_settings`` reads it.
+    """
+    annotation = _bare(annotation)
+    if get_origin(annotation) in (types.UnionType, typing.Union):
+        present = [arg for arg in get_args(annotation) if arg is not type(None)]
+        annotation = present[0] if len(present) == 1 else None
+    return isinstance(annotation, type) and issubclass(annotation, BaseModel)
+
+
 def map_value_type(annotation: object) -> Any:
     """``X`` for a ``dict[str, X]`` annotation (or ``dict[str, X] | None``); ``None`` otherwise.
 

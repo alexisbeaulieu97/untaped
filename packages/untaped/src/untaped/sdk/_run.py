@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel, JsonValue
 
-from untaped.sdk._keys import SettingKey, map_value_type, model_in
+from untaped.sdk._keys import SettingKey, is_nested_model, map_value_type
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -569,7 +569,7 @@ class PluginHandle:
         if not path:
             raise TypeError(f"{setting!r} names the whole section: name one setting in it")
         holder = SettingKey(SettingKey.model_of(setting), path[:-1])._annotation()
-        if model_in(setting._annotation()) is not None and map_value_type(holder) is None:
+        if is_nested_model(setting._annotation()) and map_value_type(holder) is None:
             raise TypeError(
                 f"{setting!r} is a model, set by the settings inside it: name one of them "
                 "(a whole model is written only as a map's entry)"

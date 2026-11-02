@@ -59,6 +59,7 @@ class ShelfSettings(BaseModel):
     retries: int = Field(3, gt=0)
     token: SecretStr | None = None
     look: Look = Look()
+    badge: Look | str = "none"
     #: The source a run starts from: one of ``sources``, which a profile may pick.
     first: str | None = None
 
@@ -254,6 +255,15 @@ def test_a_whole_model_is_written_only_as_an_entry() -> None:
 
 
 @pytest.mark.usefixtures("_held")
+def test_a_model_or_text_is_one_setting(_isolated_config: Path) -> None:
+    compose(_shelf())
+
+    plugin_of(ShelfSettings).plan_settings({SHELF.badge: "plain"}).write()
+
+    assert _file(_isolated_config)["shelf"]["badge"] == "plain"  # type: ignore[index]
+
+
+@pytest.mark.usefixtures("_held")
 def test_an_entry_and_a_setting_inside_it_are_refused_together() -> None:
     compose(_shelf())
     entry = SHELF.sources["main"].packages["git"]
@@ -331,7 +341,7 @@ def test_the_preview_prints_through_confirm_and_dry_run_writes_nothing(
     result = _untaped(changes, "shelf", "write", "--dry-run")
 
     assert result.exit_code == 0, result.output
-    assert "set shelf.greeting to hi in profile default" in result.stderr
+    assert 'set shelf.greeting to "hi" in profile default' in result.stderr
     assert (
         'set shelf.sources.main.packages.fish to {"policy":"sync"} in profile default'
         in result.stderr
@@ -346,7 +356,7 @@ def test_a_dry_run_block_prints_the_preview_and_writes_nothing(_isolated_config:
     result = _untaped({SHELF.greeting: "hi"}, "shelf", "add", "--dry-run")
 
     assert result.exit_code == 0, result.output
-    assert "set shelf.greeting to hi in profile default" in result.stderr
+    assert 'set shelf.greeting to "hi" in profile default' in result.stderr
     assert _isolated_config.read_bytes() == before
 
 
@@ -357,7 +367,7 @@ def test_a_secret_is_masked_in_the_preview_and_written_as_given(_isolated_config
     assert _file(_isolated_config)["shelf"]["token"] == "s3cret"  # type: ignore[index]
 
     previewed = _untaped({SHELF.token: "other"}, "shelf", "add", "--dry-run")
-    assert "set shelf.token to *** in profile default" in previewed.stderr
+    assert 'set shelf.token to "***" in profile default' in previewed.stderr
     assert "other" not in previewed.stderr
 
 
@@ -366,12 +376,12 @@ def test_an_old_spelling_it_replaces_is_named(_isolated_config: Path) -> None:
 
     previewed = _untaped({SHELF.greeting: "hi", SHELF.look.wide: True}, "shelf", "add", "--dry-run")
     assert "set shelf.look.wide to true in profile default" in previewed.stderr
-    assert "remove shelf.salute, an old spelling" in previewed.stderr
+    assert "remove shelf.salute, an old spelling in profile default" in previewed.stderr
 
     result = _untaped({SHELF.greeting: "hi"}, "shelf", "add")
 
     assert result.exit_code == 0, result.output
-    assert "removed shelf.salute, an old spelling" in result.stderr
+    assert "removed shelf.salute, an old spelling in profile default" in result.stderr
     shelf = _file(_isolated_config)["shelf"]
     assert (shelf.get("salute"), shelf["greeting"]) == (None, "hi")  # type: ignore[union-attr,index]
 

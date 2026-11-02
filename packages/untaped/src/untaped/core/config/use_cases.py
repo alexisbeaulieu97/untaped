@@ -274,7 +274,7 @@ class PlannedSettings:
                 self._line(repo_now, key, value, landed[key], had=had[key])
                 for key, value in self._changes.items()
             ),
-            *(f"remove {old}, an old spelling" for old in removed),
+            *(f"remove {old}, an old spelling{_landed(landed)}" for old in removed),
         ]
 
     def _updates(
@@ -301,9 +301,7 @@ class PlannedSettings:
             if descriptor.holds_secret
             else display_value(descriptor, repo.typed(key, value), reveal_secrets=False)
         )
-        text = (
-            (shown or '""') if isinstance(shown, str) else json.dumps(shown, separators=(",", ":"))
-        )
+        text = json.dumps(shown, separators=(",", ":"))  # "true" the text, true the bool
         return f"set {key} to {text} in {where}"
 
     def preview(self) -> list[PreviewItem]:
@@ -328,8 +326,14 @@ class PlannedSettings:
                 for _, text in _still_read(key, landed[key], holders[key]):
                     current_run().diag.info(text)
         for old in removed:
-            current_run().diag.info(f"removed {old}, an old spelling")
+            current_run().diag.info(f"removed {old}, an old spelling{_landed(landed)}")
         return SettingsWritten(outcomes=tuple(outcomes), target=target)
+
+
+def _landed(landed: Mapping[str, str]) -> str:
+    """`` in profile P`` when a plan's keys all landed in one place, as its old spellings did."""
+    places = set(landed.values())
+    return f" in {_where(places.pop())}" if len(places) == 1 else ""
 
 
 _EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])
