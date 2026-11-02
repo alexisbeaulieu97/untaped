@@ -42,7 +42,6 @@ if TYPE_CHECKING:
     )
     from untaped.sdk.storage.dir import Dir
     from untaped.sdk.storage.holds import (
-        HolderState,
         HolderView,
         LetGo,
         MoveAsk,
@@ -64,7 +63,6 @@ __all__ = [
     "Found",
     "Freshness",
     "FreshnessRecord",
-    "HolderState",
     "HolderView",
     "LetGo",
     "Lock",
@@ -114,7 +112,6 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
             ),
             "dir": ("Dir",),
             "holds": (
-                "HolderState",
                 "HolderView",
                 "LetGo",
                 "MoveAsk",

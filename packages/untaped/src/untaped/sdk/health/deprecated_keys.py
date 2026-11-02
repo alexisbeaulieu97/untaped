@@ -61,6 +61,8 @@ class Retired:
     ``note`` is data, printed by doctor and ``config migrate``: why the key
     went and what to set instead (``deleted in 11.0; the repo store lives
     under git.store_dir``).
+
+    First consumer: the 12 to 13 transition.
     """
 
     note: str
@@ -75,6 +77,8 @@ class Renamed:
     ``None`` leaves the rename undated, and is meant only for a
     ``Cache(renamed_from=...)`` declared without a date, which the release
     checks and ``assert_surface(version=)`` refuse.
+
+    First consumer: the 12 to 13 transition.
     """
 
     to: str

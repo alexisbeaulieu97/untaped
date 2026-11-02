@@ -35,12 +35,12 @@ from untaped.sdk import (
     Output,
     Plugin,
     Positional,
-    Written,
     deprecated,
     experimental,
 )
 from untaped.sdk._home import config_path
 from untaped.sdk.contracts import Contract, Provider
+from untaped.sdk.fields import Written
 from untaped.sdk.testing import Install
 from untaped.sdk.words import shown_path
 

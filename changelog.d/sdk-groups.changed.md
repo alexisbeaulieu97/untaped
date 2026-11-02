@@ -9,4 +9,5 @@ imported from the group only, and `untaped.sdk` keeps what a plugin's own
 files need (the plugin, its commands and fields, records and words,
 errors). The screen names leave the SDK for `untaped.screen`, and names only
 core used (`read_stdin`, `table_row`, `HttpSettings`, `connected_client`,
-the holds' bookkeeping) are no longer exported.
+`Written`, `HolderState`, the holds' bookkeeping) are no longer exported;
+every name left has a first-party user or says who its first will be.

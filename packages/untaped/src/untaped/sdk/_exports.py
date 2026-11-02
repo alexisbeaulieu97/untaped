@@ -85,7 +85,6 @@ from untaped.sdk.fields import (
     Stdin,
     TextOrStdin,
     Verbatim,
-    Written,
 )
 from untaped.sdk.marks import (
     Deprecated,
@@ -147,7 +146,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "Parallel",
     "Limit",
     "File",
-    "Written",
     "TextOrStdin",
     "PathOrStdin",
     "ExistingFile",
