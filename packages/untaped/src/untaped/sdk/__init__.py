@@ -21,11 +21,26 @@ if _typing.TYPE_CHECKING:
     from untaped.sdk._exports import __all__ as __all__
 else:
 
+    def _old_names() -> object:
+        """The root's old names (``_exports.OLD_NAMES``), for the surface walker."""
+        return _importlib.import_module("untaped.sdk._exports").OLD_NAMES
+
+    globals()["__untaped_old_names__"] = _old_names  # the name _lazy.OLD_NAMES_ATTR reads
+
     def __getattr__(name: str) -> object:
-        """Resolve a name from the table on first use and keep it."""
+        """Resolve a name from the table on first use and keep it.
+
+        An old name (``_exports.OLD_NAMES``) resolves to its replacement on
+        every lookup, with a warning, and is never kept.
+        """
         exports = _importlib.import_module("untaped.sdk._exports")
         if name != "__all__" and name not in exports.__all__:
-            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+            mark = None if name.startswith("__") else exports.OLD_NAMES.get(name)
+            if mark is None:
+                raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+            from untaped.sdk._lazy import resolve_old  # noqa: PLC0415
+
+            return resolve_old(__name__, name, mark)
         value = getattr(exports, name)
         globals()[name] = value
         return value

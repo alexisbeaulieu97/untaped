@@ -40,6 +40,7 @@ from untaped.sdk.contracts._declare import (
     NotReady,
     fills,
     method_contract,
+    old_spellings,
 )
 from untaped.sdk.contracts._reasons import ErrorReason, QuarantineReason, Reason, SkipReason
 from untaped.sdk.diagnostic import Stale
@@ -240,7 +241,7 @@ def gather[C: Contract, **P, R](
 
     def call(*args: P.args, **kwargs: P.kwargs) -> Answers[R]:
         owner = owner_of(info)
-        order = ranking(owner, info.name, wanted.name)
+        order = ranking(owner, info.name, wanted.name, old_spellings(info, wanted.name))
         answers: dict[str, Answer[R]] = {}
         runnable: list[tuple[BoundProvider, int | None]] = []
         reasons: list[str] = []

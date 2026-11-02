@@ -20,6 +20,8 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 | A function or method of your Python API | `@deprecated(removed_in=3, replacement=new_api)` over `@warnings.deprecated("<its sentence>")`, under any `@classmethod`, `@staticmethod` or `@property` |
 | A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="records on the plugin class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
+| A renamed contract method | the old method stays on the contract with both marks of a method, `@deprecated(removed_in=3, replacement=new_method)` first; a provider still filling the old name fills the new one, and `gather` or `Stdin(via=)` given the old name asks the new one |
+| A renamed name of `untaped.sdk` or a group (core) | `size_words=deprecated(removed_in=14, replacement=size_text)` in `old_names(...)`: the root's `OLD_NAMES` in `sdk/_exports.py`, or the group's `lazy_names(..., old=...)`; plus `size_words = size_text` in the module's `TYPE_CHECKING` block |
 | A field of a model in your Python API | `old: Annotated[int, deprecated(removed_in=4, replacement="name")] = 0` on a model with `extra="forbid"` or `"allow"` |
 | A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="records on the plugin class")` on the plugin class |
 
@@ -62,6 +64,15 @@ argument (`deprecated-argument`). Any spelling of the flag warns
 (`--dry-run`, `--no-dry-run`, `--dry-run=false`, a short flag), up to a
 `--`. A renamed command keeps its old spelling as an alias; a renamed flag
 or group has no declaration yet, so file an issue when a rename needs one.
+
+An old SDK name is the new object itself: every lookup resolves it again and
+warns, it stays out of `__all__`, and the surface lists it under its old
+spelling until it goes. Type checkers never see the module's `__getattr__`,
+so the `TYPE_CHECKING` assignment is how they accept it (a strict checker
+doesn't re-export `import new as old`); `tests/repo/test_old_names_typed.py`
+keeps those assignments and the table equal. An old name spells a class or a
+function; a renamed constant, or a renamed name of a plugin's own `api`
+module, has no declaration yet.
 
 The replacement is what to use instead: a command's function or app (the
 path follows a rename), or text such as a command (`"untaped acme set"`), a

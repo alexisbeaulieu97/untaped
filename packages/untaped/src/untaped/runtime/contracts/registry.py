@@ -413,14 +413,31 @@ def rankings(owner: str) -> Mapping[str, ExtensionSettings]:
     return extensions
 
 
-def ranking(owner: str, contract: str, method: str) -> tuple[str, ...]:
+def ranking(owner: str, contract: str, method: str, old: Sequence[str] = ()) -> tuple[str, ...]:
     """The plugins ranked for ``owner.contract.method``, first first.
 
     An entry for a contract or method that doesn't exist is never asked for,
     so it changes nothing; doctor reports it (``rank-unknown-method``).
+    ``old`` are the method's old spellings (:func:`method_ranking`).
     """
-    extension = rankings(owner).get(contract)
-    return () if extension is None else tuple(extension.rank.get(method, ()))
+    return method_ranking(rankings(owner).get(contract), method, old)
+
+
+def method_ranking(
+    extension: ExtensionSettings | None, method: str, old: Sequence[str] = ()
+) -> tuple[str, ...]:
+    """The plugins ``extension`` ranks for ``method``, first first.
+
+    A renamed method with no ranking of its own reads the one kept under its
+    first ``old`` spelling that has one, so a ranking set before the rename
+    still holds.
+    """
+    if extension is None:
+        return ()
+    for name in (method, *old):
+        if name in extension.rank:
+            return tuple(extension.rank[name])
+    return ()
 
 
 def _contract_name(contract: type[Contract]) -> str:

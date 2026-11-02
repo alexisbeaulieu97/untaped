@@ -18,7 +18,7 @@ import json
 import re
 import types
 from abc import ABC
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import (
@@ -46,6 +46,7 @@ from untaped.sdk._keys import SettingKey
 from untaped.sdk._keys import key as setting_key
 from untaped.sdk.contracts._parameters import adapted, parameter_problem
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
+from untaped.sdk.marks import Deprecated, function_mark
 from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
 
@@ -500,6 +501,8 @@ def method_contract(method: Callable[..., Any]) -> tuple[ContractInfo, Method]:
         raise TypeError(
             f"{method!r} is not a contract method: pass it as Contract.method (RepoSource.repos)"
         )
+    # a renamed method's old spelling asks the new one, as the owner does
+    name = _renamed_to(name, info.methods[name].function, info.methods) or name
     return info, info.methods[name]
 
 
@@ -537,7 +540,8 @@ def _rewrap(cls: type[Contract]) -> None:
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
-    ``@cached`` anywhere in the provider's own code is a ``TypeError``. A method
+    ``@cached`` anywhere in the provider's own code is a ``TypeError``. A
+    renamed method filled by its old name fills the new one. A method
     taking fewer parameters than the contract's is adapted to be called as the
     contract's is; one whose parameters can't be passed by name is recorded,
     for :func:`parameter_problems`, and left as it is.
@@ -552,6 +556,8 @@ def _rewrap(cls: type[Contract]) -> None:
                 raise TypeError(
                     f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
                 )
+    _bind_renamed(cls, info)
+    renamed = _renamed(info)
     problems: dict[str, str] = {}
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
@@ -564,13 +570,72 @@ def _rewrap(cls: type[Contract]) -> None:
         if problem is not None:
             problems[name] = f"{value.__qualname__} {problem}"  # where its code is, a mixin's too
         wrapped = value if problem is not None else adapted(value, method.function)
-        if method.bridge:
-            wrapped = _bridged(wrapped)
+        if method.bridge or (name in renamed and info.methods[renamed[name]].bridge):
+            wrapped = _bridged(wrapped)  # a provider's own call of the old spelling, too
         if method.cache is not None:
             wrapped = _served(wrapped, method.cache, name)
         if wrapped is not value or problem is not None:
             setattr(cls, name, wrapped)  # ``cls`` answers for it, mixin or not
     setattr(cls, _PARAMETERS, types.MappingProxyType(problems))
+
+
+#: The new names a provider class filled through their old spelling (:func:`_bind_renamed`).
+_BOUND_FROM_OLD = "__untaped_bound_from_old__"
+
+
+def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
+    """A provider filling a renamed method by its old name fills the new one with it.
+
+    The owner calls only the new name, so the provider keeps answering until
+    the old name goes. A subclass overriding the old name answers instead
+    when its base filled the new name this way too (so its own code reaches
+    the base through ``super().items()``, never ``self.all_items()``, which
+    is now itself); a base that defines the new name itself keeps it, so
+    ``def items(self): return self.all_items()`` stays a shim.
+    """
+    for old, new in _renamed(info).items():
+        old_at, new_at = _holder_at(cls, old), _holder_at(cls, new)
+        old_holder, new_holder = cls.__mro__[old_at], cls.__mro__[new_at]
+        if old_holder in info.cls.__mro__:
+            continue  # the provider doesn't fill the old name
+        if new_holder in info.cls.__mro__ or (
+            old_at < new_at and new in vars(new_holder).get(_BOUND_FROM_OLD, ())
+        ):
+            setattr(cls, new, vars(old_holder)[old])
+            setattr(cls, _BOUND_FROM_OLD, frozenset({*vars(cls).get(_BOUND_FROM_OLD, ()), new}))
+
+
+def _renamed(info: ContractInfo) -> dict[str, str]:
+    """Each renamed method of the contract: its old name, kept deprecated, to the new one."""
+    renamed: dict[str, str] = {}
+    for name, method in info.methods.items():
+        new = _renamed_to(name, method.function, info.methods)
+        if new is not None:
+            renamed[name] = new
+    return renamed
+
+
+def old_spellings(info: ContractInfo, name: str) -> list[str]:
+    """The old spellings of contract method ``name``, kept deprecated until they go."""
+    return [old for old, new in _renamed(info).items() if new == name]
+
+
+def _renamed_to(name: str, function: object, names: Collection[str]) -> str | None:
+    """The method ``name`` was renamed to, when it is a contract's old spelling of one of ``names``.
+
+    The old method stays on the contract, marked
+    ``@deprecated(removed_in=..., replacement=<the new method>)``.
+    """
+    mark = function_mark(function)
+    if not isinstance(mark, Deprecated) or not callable(mark.replacement):
+        return None
+    new = getattr(mark.replacement, "__name__", None)
+    return new if new is not None and new != name and new in names else None
+
+
+def _holder_at(cls: type, name: str) -> int:
+    """Where in ``cls``'s MRO the class defining ``name`` sits."""
+    return next(at for at, klass in enumerate(cls.__mro__) if name in vars(klass))
 
 
 def parameter_problems(provider: type[Contract], contract: ContractInfo) -> list[str]:
@@ -604,6 +669,11 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
     item = _item_default(where, item_param)
     methods: dict[str, Method] = {}
     bridges: list[str] = []
+    public = {
+        name
+        for name, value in vars(cls).items()
+        if not name.startswith("_") and inspect.isfunction(value)
+    }
     for name, value in vars(cls).items():
         if name.startswith("_") or not inspect.isfunction(value):
             continue
@@ -625,7 +695,10 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                     )
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
-        is_bridge = _is_bridge(value, hints, item_param, item)
+        # an old spelling is never asked: the new method is the bridge
+        is_bridge = _renamed_to(name, value, public) is None and _is_bridge(
+            value, hints, item_param, item
+        )
         if is_bridge:
             bridges.append(name)
         methods[name] = Method(

@@ -184,10 +184,12 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
     from untaped.core.commands.doctor import Check  # noqa: PLC0415 - a start's cost
     from untaped.runtime.contracts.registry import (  # noqa: PLC0415 - only when listing contracts
         method_providers,
+        method_ranking,
         owned_contracts,
         rankings,
         unreadable_owners,
     )
+    from untaped.sdk.contracts._declare import old_spellings  # noqa: PLC0415
 
     rows: list[ContractMethod] = []
     owned = owned_contracts()
@@ -202,7 +204,7 @@ def _contract_methods(diag: Diag) -> list[ContractMethod]:
         for info in sorted(infos, key=lambda each: each.name):
             extension = extensions.get(info.name)
             for method in info.methods:
-                order = [] if extension is None else list(extension.rank.get(method, ()))
+                order = list(method_ranking(extension, method, old_spellings(info, method)))
                 rows.append(
                     ContractMethod(
                         contract=f"{owner}.{info.name}",
