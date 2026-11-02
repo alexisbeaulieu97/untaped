@@ -30,6 +30,7 @@ from untaped.sdk.fields import Key
 from untaped.sdk.storage.state import StateRows
 
 if TYPE_CHECKING:
+    from untaped.runtime.declaration import PluginDecl
     from untaped.runtime.registry import CompositionResult
     from untaped.sdk.marks import UntapedDeprecationWarning
 
@@ -73,8 +74,8 @@ _PENDING: dict[tuple[str, str], tuple[str, str, str, UntapedDeprecationWarning]]
 _WRITTEN: set[str] = set()
 #: A module's file -> its name, for the modules imported when it was last filled.
 _FILES: dict[str, str] = {}
-#: A plugin's entry point target -> its package (``None``: unresolvable).
-_PACKAGES: dict[str, str | None] = {}
+#: The composed plugins last read, and each by its entry point's package.
+_PACKAGES: list[tuple[tuple[PluginDecl, ...], dict[str, PluginDecl]]] = []
 
 
 def note(warning: UntapedDeprecationWarning, filename: str) -> None:
@@ -160,22 +161,14 @@ def _row(
 def _plugin_of(filename: str) -> tuple[str, str, str] | None:
     """The name, distribution and version of the composed plugin whose code ``filename`` is."""
     from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap imports this lazily
+    from untaped.runtime.plugin_uses import owner_of  # noqa: PLC0415 - only once a warning shows
 
     result = attached()
     module = _module_of(filename)
     if result is None or module is None:
         return None
-    owners = [
-        (package, plugin)
-        for plugin in result.mount.declaration.plugins
-        if (package := _package(plugin.target)) is not None
-        and (module == package or module.startswith(f"{package}."))
-    ]
-    if not owners:
-        return None
-    # The deepest package: plugins may share a namespace package, or nest in another's.
-    _, plugin = max(owners, key=lambda each: each[0].count("."))
-    if plugin.lockstep or plugin.root:
+    plugin = owner_of(module, _packages(result))
+    if plugin is None or plugin.lockstep or plugin.root:
         return None
     candidate = next((each for each in result.candidates if each.name == plugin.name), None)
     if candidate is None:
@@ -183,13 +176,19 @@ def _plugin_of(filename: str) -> tuple[str, str, str] | None:
     return plugin.name, candidate.distribution, candidate.distribution_version
 
 
-def _package(target: str) -> str | None:
-    """The package of a plugin's entry point ``target``, read once per process."""
-    if target not in _PACKAGES:
+def _packages(result: CompositionResult) -> dict[str, PluginDecl]:
+    """Each composed plugin by its entry point's package, read once per composition."""
+    plugins = result.mount.declaration.plugins
+    if not _PACKAGES or _PACKAGES[0][0] is not plugins:
         from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
 
-        _PACKAGES[target] = candidate_package(target)
-    return _PACKAGES[target]
+        found: dict[str, PluginDecl] = {}
+        for plugin in plugins:
+            package = candidate_package(plugin.target)
+            if package is not None:
+                found.setdefault(package, plugin)
+        _PACKAGES[:] = [(plugins, found)]
+    return _PACKAGES[0][1]
 
 
 def _module_of(filename: str) -> str | None:

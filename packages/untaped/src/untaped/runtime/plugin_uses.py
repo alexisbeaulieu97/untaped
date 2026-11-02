@@ -151,10 +151,12 @@ def filled_uses(providers: Sequence[type], owners: Mapping[str, Owner]) -> list[
     return uses
 
 
-def owner_of(module: str, owners: Mapping[str, Owner]) -> Owner | None:
+def owner_of[T](module: str, owners: Mapping[str, T]) -> T | None:
     """Who owns ``module``: the owner of its longest package in ``owners`` (keyed by package).
 
-    A plugin nested in ``untaped`` (``untaped.plugins.acme``) is its own owner, not core.
+    A plugin nested in ``untaped`` (``untaped.plugins.acme``) is its own owner,
+    not core; of two plugins sharing a namespace package, each owns its own
+    subpackage.
     """
     parts = module.split(".")
     for end in range(len(parts), 0, -1):
