@@ -490,7 +490,11 @@ def test_untaped_still_ends_by_sigterm_when_its_cleanup_fails(tmp_path: Path, cl
     assert _wait_gone(_pid(pid_file))
 
 
-def test_no_credential_file_is_left_after_sigterm_in_the_middle_of_git(tmp_path: Path) -> None:
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["sigterm", "sighup"])
+def test_no_credential_file_is_left_after_a_signal_in_the_middle_of_git(
+    tmp_path: Path, sig: signal.Signals
+) -> None:
+    # SIGHUP is what a closing terminal sends untaped.
     pid_file, temp = tmp_path / "git.pid", tmp_path / "tmp"
     temp.mkdir()
     fake_git = tmp_path / "git"
@@ -515,12 +519,32 @@ def test_no_credential_file_is_left_after_sigterm_in_the_middle_of_git(tmp_path:
     try:
         _pid(pid_file)
         assert [path.name[:17] for path in temp.iterdir()] == ["untaped-git-auth-"]
-        untaped.send_signal(signal.SIGTERM)
+        untaped.send_signal(sig)
         _, err = untaped.communicate(timeout=15)
     finally:
         untaped.kill()
-    assert untaped.returncode == -signal.SIGTERM, err
+    assert untaped.returncode == -sig, err
     assert list(temp.iterdir()) == []
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_CHILD_SUBREAPER")
+def test_a_subreaper_does_not_wait_a_grace_for_a_zombie_leftover(tmp_path: Path) -> None:
+    # Orphans of the group become untaped's children; their zombies must be reaped, or the
+    # group never looks empty and close() waits out the grace and SIGKILLs.
+    code = (
+        "import ctypes, sys, time\nfrom untaped.sdk import _process_groups\n"
+        "from untaped.sdk.process import start_process\n"
+        "_process_groups.GRACE_S = 5.0\n"
+        "assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0\n"
+        "child = start_process(['sh', '-c', '(sleep 0.2 >/dev/null 2>&1 </dev/null &)'])\n"
+        "started = time.monotonic()\n"
+        "print(child.close(), round(time.monotonic() - started) < 3)\n"
+        "child.stdout.close(); child.stderr.close()\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, timeout=30
+    )
+    assert result.stdout.split() == ["0", "True"], result.stderr
 
 
 def test_a_later_sigterm_ends_untaped_at_once(tmp_path: Path) -> None:
