@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from cyclopts import App
 
 from untaped.core.docs._docstring import first_line
-from untaped.core.docs._requirement import untaped_requirement
+from untaped.core.docs._requirement import older_pin_note, untaped_requirement
 from untaped.runtime.declaration import (
     CommandDecl,
     Declaration,
@@ -166,7 +166,7 @@ class Site:
     # --- the header -----------------------------------------------------------------
 
     def header(self, title: str, name: str | None = None) -> list[str]:
-        """A page's title, the line naming who answered, and the project mismatch line."""
+        """A page's title, the line naming who answered, and the project pin warnings."""
         version = metadata.version(CORE)
         parts = [f"untaped {version}"]
         composed = None if name is None or name == CORE else self.composed(name)
@@ -179,9 +179,9 @@ class Site:
                 parts.append(distribution)
         parts.append(shown_path(sys.prefix))
         lines = [f"# {title}", " · ".join(parts)]
-        mismatch = _mismatch(version)
-        if mismatch is not None:
-            lines.append(mismatch)
+        lines.extend(
+            note for note in (_mismatch(version), older_pin_note(Path.cwd())) if note is not None
+        )
         return lines
 
 

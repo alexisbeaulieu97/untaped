@@ -41,6 +41,7 @@ from untaped.sdk.testing import (
     ScreenKeys,
     ScriptedTerminal,
     invoke_cli,
+    make_project,
     plugin_candidate,
 )
 
@@ -506,3 +507,15 @@ def test_the_table_draws_each_state_in_its_role(monkeypatch: pytest.MonkeyPatch)
     result = _cli("setup", "plan")
     assert result.exit_code == 0, result.output
     assert "\x1b[33mskipped" in result.stdout  # wiz.online.api, a warning
+
+
+def test_the_plan_describes_the_profile_not_the_project_it_runs_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup writes profiles, so a project's own values never mark a step done."""
+    root = make_project(tmp_path / "PROJ-1").root
+    file = root / ".untaped" / "config.yml"
+    file.write_text("wiz: {server: {url: https://wiz.example.com}}\n", encoding="utf-8")
+    file.chmod(0o600)
+    monkeypatch.chdir(root)
+    assert _step(_plan(), "wiz.server")["state"] == "todo"

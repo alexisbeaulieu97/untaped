@@ -9,13 +9,16 @@ can write it, and may not set secrets, commands or ``HomeOnly()`` settings.
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
 from pydantic import BaseModel, SecretStr
 
+import untaped.runtime.folder_layer as folder_layer_module
 from untaped.runtime.folder_layer import folder_layer, forget_folder_layer, untrusted
 from untaped.runtime.profile_resolver import current_pick, explicit_pick, settings_key
 from untaped.runtime.run import entered, start_run
@@ -157,7 +160,8 @@ def test_an_unknown_folder_pick_is_skipped_with_one_warning(
     assert _demo_now().region == "staging"
     err = capsys.readouterr().err
     assert err.count("picks profile 'ghost'") == 1
-    layer = folder_layer()
+    with entered(start_run()):
+        layer = folder_layer()
     assert layer is not None
     assert (layer.picks, layer.skipped) == (("staging",), ("ghost",))
 
@@ -269,3 +273,73 @@ def _home() -> dict[str, object]:
     from untaped.runtime.config_file import read_config_dict
 
     return read_config_dict()
+
+
+def test_a_copied_project_s_file_is_ignored_until_the_copy_is_this_home_s_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = _project(tmp_path, monkeypatch, "demo: {org: Platform}\n")
+    copy = tmp_path / "planted"
+    shutil.copytree(root, copy)  # a project.json no reference of this home records here
+    monkeypatch.chdir(copy)
+    forget_folder_layer()
+    with entered(start_run()):
+        assert folder_layer() is None
+    assert _demo_now().org == "home-org"
+    err = capsys.readouterr().err
+    assert err.count("ignoring") == 1
+    assert f"untaped project init {copy}" in err
+
+
+def test_the_ignored_file_warns_once_even_after_the_home_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    _isolated_config: Path,
+) -> None:
+    root = _project(tmp_path, monkeypatch, "demo: {org: Platform}\n")
+    copy = tmp_path / "planted"
+    shutil.copytree(root, copy)
+    monkeypatch.chdir(copy)
+    forget_folder_layer()
+    assert _demo_now().org == "home-org"
+    _isolated_config.write_text(HOME + "  extra: {}\n", encoding="utf-8")
+    get_settings.cache_clear()
+    assert _demo_now().org == "home-org"
+    assert capsys.readouterr().err.count("ignoring") == 1
+
+
+def _accounts(
+    monkeypatch: pytest.MonkeyPatch, group: str, members: list[str], primary: list[int]
+) -> None:
+    grp = pytest.importorskip("grp")
+    pwd = pytest.importorskip("pwd")
+    me = SimpleNamespace(pw_name="me", pw_uid=1000, pw_gid=1000)
+    others = [SimpleNamespace(pw_name=f"u{uid}", pw_uid=uid, pw_gid=1000) for uid in primary]
+    monkeypatch.setattr(
+        grp, "getgrgid", lambda _gid: SimpleNamespace(gr_name=group, gr_mem=members)
+    )
+    monkeypatch.setattr(pwd, "getpwuid", lambda _uid: me)
+    monkeypatch.setattr(pwd, "getpwall", lambda: [me, *others])
+
+
+@pytest.mark.parametrize(
+    ("group", "members", "primary", "private"),
+    [
+        ("me", [], [], True),
+        ("me", ["me"], [], True),
+        ("me", ["me", "dev"], [], False),
+        ("me", [], [1001], False),
+        ("staff", [], [], False),
+    ],
+    ids=["own", "own-listed", "another-member", "another-primary", "shared-name"],
+)
+def test_group_write_is_trusted_only_for_your_private_group(
+    monkeypatch: pytest.MonkeyPatch,
+    group: str,
+    members: list[str],
+    primary: list[int],
+    private: bool,
+) -> None:
+    _accounts(monkeypatch, group, members, primary)
+    assert folder_layer_module._private_group(1000, 1000) is private

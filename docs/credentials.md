@@ -67,6 +67,15 @@ logins in memory: after `install(Acme)`,
 `credentials.set(TOKEN, AcmeServer(url="https://acme.example"), "t")` files
 one.
 
+## Projects
+
+A project's `.untaped/config.yml` may set a server's settings
+([Projects](./projects.md#settings)), never its secret. For a server whose
+settings that file chose, `get` reads no variable (`UNTAPED_ACME__TOKEN` nor
+`ACME_TOKEN`) and `auth login` files nothing: either would hand a folder's
+server a secret meant for another. A login already stored for exactly that
+server is used, and the error names the settings the folder chose.
+
 ## See also
 
 - [Building a plugin](./plugins.md) and

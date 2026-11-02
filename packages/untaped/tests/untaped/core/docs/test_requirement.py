@@ -10,8 +10,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
-from untaped.core.docs import untaped_requirement
+from untaped.core.docs import UntapedRequirement, older_pin_note, untaped_requirement
 from untaped.sdk import nearest_pyproject
 from untaped.sdk.testing import make_project
 
@@ -141,3 +142,43 @@ def test_the_walk_never_climbs_above_both_roots(tmp_path: Path) -> None:
     make_project(project)
     (project / "notes").mkdir()
     assert nearest_pyproject(project / "notes") is None
+
+
+@pytest.mark.parametrize(
+    ("line", "admits"),
+    [
+        ("untaped<12", False),
+        ("untaped==11.1.0", False),
+        ("untaped~=11.1", False),
+        ("untaped==11.*", False),
+        ("untaped>=11,<12", False),
+        ("untaped>=11", True),
+        ("untaped<13", True),
+        ("untaped<=12.0", True),
+        ("untaped==12.*", True),
+        ("untaped~=12.0", True),
+        ("untaped", True),
+        ("untaped<12; python_version < '3'", True),
+    ],
+)
+def test_a_requirement_admits_projects_when_some_version_from_12_meets_it(
+    line: str, admits: bool
+) -> None:
+    assert UntapedRequirement(Path("pyproject.toml"), Requirement(line)).admits_projects() is admits
+
+
+def test_a_pin_without_projects_is_noted_only_when_the_project_has_a_config_file(
+    tmp_path: Path,
+) -> None:
+    app = _project(tmp_path / "app", '[project]\nname = "app"\ndependencies = ["untaped<12"]\n')
+    make_project(app)
+    assert older_pin_note(app) is None  # nothing for an older untaped to ignore
+    (app / ".untaped" / "config.yml").write_text("profile: prod\n", encoding="utf-8")
+    note = older_pin_note(app)
+    assert note is not None
+    assert "untaped<12" in note
+    assert "`profile:` included" in note
+    (app / "pyproject.toml").write_text(
+        '[project]\nname = "app"\ndependencies = ["untaped>=12"]\n', encoding="utf-8"
+    )
+    assert older_pin_note(app) is None

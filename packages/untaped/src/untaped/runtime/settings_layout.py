@@ -14,7 +14,8 @@ import copy
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePath
-from typing import TYPE_CHECKING, Any
+from types import UnionType
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 
@@ -112,6 +113,19 @@ class ProfilesSettingsLayout:
         else:
             effective, provenance = resolve_profiles(renamed, picks=picks)
         return ResolvedConfig(effective, provenance, uses)
+
+    def project_effective(self, raw: dict[str, Any], layer: FolderLayer) -> dict[str, Any]:
+        """The values a run in ``layer``'s project reads with no pick of its own.
+
+        The base, the project's picks, then its own values; what a write to
+        the project's file is validated against.
+        """
+        models = self._sections_now()
+        picks = tuple(Picked(name, "project") for name in layer.picks)
+        values, _ = _folder_values(layer, picks, models)
+        renamed, _ = _rename_profiles(raw, models, layer.picks)
+        effective, _ = resolve_profiles(renamed, picks=layer.picks, folder=values)
+        return effective
 
     def _sections_now(self) -> SectionModels:
         return self._sections() if self._sections is not None else {}
@@ -245,17 +259,28 @@ def _refuse_home_settings(
 def _rooted(
     descriptors: Sequence[FieldDescriptor], data: dict[str, Any], root: Path
 ) -> dict[str, Any]:
-    """``data`` with each relative path setting read from ``root`` (``~`` stays the home's)."""
+    """``data`` with each relative path setting read from ``root`` (``~`` stays the home's).
+
+    A path setting: a path, or a union with one (``bool | Path``), given as text.
+    """
+    from untaped.runtime.config_file import set_at_path  # noqa: PLC0415 - it imports settings
+
     for descriptor in descriptors:
-        kind = descriptor.annotation
-        if not (isinstance(kind, type) and issubclass(kind, PurePath)):
+        if not _takes_path(descriptor.annotation):
             continue
         value = _at(data, descriptor.path)
         if isinstance(value, str) and value and not value.startswith("~"):
             path = Path(value)
             if not path.is_absolute():
-                _put(data, descriptor.path, str(root / path))
+                set_at_path(data, descriptor.path, str(root / path))
     return data
+
+
+def _takes_path(annotation: object) -> bool:
+    members = get_args(annotation) if get_origin(annotation) in (Union, UnionType) else ()
+    return any(
+        isinstance(kind, type) and issubclass(kind, PurePath) for kind in (annotation, *members)
+    )
 
 
 _MISSING = object()
@@ -268,10 +293,3 @@ def _at(data: dict[str, Any], path: tuple[str, ...]) -> Any:
             return _MISSING
         cursor = cursor[part]
     return cursor
-
-
-def _put(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None:
-    cursor = data
-    for part in path[:-1]:
-        cursor = cursor[part]
-    cursor[path[-1]] = value

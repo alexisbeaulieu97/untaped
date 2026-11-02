@@ -65,26 +65,37 @@ def parse_pick(text: str, *, origin: str) -> tuple[str, ...]:
     malformed name, and for ``default`` (the base alone) inside a longer list.
     """
     names = tuple(part.strip() for part in text.split(","))
+    check_names(names, origin=origin, hint="; separate names with commas")
+    return names
+
+
+def check_names(
+    names: Sequence[str], *, origin: str, category: str = "usage", hint: str = ""
+) -> None:
+    """Refuse a malformed profile name, and ``default`` stacked with other profiles.
+
+    ``category`` is the error's (``usage`` for a typed pick, exit 2; ``config``
+    for a file's, exit 4); ``hint`` is added to the name rule's hint.
+    """
     for name in names:
         if not PROFILE_NAME.fullmatch(name):
             raise ConfigError(
                 f"invalid profile name {name!r} in {origin}",
-                category="usage",
+                category=category,
                 hint=(
                     "a name is letters, digits, `_`, `.` and `-`, and does not start with `.` "
-                    "or `-`; separate names with commas"
+                    f"or `-`{hint}"
                 ),
             )
-    check_pick(names, origin=origin)
-    return names
+    check_pick(names, origin=origin, category=category)
 
 
-def check_pick(names: Sequence[str], *, origin: str) -> None:
+def check_pick(names: Sequence[str], *, origin: str, category: str = "usage") -> None:
     """Refuse ``default`` (the base alone) stacked with other profiles."""
     if DEFAULT_PROFILE in names and len(names) > 1:
         raise ConfigError(
             f"{origin} stacks `default` with other profiles; `default` means the base alone",
-            category="usage",
+            category=category,
             hint="leave `default` out: the base is always read beneath the picked profiles",
         )
 
@@ -119,13 +130,14 @@ def run_layers() -> tuple[tuple[Picked, ...], FolderLayer | None]:
     """
     from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - it imports this
 
-    folder = folder_layer()
-    flag = flag_pick()
+    run = run_or_none()
+    folder = folder_layer() if run is None or run.folder else None
+    env, flag = _run_picks()
     if flag == (DEFAULT_PROFILE,):
         return (), folder
-    text = os.environ.get(ACTIVE_PROFILE_ENV)
-    env = parse_pick(text, origin=ACTIVE_PROFILE_ENV) if text else ()
     project = () if folder is None or env == (DEFAULT_PROFILE,) else folder.picks
+    if folder is not None and not folder_picks_aside():
+        folder.warn_skipped()
     if env == (DEFAULT_PROFILE,):
         env = ()
     picks = [
@@ -143,7 +155,25 @@ def explicit_pick() -> tuple[str, ...]:
     What ``project init`` records as a new project's ``profile:``; ``()``
     when nothing picks, or the pick is ``default`` (the base alone).
     """
-    return tuple(pick.name for pick in current_pick() if pick.source != "project")
+    env, flag = _run_picks()
+    if flag == (DEFAULT_PROFILE,):
+        return ()
+    names = [*(() if env == (DEFAULT_PROFILE,) else env), *flag]
+    last = {name: index for index, name in enumerate(names)}
+    return tuple(name for index, name in enumerate(names) if last[name] == index)
+
+
+def folder_picks_aside() -> bool:
+    """Whether ``default`` (``--profile`` or ``UNTAPED_PROFILE``) sets the project's picks aside."""
+    env, flag = _run_picks()
+    return (DEFAULT_PROFILE,) in (env, flag)
+
+
+def _run_picks() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """``UNTAPED_PROFILE``'s names and ``--profile``'s, as written; no project's file is read."""
+    text = os.environ.get(ACTIVE_PROFILE_ENV)
+    env = parse_pick(text, origin=ACTIVE_PROFILE_ENV) if text else ()
+    return env, flag_pick()
 
 
 def settings_key() -> tuple[object, ...]:

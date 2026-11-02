@@ -33,6 +33,7 @@ from untaped.core.profile.use_cases import (
 )
 from untaped.core.settings import CoreSettings
 from untaped.runtime.folder_layer import folder_layer
+from untaped.runtime.profile_resolver import folder_picks_aside
 from untaped.runtime.settings import get_settings_model, resolve_config_path
 from untaped.sdk._schema import redact_secrets, secret_field_paths
 from untaped.sdk.fields import Confirm, DryRun, Output, Positional
@@ -109,7 +110,8 @@ class Current(Command[CoreSettings]):
         return ProfilePick(
             name=",".join(pick.name for pick in picks) or "default",
             profiles=[PickedProfile(name=pick.name, source=pick.source) for pick in picks],
-            skipped=list(folder.skipped) if folder is not None else [],
+            folder=str(folder.file) if folder is not None else None,
+            skipped=list(folder.skipped) if folder is not None and not folder_picks_aside() else [],
         )
 
 

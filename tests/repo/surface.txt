@@ -5952,6 +5952,7 @@ record untaped.profile_outcome.error Failure?
 record untaped.profile_outcome.name string
 record untaped.profile_outcome.previous_name string?
 record untaped.profile_pick
+record untaped.profile_pick.folder string?
 record untaped.profile_pick.name string
 record untaped.profile_pick.profiles PickedProfile[]
 record untaped.profile_pick.skipped string[]
@@ -6777,7 +6778,7 @@ sdk untaped.sdk.HolderView.anchor  [experimental]
 sdk untaped.sdk.HolderView.holder  [experimental]
 sdk untaped.sdk.HolderView.label  [experimental]
 sdk untaped.sdk.HolderView.state  [experimental]
-sdk untaped.sdk.HomeOnly()
+sdk untaped.sdk.HomeOnly()  [experimental]
 sdk untaped.sdk.HttpClient()
 sdk untaped.sdk.HttpClient(auth=) default=None
 sdk untaped.sdk.HttpClient(base_url@1=) default=""
@@ -8077,7 +8078,7 @@ sdk untaped.sdk.health.ExecutableCheck.run
 sdk untaped.sdk.health.ExecutableCheck.spelled
 sdk untaped.sdk.health.ExecutableCheck.title
 sdk untaped.sdk.health.ExecutableCheck.where
-sdk untaped.sdk.health.HomeOnly()
+sdk untaped.sdk.health.HomeOnly()  [experimental]
 sdk untaped.sdk.health.NeedsSetup
 sdk untaped.sdk.health.OnlineCheck(*, probe) callback(probe, 0)
 sdk untaped.sdk.health.OnlineCheck(title=) default=None

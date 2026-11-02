@@ -208,7 +208,10 @@ def current_or_built(
 
 @contextmanager
 def child_run(
-    *, profiles: str | Sequence[str] | None = None, overlay: SettingsOverlay | None = None
+    *,
+    profiles: str | Sequence[str] | None = None,
+    overlay: SettingsOverlay | None = None,
+    folder: bool | None = None,
 ) -> Iterator[Run]:
     """Run the block under a child of the current run: a nested pick or a settings overlay.
 
@@ -219,7 +222,8 @@ def child_run(
     ``profiles`` replaces the ``--profile`` pick (a string is one profile;
     ``UNTAPED_PROFILE``'s names still stack beneath it; ``"default"`` reads
     the base alone), ``overlay`` lays candidate values over what it loads,
-    and either left out keeps the parent's. An empty pick raises
+    ``folder=False`` leaves the project's ``.untaped/config.yml`` out (a
+    profile read as the home defines it), and any left out keeps the parent's. An empty pick raises
     :class:`ValueError`: leave ``profiles`` out to keep the parent's. The
     aggregate settings are cached per pick and never under an overlay, so
     nothing is dropped on entry or exit. A thread sees the child only when
@@ -236,6 +240,7 @@ def child_run(
         picks=_section_reader(),
         profiles=parent.profiles if names is None else names,
         overlay=parent.overlay if overlay is None else overlay,
+        folder=parent.folder if folder is None else folder,
     )
     with run_scope(child):
         yield child

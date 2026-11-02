@@ -32,6 +32,10 @@ from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
 from untaped.sdk._schema import HomeOnly, unwrap_optional
+from untaped.sdk.marks import experimental
+
+# A marker class, defined beside the schema walker that reads it.
+experimental(HomeOnly)
 
 if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential

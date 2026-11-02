@@ -131,10 +131,15 @@ $ untaped config get awx.default_organization -f json
 - `project init` with `--profile` or `UNTAPED_PROFILE` records that pick as the
   new project's `profile:`, so the folder keeps the environment it was made in;
   with no pick it writes no `profile:`.
-- Only the file beside `project.json` counts, so a cloned repository's
-  committed `config.yml` is read once you make its folder a project. It is read
+- Only the file of a folder this home records as a project counts: a cloned
+  repository's committed `.untaped/` is never read until you run
+  `project init` there (until then it is ignored with one warning). It is read
   only when it and `.untaped/` are yours and nobody else can write them (your
-  private group may); otherwise it is ignored with one warning.
+  private group may); otherwise it is ignored with one warning. `doctor`
+  reports a file it can't read, and checks the rest without it.
+- An untaped older than 12.0 ignores the file, `profile:` included, and runs
+  against the home's active profile. When the project's `pyproject.toml` pins
+  only such versions, `doctor` and every `untaped docs` page warn.
 - A project picks profiles and defines none: `profiles:` and `active:` exit 4,
   as do a secret, a command untaped runs, a setting only the home holds (a
   plugin's shared folder, such as `git.store_dir`) and a newer
@@ -143,10 +148,12 @@ $ untaped config get awx.default_organization -f json
   applies. `profile rename` gives the projects that pick a profile its new
   name, and `profile delete` drops it from them. A relative path is read from
   the project's folder.
-- No credential is used for a server whose settings the project's file chose
-  ([Credentials](./credentials.md)). When one is missing, the hint names the
-  run's pick (`untaped --profile staging auth login awx`), so it files the
-  credential for the same server wherever you run it.
+- For a server whose settings the project's file chose, untaped reads no
+  credential variable and files no credential; one already stored for that
+  exact server is used ([Credentials](./credentials.md#projects)). When a
+  credential is missing, the hint names the run's pick
+  (`untaped --profile staging auth login awx`), so it files the credential for
+  the same server wherever you run it.
 
 ## A plugin's files in `.untaped/`
 

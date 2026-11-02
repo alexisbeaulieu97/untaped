@@ -354,6 +354,21 @@ def collect_doctor_rows(
     ``plugins`` limits the plugin-contributed checks to those
     plugins (``setup`` checks only what it configured).
     """
+    project_row = _project_config_row()
+    if project_row is None:
+        return _collect_rows(result, online=online, plugins=plugins)
+    if project_row["status"] != _FAIL:
+        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
+    with child_run(folder=False):  # the rest as if outside the project, so every row shows
+        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
+
+
+def _collect_rows(
+    result: CompositionResult,
+    *,
+    online: bool,
+    plugins: frozenset[str] | None,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row()
     rows.append(config_row)
@@ -406,7 +421,7 @@ def selected_check_rows(
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
     """``selected`` plugins' doctor rows for ``profile``, online checks included."""
-    with child_run(profiles=profile):
+    with child_run(profiles=profile, folder=False):
         rows = collect_doctor_rows(result, online=True, plugins=selected)
     # Old keys concern every plugin's settings, so setup shows them too.
     return [
@@ -443,7 +458,7 @@ def online_probe_rows(
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
     scope = _plugin_scope(composed)
     overlay = SettingsOverlay(profile, scope.section, dict(values))
-    with child_run(profiles=profile, overlay=overlay):
+    with child_run(profiles=profile, overlay=overlay, folder=False):
         settings, error = None, None
         if scope.settings_model is not None:
             settings, error = _validate_section(scope, scope.settings_model, *_overlaid_effective())
@@ -822,6 +837,29 @@ def _config_row() -> tuple[dict[str, Any] | None, dict[str, object]]:
         detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
         return None, _row("config", NAME, _FAIL, "load config file", detail)
     return raw, _row("config", NAME, _PASS, "load config file", str(path))
+
+
+def _project_config_row() -> dict[str, object] | None:
+    """The current project's ``.untaped/config.yml``: read, or why not; ``None`` outside one.
+
+    It warns when the project's pin admits only an untaped without projects,
+    which ignores the file.
+    """
+    from untaped.core.docs import older_pin_note  # noqa: PLC0415 - read only here
+    from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - read only here
+
+    title = "load project config file"
+    try:
+        layer = folder_layer()
+    except ConfigError as exc:
+        detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
+        return _row("config", NAME, _FAIL, title, f"{detail} (the rows below leave it out)")
+    if layer is None:
+        return None
+    note = older_pin_note(Path.cwd())
+    if note is not None:
+        return _row("config", NAME, _WARN, title, note)
+    return _row("config", NAME, _PASS, title, str(layer.file))
 
 
 def _profile_row(settings_error: str | None) -> dict[str, object]:

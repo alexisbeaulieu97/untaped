@@ -27,7 +27,7 @@ from untaped.core.config.models import (
     display_value,
 )
 from untaped.core.config.ports import SettingsReader, SettingsWriter
-from untaped.runtime.profile_resolver import DEFAULT_PROFILE
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE, current_pick
 from untaped.runtime.settings import ContractName, ExtensionSettings
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
@@ -137,6 +137,11 @@ def _still_read(key: str, target: str, holder: str | None) -> tuple[Note, ...]:
         return ()
     over = "the project's file" if is_folder_source(target) else "the base"
     held = Source.of(holder)
+    if is_folder_source(target) and held.kind == "profile":
+        # The project's own picks sit beneath its values: only the terminal's hide them.
+        sources = {pick.name: pick.source for pick in current_pick()}
+        if sources.get(held.profile or "") == "project":
+            return ()
     where = (
         f"project {held.project}'s config.yml"
         if held.kind == "project"

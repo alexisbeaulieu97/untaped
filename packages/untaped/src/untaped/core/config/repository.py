@@ -496,14 +496,17 @@ class SettingsFileRepository:
         Merges from the *target* profile's perspective: otherwise an invalid
         value silently lands in a profile this run doesn't pick and only fails
         when a later run picks it. Env overrides are deliberately ignored:
-        the file must be valid on its own. A project's file is validated as
-        it stands.
+        the file must be valid on its own. A project's file is validated over
+        the home's base and the profiles it picks, as a run inside it reads them.
         """
-        effective = (
-            data
-            if self._project is not None
-            else active_settings_layout().effective(data, profile=profile)
-        )
+        layout = active_settings_layout()
+        if self._project is not None:
+            from untaped.runtime.folder_layer import layer_from  # noqa: PLC0415
+
+            layer = layer_from(self._project.root, data)
+            effective = layout.project_effective(read_config_dict(), layer)
+        else:
+            effective = layout.effective(data, profile=profile)
         written = ".".join(descriptor.path)
         part = _core_part(descriptor.path)
         if part is not None:

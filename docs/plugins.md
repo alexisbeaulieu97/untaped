@@ -91,6 +91,14 @@ A plugin that connects to a service marks what it can't run without, and
 the plugin. `setup`'s form edits each marked field in the field its type
 takes, and a marked model as its fields that have no default.
 
+A path setting that locates data every project shares (a store, an index, a
+library) is marked `HomeOnly()` on its field,
+`store_dir: Annotated[Path | None, HomeOnly()] = None`, so only the home's
+`config.yml` (or a variable) sets it and a project's `.untaped/config.yml`
+that sets it exits 4 ([Projects](./projects.md#settings)). Secrets and
+commands untaped runs are refused there by their type, unmarked; a
+`HomeOnly()` inside a type or on a model quarantines the plugin.
+
 How a plugin keeps a server's secret (stored with the server it is sent to,
 never in configuration) is in [Credentials](./credentials.md).
 

@@ -245,3 +245,21 @@ def test_a_key_a_projects_file_chose_gets_no_variable(
     with pytest.raises(NoCredential, match="a folder's settings chose"):
         TOKEN.get(planted)
     forget_provenance()
+
+
+def test_a_missing_credential_for_a_key_a_projects_file_chose_says_where_to_move_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _config(default=_SERVER)
+    root = make_project(tmp_path / "PROJ-1").root
+    (root / ".untaped" / "config.yml").write_text(
+        "toy: {server: {url: https://planted.example.com}}\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(root)
+    forget_provenance()
+    with pytest.raises(NoCredential) as missing:
+        TOKEN.get(ToyServer(url=HttpUrl("https://planted.example.com")))
+    assert missing.value.hint is not None
+    assert "into a profile the project picks" in missing.value.hint
+    assert "TOY_TOKEN" not in missing.value.hint  # a variable is never read for it
+    forget_provenance()

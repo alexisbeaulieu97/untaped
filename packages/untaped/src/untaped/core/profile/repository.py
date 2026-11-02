@@ -23,7 +23,7 @@ from untaped.runtime.profile_resolver import (
     pick_names,
 )
 from untaped.runtime.settings import active_settings_layout, load_project_config
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
 
 if TYPE_CHECKING:
     from untaped.core.profile.project_picks import ProjectPick
@@ -161,7 +161,7 @@ def rewrite_project_picks(
             continue
         try:
             mutate_config(_renaming(old, new), each.file, load=load_project_config)
-        except ConfigError as exc:
+        except (UntapedError, OSError) as exc:  # the home's rename is done: report, never crash
             left.append(ProjectPick(each.name, each.file, str(exc)))
     return left
 

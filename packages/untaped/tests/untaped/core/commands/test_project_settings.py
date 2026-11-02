@@ -140,8 +140,11 @@ def test_profile_current_lists_the_projects_pick_and_what_it_skips(
             {"name": "staging", "source": "project"},
             {"name": "prod", "source": "flag"},
         ],
+        "folder": str(tmp_path / "PROJ-1" / ".untaped" / "config.yml"),
         "skipped": ["ghost"],
     }
+    aside = _cli("--profile", "default", "profile", "current", "-f", "json")
+    assert json.loads(aside.stdout)["skipped"] == []
 
 
 def test_profile_rename_rewrites_the_projects_that_pick_it(
@@ -197,3 +200,48 @@ def test_project_init_refuses_an_unknown_pick_before_making_anything(tmp_path: P
     result = _cli("--profile", "ghost", "project", "init", str(tmp_path / "T-5"))
     assert result.exit_code == 2
     assert not (tmp_path / "T-5").exists()
+
+
+def _doctor(*args: str) -> list[dict[str, object]]:
+    result = _cli("doctor", "-f", "json", *args)
+    return json.loads(result.stdout)
+
+
+def test_doctor_reads_the_projects_file_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(tmp_path, monkeypatch, "profile: staging\n")
+    rows = _doctor()
+    assert rows[0]["title"] == "load project config file"
+    assert rows[0]["status"] == "pass"
+
+
+def test_doctor_keeps_checking_when_the_projects_file_is_broken(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(tmp_path, monkeypatch, "profile: [unclosed\n")
+    rows = _doctor()
+    assert rows[0]["status"] == "fail"
+    assert "the rows below leave it out" in str(rows[0]["detail"])
+    assert len(rows) > 1  # the rest ran as if outside the project
+
+
+def test_doctor_warns_when_the_projects_pin_ignores_its_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch, "profile: staging\n")
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "app"\ndependencies = ["untaped<12"]\n', encoding="utf-8"
+    )
+    row = _doctor()[0]
+    assert row["status"] == "warn"
+    assert "an untaped without projects" in str(row["detail"])
+
+
+def test_config_set_project_keeps_the_rest_of_a_nested_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch, "untaped: {ui: {theme: plain}}\n")
+    result = _cli("config", "set", "untaped.ui.border", "none", "--project")
+    assert result.exit_code == 0, result.output
+    assert _file(root)["untaped"] == {"ui": {"theme": "plain", "border": "none"}}

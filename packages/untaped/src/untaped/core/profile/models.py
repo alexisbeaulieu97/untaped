@@ -65,6 +65,13 @@ class ProfilePick(Record):
         description="The pick as one `--profile` value: the names comma-joined, else `default`."
     )
     profiles: list[PickedProfile]
+    folder: str | None = Field(
+        default=None,
+        description=(
+            "The project's .untaped/config.yml this run reads; null outside a project, or "
+            "when that file is ignored."
+        ),
+    )
     skipped: list[str] = Field(
         default_factory=list,
         description="Profiles the project's profile: names that the home doesn't define.",

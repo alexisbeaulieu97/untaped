@@ -17,12 +17,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from packaging.requirements import Requirement
+from packaging.specifiers import InvalidSpecifier, Specifier
 from packaging.utils import canonicalize_name
+from packaging.version import InvalidVersion, Version
 
+from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.registry import UNEVALUABLE, parse_requirement, requirement_admits
-from untaped.sdk.projects import nearest_pyproject
+from untaped.sdk.projects import find_root, nearest_pyproject
+from untaped.sdk.words import shown_path
 
 _UNTAPED = "untaped"
+_FIRST_WITH_PROJECTS = Version("12")
 
 
 @dataclass(frozen=True)
@@ -35,6 +40,20 @@ class UntapedRequirement:
     def satisfied_by(self, version: str) -> bool:
         """Whether ``version`` of untaped meets it (a pre-release compared per PEP 440)."""
         return requirement_admits(self.requirement, version)
+
+    def admits_projects(self) -> bool:
+        """Whether some untaped it admits reads projects (12.0 or later).
+
+        Each specifier is checked alone: one that admits nothing from 12.0
+        on rules every such version out. A marker that does not apply or a
+        direct reference constrains nothing, so it admits them.
+        """
+        if self.requirement.url or (
+            self.requirement.marker is not None
+            and not self.requirement.marker.evaluate({"extra": ""})
+        ):
+            return True
+        return all(_reaches_projects(spec) for spec in self.requirement.specifier)
 
 
 def untaped_requirement(start: Path) -> UntapedRequirement | None:
@@ -51,6 +70,43 @@ def untaped_requirement(start: Path) -> UntapedRequirement | None:
         if parsed is not None and canonicalize_name(parsed.name) == _UNTAPED:
             return UntapedRequirement(file, parsed) if _evaluable(parsed) else None
     return None
+
+
+def older_pin_note(start: Path) -> str | None:
+    """A warning when the project at ``start`` has a ``config.yml`` its pin can't read.
+
+    An untaped without projects ignores ``.untaped/config.yml``, ``profile:``
+    included, so an agent pinned to one runs against the home's active profile.
+    """
+    root = find_root(start)
+    if root is None or not project_config_path(root).is_file():
+        return None
+    found = untaped_requirement(start)
+    if found is None or found.admits_projects():
+        return None
+    return (
+        f"{shown_path(found.file)} pins {found.requirement}, an untaped without projects: it "
+        f"ignores {shown_path(project_config_path(root))}, `profile:` included, and runs "
+        "against the home's active profile. Pin untaped>=12 to read it."
+    )
+
+
+def _reaches_projects(spec: Specifier) -> bool:
+    """Whether ``spec`` admits some version from 12.0 on (an unparsable one is assumed to)."""
+    if spec.operator in {">", ">=", "!="}:
+        return True
+    if spec.operator in {"<", "<="}:
+        return spec.contains(_FIRST_WITH_PROJECTS, prereleases=True)
+    try:
+        floor = Version(spec.version.removesuffix(".*"))
+    except InvalidVersion:
+        return True
+    if spec.operator == "===":
+        return floor >= _FIRST_WITH_PROJECTS
+    try:
+        return spec.contains(max(floor, _FIRST_WITH_PROJECTS), prereleases=True)
+    except InvalidSpecifier:  # pragma: no cover - a parsed specifier takes any version
+        return True
 
 
 def _evaluable(requirement: Requirement) -> bool:

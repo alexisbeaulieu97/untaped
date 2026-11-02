@@ -205,7 +205,7 @@ def _login(credential: Credential[Any], candidate: Candidate, secret: SecretChoi
     section, profile, how = candidate.section, candidate.profile, secret.how
     if how == "keep":
         return []
-    with child_run(profiles=profile):
+    with child_run(profiles=profile, folder=False):
         settings = load_settings_section(section)
     key = credential_key(credential, settings)
     if key is None:
