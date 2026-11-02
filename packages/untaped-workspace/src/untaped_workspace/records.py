@@ -151,7 +151,9 @@ class RunOutcome(OutcomeRecord, TargetRecord):
     action: Annotated[RunAction, Column]
     returncode: Annotated[int | None, Column] = Field(
         default=None,
-        description="Null for a timeout or a repo not run; negative for a signal.",
+        description=(
+            "Null for a timeout, a run untaped stopped or a repo not run; negative for a signal."
+        ),
     )
     stdout: str = ""
     stderr: str = ""

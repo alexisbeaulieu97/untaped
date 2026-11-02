@@ -182,5 +182,5 @@ class CommandRunner(Protocol):
         ...
 
     def cancel(self) -> None:
-        """Stop every command still running (an interrupted ``run``)."""
+        """Stop every command still running and start no more (an interrupted ``run``)."""
         ...
