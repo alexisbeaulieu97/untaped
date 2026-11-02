@@ -132,6 +132,29 @@ def deprecated(
 type Stability = Experimental | Deprecated
 
 
+def old_names(**entries: Deprecated) -> Mapping[str, Deprecated]:
+    """A module's old spellings: each resolves to its replacement and warns until it goes.
+
+    ``old_names(human_size=deprecated(removed_in=14, replacement=size_text))``
+    in the table a module resolves its names from (the SDK root's
+    ``_exports.OLD_NAMES``, a group's ``lazy_names(..., old=...)``). Each
+    entry names its removal and the renamed object itself, never text: the
+    old name is that object. Old names stay out of ``__all__``.
+    """
+    for name, mark in entries.items():
+        if (
+            not isinstance(mark, Deprecated)
+            or mark.removed_in is None
+            or mark.replacement is None
+            or isinstance(mark.replacement, str)
+        ):
+            raise TypeError(
+                f"old_names({name}=...) takes deprecated(removed_in=<major>, replacement=<the "
+                f"renamed object>), not {mark!r}"
+            )
+    return types.MappingProxyType(dict(entries))
+
+
 def stability_refusal(value: object) -> str | None:
     """Why ``value`` is no stability mark; ``None`` for no mark or a mark.
 

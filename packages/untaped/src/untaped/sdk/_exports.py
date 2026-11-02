@@ -84,7 +84,13 @@ from untaped.sdk.fields import (
     Spread,
     Status,
 )
-from untaped.sdk.marks import Deprecated, UntapedDeprecationWarning, deprecated, experimental
+from untaped.sdk.marks import (
+    Deprecated,
+    UntapedDeprecationWarning,
+    deprecated,
+    experimental,
+    old_names,
+)
 from untaped.sdk.plugin import Command, Group, Plugin, StubSkill, derive
 from untaped.sdk.plugin_records import InstalledPlugin, installed_plugins
 from untaped.sdk.records import (
@@ -237,3 +243,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "shown_path",
     "size_text",
 ]
+
+#: The root's old spellings (:func:`untaped.sdk.marks.old_names`): each resolves to its
+#: replacement on every lookup and warns, stays out of ``__all__``, and is imported by name
+#: in ``untaped/sdk/__init__.py``'s ``TYPE_CHECKING`` block for type checkers.
+OLD_NAMES = old_names()

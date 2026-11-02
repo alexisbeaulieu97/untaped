@@ -46,6 +46,7 @@ from untaped.sdk._keys import SettingKey
 from untaped.sdk._keys import key as setting_key
 from untaped.sdk.contracts._parameters import adapted, parameter_problem
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
+from untaped.sdk.marks import Deprecated, function_mark
 from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
 
@@ -537,7 +538,8 @@ def _rewrap(cls: type[Contract]) -> None:
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
-    ``@cached`` anywhere in the provider's own code is a ``TypeError``. A method
+    ``@cached`` anywhere in the provider's own code is a ``TypeError``. A
+    renamed method filled by its old name fills the new one. A method
     taking fewer parameters than the contract's is adapted to be called as the
     contract's is; one whose parameters can't be passed by name is recorded,
     for :func:`parameter_problems`, and left as it is.
@@ -552,6 +554,7 @@ def _rewrap(cls: type[Contract]) -> None:
                 raise TypeError(
                     f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
                 )
+    _bind_renamed(cls, info)
     problems: dict[str, str] = {}
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
@@ -571,6 +574,41 @@ def _rewrap(cls: type[Contract]) -> None:
         if wrapped is not value or problem is not None:
             setattr(cls, name, wrapped)  # ``cls`` answers for it, mixin or not
     setattr(cls, _PARAMETERS, types.MappingProxyType(problems))
+
+
+def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
+    """A provider filling a renamed method by its old name fills the new one with it.
+
+    The owner calls only the new name, so the provider keeps answering until
+    the old name goes.
+    """
+    for old, new in _renamed(info).items():
+        if _fills(cls, info, old) and not _fills(cls, info, new):
+            holder = next(klass for klass in cls.__mro__ if old in vars(klass))
+            setattr(cls, new, vars(holder)[old])
+
+
+def _renamed(info: ContractInfo) -> dict[str, str]:
+    """Each renamed method of the contract: its old name, kept deprecated, to the new one.
+
+    The old method stays on the contract, marked
+    ``@deprecated(removed_in=..., replacement=<the new method>)``.
+    """
+    renamed: dict[str, str] = {}
+    for name, method in info.methods.items():
+        mark = function_mark(method.function)
+        if not isinstance(mark, Deprecated) or not callable(mark.replacement):
+            continue
+        new = getattr(mark.replacement, "__name__", None)
+        if new is not None and new != name and new in info.methods:
+            renamed[name] = new
+    return renamed
+
+
+def _fills(cls: type, info: ContractInfo, name: str) -> bool:
+    """Whether ``cls`` defines ``name`` below the contract (itself, a provider base or a mixin)."""
+    holder = next(klass for klass in cls.__mro__ if name in vars(klass))
+    return holder not in info.cls.__mro__
 
 
 def parameter_problems(provider: type[Contract], contract: ContractInfo) -> list[str]:

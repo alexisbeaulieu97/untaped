@@ -50,6 +50,7 @@ from pydantic import BaseModel
 from untaped.core.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.core.surface._lists import HOOKS, IMPLEMENTERS
 from untaped.core.surface._types import default_text, factory_default, literal_values, named_token
+from untaped.sdk._lazy import old_names_of
 from untaped.sdk._parameter_marks import parameter_marks
 from untaped.sdk._replacement import replacement_text, sdk_replacement_text
 from untaped.sdk.marks import (
@@ -144,6 +145,9 @@ def module_lines(
         obj = getattr(module, name)
         subject = f"{path}.{name}"
         lines.extend(walker.export(subject, obj, own_mark(obj) or plugin_mark))
+    # an old name is the renamed object, promised under its old spelling until it goes
+    for name, mark in sorted(old_names_of(module).items()):
+        lines.extend(walker.export(f"{path}.{name}", mark.replacement, sdk_line_mark(mark)))
     return lines
 
 
