@@ -92,6 +92,22 @@ class Deprecated(_Marker):
     replacement: Callable[..., Any] | App | SettingKey | str | None = None
     removed_in: int | None = None
 
+    def __call__[F: Callable[..., Any]](self, target: F, /) -> F:
+        """Record this mark on ``target``, and its ``warnings.deprecated`` literal when it has one.
+
+        The literal is how the warning that decorator raises finds its
+        callable again (:class:`UntapedDeprecationWarning` built from the
+        literal alone), so the mark goes over it.
+        """
+        marked = descriptor_function(target)
+        if isinstance(marked, type):
+            literal = vars(marked).get("__deprecated__")
+        else:
+            literal = getattr(marked, "__deprecated__", None)
+        if isinstance(literal, str):
+            _LITERALS[literal] = marked
+        return super().__call__(target)
+
     def __post_init__(self) -> None:
         check_removed_in(self.removed_in)
         replacement = self.replacement
@@ -211,6 +227,7 @@ def bind_owners(owners: Mapping[str, str]) -> None:
     """Record each composed plugin's distribution (plugin name → distribution), anew."""
     _OWNERS.clear()
     _OWNERS.update(owners)
+    _FIELDS.clear()
 
 
 def owner(name: str) -> str | None:
@@ -237,12 +254,23 @@ def removal_text(removed_in: int | None, owner: str | None) -> str | None:
     return f"{removed_in}.0" if owner is None else f"{owner} {removed_in}.0"
 
 
+# A ``warnings.deprecated`` literal → the callable it decorates, recorded by the
+# ``deprecated`` mark put over it.
+_LITERALS: dict[str, object] = {}
+
+
 class UntapedDeprecationWarning(DeprecationWarning):
     """A deprecation of a Python API, carrying what the ``untaped.deprecation`` record carries.
 
     ``id`` is the deprecated thing's surface identity, ``removed_in`` its
     removal major (``None`` undated), ``distribution`` its owner (``None``
     for core's own) and ``replacement`` what to use instead.
+
+    Built from its message alone, as
+    ``@warnings.deprecated("<literal>", category=UntapedDeprecationWarning)``
+    builds it, it reads them from the callable whose literal the message
+    is, when untaped's ``deprecated`` mark sits over that decorator; ``id``
+    stays ``None`` otherwise.
 
     First consumer: the 12 to 13 transition.
     """
@@ -251,16 +279,41 @@ class UntapedDeprecationWarning(DeprecationWarning):
         self,
         message: str,
         *,
-        id: str,
+        id: str | None = None,
         removed_in: int | None = None,
         distribution: str | None = None,
         replacement: str | None = None,
     ) -> None:
         super().__init__(message)
+        found = _literal_fields(message) if id is None else None
+        if found is not None:
+            id, removed_in, distribution, replacement = found
         self.id = id
         self.removed_in = removed_in
         self.distribution = distribution
         self.replacement = replacement
+
+
+# A literal → its callable's record fields, read once per composition (``bind_owners``):
+# Python builds the warning on every call, shown or not.
+_FIELDS: dict[str, tuple[str, int | None, str | None, str | None]] = {}
+
+
+def _literal_fields(message: str) -> tuple[str, int | None, str | None, str | None] | None:
+    """The record fields of the callable whose ``warnings.deprecated`` literal ``message`` is."""
+    if message in _FIELDS:
+        return _FIELDS[message]
+    target = _LITERALS.get(message)
+    if target is None:
+        return None
+    mark = class_mark(target) if isinstance(target, type) else function_mark(target)
+    if not isinstance(mark, Deprecated):
+        return None
+    from untaped.sdk._parameter_marks import callable_fields  # noqa: PLC0415 - a cycle
+
+    id, distribution, replacement = callable_fields(target, mark)
+    _FIELDS[message] = found = (id, mark.removed_in, distribution, replacement)
+    return found
 
 
 _NOTIFIED: set[str] = set()

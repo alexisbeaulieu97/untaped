@@ -31,8 +31,9 @@ Every deprecation is a promise with a date, so:
   export of its ``api`` or ``testing`` module (below);
 - ``untyped-deprecation``, ``deprecation-text`` and ``unwarned-parameter`` —
   an exported SDK callable or class marked for one audience only, whose
-  ``warnings.deprecated`` literal is not its mark's sentence, or with a
-  marked parameter and no ``@deprecated_parameters``
+  ``warnings.deprecated`` literal is not its mark's sentence or names no
+  ``category=UntapedDeprecationWarning``, or with a marked parameter and no
+  ``@deprecated_parameters``
   (:func:`deprecation_text_violations`, which the repo's
   ``test_sdk_deprecations`` runs over core's SDK modules).
 
@@ -75,6 +76,7 @@ from untaped.sdk.marks import (
     Deprecated,
     Experimental,
     Stability,
+    UntapedDeprecationWarning,
     class_mark,
     descriptor_function,
     function_mark,
@@ -303,7 +305,9 @@ def deprecation_text_violations(module: ModuleType) -> list[str]:
     of the workspace defines is read: ``warnings.deprecated`` without
     untaped's mark, or a mark without a removal, is ``undated-deprecation``;
     a mark without the literal is ``untyped-deprecation``; a literal that is
-    not the mark's sentence is ``deprecation-text``, naming the one to paste;
+    not the mark's sentence, or a decorator naming another category than
+    ``UntapedDeprecationWarning`` (Python hides any other while a command
+    runs), is ``deprecation-text``, naming the decorator to paste;
     a parameter marked in its annotation on a function without
     ``@deprecated_parameters`` is ``unwarned-parameter``. Nothing compares at
     import: the repo test and ``untaped lint`` run this before a merge.
@@ -356,16 +360,22 @@ def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:
         sentence = deprecation_sentence(target, mark)
         if mark.removed_in is None:
             yield "undated-deprecation", _UNDATED
+        decorator = f"@warnings.deprecated({_literal(sentence)}, category={_CATEGORY})"
         if literal is None:
             yield (
                 "untyped-deprecation",
-                "untaped's mark alone is invisible to type checkers; add "
-                f"@warnings.deprecated({_literal(sentence)}) under it",
+                f"untaped's mark alone is invisible to type checkers; add {decorator} under it",
             )
         elif literal != sentence:
             yield (
                 "deprecation-text",
-                f"its warnings.deprecated text is not its mark's; use {_literal(sentence)}",
+                f"its warnings.deprecated text is not its mark's; use {decorator}",
+            )
+        elif _literal_category(target) not in (None, UntapedDeprecationWarning):
+            yield (
+                "deprecation-text",
+                f"its warnings.deprecated names no category={_CATEGORY}, so it never shows "
+                f"while a command runs; use {decorator}",
             )
     if not isinstance(target, type):
         yield from _parameter_violations(target, obj)
@@ -396,6 +406,25 @@ def _parameter_violations(
             "unwarned-parameter",
             f"{names} is marked deprecated but nothing warns when it is passed; {fix}",
         )
+
+
+_CATEGORY = UntapedDeprecationWarning.__name__
+
+
+def _literal_category(target: object) -> object:
+    """The category a ``warnings.deprecated`` wrapper warns with; ``None`` when unreadable.
+
+    It is a variable the wrapper closes over: a function's own, a class's
+    ``__new__``'s.
+    """
+    wrapper = vars(target).get("__new__") if isinstance(target, type) else target
+    wrapper = descriptor_function(wrapper)
+    if not inspect.isfunction(wrapper):
+        return None
+    try:
+        return inspect.getclosurevars(wrapper).nonlocals.get("category")
+    except TypeError, ValueError:
+        return None
 
 
 def _literal(text: str) -> str:

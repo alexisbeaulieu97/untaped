@@ -15,7 +15,7 @@ _API = '''
     from typing import Annotated
 
     from acme_lib import borrowed
-    from untaped.sdk import deprecated, deprecated_parameters
+    from untaped.sdk import UntapedDeprecationWarning, deprecated, deprecated_parameters
 
     __all__ = [
         "Box",
@@ -28,15 +28,25 @@ _API = '''
         "optional",
         "param",
         "typed",
+        "uncategorized",
         "undated",
         "warned",
     ]
 
 
     @deprecated(removed_in=3, replacement="clean")
-    @warnings.deprecated("clean is deprecated and will be removed in untaped-acme 3.0; use clean")
+    @warnings.deprecated(
+        "clean is deprecated and will be removed in untaped-acme 3.0; use clean",
+        category=UntapedDeprecationWarning,
+    )
     def clean() -> None:
         """Gone at 3.0."""
+
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated("uncategorized is deprecated and will be removed in untaped-acme 3.0")
+    def uncategorized() -> None:
+        """A DeprecationWarning, which Python hides while a command runs."""
 
 
     @deprecated(removed_in=3)
@@ -56,7 +66,10 @@ _API = '''
 
 
     @deprecated()
-    @warnings.deprecated("undated is deprecated and will be removed in a future major release")
+    @warnings.deprecated(
+        "undated is deprecated and will be removed in a future major release",
+        category=UntapedDeprecationWarning,
+    )
     def undated() -> None:
         """No date."""
 
@@ -197,10 +210,11 @@ def test_each_rule_reads_a_plugin_s_api_and_its_marks(install: Install) -> None:
         f"cli untaped acme store -> untaped acme set::undated-deprecation::{undated}",
         "untaped_acme.api.Client.build::untyped-deprecation::untaped's mark alone is invisible "
         'to type checkers; add @warnings.deprecated("Client.build is deprecated and will be '
-        'removed in untaped-acme 3.0") under it',
+        'removed in untaped-acme 3.0", category=UntapedDeprecationWarning) under it',
         f"untaped_acme.api.Crate.__init__::unwarned-parameter::old= {unwarned} to the function",
         "untaped_acme.api.drifted::deprecation-text::its warnings.deprecated text is not its "
-        'mark\'s; use "drifted is deprecated and will be removed in untaped-acme 3.0"',
+        "mark's; use @warnings.deprecated(\"drifted is deprecated and will be removed in "
+        'untaped-acme 3.0", category=UntapedDeprecationWarning)',
         "untaped_acme.api.old::undated-deprecation::carries warnings.deprecated and no untaped "
         "mark; add @deprecated(removed_in=<major>, replacement=...) above it so the surface "
         "dates it",
@@ -208,7 +222,11 @@ def test_each_rule_reads_a_plugin_s_api_and_its_marks(install: Install) -> None:
         f"untaped_acme.api.param::unwarned-parameter::x= {unwarned} to the function",
         "untaped_acme.api.typed::untyped-deprecation::untaped's mark alone is invisible to type "
         'checkers; add @warnings.deprecated("typed is deprecated and will be removed in '
-        'untaped-acme 3.0") under it',
+        'untaped-acme 3.0", category=UntapedDeprecationWarning) under it',
+        "untaped_acme.api.uncategorized::deprecation-text::its warnings.deprecated names no "
+        "category=UntapedDeprecationWarning, so it never shows while a command runs; use "
+        '@warnings.deprecated("uncategorized is deprecated and will be removed in untaped-acme '
+        '3.0", category=UntapedDeprecationWarning)',
         f"untaped_acme.api.undated::undated-deprecation::{undated}",
     ]
 

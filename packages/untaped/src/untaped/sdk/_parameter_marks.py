@@ -9,6 +9,7 @@ import annotationlib
 import ast
 import functools
 import inspect
+import sys
 import types
 import typing
 import warnings
@@ -46,6 +47,78 @@ def callable_owner(obj: object) -> str | None:
         return None
     name = package.removeprefix(_PLUGIN_PACKAGE).replace("_", "-")
     return owner(name) or f"untaped-{name}"
+
+
+#: The modules beside a package that plugins import from, besides the package itself.
+_PLUGIN_FACING = ("api", "testing")
+
+
+def public_name(obj: object) -> str:
+    """``<module>.<qualname>`` of a function, class or method, by the module plugins import it from.
+
+    That module is the first that exports the same object of: core's SDK
+    modules, for core's own; then the defining module's public prefixes,
+    shortest first, each followed by its ``api`` and ``testing`` modules
+    (``untaped.sdk.Diagnostics.failure``, ``untaped_git.api.Prefetched.cat``);
+    else the defining module. Only modules already imported are read, so
+    naming a callable imports nothing.
+    """
+    module = str(getattr(obj, "__module__", "") or "")
+    qualname = str(getattr(obj, "__qualname__", obj))
+    head = qualname.partition(".")[0]
+    owner = _qualname_head(obj, module, head)
+    for candidate in _candidates(module):
+        if _exports(candidate, head, owner):
+            return f"{candidate}.{qualname}"
+    return f"{module}.{qualname}"
+
+
+def _candidates(module: str) -> Iterator[str]:
+    """The modules that may export what ``module`` defines, in :func:`public_name`'s order."""
+    parts = module.split(".")
+    if parts[0] == "untaped":
+        from untaped.sdk._modules import SDK_MODULES  # noqa: PLC0415 - on a warning only
+
+        yield from SDK_MODULES
+    for end in range(1, len(parts) + 1):
+        if parts[end - 1].startswith("_"):
+            return
+        prefix = ".".join(parts[:end])
+        yield prefix
+        yield from (f"{prefix}.{each}" for each in _PLUGIN_FACING)
+
+
+def _qualname_head(obj: object, module: str, head: str) -> object:
+    """The object a qualname's first part names in its defining module: a method's class."""
+    defining = sys.modules.get(module)
+    found = getattr(defining, head, None) if defining is not None else None
+    return found if found is not None else obj
+
+
+def _exports(module: str, name: str, obj: object) -> bool:
+    """Whether imported ``module`` exports ``obj`` as ``name``, under a decorator or not."""
+    loaded = sys.modules.get(module)
+    if loaded is None or name not in getattr(loaded, "__all__", (name,)):
+        return False
+    found = vars(loaded)[name] if name in vars(loaded) else getattr(loaded, name, None)
+    return found is obj or _unwrapped(found) is _unwrapped(obj)
+
+
+def _unwrapped(obj: object) -> object:
+    try:
+        return inspect.unwrap(obj) if callable(obj) else obj
+    except ValueError:  # a ``__wrapped__`` cycle
+        return obj
+
+
+def callable_fields(obj: object, mark: Deprecated) -> tuple[str, str | None, str | None]:
+    """A deprecated SDK callable's record fields: its id, owning distribution and replacement."""
+    shown = sdk_replacement_text(mark)
+    return (
+        f"sdk {public_name(obj)}",
+        callable_owner(obj),
+        None if shown is None else shown.replace("`", ""),
+    )
 
 
 def deprecation_sentence(obj: object, mark: Deprecated, *, subject: str | None = None) -> str:
@@ -101,7 +174,7 @@ def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
             shown = sdk_replacement_text(mark)
             warning = UntapedDeprecationWarning(
                 deprecation_sentence(function, mark, subject=subject),
-                id=f"sdk {subject}",
+                id=f"sdk {public_name(function)}({name}=)",
                 removed_in=mark.removed_in,
                 distribution=callable_owner(function),
                 replacement=None if shown is None else shown.replace("`", ""),

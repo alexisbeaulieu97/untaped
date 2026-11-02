@@ -53,6 +53,7 @@ from untaped.core.surface._lines import (
 )
 from untaped.core.surface._sdk import SurfaceError
 from untaped.core.surface._window import broken
+from untaped.sdk._modules import SDK_MODULES
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -82,20 +83,6 @@ __all__ = [
     "render",
     "upgrade",
 ]
-
-#: Core's SDK modules; each plugin adds its ``api`` and ``testing`` when it has them.
-SDK_MODULES = (
-    "untaped.sdk",
-    "untaped.sdk.contracts",
-    "untaped.sdk.git",
-    "untaped.sdk.health",
-    "untaped.sdk.network",
-    "untaped.sdk.projects",
-    "untaped.sdk.prompt",
-    "untaped.sdk.storage",
-    "untaped.sdk.testing",
-    "untaped.sdk.testing.git",
-)
 
 
 def generate(candidates: Sequence[PluginCandidate]) -> list[Line]:

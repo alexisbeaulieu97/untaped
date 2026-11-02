@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import sys
+import types
 import warnings
 from typing import TYPE_CHECKING, Annotated
 
@@ -16,6 +18,7 @@ from untaped.sdk._parameter_marks import (
     deprecated_parameters,
     deprecation_sentence,
     parameter_marks,
+    public_name,
     read_parameter_marks,
     warns_parameters,
 )
@@ -82,6 +85,70 @@ def test_core_s_callable_names_the_bare_version_and_a_plugin_s_its_distribution(
     )
 
 
+# --- the warning a literal raises ----------------------------------------------------------
+
+
+def bright() -> None: ...
+
+
+@deprecated(removed_in=3, replacement=bright)
+@warnings.deprecated(
+    "dim is deprecated and will be removed in 3.0; use `bright`",
+    category=UntapedDeprecationWarning,
+)
+def dim() -> None: ...
+
+
+@deprecated(removed_in=4)
+@warnings.deprecated("Lamp is deprecated", category=UntapedDeprecationWarning)
+class Lamp: ...
+
+
+def _fields(warning: object) -> tuple[object, ...]:
+    assert isinstance(warning, UntapedDeprecationWarning)
+    return (warning.id, warning.removed_in, warning.distribution, warning.replacement)
+
+
+def test_a_literal_s_warning_carries_its_callable_s_fields() -> None:
+    (called,) = _caught(dim)
+    (built,) = _caught(Lamp)
+    assert _fields(called.message) == (f"sdk {__name__}.dim", 3, None, "bright")
+    assert _fields(built.message) == (f"sdk {__name__}.Lamp", 4, None, None)
+
+
+def test_a_literal_with_no_mark_over_it_carries_no_id() -> None:
+    assert _fields(UntapedDeprecationWarning("nothing marks this")) == (None, None, None, None)
+
+
+def _module(name: str, **names: object) -> types.ModuleType:
+    module = types.ModuleType(name)
+    vars(module).update(names)
+    return module
+
+
+def test_a_callable_is_named_by_the_imported_module_that_exports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Bulb:
+        def dim(self) -> None: ...
+
+    def glow() -> None: ...
+
+    for each in (Bulb, Bulb.dim, glow):
+        each.__module__ = "untaped_lamp._bulbs"
+        each.__qualname__ = each.__name__
+    Bulb.dim.__qualname__ = "Bulb.dim"
+    defining = _module("untaped_lamp._bulbs", Bulb=Bulb, glow=glow)
+    api = _module("untaped_lamp.api", Bulb=Bulb, glow=glow, __all__=["Bulb"])
+    monkeypatch.setitem(sys.modules, "untaped_lamp._bulbs", defining)
+    assert public_name(glow) == "untaped_lamp._bulbs.glow"  # api not imported: the defining one
+    monkeypatch.setitem(sys.modules, "untaped_lamp.api", api)
+    monkeypatch.setitem(sys.modules, "untaped_lamp", _module("untaped_lamp", __all__=[]))
+    assert public_name(Bulb.dim) == "untaped_lamp.api.Bulb.dim"
+    assert public_name(glow) == "untaped_lamp._bulbs.glow"  # not in api's __all__
+    assert public_name(Diagnostics.failure) == "untaped.sdk.Diagnostics.failure"
+
+
 # --- deprecated_parameters -----------------------------------------------------------------
 
 
@@ -137,7 +204,7 @@ def test_the_warning_carries_its_fields_and_points_at_the_caller() -> None:
     warning = shown.message
     assert isinstance(warning, UntapedDeprecationWarning)
     assert (warning.id, warning.removed_in, warning.distribution, warning.replacement) == (
-        "sdk emit(kind=)",
+        f"sdk {__name__}.emit(kind=)",
         12,
         None,
         "kind= on the Record class",

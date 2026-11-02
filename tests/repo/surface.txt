@@ -6803,7 +6803,8 @@ sdk untaped.sdk.TreeGraphNode.notes  [experimental]
 sdk untaped.sdk.TreeGraphNode.stopped  [experimental]
 sdk untaped.sdk.TreeGraphNode.tone  [experimental]
 sdk untaped.sdk.UntapedDeprecationWarning(distribution=) default=None
-sdk untaped.sdk.UntapedDeprecationWarning(message, *, id)
+sdk untaped.sdk.UntapedDeprecationWarning(id=) default=None
+sdk untaped.sdk.UntapedDeprecationWarning(message)
 sdk untaped.sdk.UntapedDeprecationWarning(removed_in=) default=None
 sdk untaped.sdk.UntapedDeprecationWarning(replacement=) default=None
 sdk untaped.sdk.UntapedError()

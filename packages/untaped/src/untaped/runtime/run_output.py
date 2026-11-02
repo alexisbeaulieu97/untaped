@@ -74,14 +74,46 @@ def opened(output: RunOutput) -> Iterator[None]:
     message, so JSON diagnostics stay one object per line. A warning
     something else records (``warnings.catch_warnings(record=True)``,
     ``pytest.warns``) is left to it.
+
+    Python hides a ``DeprecationWarning`` raised outside ``__main__``, so
+    for the run untaped shows its own (:func:`_shown_deprecations`), each
+    once, unless a filter someone set decides; the filters are restored after.
     """
-    shown = warnings.showwarning
-    warnings.showwarning = _WarningRoute(shown)
-    try:
-        yield
-    finally:
-        warnings.showwarning = shown
-        output.sink.close()
+    with warnings.catch_warnings():
+        _shown_deprecations()
+        shown = warnings.showwarning
+        warnings.showwarning = _WarningRoute(shown)
+        try:
+            yield
+        finally:
+            warnings.showwarning = shown
+            output.sink.close()
+
+
+#: The filters Python installs at startup that cover a ``DeprecationWarning``, in their order
+#: (as ``(action, module)``; a module of ``None`` covers every module).
+_PYTHON_DEFAULTS = (("default", "__main__"), ("ignore", None))
+
+
+def _shown_deprecations() -> None:
+    """Show :class:`~untaped.sdk.marks.UntapedDeprecationWarning` for the run.
+
+    Only while the filters covering it are Python's startup defaults alone:
+    any other (a ``-W`` flag, ``PYTHONWARNINGS``, a test harness's or the
+    program's own, even one spelled like a default) decides instead.
+    """
+    from untaped.sdk.marks import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
+
+    current = getattr(warnings, "_get_filters", lambda: warnings.filters)()
+    covering = tuple(
+        (action, getattr(module, "pattern", module))
+        if message is None and lineno == 0 and category is DeprecationWarning
+        else None
+        for action, message, category, module, lineno in current
+        if issubclass(UntapedDeprecationWarning, category)
+    )
+    if covering == _PYTHON_DEFAULTS:
+        warnings.filterwarnings("default", category=UntapedDeprecationWarning)
 
 
 #: How Python shows a warning when nothing records it; ``catch_warnings(record=True)``
@@ -127,9 +159,14 @@ def _show_warning(
     message: Warning | str, category: type[Warning], filename: str, lineno: int
 ) -> None:
     """A shown Python warning as a diagnostic on the sink."""
-    from untaped.sdk.marks import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
+    from untaped.sdk.marks import (  # noqa: PLC0415 - avoids a cycle
+        UntapedDeprecationWarning,
+        first_notice,
+    )
 
-    if isinstance(message, UntapedDeprecationWarning):
+    if isinstance(message, UntapedDeprecationWarning) and message.id is not None:
+        if not first_notice(message.id):
+            return
         current_sink().emit(
             Deprecation(
                 message=str(message),
