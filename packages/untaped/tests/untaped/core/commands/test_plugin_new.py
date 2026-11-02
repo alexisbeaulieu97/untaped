@@ -376,6 +376,7 @@ def test_the_scaffold_passes_its_own_mypy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contract_plugins_site: Path
 ) -> None:
     api = pytest.importorskip("mypy.api")  # a tool install of core has no mypy
+    pytest.importorskip("untaped_lint.testing")  # its tests' dev group has it; core's run doesn't
     _new(tmp_path)
     root = tmp_path / "untaped-gitlab"
     monkeypatch.chdir(root)  # its own pyproject.toml and its files = ["src", "tests"]
