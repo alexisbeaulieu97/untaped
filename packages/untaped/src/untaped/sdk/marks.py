@@ -118,6 +118,8 @@ class Deprecated(_Marker):
     that replaces a Python API, or text: ``"untaped github sync"`` or a
     setting key (shown in backticks) or prose (shown as is). Core's own
     adapter also passes the app it builds for a command.
+
+    First consumer: the 12 to 13 transition.
     """
 
     replacement: Callable[..., Any] | App | SettingKey | str | None = None
@@ -154,6 +156,8 @@ def deprecated(
     plugin's command (``"untaped other run"``), a setting key or prose. Both
     are keyword-only.
     Use it as ``stability = deprecated(...)``, or in a field's ``Annotated``.
+
+    First consumer: the 12 to 13 transition.
     """
     return Deprecated(replacement=replacement, removed_in=removed_in)
 
@@ -860,6 +864,8 @@ class UntapedDeprecationWarning(DeprecationWarning):
     ``id`` is the deprecated thing's surface identity, ``removed_in`` its
     removal major (``None`` undated), ``distribution`` its owner (``None``
     for core's own) and ``replacement`` what to use instead.
+
+    First consumer: the 12 to 13 transition.
     """
 
     def __init__(
@@ -979,6 +985,8 @@ def deprecated_parameters[F: Callable[..., Any]](function: F, /) -> F:
     that removes it makes any spelling of it a ``TypeError``. The mark on the
     parameter is the declaration (its surface line shows it); the decorator
     is what warns. Signatures see through it, and an ``async def`` stays one.
+
+    First consumer: the 12 to 13 transition.
     """
     if isinstance(function, classmethod | staticmethod | property):
         raise TypeError(
@@ -1179,6 +1187,8 @@ class DeprecatedBehaviour(OwnedBlock):
     it to its date; a held one reaches the surface once it is read from the
     declaration, with the mount. A site never types the words: it names the subject and calls
     :meth:`sentence`, :meth:`notify` or :meth:`warn`.
+
+    First consumer: the 12 to 13 transition.
     """
 
     block_kind = "deprecated-behaviour"

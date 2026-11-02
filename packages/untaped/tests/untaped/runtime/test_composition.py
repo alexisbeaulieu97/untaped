@@ -46,7 +46,6 @@ from untaped.sdk import (
     Stdin,
     StubSkill,
     TextOrStdin,
-    Written,
     deprecated,
     derive,
     experimental,
@@ -56,7 +55,7 @@ from untaped.sdk._block import Block
 from untaped.sdk._names import kebab, snake, words
 from untaped.sdk.contracts import Contract, Provider, cached
 from untaped.sdk.diagnostic import Failure
-from untaped.sdk.fields import table_row
+from untaped.sdk.fields import Written, table_row
 from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.records import kind_of, record_model
 from untaped.sdk.storage import Cache

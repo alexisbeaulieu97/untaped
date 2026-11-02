@@ -6758,7 +6758,6 @@ sdk untaped.sdk.UsageError.retryable
 sdk untaped.sdk.UsageError.system class
 sdk untaped.sdk.UtcTimestamp
 sdk untaped.sdk.Verbatim(text)
-sdk untaped.sdk.Written
 sdk untaped.sdk.ago_text(at, now)
 sdk untaped.sdk.attribution(error)
 sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) callback(on_each, 2)
@@ -7108,12 +7107,6 @@ sdk untaped.sdk.network.RetryPolicy.retry_on_transport
 sdk untaped.sdk.network.RetryPolicy.retry_statuses
 sdk untaped.sdk.network.RetryPolicy.status_delay(attempt, retry_after)
 sdk untaped.sdk.network.TlsVerify
-sdk untaped.sdk.network.connected_client(bearer=) default=None
-sdk untaped.sdk.network.connected_client(config, *, section, base_url)
-sdk untaped.sdk.network.connected_client(headers=) default=None
-sdk untaped.sdk.network.connected_client(http=) default=None
-sdk untaped.sdk.network.connected_client(retry=) default=<computed>
-sdk untaped.sdk.network.connected_client(verify=) default=None
 sdk untaped.sdk.network.find_program(name)
 sdk untaped.sdk.network.paginate_link(http, path)
 sdk untaped.sdk.network.paginate_link(item_key=) default=None
@@ -7367,9 +7360,6 @@ sdk untaped.sdk.storage.FreshnessRecord.refresh_error
 sdk untaped.sdk.storage.FreshnessRecord.refreshed_at
 sdk untaped.sdk.storage.FreshnessRecord.retry_at
 sdk untaped.sdk.storage.FreshnessRecord.stale
-sdk untaped.sdk.storage.HolderState choice=missing
-sdk untaped.sdk.storage.HolderState choice=present
-sdk untaped.sdk.storage.HolderState choice=unreadable
 sdk untaped.sdk.storage.HolderView(*, holder, label, anchor, state)  [experimental]
 sdk untaped.sdk.storage.HolderView.anchor  [experimental]
 sdk untaped.sdk.storage.HolderView.holder  [experimental]

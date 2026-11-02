@@ -163,7 +163,7 @@ everything an author needs to know.
 | `str`, `int`, `float`, `bool`, `Path`, `Literal[...]`, an enum, `X \| None`, `list[X]` | An option named after the field. Its `description` is the help, and `Field` constraints validate it. A `bool` defaulting to true, or a `bool \| None`, also gets `--no-`. A list option repeats, one value per flag. |
 | `Positional[X]`, or `Annotated[Positional[X], AllowHyphen]` | An argument, filled in field order. `AllowHyphen` lets a value start with `-`. |
 | `Annotated[X, Short("-x")]` | The option's short flag. |
-| `File[M]`, `ExistingFile`, `TextOrStdin`, `PathOrStdin`, `KeyValue`, `KeyJson` | Core's value types: a file parsed as `M` (with an input page and schema), a path that must exist, a value or `-` for stdin, and a `KEY=VALUE` or `KEY=<json>` pair. `Annotated[File[M], Written]` is a file the command writes. |
+| `File[M]`, `ExistingFile`, `TextOrStdin`, `PathOrStdin`, `KeyValue`, `KeyJson` | Core's value types: a file parsed as `M` (with an input page and schema), a path that must exist, a value or `-` for stdin, and a `KEY=VALUE` or `KEY=<json>` pair. |
 | `Annotated[Ref, Document(M)]` | The value names a document of `M` that the plugin finds and parses itself. The docs show `M`'s input page; core checks no file. |
 | A pydantic model of the plugin's own | A bundle: its fields are flattened into the command, in a help panel named after the class. Its docstring is a guide, linked "Read first" from each command taking it. |
 | An enum of the plugin's own with a docstring | The choices. Its docstring is a guide, as for a bundle. |

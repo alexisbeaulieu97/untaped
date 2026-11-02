@@ -31,7 +31,6 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "Parallel",
         "Limit",
         "File",
-        "Written",
         "TextOrStdin",
         "PathOrStdin",
         "ExistingFile",

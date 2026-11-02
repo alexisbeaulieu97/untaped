@@ -256,6 +256,8 @@ class DataFile[M: BaseModel]:
     :meth:`read` answers what is there; :meth:`write` writes under the file's
     lock and keeps the keys the model doesn't know (a newer untaped's), and
     never overwrites a newer untaped's file.
+
+    First consumer: git's repo store's private file, moving off ``read_data_file``.
     """
 
     __slots__ = ("model", "path")
