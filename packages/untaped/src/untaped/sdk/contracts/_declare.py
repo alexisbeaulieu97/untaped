@@ -44,6 +44,7 @@ from pydantic_core import PydanticSerializationError, to_json
 
 from untaped.sdk._keys import SettingKey
 from untaped.sdk._keys import key as setting_key
+from untaped.sdk.contracts._parameters import adapted, parameter_problem
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.records import Issued, Record, Source, kind_of
 from untaped.sdk.storage.cache import Cache
@@ -62,6 +63,7 @@ _CACHED = "__untaped_cached__"
 _CONTRACT_OF = "__untaped_contract_of__"
 _CONTRACT = "__untaped_contract__"
 _BINDING = "_untaped_binding"
+_PARAMETERS = "__untaped_parameter_problems__"
 
 
 class ContractError(TypeError):
@@ -535,7 +537,10 @@ def _rewrap(cls: type[Contract]) -> None:
 
     A filled method defined on ``cls`` or on a plain mixin it inherits is
     rewrapped onto ``cls``; one inherited from a provider base already is.
-    ``@cached`` anywhere in the provider's own code is a ``TypeError``.
+    ``@cached`` anywhere in the provider's own code is a ``TypeError``. A method
+    taking fewer parameters than the contract's is adapted to be called as the
+    contract's is; one whose parameters can't be passed by name is recorded,
+    for :func:`parameter_problems`, and left as it is.
     """
     info = contract_of(cls)
     if info is None:
@@ -547,6 +552,7 @@ def _rewrap(cls: type[Contract]) -> None:
                 raise TypeError(
                     f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
                 )
+    problems: dict[str, str] = {}
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
         if holder is not cls and issubclass(holder, Contract):
@@ -554,13 +560,36 @@ def _rewrap(cls: type[Contract]) -> None:
         value = vars(holder)[name]
         if not inspect.isfunction(value):
             continue
-        wrapped = value
+        problem = parameter_problem(value, method.function)
+        if problem is not None:
+            problems[name] = f"{value.__qualname__} {problem}"  # where its code is, a mixin's too
+        wrapped = value if problem is not None else adapted(value, method.function)
         if method.bridge:
             wrapped = _bridged(wrapped)
         if method.cache is not None:
             wrapped = _served(wrapped, method.cache, name)
-        if wrapped is not value:
-            setattr(cls, name, wrapped)
+        if wrapped is not value or problem is not None:
+            setattr(cls, name, wrapped)  # ``cls`` answers for it, mixin or not
+    setattr(cls, _PARAMETERS, types.MappingProxyType(problems))
+
+
+def parameter_problems(provider: type[Contract], contract: ContractInfo) -> list[str]:
+    """Each method ``provider`` fills whose parameters can't be passed by name, and why.
+
+    Read from the class that defines the method, so a subclass that fills it
+    again answers for itself.
+    """
+    found: list[str] = []
+    for name in sorted(contract.methods):
+        holder = next(klass for klass in provider.__mro__ if name in vars(klass))
+        problem = vars(holder).get(_PARAMETERS, {}).get(name)
+        if problem is not None:
+            declared = list(inspect.signature(contract.methods[name].function).parameters)[1:]
+            found.append(
+                f"{problem} ({contract.cls.__qualname__}.{name} takes "
+                f"{', '.join(declared) or 'nothing'})"
+            )
+    return found
 
 
 def _carries(value: object, marker: str) -> bool:

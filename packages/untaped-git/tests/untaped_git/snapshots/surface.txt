@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.store_dir string(format=path)? default=unset
@@ -66,8 +66,6 @@ sdk untaped_git.api.Credential.username
 sdk untaped_git.api.Credential.verify_tls
 sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
-sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
-sdk untaped_git.api.GitHost.home() -> string?  [experimental]
 sdk untaped_git.api.GitUrl
 sdk untaped_git.api.HostAuth(plugin, credential)
 sdk untaped_git.api.HostAuth.credential

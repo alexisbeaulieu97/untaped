@@ -51,14 +51,57 @@ def test_parse_reads_what_render_writes(lines: list[Line]) -> None:
 
 def test_render_sorts_and_dedupes_under_the_header() -> None:
     text = render([Line("cli untaped b"), Line("cli untaped a"), Line("cli untaped b")])
-    assert text == "# untaped surface 1\ncli untaped a\ncli untaped b\n"
+    assert text == f"# untaped surface {FORMAT}\ncli untaped a\ncli untaped b\n"
 
 
-def test_render_writes_the_lowest_format_its_marks_need() -> None:
+def test_render_writes_every_mark_whole() -> None:
     undated = render([Line("cli untaped a", DeprecatedMark(None, "untaped b"))])
     dated = render([Line("cli untaped a", DeprecatedMark(12))])
-    assert undated == "# untaped surface 1\ncli untaped a  [deprecated]\n"
+    assert undated == f"# untaped surface {FORMAT}\ncli untaped a  [deprecated; use untaped b]\n"
     assert dated == f"# untaped surface {FORMAT}\ncli untaped a  [deprecated, removed in 12.0]\n"
+
+
+@pytest.mark.parametrize("old", [1, 2])
+def test_an_older_file_splits_optional_contract_parameters_off(old: int) -> None:
+    text = (
+        f"# untaped surface {old}\n"
+        'contract o.c.find(name: string, sep: string = ", ", open: string = "(", *, '
+        "limit: integer = 5, tags: string(pattern=a,b)[] = [], mode: string = x) "
+        "-> Item[]  [experimental]\n"
+        "contract o.c.first(*, deep: boolean) -> Item\n"
+        "contract o.Item(name)\n"
+    )
+    assert [str(line) for line in parse(text)] == [
+        "contract o.c.find(name: string) -> Item[]  [experimental]",
+        'contract o.c.find(sep@2=) string default=", "  [experimental]',
+        'contract o.c.find(open@3=) string default="("  [experimental]',
+        "contract o.c.find(limit=) integer default=5  [experimental]",
+        "contract o.c.find(tags=) string(pattern=a,b)[] default=[]  [experimental]",
+        "contract o.c.find(mode=) string default=x  [experimental]",
+        "contract o.c.first(*, deep: boolean) -> Item",
+        "contract o.Item(name)",
+    ]
+
+
+def test_an_older_file_drops_a_declared_contract_s_sdk_method_lines() -> None:
+    """Its ``contract`` lines carry them; a provider base keeps its own."""
+    text = (
+        "# untaped surface 2\n"
+        "sdk p.api.Source base=untaped.sdk.contracts.Contract\n"
+        "sdk p.api.Source implement=items\n"
+        "sdk p.api.Source.items() -> Item[]\n"
+        "sdk p.api.Source.to_item(item)\n"
+        "sdk p.api.Rules base=untaped.sdk.contracts.Contract\n"
+        "sdk p.api.Rules base=untaped.sdk.contracts.Provider\n"
+        "sdk p.api.Rules.findings(record)\n"
+    )
+    assert [line.text for line in parse(text)] == [
+        "sdk p.api.Source base=untaped.sdk.contracts.Contract",
+        "sdk p.api.Source implement=items",
+        "sdk p.api.Rules base=untaped.sdk.contracts.Contract",
+        "sdk p.api.Rules base=untaped.sdk.contracts.Provider",
+        "sdk p.api.Rules.findings(record)",
+    ]
 
 
 def test_an_experimental_mark_reads_back_and_an_older_format_still_parses() -> None:

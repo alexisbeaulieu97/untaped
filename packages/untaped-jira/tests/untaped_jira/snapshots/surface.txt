@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg jira.agile_prefix string default=/rest/agile/1.0
 cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"

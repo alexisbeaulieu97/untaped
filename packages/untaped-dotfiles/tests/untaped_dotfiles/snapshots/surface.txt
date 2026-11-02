@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg dotfiles.kept_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]

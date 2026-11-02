@@ -136,7 +136,8 @@ def _offers(
                 title = (
                     entry.owner if entry.contract is None else _what(entry.owner, entry.contract)
                 )
-                rows.append(row("registration", title, "fail", f"{entry.reason}: {entry.detail}"))
+                why = f"{entry.reason}: {entry.described}"
+                rows.append(row("registration", title, "fail", why))
                 continue
             rows += _provider(entry, composed, candidates, row)
     return rows

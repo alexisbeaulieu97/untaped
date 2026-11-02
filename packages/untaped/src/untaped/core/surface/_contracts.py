@@ -1,9 +1,11 @@
 """``contract`` lines: each owned contract, its methods and the payload models they reach.
 
-Contracts are implementer-shaped: a provider's signature must match the
-contract's exactly, so the owner line names every abstract method and each
-method's line carries its full typed parameter list and return type. Any
-change to either removes a line.
+Contracts are implementer-shaped: the owner line names every abstract method,
+and each method's line carries its required typed parameters and its return
+type, so a change to either removes a line. Each optional parameter gets a line
+of its own with its type and default: a provider may take fewer parameters
+than the contract (core passes it its own), so an owner may add one with a
+default, which adds a line.
 
 Every pydantic model reachable from a contract method's parameters or return
 type is a payload model, named ``<owner>.<ClassName>``. Providers construct
@@ -78,7 +80,12 @@ def contract_lines(
         for name, method in sorted(info.methods.items()):
             mark = method_mark(info, name, plugin_mark)
             hints = {key: _substitute(hint, info) for key, hint in method.hints.items()}
-            lines.append(Line(f"{subject}.{name}{_signature(method.function, hints)}", mark))
+            required, optional = _signature(method.function, hints)
+            lines.append(Line(f"{subject}.{name}{required}", mark))
+            lines.extend(
+                Line(f"{subject}.{name}({parameter}=) {token} default={default}", mark)
+                for parameter, token, default in optional
+            )
             for hint in hints.values():
                 for model in _models(hint):
                     reached.setdefault(model, set()).add(mark)
@@ -165,19 +172,34 @@ def _field_default(info: Any) -> str:
     return "None"
 
 
-def _signature(function: Any, hints: Mapping[str, Any]) -> str:
+def _signature(function: Any, hints: Mapping[str, Any]) -> tuple[str, list[tuple[str, str, str]]]:
+    """The method's owner-line shape, its required parameters, then each optional one.
+
+    An optional parameter has a line of its own (name, type, default), so an
+    owner that adds one with a default adds a line, and one that adds a
+    required parameter respells the owner line. One a caller may pass by
+    position carries it, as caller-shaped ``sdk`` lines do (``limit@2=``), so
+    moving it still respells its line.
+    """
     parameters = list(inspect.signature(function).parameters.values())[1:]
     parts: list[str] = []
+    optional: list[tuple[str, str, str]] = []
     star = False
+    position = 0
     for parameter in parameters:
+        token = type_token(hints[parameter.name]).token
+        name = parameter.name
+        if parameter.kind is not parameter.KEYWORD_ONLY:
+            position += 1
+            name = f"{name}@{position}"
+        if parameter.default is not parameter.empty:
+            optional.append((name, token, default_text(parameter.default)))
+            continue
         if parameter.kind is parameter.KEYWORD_ONLY and not star:
             parts.append("*")
             star = True
-        text = f"{parameter.name}: {type_token(hints[parameter.name]).token}"
-        if parameter.default is not parameter.empty:
-            text += f" = {default_text(parameter.default)}"
-        parts.append(text)
-    return f"({', '.join(parts)}) -> {type_token(hints['return']).token}"
+        parts.append(f"{parameter.name}: {token}")
+    return f"({', '.join(parts)}) -> {type_token(hints['return']).token}", optional
 
 
 def _substitute(hint: Any, info: ContractInfo) -> Any:

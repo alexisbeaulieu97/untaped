@@ -116,7 +116,8 @@ def test_a_contract_and_the_payload_models_it_reaches() -> None:
         "contract bins.Lid(color)",
         "contract bins.Lid.color string",
         "contract bins.bin_source abstract=bins",
-        "contract bins.bin_source.bins(*, full: boolean = false) -> Bin[]",
+        "contract bins.bin_source.bins() -> Bin[]",
+        "contract bins.bin_source.bins(full=) boolean default=false",
     }
     assert "cfg bins.extensions.bin_source.rank.bins string[] default=[]" in lines
 

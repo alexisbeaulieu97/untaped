@@ -237,3 +237,38 @@ def test_a_marked_parameter_is_dated_on_its_own_line(lines: set[str]) -> None:
     assert f"sdk {_NAME}.Boxed(old@1=) default=false  [deprecated, removed in 12.0]" in _of(
         lines, "Boxed"
     )
+
+
+def test_a_declared_contract_s_methods_are_its_contract_lines_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A provider base in an ``api`` module keeps its own typed lines."""
+    import types
+    from abc import abstractmethod
+
+    from untaped.sdk.contracts import Contract, Provider
+
+    module = types.ModuleType("untaped_contract_sample")
+
+    class Shelf(Contract):
+        @abstractmethod
+        def books(self, *, limit: int = 5) -> list[str]: ...
+
+    class ShelfBase(Shelf, Provider):
+        def books(self, *, limit: int = 5) -> list[str]:
+            return []
+
+        def shelves(self) -> list[str]:
+            return []
+
+    for cls in (Shelf, ShelfBase):
+        cls.__module__ = module.__name__
+        setattr(module, cls.__name__, cls)
+    module.__all__ = ["Shelf", "ShelfBase"]  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exports = collect_exports({module.__name__: None})
+    lines = {line.text for line in module_lines(module.__name__, None, exports)}
+    subject = "sdk untaped_contract_sample"
+    assert f"{subject}.Shelf implement=books" in lines
+    assert not [line for line in lines if line.startswith(f"{subject}.Shelf.books")]
+    assert f"{subject}.ShelfBase.shelves()" in lines

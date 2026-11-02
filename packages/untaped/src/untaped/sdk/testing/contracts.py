@@ -168,7 +168,7 @@ def _bound(cls: type) -> BoundProvider:
         ):
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
-                f"{entry.detail}"
+                f"{entry.described}"
             )
     raise LookupError(f"no composed plugin offers {cls.__qualname__}")
 

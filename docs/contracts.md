@@ -103,7 +103,15 @@ class Library(Plugin):
   state: `gather` runs providers side by side in threads, so a change would
   reach the providers beside it. Composing the root is the guarded case:
   `compose_root`, `build_root_app` or `compose_with` inside a provider call
-  raises, and the provider's answer is `Errored`.
+  raises, and the provider's answer is `Errored`. Declare each method with
+  the contract's full signature (or `**kwargs: Any`): a provider released
+  against an older owner may take fewer parameters than a newer contract
+  method, and core passes it only the ones it declares, by name, with the
+  contract's defaults applied. That only tolerates an older provider; when
+  your provider reads a new parameter, raise your floor on the owner. A
+  parameter the contract doesn't declare (`def lookup(self, _title)` for
+  `title`), one taken positional-only, or `*args` without `**kwargs` can't
+  be passed by name, so that provider is quarantined (`uses-missing`).
 - **Asking.** `gather(method, plugins=, refresh=, progress=)(*args)` returns
   one `Ok`, `Errored` or `Skipped` per provider that fills the method (only
   those `plugins` when given: provider classes where the code holds one,
@@ -141,7 +149,8 @@ and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
-`unserialisable-signature`, or `bad-provider` (building it raised). A
+`unserialisable-signature`, `uses-missing` (a parameter the contract can't
+pass it by name), or `bad-provider` (building it raised). A
 provider whose plugin requires an owner below its floor, or a disabled one,
 is never loaded: composition disables the whole plugin (`unmet-requirement`).
 A class in
@@ -265,13 +274,13 @@ def test_shelf_keeps_its_surface() -> None:
   It fails on an incompatible change, listing the lines that went: a
   removed or retyped field, a new required field, flag or parameter, a
   changed constraint, a dropped Literal value, a changed default, a
-  removed stable command or method, a new abstract method, or any change
-  to a contract method's signature, since every provider must match it
-  exactly. A new optional
-  method, optional payload field or Literal value, a new command or
+  removed stable command or method, a new abstract method, or a contract
+  method's new required parameter or changed type, default or return type.
+  A new optional method, optional method parameter (a provider may take
+  fewer), optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
-  and rewrite the file. To accept a breaking change in a major release,
-  delete the file. Commit it. With `version=` (your distribution's
+  and rewrite the file, as does a file an older untaped wrote. To accept a
+  breaking change in a major release, delete the file. Commit it. With `version=` (your distribution's
   version) it also fails an undated deprecation and anything still marked
   removed in that version's major or earlier
   ([Deprecating something](./reference/deprecation.md#the-checks)). A stable contract method that reaches a model
