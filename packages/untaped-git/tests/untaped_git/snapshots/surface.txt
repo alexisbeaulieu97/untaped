@@ -105,17 +105,20 @@ sdk untaped_git.api.Released()
 sdk untaped_git.api.Released(branches@3=) default=[]
 sdk untaped_git.api.Released(foreign_worktrees@2=) default=[]
 sdk untaped_git.api.Released(plugins@1=) default=<computed>
+sdk untaped_git.api.Released(refs@5=) default=[]
 sdk untaped_git.api.Released(stash@4=) default=false
 sdk untaped_git.api.Released.branches
 sdk untaped_git.api.Released.foreign_worktrees
 sdk untaped_git.api.Released.kept()
 sdk untaped_git.api.Released.plugins
+sdk untaped_git.api.Released.refs
 sdk untaped_git.api.Released.stash
 sdk untaped_git.api.Removed()
 sdk untaped_git.api.Removed(freed_bytes@1=) default=0
 sdk untaped_git.api.Removed.freed_bytes
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
+sdk untaped_git.api.RepoStore(plain_clone=) default=false
 sdk untaped_git.api.RepoStore.checkout(worktree, ref)
 sdk untaped_git.api.RepoStore.delete_refs(names)
 sdk untaped_git.api.RepoStore.exists()
@@ -125,12 +128,14 @@ sdk untaped_git.api.RepoStore.fetch(progress=) default=NO_PROGRESS
 sdk untaped_git.api.RepoStore.fetch(prune=) default=false
 sdk untaped_git.api.RepoStore.fetch(tags=) default=[]
 sdk untaped_git.api.RepoStore.for_url(map_error=) default=None callback(1)
+sdk untaped_git.api.RepoStore.for_url(plain_clone=) default=false
 sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
 sdk untaped_git.api.RepoStore.has_part()
 sdk untaped_git.api.RepoStore.lock_worktree(worktree, *, reason)
 sdk untaped_git.api.RepoStore.ls_tree(paths@2=) default=[]
 sdk untaped_git.api.RepoStore.ls_tree(tree)
 sdk untaped_git.api.RepoStore.owned_by(map_error=) default=None callback(1)
+sdk untaped_git.api.RepoStore.owned_by(plain_clone=) default=false
 sdk untaped_git.api.RepoStore.owned_by(plugin, *, error)
 sdk untaped_git.api.RepoStore.path
 sdk untaped_git.api.RepoStore.prefetch()

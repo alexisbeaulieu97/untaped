@@ -26,17 +26,19 @@ class Released:
     ``plugins`` maps each other plugin holding refs, a private file or
     worktrees to its worktree count; ``foreign_worktrees`` are worktrees no
     untaped plugin owns (added by hand), which release never removes;
-    ``branches`` are local branches (``refs/heads/*``) nobody released, and
-    ``stash`` says ``refs/stash`` is there.
+    ``branches`` are local branches (``refs/heads/*``) nobody released;
+    ``stash`` says ``refs/stash`` is there, and ``refs`` are remote-tracking
+    refs or tags no plugin holds (made by hand).
     """
 
     plugins: Mapping[str, int] = field(default_factory=_empty)
     foreign_worktrees: tuple[str, ...] = ()
     branches: tuple[str, ...] = ()
     stash: bool = False
+    refs: tuple[str, ...] = ()
 
     def kept(self) -> str:
-        """Who kept the repo: ``workspace (2 worktrees), ansible; branch fix``."""
+        """Who kept the repo: ``ansible, trees (2 worktrees), branch fix``."""
         parts = [
             f"{name} ({plural(count, 'worktree')})" if count else name
             for name, count in sorted(self.plugins.items())
@@ -49,6 +51,9 @@ class Released:
             parts.append(f"{noun} {', '.join(self.branches)}")
         if self.stash:
             parts.append("a stash")
+        if self.refs:
+            noun = "ref" if len(self.refs) == 1 else "refs"
+            parts.append(f"{noun} {', '.join(self.refs)}")
         return ", ".join(parts)
 
 

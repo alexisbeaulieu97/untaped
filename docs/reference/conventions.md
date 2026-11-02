@@ -269,7 +269,11 @@ The sections above name the helper for each rule. Beyond those:
   from `untaped_git.api`, not a bare repo or a root setting of your own:
   `plugin=` takes your plugin's name or what names it (a command's
   `self.ctx.plugin`). Read blobs through
-  `store.prefetched(...).run(...)` (the `blob-reader` rule).
+  `store.prefetched(...).run(...)` (the `blob-reader` rule). Pass
+  `plain_clone=True` when your worktrees should work as in a clone
+  (`origin/*`, the remote's tags, `origin/HEAD`): one plugin per repository
+  holds that layout, and another plugin declaring it is refused while the
+  first still has refs or worktrees there.
 
 A row-producing command declares `Output[R]` and yields its records, which
 take their kinds from their classes:

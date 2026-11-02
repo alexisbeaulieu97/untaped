@@ -27,7 +27,7 @@ def _shared(store_for: StoreFor, tmp_path: Path) -> tuple[Path, Path]:
     ansible = store_for("ansible")
     ansible.fetch(branches=["main"], tags=["*"])
     ansible.write_private()
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     workspace.write_private()
     trees = (tmp_path / "ws" / "one", tmp_path / "ws" / "two")
@@ -136,7 +136,7 @@ def test_workspace_release_deletes_its_plain_clone_refs_and_named_branches(
     remote.tag("v1")
     github = store_for("github")
     github.fetch(branches=["main"])
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     tree = tmp_path / "ws" / "one"
     workspace.worktree_add(tree, "refs/remotes/origin/main", branch="fix")
@@ -152,7 +152,7 @@ def test_workspace_release_deletes_its_plain_clone_refs_and_named_branches(
 def test_a_branch_left_behind_keeps_the_repo_without_a_mark(
     store_for: StoreFor, tmp_path: Path
 ) -> None:
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     tree = tmp_path / "ws" / "one"
     workspace.worktree_add(tree, "refs/remotes/origin/main", branch="fix")
@@ -171,7 +171,7 @@ def test_a_branch_left_behind_keeps_the_repo_without_a_mark(
 def test_a_checked_out_branch_is_refused_before_anything_changes(
     store_for: StoreFor, tmp_path: Path
 ) -> None:
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     workspace.write_private()
     workspace.worktree_add(tmp_path / "ws" / "one", "refs/remotes/origin/main", branch="fix")
@@ -188,7 +188,7 @@ def test_a_checked_out_branch_is_refused_before_anything_changes(
 @pytest.mark.parametrize("name", ["*", "a..b", "-x", "refs/heads/x"])
 def test_release_refuses_a_name_that_is_not_a_branch(store_for: StoreFor, name: str) -> None:
     with pytest.raises(StoreError) as caught:
-        store_for("workspace").release(branches=[name])
+        store_for("workspace", plain_clone=True).release(branches=[name])
     assert caught.value.category == ErrorCategory.INVALID
 
 
@@ -260,7 +260,7 @@ def test_a_worktree_added_from_an_owned_one_stays_the_users(
     store_for: StoreFor, tmp_path: Path
 ) -> None:
     """git copies config.worktree into it, owner included; the path stamp says it isn't ours."""
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     owned = tmp_path / "ws" / "one"
     workspace.worktree_add(owned, "refs/remotes/origin/main", branch="one")
@@ -295,7 +295,7 @@ def test_release_finishes_another_plugins_interrupted_release_first(
 def test_release_unless_in_use_keeps_everything_while_a_worktree_is_registered(
     store_for: StoreFor, tmp_path: Path
 ) -> None:
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     workspace.write_private()
     tree = tmp_path / "ws" / "one"

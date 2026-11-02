@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import ErrorCategory, UntapedError
 from untaped.sdk.network import find_program
+from untaped_git import plain_clone
 from untaped_git.helper_nonce import helper_nonce
-from untaped_git.namespace import layout_for
 from untaped_git.repo_files import (
     WorktreeEntry,
     config_value,
@@ -75,7 +75,7 @@ def enable_worktree_config(store: RepoStore) -> None:
 def repair_worktrees(store: RepoStore, *, stripped: bool) -> None:
     """Give each registered worktree its own fetch keys after a shared-config change.
 
-    A worktree workspace owns gets workspace's owner keys. With the shared
+    A worktree a plugin owns gets its owner's keys again. With the shared
     refspec just ``stripped``, a worktree nobody owns (a 10.x worktree, or
     one added by hand) gets the refspec and filter it lost, never an
     owner: release would then remove it.
@@ -85,8 +85,8 @@ def repair_worktrees(store: RepoStore, *, stripped: bool) -> None:
     for entry in worktree_entries(store._path):
         if entry.path is None or not names_admin(entry.path / ".git", entry.admin):
             continue
-        if entry.owner == "workspace":
-            write_owner_config(store, entry.path, owner="workspace")
+        if entry.owner is not None:
+            write_owner_config(store, entry.path, owner=entry.owner)
         elif entry.owner is None and stripped:
             _write_fetch_config(store, entry.path, plain=True)
 
@@ -102,8 +102,7 @@ def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = 
     entry = _entry_of(store, worktree)
     if entry is not None:
         (entry.admin / OWNER_MARK).write_text(f"{owner}\n", encoding="utf-8")
-    plain = layout_for(owner).heads == "refs/remotes/origin/"
-    _write_fetch_config(store, worktree, plain=plain)
+    _write_fetch_config(store, worktree, plain=plain_clone.holder(store) == owner)
 
 
 def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> None:

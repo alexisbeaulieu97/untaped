@@ -3,7 +3,7 @@
 Writers take it; readers that only list do not. It is advisory: a user's own
 git in a worktree never takes it, which is fine for refs (git's own ref locks)
 and for gc (``gc.pruneExpire``). Lock order: a consumer that holds a lock of
-its own (workspace's state lock) takes it first, so the repo lock is always
+its own (a state lock of its own data) takes it first, so the repo lock is always
 the inner lock. Nesting (``prefetched`` → ``prefetch``) re-enters the held
 lock instead of opening the file again, which would block on itself.
 """

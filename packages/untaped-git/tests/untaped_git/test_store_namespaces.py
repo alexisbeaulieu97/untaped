@@ -16,7 +16,7 @@ def test_sweep_and_workspace_share_a_repo(
 ) -> None:
     remote.branch("release")
     remote.tag("v1")
-    workspace, github = store_for("workspace"), store_for("github")
+    workspace, github = store_for("workspace", plain_clone=True), store_for("github")
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     workspace.worktree_add(tmp_path / "ws" / "fix-login", "refs/remotes/origin/main", branch="fix")
     stale = remote.oid("main")
@@ -61,7 +61,7 @@ def test_a_refspec_never_reaches_git(store_for: StoreFor, name: str) -> None:
 def test_upstream_and_pull_resolve_from_the_worktree_refspec(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path
 ) -> None:
-    workspace, github = store_for("workspace"), store_for("github")
+    workspace, github = store_for("workspace", plain_clone=True), store_for("github")
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     tree = tmp_path / "ws" / "fix"
     workspace.worktree_add(tree, "refs/remotes/origin/main", branch="fix")

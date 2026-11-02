@@ -29,6 +29,7 @@ def _store(base: Path, remote: GitRemote, plugin: str = "workspace") -> RepoStor
         url=remote.url,
         plugin=plugin,
         error=StoreError,
+        plain_clone=plugin == "workspace",
         warn=lambda _text: None,
         sleep=lambda _seconds: None,
     )
