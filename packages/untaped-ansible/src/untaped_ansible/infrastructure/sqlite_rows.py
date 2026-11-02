@@ -6,6 +6,10 @@ import sqlite3
 from datetime import UTC, datetime
 
 from untaped_ansible.domain.payloads import IndexedDependency, RefScanMetadata
+from untaped_ansible.domain.variable_models import How
+
+HOWS: tuple[How, ...] = ("defines", "sets", "reads")
+"""How each ``variable_facts.how`` integer reads: its index in this tuple."""
 
 
 def edge_from_row(row: sqlite3.Row) -> IndexedDependency:
