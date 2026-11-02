@@ -424,7 +424,7 @@ class SettingsFileRepository:
             if value is None:
                 continue
             if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
-                return
+                continue
             unset_at_path(data, old)
             set_at_path(data, declared.path, value)
             if report is not None:
