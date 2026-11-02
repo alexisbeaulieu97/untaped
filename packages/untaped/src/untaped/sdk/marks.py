@@ -138,8 +138,10 @@ def old_names(**entries: Deprecated) -> Mapping[str, Deprecated]:
     ``old_names(human_size=deprecated(removed_in=14, replacement=size_text))``
     in the table a module resolves its names from (the SDK root's
     ``_exports.OLD_NAMES``, a group's ``lazy_names(..., old=...)``). Each
-    entry names its removal and the renamed object itself, never text: the
-    old name is that object. Old names stay out of ``__all__``.
+    entry names its removal and the renamed class or function itself, never
+    text: the old name is that object. Old names stay out of ``__all__``;
+    the module's ``TYPE_CHECKING`` block assigns each (``human_size =
+    size_text``) so type checkers accept it.
     """
     for name, mark in entries.items():
         if (

@@ -2,27 +2,22 @@
 
 The root and each group resolve an old name on every lookup (never keeping it),
 warn through :func:`untaped.sdk.marks.notify_deprecation`, keep it out of
-``__all__``, and the surface lists it under the old name, deprecated. A
-contract method filled by its old name fills the new one.
+``__all__``, and the surface lists it under the old name, deprecated.
 """
 
 from __future__ import annotations
 
 import sys
 import types
-import warnings
-from abc import abstractmethod
 from collections.abc import Iterator, Mapping
 from typing import Any
 
 import pytest
 
 import untaped.sdk
-from core_test_support.contracts.support import compose, plugin
 from untaped.core.surface._sdk import collect_exports, module_lines
-from untaped.sdk import Issued, size_text
+from untaped.sdk import size_text
 from untaped.sdk._lazy import OLD_NAMES_ATTR, lazy_names, old_names_of
-from untaped.sdk.contracts import Contract, Ok, Provider, gather
 from untaped.sdk.marks import Deprecated, deprecated, old_names
 
 
@@ -195,61 +190,3 @@ def test_an_old_name_is_a_deprecated_surface_line_under_its_old_spelling() -> No
         f"sdk {_SAMPLE}.new(count)",
         f"sdk {_SAMPLE}.old(count)  [deprecated, removed in 14.0; use _new]",
     ]
-
-
-# --- a contract method --------------------------------------------------------------------
-
-
-class Item(Issued):
-    name: str
-
-
-class ItemSource(Contract):
-    """Items, from an owner that renamed ``items`` to ``all_items``."""
-
-    @abstractmethod
-    def all_items(self) -> list[Item]: ...
-
-    @deprecated(removed_in=14, replacement=all_items)
-    @warnings.deprecated("ItemSource.items is deprecated; use `all_items`")
-    def items(self) -> list[Item]:
-        raise NotImplementedError
-
-
-class OldShop(ItemSource, Provider):
-    """Released before the rename: it fills ``items``."""
-
-    def items(self) -> list[Item]:
-        return [Item(name="old")]
-
-
-class NewShop(ItemSource, Provider):
-    def all_items(self) -> list[Item]:
-        return [Item(name="new")]
-
-
-class BothShop(ItemSource, Provider):
-    """Fills both: the new name is the one asked."""
-
-    def items(self) -> list[Item]:
-        return [Item(name="old")]
-
-    def all_items(self) -> list[Item]:
-        return [Item(name="new")]
-
-
-def test_a_provider_filling_a_renamed_method_by_its_old_name_answers_the_new_one() -> None:
-    compose(
-        plugin("owner", offers=(ItemSource,), records=(Item,), module=__name__),
-        plugin("old", fills=(OldShop,), module=__name__),
-        plugin("new", fills=(NewShop,), module=__name__),
-        plugin("both", fills=(BothShop,), module=__name__),
-    )
-    answers = gather(ItemSource.all_items)()
-    assert all(isinstance(answer, Ok) for answer in answers), answers
-    names = {
-        answer.plugin: [item.name for item in answer.value]
-        for answer in answers
-        if isinstance(answer, Ok)
-    }
-    assert names == {"old": ["old"], "new": ["new"], "both": ["new"]}

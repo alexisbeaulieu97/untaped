@@ -245,6 +245,6 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
 ]
 
 #: The root's old spellings (:func:`untaped.sdk.marks.old_names`): each resolves to its
-#: replacement on every lookup and warns, stays out of ``__all__``, and is imported by name
-#: in ``untaped/sdk/__init__.py``'s ``TYPE_CHECKING`` block for type checkers.
+#: replacement on every lookup and warns, stays out of ``__all__``, and is assigned
+#: (``old = new``) in ``untaped/sdk/__init__.py``'s ``TYPE_CHECKING`` block for type checkers.
 OLD_NAMES = old_names()

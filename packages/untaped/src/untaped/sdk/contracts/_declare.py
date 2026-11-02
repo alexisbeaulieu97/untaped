@@ -18,7 +18,7 @@ import json
 import re
 import types
 from abc import ABC
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import (
@@ -580,35 +580,42 @@ def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
     """A provider filling a renamed method by its old name fills the new one with it.
 
     The owner calls only the new name, so the provider keeps answering until
-    the old name goes.
+    the old name goes. The class nearest ``cls`` decides: an old name it
+    defines below (or beside none of) the new one is the provider's answer,
+    so a subclass overriding the old name still answers.
     """
     for old, new in _renamed(info).items():
-        if _fills(cls, info, old) and not _fills(cls, info, new):
-            holder = next(klass for klass in cls.__mro__ if old in vars(klass))
-            setattr(cls, new, vars(holder)[old])
+        old_at, new_at = _holder_at(cls, old), _holder_at(cls, new)
+        if old_at < new_at and cls.__mro__[old_at] not in info.cls.__mro__:
+            setattr(cls, new, vars(cls.__mro__[old_at])[old])
 
 
 def _renamed(info: ContractInfo) -> dict[str, str]:
-    """Each renamed method of the contract: its old name, kept deprecated, to the new one.
-
-    The old method stays on the contract, marked
-    ``@deprecated(removed_in=..., replacement=<the new method>)``.
-    """
+    """Each renamed method of the contract: its old name, kept deprecated, to the new one."""
     renamed: dict[str, str] = {}
     for name, method in info.methods.items():
-        mark = function_mark(method.function)
-        if not isinstance(mark, Deprecated) or not callable(mark.replacement):
-            continue
-        new = getattr(mark.replacement, "__name__", None)
-        if new is not None and new != name and new in info.methods:
+        new = _renamed_to(name, method.function, info.methods)
+        if new is not None:
             renamed[name] = new
     return renamed
 
 
-def _fills(cls: type, info: ContractInfo, name: str) -> bool:
-    """Whether ``cls`` defines ``name`` below the contract (itself, a provider base or a mixin)."""
-    holder = next(klass for klass in cls.__mro__ if name in vars(klass))
-    return holder not in info.cls.__mro__
+def _renamed_to(name: str, function: object, names: Collection[str]) -> str | None:
+    """The method ``name`` was renamed to, when it is a contract's old spelling of one of ``names``.
+
+    The old method stays on the contract, marked
+    ``@deprecated(removed_in=..., replacement=<the new method>)``.
+    """
+    mark = function_mark(function)
+    if not isinstance(mark, Deprecated) or not callable(mark.replacement):
+        return None
+    new = getattr(mark.replacement, "__name__", None)
+    return new if new is not None and new != name and new in names else None
+
+
+def _holder_at(cls: type, name: str) -> int:
+    """Where in ``cls``'s MRO the class defining ``name`` sits."""
+    return next(at for at, klass in enumerate(cls.__mro__) if name in vars(klass))
 
 
 def parameter_problems(provider: type[Contract], contract: ContractInfo) -> list[str]:
@@ -663,7 +670,10 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                     )
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
-        is_bridge = _is_bridge(value, hints, item_param, item)
+        # an old spelling is never asked: the new method is the bridge
+        is_bridge = _renamed_to(name, value, vars(cls)) is None and _is_bridge(
+            value, hints, item_param, item
+        )
         if is_bridge:
             bridges.append(name)
         methods[name] = Method(
