@@ -22,8 +22,8 @@ from core_test_support.commands.support import (
 from untaped.core.commands.doctor import report_check_rows
 from untaped.runtime.theme import PLAIN_CHECK_SYMBOLS
 from untaped.sdk import Plugin
+from untaped.sdk._output import Output
 from untaped.sdk._theme import CHECK_SYMBOLS
-from untaped.sdk.fields import Output
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import CliInvoker, CliResult
 

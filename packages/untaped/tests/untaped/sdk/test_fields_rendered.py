@@ -6,7 +6,7 @@ import pytest
 from rich.text import Text
 
 from untaped.sdk import TreeGraph, TreeGraphEdge, TreeGraphNode, Verbatim
-from untaped.sdk.fields import Rendered, print_rendered
+from untaped.sdk._output import Rendered, print_rendered
 
 
 def _tree(root: str, child: str) -> TreeGraph:

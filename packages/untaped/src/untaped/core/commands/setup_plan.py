@@ -34,7 +34,7 @@ from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import CompositionResult
 from untaped.runtime.run import child_run
 from untaped.sdk._cli import emit
-from untaped.sdk.fields import default_columns, table_row
+from untaped.sdk._table import default_columns, table_row
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField
 from untaped.sdk.network.auth import find_program
