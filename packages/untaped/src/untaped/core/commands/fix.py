@@ -18,6 +18,7 @@ severe failure, and ``1`` when a check still fails afterwards. The
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 import os
@@ -45,6 +46,7 @@ from untaped.runtime.run_output import (
     current_sink,
 )
 from untaped.runtime.sink import DIAGNOSTICS_ENV
+from untaped.sdk import _process_groups
 from untaped.sdk._confirm import Confirm
 from untaped.sdk._run import is_verbose
 from untaped.sdk._table import table_row
@@ -226,18 +228,32 @@ def _run_one(argv: Sequence[str]) -> ChildRun:
             )
             for stream, into in ((process.stdout, out), (process.stderr, err))
         ]
-        for reader in readers:
-            reader.start()
         try:
+            for reader in readers:
+                reader.start()
             code = process.wait()
         except BaseException:
-            # A SIGTERM sent to this process alone is untaped's interrupt here, and
-            # leaving the ``with`` waits for the readers, so end the child first.
-            process.terminate()
+            _end_after_interrupt(process)
             raise
         for reader in readers:
             reader.join()
     return ChildRun(code=code, rows=_parse_rows("".join(out)), diagnostics=_parse_lines(err))
+
+
+def _end_after_interrupt(process: subprocess.Popen[str]) -> None:
+    """Give the child one grace to finish what the interrupt started, then end it.
+
+    The child shares untaped's process group, so Ctrl-C reached it too and
+    its own cleanup is running: one grace leaves that alone (a second signal
+    would cut it short). A SIGTERM sent to untaped alone never reached it, and
+    leaving the ``with`` waits for its readers, so it then gets SIGTERM.
+    """
+    try:
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(timeout=_process_groups.GRACE_S)
+    finally:
+        if process.poll() is None:
+            process.terminate()
 
 
 def _drain(stream: IO[str] | None, into: list[str], relay: bool) -> None:

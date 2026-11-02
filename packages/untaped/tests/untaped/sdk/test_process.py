@@ -403,7 +403,8 @@ def _untaped(argv: list[str], *, grace: float = GRACE) -> subprocess.Popen[str]:
         [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
     assert untaped.stdout is not None
-    assert untaped.stdout.readline() == "ready\n", untaped.stderr
+    if untaped.stdout.readline() != "ready\n":
+        pytest.fail(untaped.communicate(timeout=5)[1])
     return untaped
 
 

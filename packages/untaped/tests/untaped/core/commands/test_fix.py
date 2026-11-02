@@ -8,6 +8,7 @@ would leave behind. Checks name real root commands of a test composition.
 from __future__ import annotations
 
 import json
+import signal
 import subprocess
 import sys
 import time
@@ -22,7 +23,7 @@ from untaped.core.commands import fix
 from untaped.core.commands.fix import ChildRun
 from untaped.core.settings import NAME, CoreSettings
 from untaped.runtime import bootstrap
-from untaped.sdk import Command, Plugin
+from untaped.sdk import Command, Plugin, _process_groups
 from untaped.sdk._home import config_path
 from untaped.sdk.health.deprecated_keys import key_mappings
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
@@ -625,27 +626,67 @@ def test_unparsable_output_has_no_rows() -> None:
     assert fix._parse_lines(["oops\n", '"s"\n', '{"level": "info"}\n']) == [{"level": "info"}]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="an executable script stands in for Python")
-def test_an_interrupt_while_a_fix_runs_ends_its_child(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # A SIGTERM sent to untaped alone arrives as the interrupt: the child must not hold it.
+def _interrupted_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script: str, *, sigint: bool
+) -> list[subprocess.Popen[str]]:
+    """Make ``_run_one`` start ``script`` and get the interrupt during its first wait.
+
+    With ``sigint`` the child gets SIGINT first, as Ctrl-C reaches untaped's group,
+    once it has written ``ready``.
+    """
+    ready = tmp_path / "ready"
     child = tmp_path / "python"
-    child.write_text("#!/bin/sh\nexec sleep 30\n")
+    child.write_text(f"#!{sys.executable}\nopen({str(ready)!r}, 'w').close()\n{script}")
     child.chmod(0o755)
     monkeypatch.setattr(sys, "executable", str(child))
+    monkeypatch.setattr(_process_groups, "GRACE_S", 1.0)
     started: list[subprocess.Popen[str]] = []
 
     class InterruptedOnce(subprocess.Popen[str]):
         def wait(self, timeout: float | None = None) -> int:
             if not started:
                 started.append(self)
+                if sigint:
+                    deadline = time.monotonic() + 10
+                    while not ready.exists() and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.send_signal(signal.SIGINT)
                 raise KeyboardInterrupt
             return super().wait(timeout)
 
     monkeypatch.setattr(fix.subprocess, "Popen", InterruptedOnce)
+    return started
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="an executable script stands in for Python")
+def test_an_interrupt_that_missed_the_fix_child_ends_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A SIGTERM sent to untaped alone arrives as the interrupt: the child must not hold it.
+    started = _interrupted_child(
+        monkeypatch, tmp_path, "import time; time.sleep(30)\n", sigint=False
+    )
     begun = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
         fix._run_one(["status"])
     assert time.monotonic() - begun < 10
-    assert started[0].poll() is not None
+    assert started[0].poll() == -signal.SIGTERM
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="an executable script stands in for Python")
+def test_ctrl_c_lets_the_fix_child_finish_its_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Ctrl-C reached the child too: a second signal would cut its cleanup short.
+    marker = tmp_path / "cleaned"
+    script = (
+        "import sys, time\n"
+        "try:\n    time.sleep(30)\n"
+        f"except KeyboardInterrupt:\n    time.sleep(0.3)\n    open({str(marker)!r}, 'w').close()\n"
+        "    sys.exit(130)\n"
+    )
+    started = _interrupted_child(monkeypatch, tmp_path, script, sigint=True)
+    with pytest.raises(KeyboardInterrupt):
+        fix._run_one(["status"])
+    assert started[0].poll() == 130
+    assert marker.exists()
