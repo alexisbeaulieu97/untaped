@@ -176,8 +176,8 @@ A run picks the profiles `UNTAPED_PROFILE` names, then the ones the global
 neither, it reads only the base. `--profile default` reads the base alone and
 sets `UNTAPED_PROFILE` aside; `default` in a longer list, a name that is not
 letters, digits, `_`, `.` and `-`, or a profile not under `profiles:` exits 2.
-Nothing in `config.yml` picks a profile: set `UNTAPED_PROFILE` in your shell
-for a lasting choice.
+For a lasting choice, set `UNTAPED_PROFILE` in your shell, or give a project
+a `profile:` ([Projects](./projects.md#settings)), beneath both.
 
 `--profile`, `--verbose`/`-v`, `--quiet`/`-q` and `--deprecated` are global
 and go anywhere before `--` (`untaped github --profile work whoami`).
@@ -194,8 +194,8 @@ and go anywhere before `--` (`untaped github --profile work whoami`).
 - `profile show` prints YAML (its settings under `data`), secrets `***`
   unless `--show-secrets`; with no name it shows what the run reads.
 - `profile current` writes only the pick, comma-joined (or `default`), to
-  stdout and where it came from (`flag`, `env` or `fallback`) to stderr, so
-  it is safe in a prompt; `--format json` lists each profile with its source:
+  stdout and its sources (`project`, `env`, `flag` or `fallback`) to stderr,
+  so it is safe in a prompt; `--format json` lists each profile's source:
 
   ```bash
   echo "[$(untaped profile current 2>/dev/null)] $ "
@@ -239,15 +239,14 @@ parsing it as YAML:
 - an invalid value is rejected before anything is written.
 
 `config set` and `config unset` write to the one profile `--profile` names,
-else to the base; `UNTAPED_PROFILE` picks what runs read, never where they
-write, and `--profile a,b` is refused (exit 2). When a profile the run picks
-still hides a value written to the base, one line says so. Each prints an
-`untaped.setting_outcome` record that never echoes the value.
+else to the base (`--project`: the project's file); `UNTAPED_PROFILE` picks
+what runs read, never where they write, and `--profile a,b` exits 2. When a
+layer the run reads still hides a value written to the base, one line says so.
+Each prints an `untaped.setting_outcome` record that never echoes the value.
 
 `config get` prints only the value (nothing when unset). Structured output
-adds its source (`profile:<name>`, `base`, `env`, `default` or `unset`),
-profile and default, with secrets masked as `"***"` unless
-you pass `--show-secrets`.
+adds its source (`profile:<name>`, `base`, `project:<name>`, `env`, `default`
+or `unset`), profile and default, secrets `"***"` unless `--show-secrets`.
 
 Because a command validates only the section it reads, you can repair a
 broken key through the CLI: `config set KEY --prompt` offers the raw stored

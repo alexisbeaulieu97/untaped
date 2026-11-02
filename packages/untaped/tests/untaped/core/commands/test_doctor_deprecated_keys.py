@@ -183,3 +183,20 @@ def test_a_renamed_variable_is_left_to_the_read_warning(
     row = _rows(**{"deprecated-keys": ""})["deprecated-keys"]
 
     assert row["status"] == "pass"
+
+
+@pytest.mark.usefixtures("home_run")
+def test_setup_s_checks_leave_the_project_out(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup checks a profile, so a project's file adds no row and no warning."""
+    from untaped.sdk.testing import make_project
+
+    write_config(_isolated_config, "format_version: 2\n")
+    root = make_project(tmp_path / "PROJ-1").root
+    file = root / ".untaped" / "config.yml"
+    file.write_text("profile: [unclosed\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    result = compose(make_plugin("old", settings=OldProfile))
+    rows = selected_check_rows(result, "default", frozenset({"old", "untaped"}))
+    assert all(row["title"] != "load project config file" for row in rows)

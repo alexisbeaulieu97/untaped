@@ -291,6 +291,9 @@ class Run:
     #: the root option's, written by the token pass (:meth:`set_profiles`), or
     #: a child run's own (``untaped.runtime.run.child_run``).
     profiles: tuple[str, ...] = ()
+    #: Whether the run reads the folder layer: its project's ``.untaped/config.yml``
+    #: (``False`` for a child run that reads a profile as the home defines it: setup).
+    folder: bool = True
     #: Candidate settings a child run lays over what it loads; nothing is written.
     overlay: SettingsOverlay | None = None
     #: Where the run keeps what it asks of stderr (:attr:`policy`), which the

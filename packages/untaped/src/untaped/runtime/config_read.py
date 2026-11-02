@@ -41,6 +41,30 @@ def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
     return raw
 
 
+#: A project's ``config.yml``'s own top-level keys; every other key is a section.
+PROJECT_FILE_KEYS = frozenset({"format_version", "profile"})
+
+
+def load_project_config(yaml_file: Path) -> dict[str, Any]:
+    """Parse a project's ``.untaped/config.yml`` into a dict (``{}`` when absent or empty).
+
+    Its stamp is optional (a hand-written file may leave it out) and is
+    refused when newer than this release reads, as the home's is. A project
+    picks profiles and defines none, so ``profiles:`` and ``active:`` are
+    refused too. Raises :class:`ConfigError` (exit 4) naming the path.
+    """
+    raw = _read_yaml(yaml_file)
+    _check_stamp(raw, yaml_file, newest=FORMAT_VERSION)
+    for key in ("profiles", "active"):
+        if key in raw:
+            raise ConfigError(
+                f"`{key}:` in {yaml_file} is not read: a project picks the home's profiles "
+                "with `profile:` and defines none",
+                hint=f"move it to the home's config.yml, or delete the `{key}:` key",
+            )
+    return raw
+
+
 def _check_no_shared_state(folder: Path) -> None:
     """Refuse a folder holding 11.x's shared ``state.yml`` beside the config read from it.
 

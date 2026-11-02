@@ -43,3 +43,16 @@ def test_a_missing_credential_s_hint_runs_its_login(tmp_path: Path) -> None:
     with run_scope(run), pytest.raises(NoCredential) as missing:
         Demo.api_token.get(DemoServer())
     assert missing.value.hint == "run `untaped auth login demo api_token`, or set DEMO_TOKEN"
+
+
+def test_a_missing_credential_s_hint_names_the_runs_pick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The line files the credential for the same key wherever it is typed."""
+    monkeypatch.setenv("UNTAPED_PROFILE", "staging,lab")
+    run = run_owning(tmp_path, __name__.partition(".")[0], "demo")
+    with run_scope(run), pytest.raises(NoCredential) as missing:
+        Demo.api_token.get(DemoServer())
+    assert missing.value.hint == (
+        "run `untaped --profile staging,lab auth login demo api_token`, or set DEMO_TOKEN"
+    )

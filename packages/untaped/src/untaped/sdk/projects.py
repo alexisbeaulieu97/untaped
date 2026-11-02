@@ -537,6 +537,32 @@ def _warn_unrepaired(project: Project, rows: Collection[HoldOutcome]) -> None:
             )
 
 
+def recorded_here(root: Path) -> str | None:
+    """Why the project at ``root`` is not this home's own yet, or ``None`` when it is.
+
+    Its own: the home records it at this folder (or it moved here, which its
+    filesystem identity proves). An unrecorded folder, a copy, or one whose
+    record can't be read is not: ``untaped project init`` there is the
+    consent step that makes it this home's. Only reads.
+    """
+    try:
+        pid = _marker_id(root)
+    except (OSError, ValueError) as exc:
+        return f"its project marker can't be read ({exc})"
+    if pid is None:
+        return "it is no longer a project"
+    situation = _situation(root, pid)
+    match situation.kind:
+        case "ok" | "refresh" | "moved":
+            return None
+        case "copy":
+            return "it is a copy of another project this home records"
+        case "unrecorded":
+            return "this home doesn't record the project"
+        case _:
+            return situation.reason or "this home can't tell whether it records the project"
+
+
 def _discover(root: Path, *, report: bool = True) -> Project:
     key = str(root)
     with _SEEN_GUARD:

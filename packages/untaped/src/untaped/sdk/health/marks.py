@@ -7,6 +7,8 @@ what follows (``setup``, ``setup plan``, doctor's ``setup`` row, ``auth``):
   (a :class:`~untaped.sdk.network.credentials.CredentialKey` model included): the plugin
   can't be used until the field has a value. Nested models' fields count
   too, by their dotted path.
+- :class:`HomeOnly` on a leaf field that locates data every project shares:
+  a project's ``.untaped/config.yml`` may not set it.
 - each :class:`~untaped.sdk.network.credentials.Credential` its plugin class holds
   is a secret the plugin needs: set once :meth:`~untaped.sdk.network.credentials.Credential.answer`
   names a source. It is no setting: ``untaped auth login`` stores it.
@@ -29,7 +31,11 @@ from pydantic import BaseModel, SecretStr
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-from untaped.sdk._schema import unwrap_optional
+from untaped.sdk._schema import HomeOnly, unwrap_optional
+from untaped.sdk.marks import experimental
+
+# A marker class, defined beside the schema walker that reads it.
+experimental(HomeOnly)
 
 if TYPE_CHECKING:
     from untaped.sdk.network.credentials import Credential
@@ -208,10 +214,11 @@ class _NoSettings(BaseModel):
 def setup_mark_errors(model: type[BaseModel]) -> list[str]:
     """One sentence per setting mark on ``model`` that would not take effect; ``[]`` when none."""
     errors: list[str] = []
-    for path, field, _is_model in _fields(model):
+    for path, field, is_model in _fields(model):
         key = ".".join(path)
+        errors.extend(_home_only_errors(key, field, is_model=is_model))
         marks = _marks_of(field)
-        if _mark_inside_type(field.annotation):
+        if _inside_type(field.annotation, _NeedsSetup):
             errors.append(
                 f"the setup mark on setting {key!r} sits inside its type, where pydantic "
                 "drops it; annotate the field: Annotated[str | None, NeedsSetup] = None"
@@ -227,6 +234,25 @@ def setup_mark_errors(model: type[BaseModel]) -> list[str]:
                 "Annotated[X | None, NeedsSetup] = None"
             )
     return errors
+
+
+def _home_only_errors(key: str, field: FieldInfo, *, is_model: bool) -> list[str]:
+    """Why a :class:`HomeOnly` mark on ``field`` can't take effect: inside a type, on a model."""
+    if _inside_type(field.annotation, HomeOnly):
+        return [
+            f"the HomeOnly mark on setting {key!r} sits inside its type, where pydantic drops "
+            "it; annotate the field: Annotated[Path | None, HomeOnly()]"
+        ]
+    if is_model and any(isinstance(item, HomeOnly) for item in field.metadata):
+        return [f"setting {key!r} is a model; mark HomeOnly on its fields instead"]
+    return []
+
+
+def _inside_type(annotation: object, mark: type) -> bool:
+    """Whether a ``mark`` instance sits inside the type itself, where pydantic drops it."""
+    return any(
+        isinstance(arg, mark) or _inside_type(arg, mark) for arg in typing.get_args(annotation)
+    )
 
 
 def _none_by_default(field: FieldInfo) -> bool:
@@ -245,14 +271,6 @@ def _is_optional(annotation: Any) -> bool:
     )
 
 
-def _mark_inside_type(annotation: object) -> bool:
-    """Whether a setup mark sits inside the type itself, where pydantic drops it."""
-    return any(
-        isinstance(arg, _NeedsSetup) or _mark_inside_type(arg)
-        for arg in typing.get_args(annotation)
-    )
-
-
 def is_set(value: object) -> bool:
     """Whether a resolved setting counts as set: not ``None``, and not a blank string.
 
@@ -264,6 +282,7 @@ def is_set(value: object) -> bool:
 
 
 __all__ = [
+    "HomeOnly",
     "MarkedField",
     "NeedsSetup",
     "SetupMarks",

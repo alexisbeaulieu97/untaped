@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from untaped.runtime.profile_resolver import pick_names, picked_names
+from untaped.runtime.profile_resolver import pick_names, settings_key
 from untaped.runtime.run_output import RunOutput, opened
 from untaped.runtime.settings import get_config_section
 from untaped.runtime.sink import forced_diagnostics
@@ -86,14 +86,15 @@ def _given(home: Path) -> Callable[[], Path]:
 def _section_reader() -> Callable[[str, type[BaseModel]], BaseModel]:
     """A run's ``picks``: each section validated on first read, once for each pick it is read under.
 
-    Keyed by the pick, so a section read before a late ``--profile`` (one a
-    line read with no declaration kept takes once the root is composed) is
-    read again under the pick that follows.
+    Keyed by the pick and the project's file (:func:`settings_key`), so a
+    section read before a late ``--profile`` (one a line read with no
+    declaration kept takes once the root is composed) is read again under
+    the pick that follows.
     """
-    picked: dict[tuple[str, tuple[str, ...]], BaseModel] = {}
+    picked: dict[tuple[str, tuple[object, ...]], BaseModel] = {}
 
     def picks(section: str, model: type[BaseModel]) -> BaseModel:
-        key = (section, picked_names())
+        key = (section, settings_key())
         if key not in picked:
             picked[key] = get_config_section(section, model)
         return picked[key]
@@ -208,7 +209,10 @@ def current_or_built(
 
 @contextmanager
 def child_run(
-    *, profiles: str | Sequence[str] | None = None, overlay: SettingsOverlay | None = None
+    *,
+    profiles: str | Sequence[str] | None = None,
+    overlay: SettingsOverlay | None = None,
+    folder: bool | None = None,
 ) -> Iterator[Run]:
     """Run the block under a child of the current run: a nested pick or a settings overlay.
 
@@ -219,7 +223,8 @@ def child_run(
     ``profiles`` replaces the ``--profile`` pick (a string is one profile;
     ``UNTAPED_PROFILE``'s names still stack beneath it; ``"default"`` reads
     the base alone), ``overlay`` lays candidate values over what it loads,
-    and either left out keeps the parent's. An empty pick raises
+    ``folder=False`` leaves the project's ``.untaped/config.yml`` out (a
+    profile read as the home defines it), and any left out keeps the parent's. An empty pick raises
     :class:`ValueError`: leave ``profiles`` out to keep the parent's. The
     aggregate settings are cached per pick and never under an overlay, so
     nothing is dropped on entry or exit. A thread sees the child only when
@@ -236,6 +241,7 @@ def child_run(
         picks=_section_reader(),
         profiles=parent.profiles if names is None else names,
         overlay=parent.overlay if overlay is None else overlay,
+        folder=parent.folder if folder is None else folder,
     )
     with run_scope(child):
         yield child

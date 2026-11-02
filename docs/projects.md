@@ -99,6 +99,64 @@ untaped    ~/work/PROJ-123      planned  deletes .gitignore, project.json; keeps
 All three preview with `--dry-run`; `remove` and `prune` exit 3 under
 `--check` when a hold is refused, and confirm (`--yes` without a terminal).
 
+## Settings
+
+A project's `.untaped/config.yml` is a settings layer for every command run
+inside it. It may pick the home's profiles with `profile:` (a name or a list)
+and set values, in the same sections as the home's file:
+
+```yaml
+format_version: 2
+profile: [staging, jira-beta]
+awx:
+  default_organization: Platform
+```
+
+Lowest first, a run reads each setting's default, the home's base, the
+project's picks, the project's own values, `UNTAPED_PROFILE`'s picks,
+`--profile`'s picks, `UNTAPED_<SECTION>__<FIELD>` variables, then a
+command's flags. A pick stacks on the project's with no warning, and
+`--profile default` sets the project's picks aside (its values still apply).
+`config list` names the layer `project:<name>`; `profile show NAME`,
+`config list --all-profiles` and `setup` act on a profile by name and leave it
+out.
+
+```console
+$ untaped --profile staging project init ~/work/PROJ-123
+$ untaped config set awx.default_organization Platform --project
+$ untaped config get awx.default_organization -f json
+{"key": "awx.default_organization", "value": "Platform", ..., "source": "project:PROJ-123"}
+```
+
+- `project init` with `--profile` or `UNTAPED_PROFILE` records that pick as the
+  new project's `profile:`, so the folder keeps the environment it was made in;
+  with no pick it writes no `profile:`.
+- Only the file of a folder this home records as a project counts: a cloned
+  repository's committed `.untaped/` is never read until you run
+  `project init` there (until then it is ignored with one warning). It is read
+  only when it and `.untaped/` are yours and nobody else can write them (your
+  private group may, when the system lists its users); otherwise it is ignored
+  with one warning, and `config set --project` refuses to write it. `doctor`
+  reports a file it can't read or that sets what it may not, and checks the
+  rest without it.
+- An untaped older than 12.0 ignores the file, `profile:` included, and runs
+  against the home's active profile. When the project's `pyproject.toml` pins
+  only such versions, `doctor` and every `untaped docs` page warn.
+- A project picks profiles and defines none: `profiles:` and `active:` exit 4,
+  as do a secret, a command untaped runs, a setting only the home holds (a
+  plugin's shared folder, such as `git.store_dir`) and a newer
+  `format_version`.
+- A profile the home doesn't define is skipped with a warning; the rest
+  applies. `profile rename` gives the projects that pick a profile its new
+  name, and `profile delete` drops it from them. A relative path is read from
+  the project's folder.
+- For a server whose settings the project's file chose, untaped reads no
+  credential variable and files no credential; one already stored for that
+  exact server is used ([Credentials](./credentials.md#projects)). When a
+  credential is missing, the hint names the run's pick
+  (`untaped --profile staging auth login awx`), so it files the credential for
+  the same server wherever you run it.
+
 ## A plugin's files in `.untaped/`
 
 Every name in `.untaped/` is core's (`project.json`, `config.yml`,

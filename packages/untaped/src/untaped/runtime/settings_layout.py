@@ -2,30 +2,43 @@
 
 `ProfilesSettingsLayout` layers the picked profiles (``profiles.<name>``)
 over the base (``config.yml``'s top level) and is the SDK's only layout:
-every plugin resolves through it.
+every plugin resolves through it. Resolving the run's own pick, it also
+layers the project's ``.untaped/config.yml`` (:mod:`untaped.runtime.folder_layer`):
+renamed keys read as in a profile, a relative path read from the project's
+folder, and a setting a project may not set refused (exit 4).
 """
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path, PurePath
+from types import UnionType
+from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 from pydantic import BaseModel
 
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
+    FolderValues,
+    Picked,
     base_sections,
     check_defined,
     named_profiles,
     picked_names,
     profile_entries,
     resolve_profiles,
+    run_layers,
     write_target,
 )
+from untaped.sdk._schema import FieldDescriptor, walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import KeyUse, rename_keys
 from untaped.sdk.words import hint, not_found
+
+if TYPE_CHECKING:
+    from untaped.runtime.folder_layer import FolderLayer
 
 SectionModels = Mapping[str, type[BaseModel]]
 
@@ -37,7 +50,7 @@ class ResolvedConfig:
     effective: dict[str, Any]
     provenance: dict[tuple[str, ...], str]
     uses: dict[str, dict[str, tuple[KeyUse, ...]]]
-    """``profile -> section -> uses``, for the layered profiles only."""
+    """``profile -> section -> uses``, for the layered profiles (and project) only."""
 
 
 class ProfilesSettingsLayout:
@@ -79,13 +92,40 @@ class ProfilesSettingsLayout:
         """Resolve effective settings, provenance and old-key uses.
 
         ``profile`` layers that one profile over the base instead of the
-        run's pick. ``sections`` overrides the constructor's section models.
+        run's pick, and leaves the project's file out: a command acting on a
+        profile by name reads that profile alone. ``sections`` overrides the
+        constructor's section models.
         """
-        picks = (profile,) if profile else picked_names()
         models = sections if sections is not None else self._sections_now()
+        if profile:
+            picks: tuple[str, ...] = (profile,)
+            folder = None
+        else:
+            layers, layer = run_layers()
+            picks = tuple(pick.name for pick in layers)
+            folder = None if layer is None else _folder_values(layer, layers, models)
         renamed, uses = _rename_profiles(raw, models, picks)
-        effective, provenance = resolve_profiles(renamed, picks=picks)
+        if folder is not None:
+            values, folder_uses = folder
+            if folder_uses:
+                uses[values.source] = folder_uses
+            effective, provenance = resolve_profiles(renamed, picks=picks, folder=values)
+        else:
+            effective, provenance = resolve_profiles(renamed, picks=picks)
         return ResolvedConfig(effective, provenance, uses)
+
+    def project_effective(self, raw: dict[str, Any], layer: FolderLayer) -> dict[str, Any]:
+        """The values a run in ``layer``'s project reads with no pick of its own.
+
+        The base, the project's picks, then its own values; what a write to
+        the project's file is validated against.
+        """
+        models = self._sections_now()
+        picks = tuple(Picked(name, "project") for name in layer.picks)
+        values, _ = _folder_values(layer, picks, models)
+        renamed, _ = _rename_profiles(raw, models, layer.picks)
+        effective, _ = resolve_profiles(renamed, picks=layer.picks, folder=values)
+        return effective
 
     def _sections_now(self) -> SectionModels:
         return self._sections() if self._sections is not None else {}
@@ -161,3 +201,95 @@ def _rename_profiles(
     if "profiles" not in raw:
         del renamed["profiles"]
     return renamed, uses
+
+
+def _folder_values(
+    layer: FolderLayer, picks: Sequence[Picked], models: SectionModels
+) -> tuple[FolderValues, dict[str, tuple[KeyUse, ...]]]:
+    """The project's values as the layout layers them, and the old keys they used.
+
+    Raises :class:`ConfigError` (exit 4) naming the first setting the
+    project may not set.
+    """
+    sections: dict[str, Any] = {}
+    uses: dict[str, tuple[KeyUse, ...]] = {}
+    for section, data in layer.sections.items():
+        model = models.get(section)
+        if model is None or not isinstance(data, dict):
+            sections[section] = copy.deepcopy(data)
+            continue
+        renamed, section_uses = rename_keys(model, copy.deepcopy(data))
+        if section_uses:
+            uses[section] = section_uses
+        descriptors = walk_settings(model, include_collections=True)
+        _refuse_home_settings(section, descriptors, renamed, layer.file)
+        sections[section] = _rooted(descriptors, renamed, layer.root)
+    at = sum(1 for pick in picks if pick.source == "project")
+    return FolderValues(at=at, source=layer.source, sections=sections), uses
+
+
+def folder_refusal(descriptor: FieldDescriptor) -> str | None:
+    """Why a project's file may not set ``descriptor``'s setting, or ``None`` when it may.
+
+    Read from the setting's type and marks, never its name: a secret, a
+    command untaped runs, or a setting marked ``HomeOnly()``.
+    """
+    if descriptor.is_secret:
+        return "it is a secret, which only the home's config.yml or `untaped auth login` holds"
+    if descriptor.argv:
+        return "it is a command untaped runs, which only the home's config.yml sets"
+    if descriptor.home_only:
+        return "it locates data every project shares, so only the home's config.yml sets it"
+    return None
+
+
+def _refuse_home_settings(
+    section: str, descriptors: Sequence[FieldDescriptor], data: dict[str, Any], file: Path
+) -> None:
+    for descriptor in descriptors:
+        why = folder_refusal(descriptor)
+        if why is not None and _at(data, descriptor.path) is not _MISSING:
+            raise ConfigError(
+                f"{section}.{descriptor.key} can't be set in {file}: {why}",
+                hint=f"delete `{section}.{descriptor.key}` from {file}",
+                details={"key": f"{section}.{descriptor.key}", "file": str(file)},
+            )
+
+
+def _rooted(
+    descriptors: Sequence[FieldDescriptor], data: dict[str, Any], root: Path
+) -> dict[str, Any]:
+    """``data`` with each relative path setting read from ``root`` (``~`` stays the home's).
+
+    A path setting: a path, or a union with one (``bool | Path``), given as text.
+    """
+    from untaped.runtime.config_file import set_at_path  # noqa: PLC0415 - it imports settings
+
+    for descriptor in descriptors:
+        if not _takes_path(descriptor.annotation):
+            continue
+        value = _at(data, descriptor.path)
+        if isinstance(value, str) and value and not value.startswith("~"):
+            path = Path(value)
+            if not path.is_absolute():
+                set_at_path(data, descriptor.path, str(root / path))
+    return data
+
+
+def _takes_path(annotation: object) -> bool:
+    members = get_args(annotation) if get_origin(annotation) in (Union, UnionType) else ()
+    return any(
+        isinstance(kind, type) and issubclass(kind, PurePath) for kind in (annotation, *members)
+    )
+
+
+_MISSING = object()
+
+
+def _at(data: dict[str, Any], path: tuple[str, ...]) -> Any:
+    cursor: Any = data
+    for part in path:
+        if not isinstance(cursor, dict) or part not in cursor:
+            return _MISSING
+        cursor = cursor[part]
+    return cursor

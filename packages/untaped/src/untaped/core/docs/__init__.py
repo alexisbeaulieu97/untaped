@@ -32,7 +32,11 @@ from untaped.core.docs import (
     _plugin,
     _settings,
 )
-from untaped.core.docs._requirement import UntapedRequirement, untaped_requirement
+from untaped.core.docs._requirement import (
+    UntapedRequirement,
+    older_pin_note,
+    untaped_requirement,
+)
 from untaped.core.docs._site import CORE, Site, nodes
 from untaped.runtime.declaration import PluginDecl
 from untaped.runtime.registry import CompositionResult
@@ -171,4 +175,11 @@ def _not_installed(site: Site, name: str) -> str:
     )
 
 
-__all__ = ["UntapedRequirement", "addresses", "page", "search", "untaped_requirement"]
+__all__ = [
+    "UntapedRequirement",
+    "addresses",
+    "older_pin_note",
+    "page",
+    "search",
+    "untaped_requirement",
+]

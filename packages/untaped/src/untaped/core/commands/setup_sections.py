@@ -165,7 +165,7 @@ def read_listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listin
     """
     exists = profile_exists(profile)
     hidden = frozenset().union(*(connection_keys(plugin) for plugin in services.values()))
-    with child_run(profiles=profile if exists else DEFAULT_PROFILE):
+    with child_run(profiles=profile if exists else DEFAULT_PROFILE, folder=False):
         repo = SettingsFileRepository()
         listing = ListSettings(repo)
         entries = listing()
@@ -317,7 +317,7 @@ def open_command(profile: str, row: SettingRow) -> Cmd:
 
     def open_field() -> object:
         exists = profile_exists(profile)
-        with child_run(profiles=profile if exists else DEFAULT_PROFILE):
+        with child_run(profiles=profile if exists else DEFAULT_PROFILE, folder=False):
             repo = SettingsFileRepository()
             if ranking is not None:
                 if not ranking.method:

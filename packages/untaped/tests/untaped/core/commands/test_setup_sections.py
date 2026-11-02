@@ -986,3 +986,25 @@ def test_a_bad_part_of_core_s_section_leaves_the_other_parts_validated(
     assert "border" in listing.errors["untaped"]
     assert not rows["untaped.http.timeout_seconds"].raw
     assert rows["untaped.ui.border"].raw
+
+
+def test_the_listing_shows_the_profile_not_the_project_it_runs_in(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Setup edits profiles, so a project's own value is neither shown nor owned."""
+    from untaped.core.commands.setup_sections import read_listing
+    from untaped.runtime.folder_layer import forget_folder_layer
+    from untaped.sdk.testing import make_project
+
+    _isolated_config.write_text("format_version: 2\nuntaped: {http: {timeout_seconds: 5}}\n")
+    root = make_project(tmp_path / "PROJ-1").root
+    file = root / ".untaped" / "config.yml"
+    file.write_text("untaped: {http: {timeout_seconds: 99}}\n", encoding="utf-8")
+    file.chmod(0o600)
+    monkeypatch.chdir(root)
+    forget_folder_layer()
+    row = {row.key: row for row in read_listing("default", {}).rows["untaped"]}[
+        "untaped.http.timeout_seconds"
+    ]
+    assert "99" not in row.value
+    assert not row.source.startswith("project")
