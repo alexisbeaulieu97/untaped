@@ -1,21 +1,20 @@
 """The ``untaped`` argv that fixes a live finding: a ``patch`` of the resource to change.
 
-A ``fix`` names a command group by its CLI name, which only the catalog
-(infrastructure) carries, so the few kinds a fix patches are listed here and
-a test pins them to the catalog. A document finding has no ``fix``: its fix
-is an edit of the file.
+A document finding has no ``fix``: its fix is an edit of the file. The kinds
+a fix patches are those whose ``patch`` command awx derives once
+(:data:`~untaped_awx.commands.resources.PATCH_PROJECT` and its siblings), so
+the argv is spelled from the mounted command, under the name the run gives awx.
 """
 
 from __future__ import annotations
 
+import shlex
+
+from untaped.sdk import command_line
 from untaped_awx.domain.lint.resources import Linted
 
-PATCH_GROUPS: dict[str, str] = {
-    "JobTemplate": "job-templates",
-    "WorkflowJobTemplate": "workflow-templates",
-    "Project": "projects",
-}
-"""Kind → the ``untaped awx`` group whose ``patch`` sets one of its fields."""
+PATCHED_KINDS = frozenset({"JobTemplate", "WorkflowJobTemplate", "Project"})
+"""The kinds a fix can patch."""
 
 
 def patch_fix(item: Linted, assignment: str) -> list[str]:
@@ -25,14 +24,27 @@ def patch_fix(item: Linted, assignment: str) -> list[str]:
     without ``--organization`` its name would also select any organization's
     namesake, and ``patch`` refuses the ambiguity.
     """
-    kind, metadata = item.resource.kind, item.resource.metadata
-    group = PATCH_GROUPS[kind]
+    # Lazy: the fix spells awx's commands, and the commands import the lint rules.
+    from untaped_awx.commands.resources import (  # noqa: PLC0415
+        PATCH_JOB_TEMPLATE,
+        PATCH_PROJECT,
+        PATCH_WORKFLOW_TEMPLATE,
+    )
+
+    patch = {
+        "JobTemplate": PATCH_JOB_TEMPLATE,
+        "WorkflowJobTemplate": PATCH_WORKFLOW_TEMPLATE,
+        "Project": PATCH_PROJECT,
+    }[item.resource.kind]
+    metadata = item.resource.metadata
     if metadata.organization is not None:
         selection = [metadata.name, "--organization", metadata.organization]
     else:
         id_ = str(getattr(item.location, "id", "")).rpartition("/")[2]
         selection = [id_, "--by-id"] if id_.isdigit() else [metadata.name]
-    return ["awx", group, "patch", *selection, "--set", assignment]
+    # The words alone are spelled: a name may hold spaces, kept whole as one argument.
+    words = shlex.split(command_line(patch.spelled()))[1:]
+    return [*words, *selection, "--set", assignment]
 
 
-__all__ = ["PATCH_GROUPS", "patch_fix"]
+__all__ = ["PATCHED_KINDS", "patch_fix"]
