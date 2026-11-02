@@ -23,6 +23,11 @@ from untaped.sdk import _process_groups
 from untaped.sdk.errors import ErrorCategory, UntapedError
 from untaped.sdk.process import ProcessResult, run_process, start_process
 
+_NEEDS_SIGINT = pytest.mark.skipif(
+    signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    reason="SIGINT is ignored here (a background job), and every child inherits that",
+)
+
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
 
 GRACE = 0.5
@@ -410,7 +415,11 @@ def _untaped(argv: list[str], *, grace: float = GRACE) -> subprocess.Popen[str]:
 
 @pytest.mark.parametrize(
     ("sig", "status"),
-    [(signal.SIGINT, 130), (signal.SIGTERM, -signal.SIGTERM), (signal.SIGHUP, -signal.SIGHUP)],
+    [
+        pytest.param(signal.SIGINT, 130, marks=_NEEDS_SIGINT),
+        (signal.SIGTERM, -signal.SIGTERM),
+        (signal.SIGHUP, -signal.SIGHUP),
+    ],
     ids=["sigint", "sigterm", "sighup"],
 )
 def test_a_signal_to_untaped_stops_a_worker_child_that_ignores_it(
@@ -544,6 +553,7 @@ def test_a_subreaper_does_not_wait_a_grace_for_a_zombie_leftover(tmp_path: Path)
     assert result.stdout.split() == ["0", "True"], result.stderr
 
 
+@_NEEDS_SIGINT
 def test_a_later_sigterm_ends_untaped_at_once(tmp_path: Path) -> None:
     # Cleanup that never ends holds untaped after Ctrl-C: a SIGTERM a grace later ends it now.
     pid_file = tmp_path / "child.pid"
@@ -586,6 +596,7 @@ def test_an_ignored_signal_stays_ignored_and_an_earlier_handler_runs(tmp_path: P
     assert result.stdout.strip() == "['earlier']"
 
 
+@_NEEDS_SIGINT
 def test_a_worker_starts_no_child_once_untaped_is_closing(tmp_path: Path) -> None:
     code = (
         "import signal, threading\nfrom untaped.sdk import _process_groups\n"
@@ -620,7 +631,7 @@ def test_without_the_installer_a_spawn_after_an_interrupt_still_starts() -> None
     assert results[0].ended == "exited"
 
 
-@pytest.mark.parametrize("sig", ["SIGINT", "SIGTERM", "SIGHUP"])
+@pytest.mark.parametrize("sig", [pytest.param("SIGINT", marks=_NEEDS_SIGINT), "SIGTERM", "SIGHUP"])
 def test_a_signal_while_the_main_thread_starts_a_child_still_stops_it(
     tmp_path: Path, sig: str
 ) -> None:
