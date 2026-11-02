@@ -186,6 +186,21 @@ def _found_roots(module: str) -> list[str | None]:
     return []
 
 
+def module_source(module: str) -> Path | None:
+    """The Python file ``module`` is read from, found as an import would find it, importing nothing.
+
+    A package's is its ``__init__.py``; ``None`` for a namespace package, a
+    compiled module, or one that isn't installed.
+    """
+    found = [each for each in _found_roots(module) if isinstance(each, str)]
+    if len(found) != 1:
+        return None
+    path = Path(found[0])
+    if path.is_dir():
+        path = path / "__init__.py"
+    return path if path.suffix == ".py" and path.is_file() else None
+
+
 # --------------------------------------------------------------------------- #
 # The whole install: every plugin distribution, and untaped
 # --------------------------------------------------------------------------- #
@@ -211,6 +226,15 @@ def _install_version() -> str:
     for name in sorted(found):
         parts.extend(_distribution_parts(name, found[name]))
     return _hash(parts)
+
+
+def distribution_code(distribution: importlib.metadata.Distribution) -> str:
+    """The version of one distribution's code, as the whole-install version counts it.
+
+    Its version, its ``RECORD`` and, for an editable install, its source
+    files' modification times and sizes: what a cache keyed per plugin keys by.
+    """
+    return _hash(_distribution_parts(distribution.name, distribution))
 
 
 def _distribution_parts(name: str, distribution: importlib.metadata.Distribution) -> list[bytes]:

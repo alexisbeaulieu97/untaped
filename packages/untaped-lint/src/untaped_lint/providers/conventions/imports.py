@@ -9,7 +9,9 @@ record). Which packages are plugins
 comes from every installed plugin's record, quarantined ones included. Its
 own package is always allowed; third-party libraries are not this rule's
 business. Every import counts, including function-level and
-``TYPE_CHECKING`` ones. Violations are
+``TYPE_CHECKING`` ones. A star import of untaped or another plugin is
+flagged too: untaped checks each name a plugin imports, and can't tell what
+a star binds. Violations are
 ``<file>:<line>::import-boundary::<detail>``;
 ``# untaped: allow import-boundary`` on the import line waives one.
 """
@@ -95,6 +97,17 @@ def _detail(
     return None
 
 
+def _star(node: ast.Import | ast.ImportFrom, package: str, roots: frozenset[str]) -> str | None:
+    """What a star import of untaped or another plugin breaks; ``None`` for any other import."""
+    if not isinstance(node, ast.ImportFrom) or node.level or node.module is None:
+        return None
+    if not any(alias.name == "*" for alias in node.names) or _is_within(node.module, package):
+        return None
+    if not any(_is_within(node.module, root) for root in roots):
+        return None
+    return f"imports * from {node.module}; import each name, so untaped can check it"
+
+
 def import_boundary_violations(
     plugin: InstalledPlugin,
     source_dir: Path,
@@ -123,6 +136,11 @@ def import_boundary_violations(
         rel = source.path.relative_to(source_dir.parent).as_posix()
         for node in ast.walk(source.tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            star = _star(node, package, roots)
+            if star is not None:
+                if not allows(source.lines, node.lineno, RULE):
+                    found.append(f"{rel}:{node.lineno}::{RULE}::{star}")
                 continue
             for target in _targets(node, module_package, roots):
                 detail = _detail(target, package, plugin_packages, declared)

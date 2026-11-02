@@ -274,6 +274,24 @@ class FillDecl(_Frozen):
     item: str | None = None
 
 
+class UseDecl(_Frozen):
+    """A deprecated name a plugin uses, found when it composed: an import, or a method it fills."""
+
+    #: The name's surface identity: ``sdk untaped.sdk.human_size``,
+    #: ``contract acme.item_source.items``.
+    id: str
+    how: Literal["imports", "fills"]
+    #: The distribution whose major removes it.
+    distribution: str
+    #: Core's own name: its removal is a bare major (``14.0``).
+    core: bool = False
+    removed_in: int | None = None
+    #: What to use instead, as the deprecation names it.
+    replacement: str | None = None
+    #: Where the plugin uses it: ``acme/report.py:12``, or the provider method's target.
+    where: str = ""
+
+
 class PluginDecl(_Frozen):
     """One composed plugin."""
 
@@ -298,6 +316,8 @@ class PluginDecl(_Frozen):
     blocks: tuple[BlockDecl, ...] = ()
     #: Its commands mount at the root (core's): ``untaped plugin``, not ``untaped untaped plugin``.
     root: bool = False
+    #: The deprecated names it imports or fills, found when it composed.
+    uses: tuple[UseDecl, ...] = ()
 
     def command_words(self) -> set[str]:
         """The first word of each of its commands, deprecated aliases included."""

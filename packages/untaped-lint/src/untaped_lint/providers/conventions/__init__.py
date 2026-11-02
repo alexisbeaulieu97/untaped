@@ -64,6 +64,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("settings-not-frozen", "error", "Settings models are frozen."),
     ("settings-naming", "error", "Setting names follow the naming rules (_dir, _path, parallel)."),
     ("settings-renames", "error", "Renamed setting keys are declared consistently."),
+    ("uses-deprecated", "warning", "A plugin imports and fills no deprecated name."),
     # The file rules: stderr wording, structure, layering, boundaries and stores, read from files.
     ("echo-error", "error", "Errors are raised as UntapedError, never echoed."),
     ("echo-warning", "error", "Warnings go through ctx.diag.warning, never echo."),

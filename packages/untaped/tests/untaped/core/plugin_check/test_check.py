@@ -150,10 +150,10 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
 
 
 @pytest.mark.parametrize("by_class", [False, True], ids=["entry-point", "class"])
-def test_a_provider_fails_when_its_owner_is_quarantined(
+def test_a_provider_importing_a_quarantined_owner_is_quarantined_with_it(
     contract_plugins_site: Path, by_class: bool
 ) -> None:
-    """Once, named by the owner, whether its candidate names the class or holds it."""
+    """Without declaring the owner, by its import, whether the owner's candidate names the class."""
     rack = importlib.import_module("untaped_rack.plugin").Rack if by_class else None
     found = [
         candidate
@@ -168,10 +168,13 @@ def test_a_provider_fails_when_its_owner_is_quarantined(
         for candidate in candidates(bin_requires=(CORE_FLOOR,))
     ]
     result = bootstrap.compose_root(candidates=found)
-    [registration] = [row for row in check_plugins(result, found, "bin") if row.title == "rack"]
-    assert not [row for row in check_plugins(result, found, "bin") if "offers" in row.detail]
-    assert registration.status == "fail"
-    assert registration.detail.startswith("rack is quarantined (")
+    [row] = check_plugins(result, found, "bin")
+    assert (row.check, row.title, row.status) == ("registration", "unmet-requirement", "fail")
+    assert row.detail == (
+        "untaped-bin 1.0: untaped_bin/providers/rack.py:8 imports untaped_rack.api.Item "
+        "from untaped-rack, which is disabled [unmet-requirement]; fix untaped-rack first: "
+        "upgrade untaped, or remove untaped-rack"
+    )
 
 
 def test_a_provider_requiring_a_quarantined_owner_is_quarantined_with_it(

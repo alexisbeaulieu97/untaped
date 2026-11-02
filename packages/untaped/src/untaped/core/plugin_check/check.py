@@ -30,7 +30,7 @@ from untaped.runtime.declaration import target_of
 from untaped.runtime.plugin_package import package_of
 from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.sdk.errors import UsageError, first_validation_error
-from untaped.sdk.words import not_found, plural
+from untaped.sdk.words import deprecated_message, not_found, plural
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
@@ -69,7 +69,7 @@ def _check(
     quarantined = next((record for record in result.quarantine if record.name == name), None)
     if quarantined is not None:
         return [row("registration", quarantined.reason, "fail", quarantined.detail)]
-    rows = _conventions(name, candidates, row)
+    rows = _conventions(name, candidates, row) + _uses(name, result, row)
     composed = next(plugin for plugin in result.plugins if plugin.name == name)
     if composed.owns_contracts:
         rows += _contracts(name, candidates, row)
@@ -95,6 +95,25 @@ def _conventions(name: str, candidates: Sequence[PluginCandidate], row: _Row) ->
     for line in found:
         where, rule, detail = [*line.split("::", 2), "", ""][:3]
         rows.append(row("conventions", rule, "fail", f"{where}: {detail}" if detail else where))
+    return rows
+
+
+def _uses(name: str, result: CompositionResult, row: _Row) -> list[PluginCheck]:
+    """A ``uses-deprecated`` warning per deprecated name the plugin imports or fills.
+
+    Composition found them reading the plugin's imports and its providers;
+    the declaration keeps them.
+    """
+    from untaped.runtime.plugin_uses import use_name  # noqa: PLC0415 - beside the lookup
+    from untaped.sdk.marks import removal_text  # noqa: PLC0415
+
+    rows: list[PluginCheck] = []
+    for use in result.mount.declaration.plugin(name).uses:
+        removal = removal_text(use.removed_in, None if use.core else use.distribution)
+        words = deprecated_message(
+            f"`{use_name(use)}`, which it {use.how},", use.replacement, removal
+        )
+        rows.append(row("conventions", "uses-deprecated", "warn", f"{use.where}: {words}"))
     return rows
 
 

@@ -161,6 +161,36 @@ exports) keeps the longer window. `assert_surface(Plugin, version=...)` checks t
 plugin's own names, so a plugin that runs it promises plugins built on it
 the same.
 
+## Plugins across releases
+
+untaped checks each installed plugin against the release it runs on before
+the plugin's code runs. The first start after an install or upgrade reads
+the modules the plugin's entry point reaches (as text, never importing
+them) and records each name they import from untaped or another plugin.
+untaped's own plugins, which release in lockstep with it, are not read. Then
+each name is looked up in what is installed:
+
+- a name that is there runs as before;
+- a deprecated name warns once, on that start, naming the plugin, the file
+  and line, and the release that removes it; `untaped doctor` keeps listing
+  it as a `plugin-uses` row, one per plugin and owner, until the plugin
+  stops using it;
+- a missing name disables that plugin alone (`uses-missing`), naming the
+  file and line. When a major of the owner came out after the plugin's
+  floor on it, the plugin is out of date ("upgrade untaped-acme, or remove
+  it"); otherwise it needs a newer owner than it declares ("upgrade
+  untaped");
+- a name of a disabled plugin disables this one too, with that plugin's fix.
+
+An import inside a `try` that catches `ImportError`, a
+`with suppress(ImportError)`, or any `if` (a version check, a `hasattr`
+test) is the plugin's own fallback: a missing name there, or one of a
+disabled plugin, changes nothing. A contract method a plugin's provider fills is checked the same
+way: a deprecated one warns and gets a `plugin-uses` row. `untaped lint`
+reports each deprecated name a plugin uses as a `uses-deprecated` warning,
+and a star import of untaped or another plugin as an `import-boundary`
+error, since nobody can tell what it binds.
+
 ## Breaking changes
 
 - A command that goes away with no successor is marked deprecated: it is

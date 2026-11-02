@@ -157,6 +157,27 @@ def test_an_api_import_needs_a_declared_dependency(check: Check) -> None:
     ]
 
 
+def test_a_star_import_of_untaped_or_another_plugin_is_a_violation(check: Check) -> None:
+    source = (
+        "from untaped.sdk import *\n"
+        "from other.api import *\n"
+        "from demo.words import *\n"
+        "from .words import *\n"
+        "from os.path import *\n"
+    )
+    found = check(
+        {"cli/__init__.py": source, "words.py": ""},
+        plugin("other"),
+        demo=plugin("demo", requires=("other",)),
+    )
+    assert found == [
+        "demo/cli/__init__.py:1::import-boundary::imports * from untaped.sdk; import each name, "
+        "so untaped can check it",
+        "demo/cli/__init__.py:2::import-boundary::imports * from other.api; import each name, "
+        "so untaped can check it",
+    ]
+
+
 def test_distribution_names_compare_canonically(check: Check) -> None:
     found = check(
         {"cli/__init__.py": "from other.api import x\n"},

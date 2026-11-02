@@ -5844,6 +5844,7 @@ record untaped.deprecation.hint string?
 record untaped.deprecation.id string
 record untaped.deprecation.level choice=warning
 record untaped.deprecation.message string
+record untaped.deprecation.plugin string?
 record untaped.deprecation.removed_in integer?
 record untaped.deprecation.replacement string?
 record untaped.doctor_check

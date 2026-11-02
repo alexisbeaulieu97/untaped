@@ -210,6 +210,7 @@ def test_a_deprecated_command_names_its_plugin_s_major() -> None:
         "distribution": "untaped-svc",
         "replacement": "untaped svc set",
         "hint": None,
+        "plugin": None,
         "message": "`untaped svc put` is deprecated and will be removed in untaped-svc 3.0; "
         "use `untaped svc set`",
     }
@@ -272,6 +273,7 @@ def test_an_untaped_deprecation_warning_arrives_as_its_record() -> None:
         "distribution": "untaped-acme",
         "replacement": "new()",
         "hint": None,
+        "plugin": None,
         "message": "`old()` is deprecated",
     }
     assert isinstance(result.diagnostics[0], Deprecation)

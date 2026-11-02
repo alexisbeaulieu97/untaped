@@ -192,6 +192,7 @@ def test_notify_warns_once_per_key_as_its_record(monkeypatch: pytest.MonkeyPatch
         "distribution": "untaped-svc",
         "replacement": "kind= on the Record class",
         "hint": "run `untaped svc fix`",
+        "plugin": None,
         "message": "a row without a declared kind is deprecated and will be removed in "
         "untaped-svc 3.0; use kind= on the Record class",
     }
