@@ -241,16 +241,17 @@ def _run_one(argv: Sequence[str]) -> ChildRun:
 
 
 def _end_after_interrupt(process: subprocess.Popen[str]) -> None:
-    """Give the child one grace to finish what the interrupt started, then end it.
+    """Give the child two graces to finish what the interrupt started, then end it.
 
     The child shares untaped's process group, so Ctrl-C reached it too and
-    its own cleanup is running: one grace leaves that alone (a second signal
-    would cut it short). A SIGTERM sent to untaped alone never reached it, and
-    leaving the ``with`` waits for its readers, so it then gets SIGTERM.
+    its own cleanup is running, stopping its children within one grace: the
+    wait leaves that alone (a second signal would cut it short). A SIGTERM
+    sent to untaped alone never reached it, and leaving the ``with`` waits for
+    its readers, so it then gets SIGTERM.
     """
     try:
         with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=_process_groups.GRACE_S)
+            process.wait(timeout=2 * _process_groups.GRACE_S)
     finally:
         if process.poll() is None:
             process.terminate()

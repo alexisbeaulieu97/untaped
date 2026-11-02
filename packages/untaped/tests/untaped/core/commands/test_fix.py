@@ -632,11 +632,11 @@ def _interrupted_child(
     """Make ``_run_one`` start ``script`` and get the interrupt during its first wait.
 
     With ``sigint`` the child gets SIGINT first, as Ctrl-C reaches untaped's group,
-    once it has written ``ready``.
+    once ``script`` has written the ``READY`` file.
     """
     ready = tmp_path / "ready"
     child = tmp_path / "python"
-    child.write_text(f"#!{sys.executable}\nopen({str(ready)!r}, 'w').close()\n{script}")
+    child.write_text(f"#!{sys.executable}\nREADY = {str(ready)!r}\n{script}")
     child.chmod(0o755)
     monkeypatch.setattr(sys, "executable", str(child))
     monkeypatch.setattr(_process_groups, "GRACE_S", 1.0)
@@ -664,7 +664,7 @@ def test_an_interrupt_that_missed_the_fix_child_ends_it(
 ) -> None:
     # A SIGTERM sent to untaped alone arrives as the interrupt: the child must not hold it.
     started = _interrupted_child(
-        monkeypatch, tmp_path, "import time; time.sleep(30)\n", sigint=False
+        monkeypatch, tmp_path, "import time\ntime.sleep(30)\n", sigint=False
     )
     begun = time.monotonic()
     with pytest.raises(KeyboardInterrupt):
@@ -681,7 +681,7 @@ def test_ctrl_c_lets_the_fix_child_finish_its_cleanup(
     marker = tmp_path / "cleaned"
     script = (
         "import sys, time\n"
-        "try:\n    time.sleep(30)\n"
+        "try:\n    open(READY, 'w').close()\n    time.sleep(30)\n"
         f"except KeyboardInterrupt:\n    time.sleep(0.3)\n    open({str(marker)!r}, 'w').close()\n"
         "    sys.exit(130)\n"
     )
