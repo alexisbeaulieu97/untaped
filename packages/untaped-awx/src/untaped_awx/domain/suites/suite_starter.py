@@ -18,6 +18,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from untaped.sdk import command_line
 from untaped_awx.domain.suites.workflow_run import APPROVAL, TemplateNode
 
 TODO = "TODO"
@@ -52,12 +53,17 @@ def starter_suite(
     With ``nodes`` (possibly none), ``template`` is a workflow; ``approvals``
     are its approval nodes' paths, nested workflows' included.
     """
+    # Lazy: the comments spell awx's commands, and the commands import this module.
+    from untaped_awx.commands.controller import Schema  # noqa: PLC0415
+    from untaped_awx.commands.test import Init, Run, Validate  # noqa: PLC0415
+
     workflow = nodes is not None
     lines = [
-        "# Starter suite written by `untaped awx test init` from the "
+        f"# Starter suite written by `{command_line(Init.spelled())}` from the "
         f"{'workflow' if workflow else 'job template'}'s survey.",
-        "# Edit the cases, then run `untaped awx test validate` and `untaped awx test run`;",
-        "# `untaped awx schema AwxTestSuite` prints the format as a JSON Schema.",
+        f"# Edit the cases, then run `{command_line(Validate.spelled())}` and "
+        f"`{command_line(Run.spelled())}`;",
+        f"# `{command_line(Schema.spelled('AwxTestSuite'))}` prints the format as a JSON Schema.",
         "kind: AwxTestSuite",
         f"name: {_value(suite_slug(template))}",
         f"{'workflowTemplate' if workflow else 'jobTemplate'}: {_value(template)}",

@@ -106,6 +106,10 @@ def test_init_writes_a_starter_suite_from_the_survey_and_prompts(
     assert "# survey: required, password (AWX's stored default)" in text
     assert "# region: optional survey variable (text)" in text
     assert "limit, scm_branch" in text
+    # The header spells the commands that work with the suite.
+    assert "# Starter suite written by `untaped awx test init` from the " in text
+    assert "run `untaped awx test validate` and `untaped awx test run`;" in text
+    assert "# `untaped awx schema AwxTestSuite` prints the format" in text
 
 
 def test_init_output_passes_list_and_validate(fake_aap: FakeAap, tmp_path: Path) -> None:

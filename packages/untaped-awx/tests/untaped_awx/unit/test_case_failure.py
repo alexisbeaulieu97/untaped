@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from untaped.sdk import ConfigError, ErrorCategory, Failure, HttpTransportError
+from untaped.sdk.testing import install
 from untaped_awx.domain import Job
 from untaped_awx.domain.jobs.job import HostSummary, JobEvent
 from untaped_awx.domain.suites.case_failure import (
@@ -27,13 +28,15 @@ from untaped_awx.domain.suites.case_failure import (
     unhandled,
     workflow_failure,
 )
-from untaped_awx.domain.suites.systems import AWX
+from untaped_awx.domain.suites.systems import AWX, CONTROLLER, CREDENTIALS, SCM, SUITE
 from untaped_awx.domain.suites.workflow_run import RunNode
 from untaped_awx.errors import (
     LaunchPromptError,
     PendingApprovalError,
     ResourceNotFoundError,
 )
+from untaped_awx.plugin import Awx
+from untaped_awx.settings import AwxSettings
 
 _PROJECT_FAILED = (
     'Previous Task Failed: {"job_type": "project_update", "job_name": "acme", "job_id": "812"}'
@@ -476,7 +479,7 @@ def _workflow(status: str, **fields: Any) -> Job:
     return Job(id=70, kind="workflow_job", status=status, **fields)
 
 
-_PLAYBOOK = failure("awx.playbook", ErrorCategory.FAILED, "task 'Deploy' failed on web2")
+_PLAYBOOK = failure("awx.playbook", ErrorCategory.FAILED, "task 'Deploy' failed on web2", hint="x")
 
 
 def test_a_node_failure_names_its_node_in_the_message_and_the_evidence() -> None:
@@ -622,3 +625,35 @@ def test_an_error_already_attributed_to_an_awx_system_keeps_it() -> None:
 
     assert failure_system(error, launching=False) == "awx.suite"
     assert request_failure(error).category == "invalid"
+
+
+# ---- hints ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("system", "hint"),
+    [
+        (SUITE, "fix the suite, then run `untaped awx test validate`"),
+        (
+            CREDENTIALS,
+            "fix the token (`untaped awx ping` checks it) or the job's credentials in AWX",
+        ),
+        (CONTROLLER, "retry later; `untaped awx ping` checks the controller"),
+        ("awx.controller", "retry later; `untaped awx ping` checks the controller"),
+        (SCM, "push the branch, or let the project override it"),
+        ("local", None),
+    ],
+)
+def test_a_failure_advises_by_the_part_blamed(system: Any, hint: str | None) -> None:
+    found = failure(system, ErrorCategory.FAILED, "boom").hint
+    assert found == hint if hint is None else found is not None and found.startswith(hint)
+
+
+_SERVER: dict[str, Any] = {"server": {"url": "https://aap.example.com"}}
+
+
+def test_a_renamed_awx_names_its_parts_and_spells_its_commands_by_its_name() -> None:
+    with install(Awx, settings=AwxSettings(**_SERVER), names={Awx: "tower"}).running():
+        found = failure(SUITE, ErrorCategory.INVALID, "unknown template")
+    assert found.system == "tower.suite"
+    assert found.hint == "fix the suite, then run `untaped tower test validate`"

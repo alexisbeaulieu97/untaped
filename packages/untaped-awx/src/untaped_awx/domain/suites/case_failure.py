@@ -52,7 +52,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from untaped.sdk import ErrorCategory, Failure, Service, UntapedError, q
+from untaped.sdk import ErrorCategory, Failure, Service, UntapedError, command_line, q
 from untaped_awx.domain.jobs.job import HostSummary, Job, JobEvent
 from untaped_awx.domain.suites.systems import (
     AWX,
@@ -110,16 +110,43 @@ _SUITE_CATEGORIES = frozenset(
 )
 APPROVALS_HINT = "set `approvals: approve` or `approvals: deny` on the case (or in its defaults)"
 """What to do about an approval a workflow case gave no answer for."""
-_HINTS = {
-    SUITE: "fix the suite, then run `untaped awx test validate`",
-    CREDENTIALS: "fix the token (`untaped awx ping` checks it) or the job's credentials in AWX",
-    CONTROLLER: "retry later; `untaped awx ping` checks the controller",
+
+
+_ADVICE: dict[Service, str] = {
     SCM: "push the branch, or let the project override it (allow_override and "
     "ask_scm_branch_on_launch)",
     HOSTS: "retry later, once the hosts are reachable",
     PLAYBOOK: "fix the playbook: read failure.evidence (failed_tasks, log_tail)",
     EXPECTATION: "compare expectations with what the job did; fix the change or the case",
 }
+"""What to do about a failure, by the part blamed, when no command needs spelling."""
+
+
+def _advice(system: str | Service) -> str | None:
+    """What to do about a failure blamed on ``system`` (a part, or its name in this run).
+
+    The advice for the suite, the credentials and the controller spells
+    awx's commands as this run names them, so it is built inside a run.
+    """
+    part = system if isinstance(system, Service) else _part_named(system)
+    if part is SUITE or part is CREDENTIALS or part is CONTROLLER:
+        # Lazy: the advice spells awx's commands, and the commands import this module.
+        from untaped_awx.commands.controller import Ping  # noqa: PLC0415
+        from untaped_awx.commands.test import Validate  # noqa: PLC0415
+
+        if part is SUITE:
+            return f"fix the suite, then run `{command_line(Validate.spelled())}`"
+        ping = command_line(Ping.spelled())
+        if part is CREDENTIALS:
+            return f"fix the token (`{ping}` checks it) or the job's credentials in AWX"
+        return f"retry later; `{ping}` checks the controller"
+    return None if part is None else _ADVICE.get(part)
+
+
+def _part_named(name: str) -> Service | None:
+    """The part with advice that this run names ``name``, if any."""
+    parts = (SUITE, CREDENTIALS, CONTROLLER, *_ADVICE)
+    return next((part for part in parts if part.name() == name), None)
 
 
 class FailedTask(BaseModel):
@@ -281,13 +308,12 @@ def failure(
     system: str | Service, category: ErrorCategory, message: str, *, hint: str | None = None
 ) -> CaseFailure:
     """A :class:`CaseFailure`; ``hint`` defaults to the system's advice."""
-    name = system if isinstance(system, str) else system.name()
     return CaseFailure(
-        system=name,
+        system=system if isinstance(system, str) else system.name(),
         category=category,
         retryable=category.retryable,
         message=message,
-        hint=hint or next((advice for part, advice in _HINTS.items() if part.name() == name), None),
+        hint=hint or _advice(system),
     )
 
 
@@ -457,8 +483,12 @@ def _update_failure(
         found = _ended_failure(update, what)
     else:
         system, category = _UPDATES[update.kind]
-        log = f"read its log: `untaped awx jobs logs {update.id} --kind {update.kind}`"
-        hint = f"{_HINTS[system]}; {log}" if system in _HINTS else log
+        # Lazy: the hint spells awx's command, and the commands import this module.
+        from untaped_awx.commands.jobs import Logs  # noqa: PLC0415
+
+        log = f"read its log: `{command_line(Logs.spelled(update.id, '--kind', update.kind))}`"
+        advised = _advice(system)
+        hint = f"{advised}; {log}" if advised else log
         found = failure(system, category, f"{what} failed{_first_reason(failed_tasks)}", hint=hint)
     return found.model_copy(update={"evidence": FailureEvidence(related=related)})
 
