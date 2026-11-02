@@ -141,9 +141,10 @@ and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
 doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
-`unserialisable-signature`, `owner-out-of-range` (the plugin's dependency on
-its owner requires a range the installed owner is outside), or `bad-provider`
-(building it raised). A class in
+`unserialisable-signature`, or `bad-provider` (building it raised). A
+provider whose plugin requires an owner below its floor, or a disabled one,
+is never loaded: composition disables the whole plugin (`unmet-requirement`).
+A class in
 `fills` that is no `Provider`, or reads another plugin's settings, is a
 composition problem (`bad-provider`) that quarantines its plugin. A provider method
 the contract no longer has (`unused-method`) is simply never called.
@@ -293,7 +294,7 @@ def test_the_library_fills_the_shelf_contract() -> None:
   method turns it into a valid owner record whose `source` gives it back.
   `samples=` is required when `T` is not the owner's model. Nothing is
   recorded: what guards a provider against an owner that moved is the
-  owner range in its `pyproject.toml` (`owner-out-of-range`), validation of
+  owner floor in its `pyproject.toml` (`unmet-requirement`), validation of
   every answer as the owner's model, and the owner's own surface snapshot.
 - `untaped lint`, in a plugin's directory, checks the installed plugin, a
   developer's editable install included ([Lint](./lint.md)): the

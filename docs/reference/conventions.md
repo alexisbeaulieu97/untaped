@@ -240,7 +240,7 @@ that prints records declares `Output[R]`, which gives it `--format`.
 `untaped lint` runs these checks for one plugin ([Lint](../lint.md)); each
 plugin's tests call `untaped_lint.testing.assert_clean(NAME)`. `import-boundary` enforces the import rules above
 and in [Depending on another plugin](#depending-on-another-plugin);
-`provides-requirement` the [ranges a provider declares](../plugins.md#filling-another-plugins-contract);
+`requirement-floor` the [floors a plugin declares](../plugins.md#plugin-package);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
 keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).

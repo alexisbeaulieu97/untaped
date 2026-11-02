@@ -38,7 +38,7 @@ KEY = "lint"
 _TABLE: tuple[tuple[str, Severity, str], ...] = (
     # The composed checks: names, requirements, the help tree, guides, marks, structure.
     ("plugin-name", "error", "A plugin's distribution and import package are named after it."),
-    ("provides-requirement", "error", "A provider requires untaped and each owner with a range."),
+    ("requirement-floor", "error", "A plugin requires untaped and other plugins by floors only."),
     ("command-name", "error", "Command and group names are kebab-case."),
     ("reserved-short", "error", "A reserved short flag keeps its core meaning."),
     ("ambiguous-short", "error", "A short flag means one thing within a plugin."),

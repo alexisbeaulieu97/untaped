@@ -8,17 +8,17 @@ import json
 import sys
 import tomllib
 from collections.abc import Iterator
-from importlib import metadata
 from pathlib import Path
 from types import ModuleType
 
 import pytest
 
-from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
-from untaped.core.commands.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, _range, scaffold
+from core_test_support.commands.contract_plugins import CORE_FLOOR, candidates
+from untaped.core.commands.plugin_new import BUILD_SYSTEM, ScaffoldOutcome, scaffold
 from untaped.core.plugin_check.rules import plugin_violations
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.requirements import floor_for
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError
 from untaped.sdk.testing import compose_with, invoke_cli
 
@@ -69,7 +69,7 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     project = pyproject["project"]
     # the owner is a plain dependency: the fill subclasses its contract
     core, pydantic, owner = project["dependencies"]
-    assert (core, owner) == (CORE_RANGE, "untaped-rack>=1,<2")
+    assert (core, owner) == (CORE_FLOOR, "untaped-rack>=1.4")
     assert pydantic.startswith("pydantic")
     assert "optional-dependencies" not in project
     assert project["entry-points"]["untaped.plugins"] == {"gitlab": "untaped_gitlab.plugin:Gitlab"}
@@ -83,8 +83,9 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
         distribution_version="0.1.0",
         requires_dist=tuple(project["dependencies"]),
     )
-    lint_range = _range(metadata.version("untaped"), minor=True)  # lint came in a minor
-    assert pyproject["dependency-groups"] == {"dev": ["pytest>=9", f"untaped[lint]{lint_range}"]}
+    assert pyproject["dependency-groups"] == {
+        "dev": ["pytest>=9", f"untaped[lint]{CORE_FLOOR[7:]}"]
+    }
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
     # Its own tests import untaped[lint]; core's own run (no plugin installed) stops here.
     lint = pytest.importorskip("untaped_lint.testing")
@@ -201,26 +202,14 @@ def test_the_scaffold_builds_like_the_repository_packages() -> None:
 @pytest.mark.parametrize(
     ("version", "expected"),
     [
-        ("10.1.0", ">=10,<11"),
-        ("0.3.1", ">=0.3,<0.4"),
-        ("11.0.0a1", ">=11.0.0a1,<12"),
+        ("10.1.0", ">=10.1"),
+        ("0.3.1", ">=0.3"),
+        ("11.0.0a1", ">=11.0.0a1"),
         ("", ""),
     ],
 )
-def test_an_owner_range_covers_its_installed_major(version: str, expected: str) -> None:
-    from untaped.core.commands.plugin_new import _range
-
-    assert _range(version) == expected
-
-
-@pytest.mark.parametrize(
-    ("version", "expected"),
-    [("11.1.0", ">=11.1,<12"), ("0.3.1", ">=0.3,<0.4"), ("11.1.0a1", ">=11.1.0a1,<12")],
-)
-def test_a_minor_range_floors_at_the_installed_minor(version: str, expected: str) -> None:
-    from untaped.core.commands.plugin_new import _range
-
-    assert _range(version, minor=True) == expected
+def test_a_floor_is_the_installed_minor_and_no_upper_limit(version: str, expected: str) -> None:
+    assert floor_for(version) == expected
 
 
 def test_an_owner_without_its_contract_in_api_is_refused(
@@ -374,7 +363,5 @@ def test_a_docstring_word_imports_nothing(tmp_path: Path, monkeypatch: pytest.Mo
     assert "import rack" not in provider
 
 
-def test_a_local_version_is_left_out_of_the_range() -> None:
-    from untaped.core.commands.plugin_new import _range
-
-    assert _range("11.0.0a1+g12ab") == ">=11.0.0a1,<12"
+def test_a_local_version_is_left_out_of_the_floor() -> None:
+    assert floor_for("11.0.0a1+g12ab") == ">=11.0.0a1"

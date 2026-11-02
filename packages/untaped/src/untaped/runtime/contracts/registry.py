@@ -21,12 +21,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import selected_profile
-from untaped.runtime.registry import (
-    CompositionResult,
-    admits,
-    plain_requirements,
-    range_text,
-)
+from untaped.runtime.registry import CompositionResult
 from untaped.runtime.section_models import ExtensionSettings
 from untaped.runtime.settings import (
     active_settings_layout,
@@ -232,9 +227,6 @@ def _load(
     def whole(reason: QuarantineReason, detail: str) -> tuple[Quarantined, ...]:
         return (Quarantined(plugin.name, owner, reason, detail),)
 
-    out_of_range = _out_of_range(state, plugin, owner)
-    if out_of_range is not None:
-        return whole(Reason.owner_out_of_range, out_of_range)
     try:
         values = plugin.providers(owner)
     except ContractError as exc:
@@ -262,28 +254,6 @@ def _load(
                 seen[contract] = len(entries)
         entries.append(entry)
     return tuple(entries)
-
-
-def _out_of_range(state: _State, provider: ComposedPlugin, owner: str) -> str | None:
-    """Why the installed ``owner`` is outside the range ``provider`` declares for it, if it is.
-
-    The range is the one the provider's dependency on the owner requires; without
-    one, or without the owner's version, nothing is checked (the
-    ``provides-requirement`` convention asks for the range).
-    """
-    installed = next(
-        (each.plugin_ref for each in state.composition.plugins if each.name == owner), None
-    )
-    if installed is None or not installed.distribution_version:
-        return None
-    plain = plain_requirements(provider.plugin_ref.requires_dist, installed.distribution)
-    requirement = plain[0] if plain else None
-    if requirement is None or admits(requirement, installed.distribution_version):
-        return None
-    return (
-        f"{provider.name} requires {requirement.name}{range_text(requirement)} for {owner}, "
-        f"but {installed.distribution_version} is installed"
-    )
 
 
 def _kinds(state: _State) -> Callable[[type[BaseModel]], str]:
