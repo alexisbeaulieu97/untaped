@@ -221,9 +221,8 @@ plugin, never as a literal; `[name]` names a map's entry
 its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
 `untaped config set` rejects state fields. A command writes its own through
 `self.ctx.plugin.plan_settings({key(AcmeSettings).greeting: "hi"})`
-(experimental; `None` unsets): the plan is checked and writes nothing, its
-`preview()` is what `self.confirm(..., preview=plan.preview)` prints, and
-`write()` writes where `config set` does, a `HomeOnly` key to the base.
+(experimental; `None` unsets): checked, nothing written; `self.confirm(...,
+preview=plan.preview)` prints it; `write()` writes where `config set` does.
 
 The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
 an `UntapedError` from `run` and the root prints its standard diagnostics and
@@ -242,8 +241,9 @@ command named by its class (`Refresh.spelled()`,
 `Set.spelled(key(AcmeSettings).url, "<URL>")`), which follows a rename, a
 string split like a shell would, or an argv list; a value the user supplies is
 a `<NAME>` placeholder. `doctor` emits it as the row's `fix` argv, prefixed
-with `--profile NAME` unless it names one. Set `automatic=True` only on a fix
-that meets the rule in the `DoctorResult` docstring.
+with `--profile NAME` unless it names one, so it runs as is. Set
+`automatic=True` only on a fix that meets the rule in the `DoctorResult`
+docstring.
 
 ## Keeping what users create
 

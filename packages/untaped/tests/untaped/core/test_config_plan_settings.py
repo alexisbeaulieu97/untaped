@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import pytest
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 
 from core_test_support.commands.support import compose, make_plugin
 from core_test_support.runtime.run import holding_runs
@@ -31,6 +31,7 @@ from untaped.sdk import (
 )
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health import HomeOnly
+from untaped.sdk.health.deprecated_keys import Renamed
 from untaped.sdk.testing import CliResult, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -46,11 +47,26 @@ class Source(BaseModel):
     packages: dict[str, Item] = {}
 
 
+class Look(BaseModel):
+    wide: bool = False
+
+
 class ShelfSettings(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, object]] = {"salute": Renamed("greeting", removed_in=99)}
+
     sources: Annotated[dict[str, Source], HomeOnly()] = {}
     greeting: str = "hello"
     retries: int = Field(3, gt=0)
     token: SecretStr | None = None
+    look: Look = Look()
+    #: The source a run starts from: one of ``sources``, which a profile may pick.
+    first: str | None = None
+
+    @model_validator(mode="after")
+    def _first_is_a_source(self) -> ShelfSettings:
+        if self.first is not None and self.first not in self.sources:
+            raise ValueError(f"first names no source: {self.first}")
+        return self
 
 
 class OtherSettings(BaseModel):
@@ -230,6 +246,23 @@ def test_another_plugins_key_is_a_type_error() -> None:
 
 
 @pytest.mark.usefixtures("_held")
+def test_a_whole_model_is_written_only_as_an_entry() -> None:
+    compose(_shelf())
+
+    with pytest.raises(TypeError, match="name one of them"):
+        plugin_of(ShelfSettings).plan_settings({SHELF.look: Look(wide=True)})
+
+
+@pytest.mark.usefixtures("_held")
+def test_an_entry_and_a_setting_inside_it_are_refused_together() -> None:
+    compose(_shelf())
+    entry = SHELF.sources["main"].packages["git"]
+
+    with pytest.raises(ValueError, match="overlap"):
+        plugin_of(ShelfSettings).plan_settings({entry.policy: "sync", entry: None})
+
+
+@pytest.mark.usefixtures("_held")
 def test_a_model_no_plugin_owns_is_a_type_error() -> None:
     compose(_shelf())
 
@@ -269,6 +302,20 @@ def test_an_entry_its_section_refuses_fails_the_plan(_isolated_config: Path) -> 
 
     assert result.exit_code == 1, result.output
     assert "url" in result.stderr
+    assert _isolated_config.read_bytes() == before
+
+
+def test_a_base_write_is_checked_as_the_named_profile_reads_it(_isolated_config: Path) -> None:
+    _isolated_config.write_text(
+        HOME.replace("  work: {}", "  work: {shelf: {first: main}}"), encoding="utf-8"
+    )
+    before = _isolated_config.read_bytes()
+
+    result = _untaped({SHELF.sources["main"]: None}, "--profile", "work", "shelf", "write", "--yes")
+
+    assert result.exit_code == 1, result.output
+    assert "as profile work reads it" in result.stderr
+    assert "first names no source: main" in result.stderr
     assert _isolated_config.read_bytes() == before
 
 
@@ -312,6 +359,21 @@ def test_a_secret_is_masked_in_the_preview_and_written_as_given(_isolated_config
     previewed = _untaped({SHELF.token: "other"}, "shelf", "add", "--dry-run")
     assert "set shelf.token to *** in profile default" in previewed.stderr
     assert "other" not in previewed.stderr
+
+
+def test_an_old_spelling_it_replaces_is_named(_isolated_config: Path) -> None:
+    _isolated_config.write_text(HOME.replace("  greeting: hey", "  salute: hey"), encoding="utf-8")
+
+    previewed = _untaped({SHELF.greeting: "hi", SHELF.look.wide: True}, "shelf", "add", "--dry-run")
+    assert "set shelf.look.wide to true in profile default" in previewed.stderr
+    assert "remove shelf.salute, an old spelling" in previewed.stderr
+
+    result = _untaped({SHELF.greeting: "hi"}, "shelf", "add")
+
+    assert result.exit_code == 0, result.output
+    assert "removed shelf.salute, an old spelling" in result.stderr
+    shelf = _file(_isolated_config)["shelf"]
+    assert (shelf.get("salute"), shelf["greeting"]) == (None, "hi")  # type: ignore[union-attr,index]
 
 
 def test_comments_are_kept(_isolated_config: Path) -> None:

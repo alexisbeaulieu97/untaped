@@ -262,10 +262,19 @@ class PlannedSettings:
         repo_now = repo()
         had: dict[str, bool] = {}
         landed: dict[str, str] = {}
-        repo_now.update_values(self._updates(had, landed), dry_run=True, home_only_to_base=True)
+        removed: list[str] = []
+        repo_now.update_values(
+            self._updates(had, landed),
+            dry_run=True,
+            on_spelling_removed=removed.append,
+            home_only_to_base=True,
+        )
         self._lines = [
-            self._line(repo_now, key, value, landed[key], had=had[key])
-            for key, value in self._changes.items()
+            *(
+                self._line(repo_now, key, value, landed[key], had=had[key])
+                for key, value in self._changes.items()
+            ),
+            *(f"remove {old}, an old spelling" for old in removed),
         ]
 
     def _updates(
@@ -292,7 +301,9 @@ class PlannedSettings:
             if descriptor.holds_secret
             else display_value(descriptor, repo.typed(key, value), reveal_secrets=False)
         )
-        text = json.dumps(shown, separators=(",", ":")) if isinstance(shown, dict | list) else shown
+        text = (
+            (shown or '""') if isinstance(shown, str) else json.dumps(shown, separators=(",", ":"))
+        )
         return f"set {key} to {text} in {where}"
 
     def preview(self) -> list[PreviewItem]:
@@ -305,7 +316,10 @@ class PlannedSettings:
         holders = {key: _holder(repo, key) for key in self._changes}
         had: dict[str, bool] = {}
         landed: dict[str, str] = {}
-        target = repo.update_values(self._updates(had, landed), home_only_to_base=True)
+        removed: list[str] = []
+        target = repo.update_values(
+            self._updates(had, landed), on_spelling_removed=removed.append, home_only_to_base=True
+        )
         outcomes: list[SettingOutcome] = []
         for key, value in self._changes.items():
             action = "updated" if value is not None else "deleted" if had[key] else "unchanged"
@@ -313,6 +327,8 @@ class PlannedSettings:
             if action != "unchanged":
                 for _, text in _still_read(key, landed[key], holders[key]):
                     current_run().diag.info(text)
+        for old in removed:
+            current_run().diag.info(f"removed {old}, an old spelling")
         return SettingsWritten(outcomes=tuple(outcomes), target=target)
 
 

@@ -369,9 +369,10 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
-            target_data, resolved = self._write_target(data, profile)
+            target_data, written = self._write_target(data, profile)
+            resolved = written
             targets = {
-                key: (data, DEFAULT_PROFILE) if key in based else (target_data, resolved)
+                key: (data, DEFAULT_PROFILE) if key in based else (target_data, written)
                 for key in updates
             }
             for key, update in updates.items():
@@ -386,13 +387,19 @@ class SettingsFileRepository:
                     set_at_path(where, descriptor.path, _stored(key, descriptor, raw_value))
                 _remove_spellings(where, olds, on_spelling_removed)
             for key, descriptor in descriptors.items():
-                try:
-                    self._validate_section(data, descriptor, profile=targets[key][1])
-                except ValidationError as exc:
-                    blamed = _blamed(descriptors, exc) or key
-                    raise ConfigError(
-                        f"invalid value for {blamed!r}: {_issue(blamed, exc)}", category="invalid"
-                    ) from exc
+                # A key sent to the base is read under the profile the others land in too.
+                for reader in dict.fromkeys((targets[key][1], written)):
+                    try:
+                        self._validate_section(data, descriptor, profile=reader)
+                    except ValidationError as exc:
+                        blamed = _blamed(descriptors, exc) or key
+                        read = (
+                            "" if reader == targets[key][1] else f" (as profile {reader} reads it)"
+                        )
+                        raise ConfigError(
+                            f"invalid value for {blamed!r}{read}: {_issue(blamed, exc)}",
+                            category="invalid",
+                        ) from exc
 
         self._mutate(_apply, dry_run=dry_run)
         # ``_mutate`` always runs ``_apply``, which sets ``resolved`` from

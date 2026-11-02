@@ -24,9 +24,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
-from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import SettingKey, map_value_type, model_in
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -519,26 +519,38 @@ class PluginHandle:
 
         return plugin_committed_path(self.name, name, root=Path() if root is None else root)
 
-    def plan_settings(self, changes: Mapping[SettingKey, object]) -> SettingsPlan:
+    def plan_settings(
+        self, changes: Mapping[SettingKey, JsonValue | BaseModel | None]
+    ) -> SettingsPlan:
         """Plan writes to this plugin's own settings: checked now, written by ``write()``.
 
         Each key is a ``key(Model)`` of this plugin's settings model, an entry
         of a map included (``key(Model).sources[name]``); its value is the new
-        value (JSON data or a model, whose unset fields stay unwritten), or
-        ``None`` to unset the key or entry. The changes are validated together
+        value (JSON data, or a model for a map's entry, whose unset fields stay
+        unwritten), or ``None`` to unset the key or entry. The changes are validated together
         against ``config.yml`` now, and nothing is written. They land where
         ``config set`` writes (the profile ``--profile`` names, else the
         base), except a ``HomeOnly`` key, which always goes to the base.
 
         Raises :class:`TypeError` for a key that isn't one of this plugin's,
-        and the config error ``config set`` gives for a value it refuses.
+        :class:`ValueError` for two keys where one is inside the other, and
+        the config error ``config set`` gives for a value it refuses. The
+        check on keys catches a mistake; it is no wall between plugins.
         Experimental (marked in ``untaped.sdk._settings_plan``, so a run pays
         for no marks).
         """
         run = current_run()
         paths: dict[tuple[str, ...], object] = {}
         for setting, value in changes.items():
-            paths[self._own_path(run, setting)] = value
+            path = self._own_path(run, setting)
+            within = next((each for each in paths if _nested(each, path)), None)
+            if within is not None:
+                # Applied in order, the second would undo or misreport the first.
+                raise ValueError(
+                    f"{'.'.join(path)} and {'.'.join(within)} overlap: plan the entry or "
+                    "the settings inside it, not both"
+                )
+            paths[path] = value
         return run.plan_settings(self.name, paths)
 
     def _own_path(self, run: Run, setting: object) -> tuple[str, ...]:
@@ -556,7 +568,19 @@ class PluginHandle:
         path = SettingKey.path_of(setting)
         if not path:
             raise TypeError(f"{setting!r} names the whole section: name one setting in it")
+        holder = SettingKey(SettingKey.model_of(setting), path[:-1])._annotation()
+        if model_in(setting._annotation()) is not None and map_value_type(holder) is None:
+            raise TypeError(
+                f"{setting!r} is a model, set by the settings inside it: name one of them "
+                "(a whole model is written only as a map's entry)"
+            )
         return path
+
+
+def _nested(one: tuple[str, ...], other: tuple[str, ...]) -> bool:
+    """Whether one path is the other or lies inside it."""
+    shorter = min(len(one), len(other))
+    return one[:shorter] == other[:shorter]
 
 
 def plugin_of(model: type[BaseModel]) -> PluginHandle:
