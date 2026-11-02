@@ -8245,7 +8245,7 @@ sdk untaped.sdk.network.paginate_pages(fetch, *, limit) callback(fetch, 1)
 sdk untaped.sdk.network.paginate_pages(max_pages=) default=100
 sdk untaped.sdk.network.rejected_token_error(cause=) default=None
 sdk untaped.sdk.network.rejected_token_error(field=) default=token
-sdk untaped.sdk.network.rejected_token_error(section, message)
+sdk untaped.sdk.network.rejected_token_error(service, message)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.now()
@@ -8309,7 +8309,7 @@ sdk untaped.sdk.read_structured_file(path)
 sdk untaped.sdk.record_model(kind)
 sdk untaped.sdk.rejected_token_error(cause=) default=None
 sdk untaped.sdk.rejected_token_error(field=) default=token
-sdk untaped.sdk.rejected_token_error(section, message)
+sdk untaped.sdk.rejected_token_error(service, message)
 sdk untaped.sdk.resolve_verify(http)
 sdk untaped.sdk.run_editor(argv=) default=None
 sdk untaped.sdk.run_editor(path)

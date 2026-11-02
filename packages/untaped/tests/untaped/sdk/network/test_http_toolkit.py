@@ -10,12 +10,13 @@ import pytest
 import respx
 from pydantic import BaseModel, HttpUrl, SecretStr, ValidationError
 
+from core_test_support.commands.support import compose, make_plugin
+from core_test_support.runtime.run import holding_runs
 from untaped.runtime.settings import (
     HttpSettings,
-    register_profile_settings,
     reset_config_registry,
 )
-from untaped.sdk import CredentialKey, NeedsSetup
+from untaped.sdk import CredentialKey, NeedsSetup, Service
 from untaped.sdk._home import config_path
 from untaped.sdk.errors import ConfigError, HttpError, UntapedError
 from untaped.sdk.network.http import (
@@ -708,21 +709,19 @@ def test_paginate_offset_max_pages_bounds_non_converging_server() -> None:
 
 
 @pytest.mark.usefixtures("_isolated_config")
-@pytest.mark.parametrize("model", [None, DemoSettings])
-def test_a_rejected_secret_setting_is_an_auth_error_naming_its_prompt(
-    model: type[BaseModel] | None,
-) -> None:
+def test_a_rejected_secret_setting_is_an_auth_error_naming_its_prompt() -> None:
     cause = HttpError("HTTP 401", status_code=401, url="https://aap/api/v2/me/", system="plain")
-    if model is not None:
-        register_profile_settings("plain", model)
-
-    error = rejected_token_error("plain", "rejected the token (HTTP 401)", cause=cause)
+    with holding_runs():  # the error names the section the run composed
+        compose(make_plugin("acme", settings=DemoSettings))
+        error = rejected_token_error(
+            Service(DemoSettings), "rejected the token (HTTP 401)", cause=cause
+        )
 
     assert isinstance(error, ConfigError)
     assert (str(error), error.category, error.system) == (
         "rejected the token (HTTP 401)",
         "auth",
-        "plain",
+        "acme",
     )
-    assert error.hint == "run `untaped config set plain.token --prompt`"
+    assert error.hint == "run `untaped config set acme.token --prompt`"
     assert dict(error.details) == {"status": 401, "url": "https://aap/api/v2/me/"}

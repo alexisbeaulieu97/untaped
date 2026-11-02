@@ -33,7 +33,6 @@ from untaped.sdk import (
     HttpError,
     HttpTransportError,
     RetryPolicy,
-    Service,
     UntapedError,
     bounded_map,
 )
@@ -44,7 +43,7 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
-from untaped_github.errors import GithubGraphqlError
+from untaped_github.errors import GITHUB, GithubGraphqlError
 from untaped_github.infrastructure.graphql_errors import classify_errors, graphql_http_error
 from untaped_github.infrastructure.graphql_queries import (
     RateLimit,
@@ -59,7 +58,6 @@ from untaped_github.infrastructure.graphql_queries import (
     reported_rate_limit,
     validate_kinds,
 )
-from untaped_github.settings import GithubSettings
 
 _GRAPHQL_ACCESS_STATUSES = frozenset({401, 403, 429})
 
@@ -212,7 +210,7 @@ def _probe_chunk(
                     raise UntapedError(
                         f"github graphql returned null for {target.full_name} "
                         "without an explanatory error",
-                        system=Service(GithubSettings),
+                        system=GITHUB,
                     )
                 missing.append(target.full_name)
                 continue
@@ -421,7 +419,7 @@ def _resolve_repo(
             if classify_errors(payload):
                 raise UntapedError(
                     f"github graphql lost access to {target.full_name} during ref pagination",
-                    system=Service(GithubSettings),
+                    system=GITHUB,
                 )
             rate_limit = merge_rate_limit(rate_limit, reported_rate_limit(payload))
             connection = payload["data"]["r0"][kind]

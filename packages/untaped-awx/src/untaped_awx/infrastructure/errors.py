@@ -21,6 +21,7 @@ from untaped.sdk import (
     attribution,
     rejected_token_error,
 )
+from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import (
     AwxApiError,
     AwxError,
@@ -35,7 +36,7 @@ _BODY_SNIPPET = 500
 def to_awx_error(err: HttpError) -> UntapedError:
     status = err.status_code
     if status == 401:
-        return rejected_token_error("awx", "AWX rejected the token (HTTP 401)", cause=err)
+        return rejected_token_error(AWX, "AWX rejected the token (HTTP 401)", cause=err)
     body_msg = _first_field_error(err.body) or (err.body or "")[:_BODY_SNIPPET] or "<empty body>"
     error_type: type[AwxApiError]
     if status == 403:
