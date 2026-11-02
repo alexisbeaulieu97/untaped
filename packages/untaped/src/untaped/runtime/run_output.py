@@ -234,6 +234,9 @@ def _show_warning(
     )
 
     if isinstance(message, UntapedDeprecationWarning) and message.id is not None:
+        from untaped.core.run_uses import note  # noqa: PLC0415 - on a deprecation only
+
+        note(message, filename)
         if not first_notice(message.id):
             return
         current_sink().emit(

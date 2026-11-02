@@ -151,10 +151,12 @@ def filled_uses(providers: Sequence[type], owners: Mapping[str, Owner]) -> list[
     return uses
 
 
-def owner_of(module: str, owners: Mapping[str, Owner]) -> Owner | None:
+def owner_of[T](module: str, owners: Mapping[str, T]) -> T | None:
     """Who owns ``module``: the owner of its longest package in ``owners`` (keyed by package).
 
-    A plugin nested in ``untaped`` (``untaped.plugins.acme``) is its own owner, not core.
+    A plugin nested in ``untaped`` (``untaped.plugins.acme``) is its own owner,
+    not core; of two plugins sharing a namespace package, each owns its own
+    subpackage.
     """
     parts = module.split(".")
     for end in range(len(parts), 0, -1):
@@ -222,11 +224,14 @@ def use_line(plugin: str, distribution: str, version: str, use: UseDecl) -> str:
     owner = "untaped" if use.core else use.distribution
     removal = removal_text(use.removed_in, None if use.core else use.distribution)
     head = f"{distribution} {version}".strip()
-    head = f"{head} {use.how} {use_name(use)} ({use.where}), {removal_phrase(removal)}"
+    where = f"in `{use.where}`" if use.how == "calls" else use.where
+    head = f"{head} {use.how} {use_name(use)} ({where}), {removal_phrase(removal)}"
     if use.removed_in is None:
         return f"{head}: upgrade {distribution} once a release stops using it"
+    # A call is seen while a command runs; an import or a fill is read before the plugin loads.
+    effect = f"makes `{use.where}` fail" if use.how == "calls" else f"disables {plugin}"
     return (
-        f"{head}: upgrading {owner} to {use.removed_in}.0 disables {plugin} "
+        f"{head}: upgrading {owner} to {use.removed_in}.0 {effect} "
         f"unless a newer {distribution} stops using it"
     )
 

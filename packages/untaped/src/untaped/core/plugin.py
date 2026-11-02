@@ -19,6 +19,7 @@ from untaped.core.commands.records import CORE_RECORDS
 from untaped.core.commands.setup import Setup
 from untaped.core.commands.skills import Skills
 from untaped.core.doctor_checks import CONFIG_PERMISSIONS, TOKEN_STORE, UNKNOWN_KEYS
+from untaped.core.run_uses import RUN_USES
 from untaped.core.settings import DECLARATION, IMPORTS, NAME, CoreSettings
 from untaped.sdk.network._credential_store import INDEX
 from untaped.sdk.plugin import Plugin, StubSkill
@@ -55,6 +56,7 @@ class Core(Plugin):
     token_store = TOKEN_STORE
     refs = REFS
     credentials = INDEX
+    run_uses = RUN_USES
 
 
 __all__ = ["NAME", "Core"]
