@@ -30,10 +30,9 @@ Core and each plugin care only about what comes in and what goes out, and know
 one another only through public interfaces, never how the other is built. A
 plugin doesn't know other plugins exist unless it depends on one. Whoever owns
 a capability does its wiring and offers it through a small interface; everyone
-else only declares what they need or provide. A plugin that needs a capability
-another plugin owns, such as git or credentials, goes through that plugin and
-never does the job itself, so installing a provider, such as one for another
-credential store, is enough for every plugin to use it, with no setup. untaped
+else only declares what they need or provide, and uses the owner's interface
+rather than doing the job itself, so installing a plugin that provides a
+capability is all it takes for every plugin to use it, with no setup. untaped
 owns the CLI, so it mounts the commands plugins build and wires help and agent
 support from what they declare. When one side has to know something only the
 other cares about, the boundary is in the wrong place. The checks on these
