@@ -200,6 +200,19 @@ fail. Recording never fails or slows the command: on a home it can't write,
 or a lock another untaped holds, it skips, and a later run records it. Rows
 of plugin versions no longer installed are dropped on the next record.
 
+Once such a name is gone, the command that reaches it stops with an error
+naming the plugin and the name, by the module plugins import it from, and
+exits 4, with the same fixes as a disabled plugin; `--verbose` adds the
+traceback. That covers a member gone from an object, a module attribute or
+submodule looked up while the code runs, and a field a model no longer has
+passed to its constructor (the same field in a file you wrote stays a
+validation error). A name looked up while the plugin's modules load
+disables it (`uses-missing`) as an import would. When no major of the owner
+came out after the plugin's floor on it, the name can't have gone (a typo,
+or a floor set too low): the traceback stays, after a line naming the
+plugin. A name missing from the plugin's own code, or from a library, is a
+bug and keeps its traceback.
+
 ## Breaking changes
 
 - A command that goes away with no successor is marked deprecated: it is
