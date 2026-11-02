@@ -1245,3 +1245,12 @@ def test_uv_hook_worker_pool_wakes_waiters_after_fatal_retirement(
             raise AssertionError(msg) from exc
 
     assert [worker.closed for worker in workers] == [True, True]
+
+
+def test_a_closed_pool_starts_no_worker(tmp_path: Path) -> None:
+    # Stopped mid-run, a planning thread between two hooks must not start a fresh worker.
+    pool = UvHookWorkerPool()
+    pool.close()
+
+    with pytest.raises(worker_client.FatalHookWorkerError, match="pool is closed"):
+        pool.request(_sample_ref(tmp_path), {"kind": "transform"})

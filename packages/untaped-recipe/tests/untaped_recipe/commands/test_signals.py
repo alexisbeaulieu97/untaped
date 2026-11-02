@@ -51,7 +51,7 @@ def _gone(pid: int) -> bool:
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
 @pytest.mark.parametrize(
     ("sig", "parallel"),
-    [(signal.SIGINT, 1), (signal.SIGTERM, 1), (signal.SIGINT, 2)],
+    [(signal.SIGINT, 1), (signal.SIGTERM, 1), (signal.SIGINT, 4)],
     ids=["sigint", "sigterm", "sigint-parallel"],
 )
 def test_a_signal_to_untaped_reaches_the_hook_and_what_it_started(
@@ -88,8 +88,10 @@ def test_a_signal_to_untaped_reaches_the_hook_and_what_it_started(
             time.sleep(0.05)
         pids = [int(pid) for pid_file in pid_files for pid in pid_file.read_text().split()]
         untaped.send_signal(sig)
-        # Well inside the hook timeout (60 s): the hooks are stopped, not waited out.
+        signalled = time.monotonic()
         _, stderr = untaped.communicate(timeout=15)
+        # One grace for every worker together, not one each or the hook timeout (60 s).
+        assert time.monotonic() - signalled < 6, stderr
         deadline = time.monotonic() + 5
         while not all(_gone(pid) for pid in pids):
             assert time.monotonic() < deadline, "the hook outlived untaped"

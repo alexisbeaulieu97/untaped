@@ -74,6 +74,7 @@ class UvHookWorkerPool:
         self._startup_notice = startup_notice
         self._groups: dict[Path, _UvHookWorkerGroup] = {}
         self._lock = Lock()
+        self._closed = False
 
     def __enter__(self) -> UvHookWorkerPool:
         return self
@@ -100,6 +101,7 @@ class UvHookWorkerPool:
     def close(self) -> None:
         """Stop all worker processes."""
         with self._lock:
+            self._closed = True
             groups = tuple(self._groups.values())
             self._groups.clear()
         first_error: Exception | None = None
@@ -115,6 +117,8 @@ class UvHookWorkerPool:
     def _group_for(self, project_root: Path) -> _UvHookWorkerGroup:
         resolved = project_root.resolve()
         with self._lock:
+            if self._closed:  # stopped mid-run: start no worker the stop would miss
+                raise FatalHookWorkerError("hook worker pool is closed")
             group = self._groups.get(resolved)
             if group is None:
                 group = _UvHookWorkerGroup(

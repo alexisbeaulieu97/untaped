@@ -249,7 +249,9 @@ class RunningProcess:
     def close(self) -> int | None:
         """Close stdin, give the child one grace to exit, then stop whatever is left of its group.
 
-        Idempotent; returns the child's exit status, or ``None`` when it could
+        Once untaped's own signal reached the group, the grace counts from
+        that signal, so closing several children in turn still takes one
+        grace in all. Idempotent; returns the child's exit status, or ``None`` when it could
         not be reaped: SIGKILL could not end it (a process stuck in the
         kernel), or another interrupt cut the stop short. The stop runs even
         when the grace is interrupted.
@@ -260,8 +262,11 @@ class RunningProcess:
                     self._closed = True
                     with contextlib.suppress(OSError):
                         self.stdin.close()
+                    # One grace in all: what is left of it once a signal started the clock.
+                    age = groups.clock_age(self._process.pid)
+                    grace = groups.GRACE_S if age is None else max(0.0, groups.GRACE_S - age)
                     with contextlib.suppress(subprocess.TimeoutExpired):
-                        self._process.wait(timeout=groups.GRACE_S)
+                        self._process.wait(timeout=grace)
                 finally:
                     if not groups.emptied(self._process):
                         groups.stop(self._process)

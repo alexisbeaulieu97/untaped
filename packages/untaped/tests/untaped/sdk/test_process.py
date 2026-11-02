@@ -299,6 +299,26 @@ def test_close_stops_a_child_that_ignores_end_of_file_from_two_threads(tmp_path:
     child.stderr.close()
 
 
+def test_closing_children_one_by_one_after_a_signal_takes_one_grace_in_all(
+    tmp_path: Path,
+) -> None:
+    # A pool closing its workers in turn after Ctrl-C must not give each a fresh grace.
+    pid_files = [tmp_path / f"{i}.pid" for i in range(6)]
+    children = [start_process(_stubborn(pid_file, ignore="SIGINT")) for pid_file in pid_files]
+    for pid_file in pid_files:
+        _pid(pid_file)
+    started = time.monotonic()
+    _process_groups.ending(signal.SIGINT, closing=False)
+    codes = [child.close() for child in children]
+
+    assert time.monotonic() - started < 3 * GRACE  # six fresh graces would be 6 * GRACE
+    assert codes == [-signal.SIGKILL] * len(children)
+    for child, pid_file in zip(children, pid_files, strict=True):
+        assert _wait_gone(_pid(Path(f"{pid_file}.grandchild")))
+        child.stdout.close()
+        child.stderr.close()
+
+
 def test_close_still_stops_the_group_when_its_grace_is_interrupted(tmp_path: Path) -> None:
     pid_file = tmp_path / "child.pid"
     child = start_process(_stubborn(pid_file, ignore="SIGINT"))
