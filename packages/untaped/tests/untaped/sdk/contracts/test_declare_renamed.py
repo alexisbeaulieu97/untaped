@@ -9,6 +9,8 @@ from __future__ import annotations
 import warnings
 from abc import abstractmethod
 
+import pytest
+
 from core_test_support.contracts.support import compose, plugin
 from untaped.sdk import Issued, Record
 from untaped.sdk.contracts import Contract, Ok, Provider, gather
@@ -68,6 +70,13 @@ class Compat(NewShop):
         return self.all_items()
 
 
+class ShimOverOld(OldShop):
+    """A shim calling the new name, under a base that fills only the old one."""
+
+    def items(self) -> list[Item]:
+        return [Item(name=f"shim-{item.name}") for item in self.all_items()]
+
+
 def _answers(*providers: type) -> dict[str, list[str]]:
     compose(
         plugin("owner", offers=(ItemSource,), records=(Item,), module=__name__),
@@ -96,6 +105,18 @@ def test_a_subclass_overriding_the_old_name_its_base_filled_is_the_answer() -> N
 
 def test_a_base_defining_the_new_name_keeps_it_beside_an_old_name_shim() -> None:
     assert _answers(Compat) == {"p0": ["new"]}
+
+
+def test_a_shim_calling_the_new_name_is_never_bound_to_it() -> None:
+    assert _answers(ShimOverOld) == {"p0": ["old"]}
+
+
+def test_a_ranking_kept_under_the_old_name_still_ranks(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "untaped.sdk.contracts._gather.ranking",
+        lambda _owner, _contract, method: ("p1", "p0") if method == "items" else (),
+    )
+    assert list(_answers(NewShop, BothShop)) == ["p1", "p0"]
 
 
 def test_a_consumer_asking_the_old_name_asks_the_new_one() -> None:

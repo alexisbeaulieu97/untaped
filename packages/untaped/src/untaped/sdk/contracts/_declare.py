@@ -597,10 +597,13 @@ def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
         old_holder, new_holder = cls.__mro__[old_at], cls.__mro__[new_at]
         if old_holder in info.cls.__mro__:
             continue  # the provider doesn't fill the old name
+        function = vars(old_holder)[old]
+        if new in getattr(getattr(function, "__code__", None), "co_names", ()):
+            continue  # a shim calling the new name: binding it would call itself
         if new_holder in info.cls.__mro__ or (
             old_at < new_at and new in vars(new_holder).get(_BOUND_FROM_OLD, ())
         ):
-            setattr(cls, new, vars(old_holder)[old])
+            setattr(cls, new, function)
             setattr(cls, _BOUND_FROM_OLD, frozenset({*vars(cls).get(_BOUND_FROM_OLD, ()), new}))
 
 
@@ -612,6 +615,11 @@ def _renamed(info: ContractInfo) -> dict[str, str]:
         if new is not None:
             renamed[name] = new
     return renamed
+
+
+def old_spellings(info: ContractInfo, name: str) -> list[str]:
+    """The old spellings of contract method ``name``, kept deprecated until they go."""
+    return [old for old, new in _renamed(info).items() if new == name]
 
 
 def _renamed_to(name: str, function: object, names: Collection[str]) -> str | None:
