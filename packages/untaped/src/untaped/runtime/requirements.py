@@ -234,7 +234,8 @@ def _fix(rejecting: Specifier, required: str, have: Version, requirer: str) -> s
     if rejecting.operator == "!=":
         return f"install another release of {required}, or remove {requirer}"
     floor = _version(floor_of(rejecting) or "")
-    below = floor is not None and (have <= floor if rejecting.operator == ">" else have < floor)
+    # a floor refuses only what is below it; ``>1.0`` refuses 1.0's post and local releases too
+    below = rejecting.operator in {">=", ">"} or (floor is not None and have < floor)
     if is_exact(rejecting):
         older, newer = (required, requirer) if below else (requirer, required)
         return f"upgrade {older} to match {newer}"

@@ -113,8 +113,12 @@ def test_an_unmet_requirement_quarantines_without_importing(
     assert calls == []  # read from metadata, never imported
 
 
-def test_a_requirement_above_an_exclusive_floor_names_the_package_to_upgrade() -> None:
-    [record] = compose([_base(), _acme("untaped-base>2.0.0")]).quarantine
+@pytest.mark.parametrize("installed", ["2.0.0", "2.0.0.post1", "2.0.0+local"])
+def test_a_requirement_above_an_exclusive_floor_names_the_package_to_upgrade(
+    installed: str,
+) -> None:
+    base = make_candidate(make_plugin("base"), "untaped-base", distribution_version=installed)
+    [record] = compose([base, _acme("untaped-base>2.0.0")]).quarantine
     assert record.fix == "upgrade untaped-base, or remove untaped-acme"
 
 

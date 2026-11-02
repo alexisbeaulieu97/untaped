@@ -17,6 +17,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import logging
+import re
 import sys
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -362,14 +363,14 @@ def _first(record: QuarantineRecord) -> str:
     A plugin disabled because one it requires is disabled already names the
     plugin to fix first, so its dependents pass that on instead of nesting it.
     """
-    if record.fix.startswith(_FIX_FIRST):
+    if _FIX_FIRST.fullmatch(record.fix):
         return record.fix
-    fix = f"{_FIX_FIRST}{record.distribution} first"
+    fix = f"fix {record.distribution} first"
     return f"{fix}: {record.fix}" if record.fix else fix
 
 
-#: How a cascaded quarantine's fix starts.
-_FIX_FIRST = "fix "
+#: A cascaded quarantine's fix, as :func:`_first` words it.
+_FIX_FIRST = re.compile(r"fix \S+ first(: .*)?", re.DOTALL)
 
 
 def _applies(requirement: Requirement) -> bool:
