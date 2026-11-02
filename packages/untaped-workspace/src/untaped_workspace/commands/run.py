@@ -58,9 +58,9 @@ class Run(WorkspaceCommand):
     Each run starts in the repo directory with stdin from /dev/null and
     UNTAPED_WORKSPACE, UNTAPED_REPO (the display name), UNTAPED_BRANCH
     (empty for a read-only repo), UNTAPED_BASE and UNTAPED_READ_ONLY (`1` or
-    `0`) in its environment. Background processes it starts are stopped when
-    it exits, except ones in their own session or process group (`setsid`).
-    There is no preview.
+    `0`) in its environment. Background processes it starts keep running
+    after it exits, unless they still hold its output: those are stopped two
+    seconds after it exits. There is no preview.
 
     Only writable repos run, unless --include-read-only: without it, naming
     a read-only repo with --repo exits 2, and --stdin drops read-only repos,
@@ -71,12 +71,13 @@ class Run(WorkspaceCommand):
     warns and exits 0.
 
     Every selected repo runs, and the exit is 1 when any failed: a non-zero
-    status, a timeout (the whole process tree is killed), a signal or a
-    missing directory. Each repo's row prints as it finishes, so rows come in
-    finishing order, and repos --fail-fast never started come last. In table
-    format a row is a header, its stdout, then its stderr, and a summary
-    follows on stderr; other formats print `workspace.run_outcome` records
-    only (json one object per line, yaml one document per row).
+    status, a timeout (the whole process tree gets SIGTERM, then SIGKILL two
+    seconds later), a signal or a missing directory. Each repo's row prints
+    as it finishes, so rows come in finishing order, and repos --fail-fast
+    never started come last. In table format a row is a header, its stdout,
+    then its stderr, and a summary follows on stderr; other formats print
+    `workspace.run_outcome` records only (json one object per line, yaml one
+    document per row).
 
     Examples
     --------

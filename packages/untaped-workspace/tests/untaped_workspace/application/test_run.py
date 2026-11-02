@@ -148,6 +148,25 @@ def test_cancelled_run_is_skipped(tmp_path: Path) -> None:
     )
 
 
+class StoppedRunner(FakeRunner):
+    def run(
+        self, argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], timeout: float
+    ) -> CommandResult:
+        return CommandResult(
+            returncode=None, stdout="part", stderr="", duration_s=1.0, timed_out=False, stopped=True
+        )
+
+
+def test_a_run_untaped_stopped_fails_as_interrupted(tmp_path: Path) -> None:
+    [row] = list(
+        RunInRepos(StoppedRunner({}), parallel=1, timeout=5, fail_fast=False)(
+            _targets(tmp_path, "api"), ["x"]
+        )
+    )
+    assert (row.action, row.returncode, row.detail) == ("failed", None, "stopped")
+    assert row.error is not None and row.error.category == "interrupted"
+
+
 def test_missing_dir_fails_without_running(tmp_path: Path) -> None:
     [target] = _targets(tmp_path, "api")
     target.path.rmdir()

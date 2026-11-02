@@ -67,8 +67,8 @@ class RunInRepos:
                     break
                 stop = self._reap(finished, pending, block=True) or stop
         except BaseException:
-            # Ctrl-C, or the reader stopped: the commands run in their own sessions,
-            # so stop them explicitly.
+            # Ctrl-C, or the reader stopped: the commands run in their own process
+            # groups, so stop them; each run ends its own group within two seconds.
             pool.shutdown(wait=False, cancel_futures=True)
             self._runner.cancel()
             raise
@@ -109,6 +109,9 @@ class RunInRepos:
     def _row(self, target: RunTarget, result: CommandResult) -> RunOutcome:
         if result.cancelled:
             return _outcome(target, "skipped", result, "cancelled")
+        if result.stopped:
+            stopped = WorkspaceError("stopped: untaped is stopping", category="interrupted")
+            return _failed(target, stopped, result, "stopped")
         if result.timed_out:
             detail = f"timed out after {self._timeout:g}s"
         elif result.returncode:
