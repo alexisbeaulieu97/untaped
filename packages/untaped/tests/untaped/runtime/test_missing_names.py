@@ -11,6 +11,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import pytest
@@ -196,6 +197,20 @@ def test_each_kind_of_missing_name_says_what_it_is(site: Site, poke: str, spelle
     assert f"untaped-acme 1.0 uses {spelled}, which {_FACTS}" in result.stderr
 
 
+@pytest.mark.parametrize(
+    ("module", "spelled"),
+    [("untaped.sdk", "untaped.sdk.gone"), ("untaped.sdk.storage", "untaped.sdk.storage.gone")],
+    ids=["root", "group"],
+)
+def test_a_name_the_sdk_s_lazy_modules_lack_says_what_it_is(
+    site: Site, module: str, spelled: str
+) -> None:
+    found = _install(site, f"import {module} as sdk\n\ndef poke():\n    sdk.gone\n")
+    result = _invoke(found, "acme", "poke")
+    assert result.exit_code == 4, result.output
+    assert f"untaped-acme 1.0 uses {spelled}, which untaped " in result.stderr
+
+
 def test_with_no_major_since_the_floor_it_is_the_same_error(site: Site) -> None:
     found = _install(
         site, "from untaped_shelf.api import bulb\n\ndef poke():\n    bulb().dim()\n", shelf="3.2"
@@ -277,3 +292,84 @@ def test_a_run_of_another_composition_is_judged_by_nothing(site: Site) -> None:
     found = _install(site, "def poke():\n    pass\n")
     assert _invoke(found, "acme", "poke").exit_code == 0
     assert bootstrap.attached() is None  # outside the root's run: the testing kit's, a check's
+
+
+_LAMPS = {
+    "untaped_shelf/lamps.py": '''
+        """Shelf's contract, and the command asking it."""
+
+        from abc import abstractmethod
+
+        from untaped.sdk import Command
+        from untaped.sdk.contracts import Contract, gather
+
+
+        class Lamps(Contract):
+            """Who lights lamps."""
+
+            @abstractmethod
+            def glow(self) -> str:
+                """How it glows."""
+
+
+        class Glow(Command):
+            """Ask every provider how it glows."""
+
+            def run(self) -> None:
+                for errored in gather(Lamps.glow)().errored:
+                    self.ctx.diag.failure(errored.error, item=errored.plugin)
+        ''',
+}
+
+_GLOWING = '''
+    """``acme``, a provider of shelf's ``Lamps`` whose answer dims a bulb."""
+
+    from pydantic import BaseModel, ConfigDict
+
+    from untaped.sdk import Plugin
+    from untaped.sdk.contracts import Provider
+    from untaped_shelf.api import bulb
+    from untaped_shelf.lamps import Lamps
+
+
+    class AcmeSettings(BaseModel):
+        model_config = ConfigDict(frozen=True)
+
+
+    class AcmeLamps(Lamps, Provider[AcmeSettings]):
+        def glow(self) -> str:
+            return bulb().dim()
+
+
+    class Acme(Plugin):
+        """Lights lamps."""
+
+        settings = AcmeSettings
+        fills = (AcmeLamps,)
+    '''
+
+
+def test_a_provider_s_answer_says_it_as_a_command_does(site: Site) -> None:
+    shelf_plugin = dedent(_SHELF["untaped_shelf/plugin.py"]).replace(
+        "from untaped.sdk import Plugin\n",
+        "from untaped.sdk import Plugin\nfrom untaped_shelf.lamps import Glow, Lamps\n",
+    )
+    shelf_plugin = shelf_plugin.replace(
+        "settings = ShelfSettings\n",
+        "settings = ShelfSettings\n    commands = (Glow,)\n    offers = (Lamps,)\n",
+    )
+    shelf = site.install(
+        "untaped-shelf",
+        {**_SHELF, **_LAMPS, "untaped_shelf/plugin.py": shelf_plugin},
+        at="4.0",
+    )
+    acme = site.install(
+        "untaped-acme",
+        {"untaped_acme/__init__.py": "", "untaped_acme/plugin.py": _GLOWING},
+        requires=("untaped-shelf>=3.0",),
+    )
+    result = _invoke([acme, shelf], "shelf", "glow")
+    assert result.exit_code != 0
+    assert (
+        f"acme can't run this: untaped-acme 1.0 uses untaped_shelf.api.Bulb.dim, which {_FACTS}"
+    ) in " ".join(result.stderr.split()), result.stderr

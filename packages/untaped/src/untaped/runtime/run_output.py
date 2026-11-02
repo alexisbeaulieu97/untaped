@@ -263,7 +263,7 @@ def _show_held(output: RunOutput) -> None:
 
 
 def _show_deprecation(message: UntapedDeprecationWarning, filename: str) -> None:
-    """``message`` as its ``untaped.deprecation`` record, once per run for each plugin and name.
+    """``message`` as its ``untaped.deprecation`` record, once per process for each plugin and name.
 
     A deprecation raised from a composed plugin's code names that plugin
     (``untaped-acme 1.0.0 uses `untaped.sdk.human_size`, which is

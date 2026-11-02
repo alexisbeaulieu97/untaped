@@ -81,7 +81,7 @@ def lazy_names(
     namespace[RESOLVE_ATTR] = resolve
 
     def __getattr__(name: str) -> object:
-        old = None if name in home else table().get(name)
+        old = None if name in home or name.startswith("__") else table().get(name)
         return looked_up(namespace, package, name, resolve(name), old)
 
     def __dir__() -> list[str]:

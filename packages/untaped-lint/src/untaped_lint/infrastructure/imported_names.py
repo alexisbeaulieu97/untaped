@@ -5,7 +5,12 @@ the modules an import reaches, :func:`imported_names` gives the names:
 
 - ``from M import N`` records ``M.N``; ``import M`` (or ``import M as z``)
   records ``M``, and one attribute step on the bound name (``z.N``)
-  records ``M.N``;
+  records ``M.N``. Importing ``M.sub`` binds its parents too, so
+  ``M.N`` read after ``import M.sub`` records ``M.N``; ``N.x`` read after
+  ``from M import N`` records ``M.N.x``, which names something only when
+  ``N`` is a module (``from untaped import sdk``);
+- every import binds before any attribute step is read, so a function may
+  use a module imported further down the file;
 - an import under ``if TYPE_CHECKING:`` never runs, so it isn't recorded;
 - a star import is recorded as such: nobody can tell what it binds;
 - an attribute step is read only on a name the file binds to one module and
@@ -46,6 +51,8 @@ def imported_names(
     ``__init__``, which relative imports resolve against.
     """
     reader = _Reader(module, own=own, is_package=is_package, rebound=_rebound(tree))
+    reader.visit(tree)  # binds every import first: a function may use one from further down
+    reader.found.clear()
     reader.visit(tree)
     return reader.found
 
@@ -59,7 +66,7 @@ class _Reader(ast.NodeVisitor):
         self.found: list[ImportedName] = []
         #: Each name an ``import`` bound to another package's module: the module it spells.
         self.bound: dict[str, str] = {}
-        #: The modules this file imports with ``import``, longest first when an attribute is read.
+        #: The modules an import binds (``M.sub``'s parents, a ``from`` import's name), by spelling.
         self.imported: set[str] = set()
 
     def visit_If(self, node: ast.If) -> None:
@@ -75,7 +82,8 @@ class _Reader(ast.NodeVisitor):
             if self._skipped(name):
                 continue
             self.found.append(ImportedName(name, None, node.lineno))
-            self.imported.add(name)
+            parts = name.split(".")
+            self.imported.update(".".join(parts[:end]) for end in range(1, len(parts) + 1))
             if alias.asname is not None:
                 self.bound[alias.asname] = name
             else:
@@ -91,6 +99,9 @@ class _Reader(ast.NodeVisitor):
                 self.found.append(ImportedName(module, None, node.lineno, star=True))
             else:
                 self.found.append(ImportedName(module, alias.name, node.lineno))
+                spelled = f"{module}.{alias.name}"  # a module's, when the name is a submodule
+                self.imported.add(spelled)
+                self.bound[alias.asname or alias.name] = spelled
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         chain = _chain(node)

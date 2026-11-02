@@ -136,8 +136,13 @@ def test_a_group_s_old_name_warns_on_every_lookup_and_is_never_kept() -> None:
     assert "size_words" not in group.dir()
     with pytest.raises(AttributeError, match="has no attribute 'nope'"):
         group.getattr("nope")
+
+
+def test_a_dunder_never_reaches_the_table() -> None:
+    group = _Group(old_names(size_words=deprecated(removed_in=14, replacement=size_text)))
     with pytest.raises(AttributeError):
-        group.getattr("__path__")  # a dunder never reaches the table
+        group.getattr("__wrapped__")
+    assert group.built == 0
 
 
 def test_a_group_without_old_names_publishes_an_empty_table() -> None:

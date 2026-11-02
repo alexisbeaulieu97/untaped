@@ -649,7 +649,7 @@ def _invocation(tokens: Sequence[str], result: CompositionResult, root: App) -> 
 
 
 def _record_uses(ran: Sequence[Dispatched]) -> None:
-    """Record what the command was seen calling, once the recorder is loaded (core's own
+    """Record what the command was seen using, once the recorder is loaded (core's own
     commands load it; a plugin's only when a warning did)."""
     recorder = sys.modules.get("untaped.core.run_uses")
     result = attached()

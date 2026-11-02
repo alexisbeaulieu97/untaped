@@ -174,10 +174,12 @@ before its code runs. What it uses is known two ways:
 - a contract method its provider fills is checked against the contract when
   the plugin composes; a deprecated one is kept on the plugin's declaration;
 - a deprecated name its code looks up or calls while a command runs warns,
-  naming the plugin and its version, once per run per plugin and name. The SDK's modules warn at the lookup itself,
-  an import included, so a plugin that imports a deprecated name and rarely
-  calls it is seen too. untaped records each use in its own state, once per
-  plugin version, name and command. Recording never fails or slows the
+  naming the plugin and its version, once per run per plugin and name. The
+  SDK's modules warn at the lookup itself, an import included, so a plugin
+  that imports a deprecated name and rarely calls it is seen too. untaped
+  records each use in its own state, once per plugin version, name and
+  command; a name a plugin's module looks up as it loads is recorded under
+  the command whose start loaded it. Recording never fails or slows the
   command: on a home it can't write, or a lock another untaped holds, it
   skips, and a later run records it. Rows of plugin versions no longer
   installed are dropped on the next record.
@@ -192,17 +194,17 @@ another plugin as an `import-boundary` error, since nobody can tell what it
 binds.
 
 Once such a name is gone, a plugin that looks it up while its modules load
-is disabled alone (`uses-missing`), and a command that reaches it while it
-runs stops with an error and exits 4. Both state the facts: the file and
-line, the name by the module plugins import it from, the owner's installed
-version, what the plugin requires of it, and both fixes ("upgrade
-untaped-acme or untaped, or remove untaped-acme"); `--verbose` adds the
-traceback. That covers a name imported, a member gone from an object, and a
-module attribute or submodule looked up. untaped translates an error only
-when it shows that a public module or class of another distribution lacks
-the name; anything else, such as a name missing from the plugin's own code
-or from a library, or a field a model refuses, keeps its own error and
-traceback.
+is disabled alone (`uses-missing`), a command that reaches it while it runs
+stops with an error and exits 4, and a contract provider that reaches it
+answers with that error. Each states the facts: the file and line, the name
+by the module plugins import it from, the owner's installed version, what
+the plugin requires of it, and both fixes ("upgrade untaped-acme or untaped,
+or remove untaped-acme"); `--verbose` adds the traceback. That covers a name
+imported, a member gone from an object, and a module attribute or submodule
+looked up. untaped translates an error only when it shows that a public
+module or class of another distribution lacks the name; anything else, such
+as a name missing from the plugin's own code or from a library, or a field a
+model refuses, keeps its own error and traceback.
 
 ## Breaking changes
 

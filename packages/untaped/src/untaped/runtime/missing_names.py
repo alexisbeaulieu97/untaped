@@ -3,7 +3,8 @@
 untaped reads no plugin's code to predict what it uses, so a name its owner
 no longer has (or doesn't have yet) shows when the code runs: while the
 plugin loads (composition quarantines it ``uses-missing``) or while its
-command runs (the error boundary, :func:`explain`, exit 4). :func:`missed`
+command runs (the error boundary, :func:`explain`, exit 4, and a contract
+provider's answer, whose error ``gather`` keeps). :func:`missed`
 reads the name from the exception itself, never from its text:
 
 - ``AttributeError``: its ``obj`` (a module, class or instance) and ``name``;
@@ -126,6 +127,16 @@ def explain(exc: BaseException) -> MissingNameError | None:
     )
 
 
+def translated(exc: BaseException) -> MissingNameError | None:
+    """:func:`explain` for any exception, never raising: reading an error never hides it."""
+    if not isinstance(exc, (AttributeError, ImportError)):
+        return None
+    try:
+        return explain(exc)
+    except Exception:
+        return None
+
+
 def lacks(
     found: Missed, *, installed: str, distribution: str, requires_dist: Sequence[str]
 ) -> tuple[str, str]:
@@ -241,7 +252,8 @@ def _machinery(frame: FrameType, hooks: set[CodeType]) -> bool:
 def _hooks(exc: BaseException) -> set[CodeType]:
     """The lookup hooks a miss of ``exc`` may pass through.
 
-    A module's ``__getattr__`` (its names, a lazy table's included) and
+    A module's ``__getattr__`` (its names, a lazy table's included, with the
+    resolver an SDK lazy module's hook calls) and
     pydantic's, on a model and on its class (whose fields are only on its
     instances, so :func:`_attribute` keeps a field read on the class). A
     class's own ``__getattr__`` decides what exists as it likes
@@ -257,9 +269,12 @@ def _hooks(exc: BaseException) -> set[CodeType]:
     else:
         return set()
     if isinstance(owner, ModuleType):
-        hook = owner.__dict__.get("__getattr__")
-        code = getattr(hook, "__code__", None)
-        return {code} if isinstance(code, CodeType) else set()
+        from untaped.sdk._lazy import RESOLVE_ATTR  # noqa: PLC0415 - on a failure only
+
+        # its __getattr__, and the resolver an SDK lazy module's hook calls
+        hooks = (owner.__dict__.get("__getattr__"), owner.__dict__.get(RESOLVE_ATTR))
+        codes = (getattr(hook, "__code__", None) for hook in hooks)
+        return {code for code in codes if isinstance(code, CodeType)}
     if isinstance(owner, BaseModel):
         hook = vars(BaseModel).get("__getattr__")
     elif isinstance(owner, type) and issubclass(owner, BaseModel):
@@ -320,4 +335,12 @@ def _installed(owner: Owner, result: CompositionResult) -> str:
     )
 
 
-__all__ = ["Missed", "MissingNameError", "explain", "lacks", "missed", "traceback_text"]
+__all__ = [
+    "Missed",
+    "MissingNameError",
+    "explain",
+    "lacks",
+    "missed",
+    "traceback_text",
+    "translated",
+]

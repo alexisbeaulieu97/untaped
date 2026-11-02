@@ -248,12 +248,9 @@ def _missing_names() -> Iterator[None]:
     try:
         yield
     except (AttributeError, ImportError) as exc:
-        from untaped.runtime.missing_names import explain, traceback_text  # noqa: PLC0415
+        from untaped.runtime.missing_names import traceback_text, translated  # noqa: PLC0415
 
-        try:
-            explained = explain(exc)
-        except Exception:  # reading the error never hides it
-            explained = None
+        explained = translated(exc)
         if explained is None:
             raise
         if is_verbose():

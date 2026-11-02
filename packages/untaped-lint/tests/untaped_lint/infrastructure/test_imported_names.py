@@ -129,3 +129,25 @@ def test_relative_imports_and_the_plugins_own_package_are_its_own() -> None:
     source = "from . import words\nfrom .words import plural\nfrom untaped_host.sdk import x\n"
     nested = _read(source, "untaped_host.plugins.acme.plugin", own="untaped_host.plugins.acme")
     assert nested == [("untaped_host.sdk.x", 3)]
+
+
+def test_a_module_imported_by_from_is_read_through_one_attribute() -> None:
+    found = _read("from untaped import sdk\n\nsdk.size_words(3)\n")
+    assert found == [("untaped.sdk", 1), ("untaped.sdk.size_words", 3)]
+
+
+def test_importing_a_submodule_binds_its_parents() -> None:
+    found = _read("import untaped.sdk.storage\n\nuntaped.sdk.human_size(3)\n")
+    assert found == [("untaped.sdk.human_size", 3), ("untaped.sdk.storage", 1)]
+
+
+def test_a_function_may_use_a_module_imported_further_down() -> None:
+    found = _read(
+        """
+        def run(x):
+            return other.size(x)
+
+        import untaped_other.api as other
+        """
+    )
+    assert found == [("untaped_other.api", 4), ("untaped_other.api.size", 2)]
