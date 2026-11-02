@@ -22,7 +22,7 @@ import threading
 import warnings
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import AbstractContextManager, contextmanager
-from typing import TYPE_CHECKING, TextIO, cast
+from typing import TYPE_CHECKING, NoReturn, TextIO, cast
 
 from pydantic import BaseModel
 
@@ -38,7 +38,13 @@ from untaped.sdk.diagnostic import (
     format_error,
     kind_of,
 )
-from untaped.sdk.errors import ErrorCategory, ExitCode, UntapedError, combine_exit_codes
+from untaped.sdk.errors import (
+    ErrorCategory,
+    ExitCode,
+    UntapedError,
+    UsageError,
+    combine_exit_codes,
+)
 from untaped.sdk.progress import ProgressHandle
 from untaped.sdk.records import OutcomeRecord
 
@@ -412,7 +418,7 @@ class Diagnostics:
 
     def _records(self, records: Sequence[BaseModel], *, hint: str | None, unmuted: bool) -> None:
         """``records`` as one ``info`` table: the stdout table's layout, on stderr."""
-        from untaped.sdk._cli import stderr_table  # noqa: PLC0415 - tables are heavy
+        from untaped.sdk._render import stderr_table  # noqa: PLC0415 - tables are heavy
 
         if not records:
             return
@@ -508,3 +514,14 @@ class RunOutput(Diagnostics):
 
     def _sink(self) -> Sink:
         return self.sink
+
+
+def raise_usage(message: str) -> NoReturn:
+    """Print ``error: <message>`` and exit ``2`` (usage) immediately.
+
+    For code outside core's error boundary (cyclopts validators, option
+    parsing). Inside a command prefer ``raise UsageError(message)``, which
+    core prints and exits on the same way.
+    """
+    Diagnostics().failure(UsageError(message))
+    raise SystemExit(ExitCode.USAGE)

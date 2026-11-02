@@ -16,12 +16,12 @@ from pydantic import BaseModel, Field
 from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, OptionDecl, PluginDecl
+from untaped.runtime.default_format import _table_default_format
 from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _table_default
 from untaped.runtime.stability_help import show_deprecated
 from untaped.sdk import Command, Plugin
-from untaped.sdk._cli import _table_default_format
 from untaped.sdk._run import current_run, is_verbose
 from untaped.sdk.fields import AllowHyphen, Positional, Short
 from untaped.sdk.testing import CliInvoker

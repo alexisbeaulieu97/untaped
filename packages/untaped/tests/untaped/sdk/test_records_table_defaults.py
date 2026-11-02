@@ -13,7 +13,7 @@ import pytest
 from pydantic import BaseModel
 
 from untaped.sdk import Column, OutcomeRecord
-from untaped.sdk._cli import emit
+from untaped.sdk._emit import emit
 from untaped.sdk.records import TableGlyph
 
 

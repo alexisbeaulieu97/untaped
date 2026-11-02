@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from untaped.sdk._output import Output, print_rendered
 
 if TYPE_CHECKING:
-    from untaped.sdk._cli import OutputFormat
+    from untaped.sdk._render import OutputFormat
 
 
 class _Stream:
@@ -24,7 +24,7 @@ class _Stream:
 
     def row(self, record: BaseModel, *, kind: str | None) -> None:
         """Print ``record``, the next row ``run`` yielded, and flush it."""
-        from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._emit import (  # noqa: PLC0415 - rendering is heavy
             count_failed_actions,
             count_row_failures,
             emit_with,
@@ -60,7 +60,8 @@ class _Stream:
         """One row of a streamed table: its cells padded to the widths the first row set."""
         from rich.cells import cell_len  # noqa: PLC0415 - rendering is heavy
 
-        from untaped.sdk._cli import _as_row, _selected_columns  # noqa: PLC0415 - heavy
+        from untaped.sdk._render import _selected_columns  # noqa: PLC0415 - heavy
+        from untaped.sdk._rows import _as_row  # noqa: PLC0415 - heavy
 
         row = _as_row(record)
         if self.widths is None:

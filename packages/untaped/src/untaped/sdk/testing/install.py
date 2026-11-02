@@ -429,7 +429,7 @@ def _piped(mount: Mount, values: object) -> str | None:
     """``values`` (rows, or bare lines) as another command's ``--format pipe`` would print them."""
     if values is None:
         return None
-    from untaped.sdk._cli import emit  # noqa: PLC0415
+    from untaped.sdk._emit import emit  # noqa: PLC0415
 
     lines: list[str] = []
     for value in cast("Iterable[object]", values):
@@ -455,12 +455,12 @@ def _dispatch(
 
     A run that emitted a failure fails, as at the root.
     """
+    from untaped.runtime.cli_run import report_errors  # noqa: PLC0415
     from untaped.runtime.mount import run_built  # noqa: PLC0415
     from untaped.runtime.run_output import (  # noqa: PLC0415
         derived_exit_code,
         exit_on_counted_failure,
     )
-    from untaped.sdk._cli import report_errors  # noqa: PLC0415
 
     try:
         with nullcontext() if raises else report_errors():

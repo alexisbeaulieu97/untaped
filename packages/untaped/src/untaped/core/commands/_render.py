@@ -3,7 +3,7 @@
 ``untaped doctor`` and ``untaped plugin list`` must render even when the
 registered settings are invalid — that is precisely what they report — but
 table rendering resolves the active theme from settings. This helper renders
-exactly like :func:`untaped.sdk._cli.emit` when settings are healthy and falls
+exactly like :func:`untaped.sdk._emit.emit` when settings are healthy and falls
 back to the default theme when they are not, so a broken section can never
 block the listing itself.
 
@@ -24,7 +24,7 @@ from rich.text import Text
 
 from untaped.runtime.render import output_width, status_role_style
 from untaped.runtime.theme import OutputFormat
-from untaped.sdk._cli import emit_with
+from untaped.sdk._emit import emit_with
 from untaped.sdk._theme import DEFAULT_SYMBOLS
 from untaped.sdk._ui import Ui, build_terminal, print_styled
 

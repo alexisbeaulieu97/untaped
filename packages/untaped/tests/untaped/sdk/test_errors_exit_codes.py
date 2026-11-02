@@ -12,7 +12,7 @@ import io
 import pytest
 from cyclopts import App
 
-from untaped.sdk._cli import report_errors
+from untaped.runtime.cli_run import report_errors
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
     ConfigError,

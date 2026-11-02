@@ -12,9 +12,9 @@ from typing import TextIO
 import pytest
 from cyclopts import App
 
+from untaped.runtime.cli_run import report_errors
 from untaped.screen.core import Cancel, Cmd, KeyPress, Quit, Screen
 from untaped.screen.picker import PickCatalog, Picked, PickItem, PickRequest, PickResult
-from untaped.sdk._cli import report_errors
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui, no_terminal_message
 from untaped.sdk.errors import (

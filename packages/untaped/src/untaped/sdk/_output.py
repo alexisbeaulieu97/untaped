@@ -26,7 +26,7 @@ from untaped.sdk.errors import (
 if TYPE_CHECKING:
     from rich.text import Text
 
-    from untaped.sdk._cli import OutputFormat
+    from untaped.sdk._render import OutputFormat
     from untaped.sdk.tree import TreeGraph
 
 
@@ -159,7 +159,7 @@ class Output[R: BaseModel](FieldBlock):
         A ``--columns`` name ``R`` has no field for is a usage error here, before
         ``run`` starts; a plugin renderer's format takes no ``--columns``.
         """
-        from untaped.sdk._cli import check_columns  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._render import check_columns  # noqa: PLC0415 - rendering is heavy
 
         model = _type_argument(call.annotation)
         if model is not None:
@@ -189,7 +189,8 @@ class Output[R: BaseModel](FieldBlock):
         validator calling ``self.output.columns.add("grep:x")`` or ``.offer``),
         so they count as ``R``'s fields; a key no row then has is an empty cell.
         """
-        from untaped.sdk._cli import _check_columns, _column_names, _model_fields  # noqa: PLC0415
+        from untaped.sdk._render import _check_columns, _column_names  # noqa: PLC0415
+        from untaped.sdk._rows import _model_fields  # noqa: PLC0415
 
         model = self._model
         requested = self._requested
@@ -205,7 +206,7 @@ class Output[R: BaseModel](FieldBlock):
         """The ``Spread`` keys the command named: its columns and offers past ``R``'s fields."""
         if self._model is None or not spreads(self._model):
             return None
-        from untaped.sdk._cli import _model_fields  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._rows import _model_fields  # noqa: PLC0415 - rendering is heavy
 
         known = set(_model_fields(self._model))
         named = dict.fromkeys([*self.columns, *self.columns.offered])
@@ -213,14 +214,13 @@ class Output[R: BaseModel](FieldBlock):
 
     def _print(self, records: BaseModel | list[BaseModel], *, kind: str | None) -> None:
         """Print ``records`` as this run asked: a plugin renderer's format, or core's."""
-        from untaped.sdk._cli import (  # noqa: PLC0415 - rendering is heavy
-            _as_row,
-            _model_fields,
-            _print_available_columns,
+        from untaped.sdk._emit import (  # noqa: PLC0415 - rendering is heavy
             count_failed_actions,
             count_row_failures,
             emit_with,
         )
+        from untaped.sdk._render import _print_available_columns  # noqa: PLC0415 - heavy
+        from untaped.sdk._rows import _as_row, _model_fields  # noqa: PLC0415 - rendering is heavy
         from untaped.sdk._ui import build_terminal  # noqa: PLC0415 - rendering is heavy
 
         count_failed_actions([records] if isinstance(records, BaseModel) else records)

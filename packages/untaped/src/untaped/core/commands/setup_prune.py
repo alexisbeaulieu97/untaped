@@ -154,7 +154,7 @@ class Prune(Command[CoreSettings]):
     def run(self) -> Iterator[PruneOutcome]:
         # Lazy: bootstrap is the CLI's root and imports this module.
         from untaped.runtime.bootstrap import composition  # noqa: PLC0415
-        from untaped.sdk._cli import render_rows  # noqa: PLC0415 - rendering is heavy
+        from untaped.sdk._render import render_rows  # noqa: PLC0415 - rendering is heavy
         from untaped.sdk.storage._refs import read_references  # noqa: PLC0415
 
         references = read_references()

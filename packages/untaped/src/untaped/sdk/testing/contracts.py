@@ -109,8 +109,8 @@ def piped_through[R](bridge: Callable[..., R], row: BaseModel) -> R:
     with that provider as its ``source``, or as it is when it is the owner's
     own kind. The errors are the ones the command would exit with.
     """
-    from untaped.sdk._cli import _as_row  # noqa: PLC0415 - the pipe writer's dump
     from untaped.sdk._pipe import PipeEnvelope  # noqa: PLC0415
+    from untaped.sdk._rows import _as_row  # noqa: PLC0415 - the pipe writer's dump
     from untaped.sdk.contracts._select import bridged  # noqa: PLC0415
     from untaped.sdk.records import kind_of  # noqa: PLC0415
 

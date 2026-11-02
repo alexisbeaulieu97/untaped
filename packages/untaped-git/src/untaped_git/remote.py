@@ -13,11 +13,11 @@ from pathlib import Path
 from untaped.sdk import System, attribution
 from untaped.sdk.git import GitCommandError, run_git
 from untaped_git.errors import GitError
+from untaped_git.host_auth import host_config
 from untaped_git.hosts import HostAuth
 from untaped_git.store import (
     ATTEMPTS,
     TIMEOUT,
-    host_config,
     parse_symref,
     record_default_branch,
 )

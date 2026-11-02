@@ -353,7 +353,7 @@ def _release(
     Returns the rows applied (none under ``--dry-run``).
     """
     from untaped.core.project_lifecycle import apply_removal, blocked_hint  # noqa: PLC0415
-    from untaped.sdk._cli import render_rows  # noqa: PLC0415 - rendering is heavy
+    from untaped.sdk._render import render_rows  # noqa: PLC0415 - rendering is heavy
 
     plans = [plan for removal in removals for plan in removal.plans]
     unknown = unnamed(command.force, plans)

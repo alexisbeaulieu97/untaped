@@ -16,12 +16,13 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
+import untaped.sdk._render as sdk_render
 from core_test_support.commands.support import make_plugin
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.run_output import Diagnostics
 from untaped.sdk import Command, Output
-from untaped.sdk import _cli as cli
-from untaped.sdk._cli import emit, render_rows, report_declined
+from untaped.sdk._emit import emit, report_declined
+from untaped.sdk._render import render_rows
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui
 from untaped.sdk.errors import (
@@ -286,7 +287,7 @@ def test_a_failed_row_counts_in_a_table_list_view(monkeypatch: pytest.MonkeyPatc
     error = Failure.from_exception(UntapedError("broke"))
     row = _Outcome(name="a", action="failed", error=error).model_dump(mode="json")
     theme = ThemeSpec(collection_view="list")
-    monkeypatch.setattr(cli, "build_terminal", lambda **_: Ui(theme=theme))
+    monkeypatch.setattr(sdk_render, "build_terminal", lambda **_: Ui(theme=theme))
     app = App(name="demo")
 
     @app.default

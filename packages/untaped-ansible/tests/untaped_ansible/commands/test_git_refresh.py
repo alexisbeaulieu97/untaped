@@ -30,6 +30,7 @@ from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_git import remote as remote_module
 from untaped_git import store as store_module
 from untaped_git.api import Released, RepoStore, store_key
+from untaped_git.host_auth import basic_header
 
 _REQS = "roles/requirements.yml"
 _META = "meta/main.yml"
@@ -281,7 +282,7 @@ def test_a_failed_ls_remote_keeps_the_git_errors_attribution(
 
 
 def _basic(token: str) -> str:
-    return store_module.basic_header("x-access-token", token)
+    return basic_header("x-access-token", token)
 
 
 def test_the_remotes_default_branch_and_the_names_the_store_holds(

@@ -30,7 +30,7 @@ inherited ``action`` follows the identifying field.
 
 A record's kind is composition's, the plugin and its class in snake case
 (``untaped_gitlab``'s ``Project`` is ``gitlab.project``); :func:`emit
-<untaped.sdk._cli.emit>` reads it from the rows, and :func:`record_model` maps a
+<untaped.sdk._emit.emit>` reads it from the rows, and :func:`record_model` maps a
 kind back to its model. Every record's fields must survive a JSON round trip,
 which the class definition checks (:class:`Record`).
 """

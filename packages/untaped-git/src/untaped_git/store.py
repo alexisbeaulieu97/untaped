@@ -32,7 +32,6 @@ never a failed fetch, because the data landed before it ran.
 
 from __future__ import annotations
 
-import base64
 import os
 import re
 import time
@@ -52,13 +51,13 @@ from untaped.sdk import (
     UntapedError,
     attribution,
     experimental,
-    http_of,
 )
 from untaped.sdk.git import GitCommandError, GitResult, run_git
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_git import store_release, worktree_config
 from untaped_git.delta import RefDelta, diff_refs
-from untaped_git.hosts import Credential, HostAuth
+from untaped_git.host_auth import host_config
+from untaped_git.hosts import HostAuth
 from untaped_git.namespace import (
     ORIGIN_HEAD,
     check_names,
@@ -75,9 +74,8 @@ from untaped_git.repo_files import (
     worktree_entries,
 )
 from untaped_git.repo_lock import repo_lock
-from untaped_git.settings import GitSettings
 from untaped_git.store_release import RELEASE_MARK
-from untaped_git.url import https_origin, url_host
+from untaped_git.url import url_host
 from untaped_git.version import below_floor, floor_text, git_version, version_text
 
 if TYPE_CHECKING:
@@ -1242,45 +1240,6 @@ def parse_symref(text: str) -> str | None:
         if line.startswith("ref: refs/heads/") and line.endswith("\tHEAD"):
             return line.removeprefix("ref: refs/heads/").removesuffix("\tHEAD")
     return None
-
-
-def host_config(url: str, auth: HostAuth | None) -> tuple[dict[str, str], dict[str, str]]:
-    """What a command reaching ``url`` gets: ``run_git``'s ``auth_config`` and ``config``.
-
-    ``auth``'s credential and untaped's proxy (``untaped.http.proxy``), both
-    scoped to ``url``'s https origin; an ssh URL gets neither (its
-    credentials are the user's own).
-    """
-    origin = https_origin(url)
-    if origin is None:
-        return {}, {}
-    credential = None if auth is None else auth.credential
-    secret = {} if credential is None else _credential_config(origin, credential)
-    verified = credential is None or credential.verify_tls is not False
-    found = http_of(GitSettings).proxy_for(url, verified=verified)
-    proxy = {f"http.{origin}/.proxy": found} if found else {}
-    return secret, proxy
-
-
-def _credential_config(origin: str, credential: Credential) -> dict[str, str]:
-    """The command-scope settings that send ``credential`` to ``origin`` only (``run_git``'s
-    ``auth_config``: a private include file, never argv or the environment).
-
-    The CA file git checks ``origin`` against goes with it, when the
-    credential names one; otherwise git verifies as it would.
-    """
-    header = basic_header(credential.username, credential.password)
-    found = {f"http.{origin}/.extraHeader": header}
-    if isinstance(credential.verify_tls, Path):
-        found[f"http.{origin}/.sslCAInfo"] = str(credential.verify_tls)
-    return found
-
-
-def basic_header(username: str, password: object) -> str:
-    """The transient ``AUTHORIZATION`` header for HTTP basic credentials."""
-    secret = getattr(password, "get_secret_value", lambda: str(password))()
-    token = base64.b64encode(f"{username}:{secret}".encode()).decode()
-    return f"AUTHORIZATION: basic {token}"
 
 
 def _plugin_name(plugin: object) -> str:

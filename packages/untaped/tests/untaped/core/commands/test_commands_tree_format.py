@@ -24,7 +24,7 @@ from untaped.sdk import (
     TreeGraphEdge,
     TreeGraphNode,
 )
-from untaped.sdk._cli import emit, emit_with
+from untaped.sdk._emit import emit, emit_with
 from untaped.sdk._ui import Ui
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate

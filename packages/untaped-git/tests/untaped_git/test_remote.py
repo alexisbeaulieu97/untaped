@@ -14,11 +14,12 @@ from untaped.sdk.testing.git import GitRemote, global_config, trace2_events
 from untaped_git import api
 from untaped_git.errors import GitError
 from untaped_git.helpers import missing_helper, user_helpers
+from untaped_git.host_auth import host_config
 from untaped_git.hosts import Credential, HostAuth
 from untaped_git.plugin import Git
 from untaped_git.remote import default_branch, ls_remote
 from untaped_git.settings import store_root
-from untaped_git.store import RepoStore, host_config
+from untaped_git.store import RepoStore
 
 
 def test_ls_remote_and_default_branch_through_the_api(remote: GitRemote) -> None:
