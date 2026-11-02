@@ -97,6 +97,7 @@ files = [
     "scripts/check_pr.py",
     "scripts/gen_config_reference.py",
     "scripts/release.py",
+    "scripts/upgrade_smoke.py",
 ]
 mypy_path = [
     "packages/untaped/src",

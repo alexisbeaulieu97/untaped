@@ -103,16 +103,17 @@ To script the same settings, use `config set` as below.
 
 Any AI coding agent can do the setup with you; untaped calls no model
 itself. `untaped setup plan` lists what a profile still needs, with the
-command for each step, and marks every step that asks for or reveals a token
-as yours to run, so a token never passes through the agent. Paste this into your agent:
+command for each step, and marks every step that takes a secret
+(`secret: true`), so you can keep your tokens out of the agent's hands. Paste
+this into your agent:
 
 ```text
 Install untaped with `uv tool install --compile-bytecode 'untaped[all]'`,
 then install its agent skills with
 `untaped skills install --all --target codex` (or `claude`). Read
 `untaped docs`, then `untaped docs untaped commands setup plan`, and set up a
-profile with me: run the steps that are yours and hand me the
-ones that ask for a token.
+profile with me: run the steps without a secret and hand me the
+ones with `secret: true`.
 ```
 
 ## Store your tokens

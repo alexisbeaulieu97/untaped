@@ -512,7 +512,7 @@ def rejected_token_error(
     error and its hint name the plugin as it runs, renamed or not. ``auth``
     in that section (exit ``4``). For a declared credential the hint is
     ``auth login <section>`` (``auth login <section> <name>`` for one not
-    named ``token``), the person's step; for a secret setting, ``config set
+    named ``token``); for a secret setting, ``config set
     <section>.<field> --prompt``. Outside a run, or for a model no composed
     plugin owns, there is no section to name, so the error has no hint. The
     ``cause``'s details (``status``, ``url``) are kept.
@@ -533,7 +533,6 @@ def rejected_token_error(
         system=section,
         hint=run_hint(command),
         details=details,
-        fix_by="user" if credential else None,
     )
 
 
@@ -740,7 +739,6 @@ def _refuse_folder_transport(
             f"{leaves[bundle]} sets untaped.http.ca_bundle_path; untaped won't send a credential "
             "under a trust setting a folder chose",
             system=section,
-            fix_by="user",
         )
     proxy = ("untaped", "http", "proxy")
     if proxy in leaves and http.proxy and not (verified and base.startswith("https://")):
@@ -749,7 +747,6 @@ def _refuse_folder_transport(
             f"and this {section} request isn't verified https; "
             "untaped won't send a credential through a folder's proxy without it",
             system=section,
-            fix_by="user",
         )
 
 

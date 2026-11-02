@@ -164,7 +164,6 @@ def test_a_rejected_credential_names_its_own_auth_login() -> None:
         error = rejected_token_error(Service(Duo), "rejected", cause=cause, field="webhook_secret")
         plain = rejected_token_error(Service(Duo), "rejected")
     assert error.hint == "run `untaped auth login acme webhook_secret`"
-    assert error.fix_by == "user"
     assert plain.hint == "run `untaped auth login acme`"
 
 

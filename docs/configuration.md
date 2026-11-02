@@ -342,8 +342,8 @@ A plugin's token for a server comes from the first of these that has one:
    [environment table](./reference/environment.md#untaped) lists them
    (`GH_TOKEN`, `JIRA_API_TOKEN`, `CONTROLLER_OAUTH_TOKEN`, …).
 
-With none, a command exits 4 naming `untaped auth login <plugin>`: logging in
-and setting a token variable are the person's steps, never an agent's.
+With none, a command exits 4 naming `untaped auth login <plugin>`, which asks
+for the token without echo.
 
 A token command (`--token-command`) is an argv list, run without a shell, at
 most once per process and only when a command first needs the token. It runs

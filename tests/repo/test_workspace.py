@@ -61,6 +61,7 @@ def test_root_config_lists_every_package() -> None:
         "scripts/check_pr.py",
         "scripts/gen_config_reference.py",
         "scripts/release.py",
+        "scripts/upgrade_smoke.py",
     ]
     # This repository's own lint rules (.untaped/lint) are type-checked like shipped code.
     assert sorted(config["tool"]["mypy"]["files"]) == sorted([*src, *scripts, ".untaped/lint"])

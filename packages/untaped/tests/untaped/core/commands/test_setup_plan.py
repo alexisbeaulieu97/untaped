@@ -1,8 +1,8 @@
-"""``untaped setup plan``: a profile's remaining setup steps as rows an agent acts on.
+"""``untaped setup plan``: a profile's remaining setup steps as rows a script acts on.
 
 Every ``run`` is a complete argv (``--profile`` first, ``<NAME>``
-placeholders), every step that asks for or reveals a secret is ``by:
-user``, and the online rows are the plugins' own online doctor checks.
+placeholders), every step that takes a secret says ``secret: true``, and
+the online rows are the plugins' own online doctor checks.
 """
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 import yaml
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from core_test_support.commands.stores import install_fake_stores
 from core_test_support.commands.support import (
@@ -27,10 +27,9 @@ from core_test_support.commands.support import (
     wiz_api,
     write_config,
 )
-from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
 from untaped.sdk import Plugin, key
-from untaped.sdk.health import Suggest
+from untaped.sdk.health import NeedsSetup, Suggest
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.storage import Dir
@@ -152,7 +151,7 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         "state": "done",
         "detail": "profile default exists",
         "run": [],
-        "by": "agent",
+        "secret": False,
     }
     assert _step(rows, "wiz.server") | {"detail": ""} == {
         "step": "wiz.server",
@@ -160,17 +159,17 @@ def test_an_empty_config_lists_every_step_with_its_command() -> None:
         "state": "todo",
         "detail": "",
         "run": ["--profile", "default", "config", "set", "wiz.server.url", "<URL>"],
-        "by": "agent",
+        "secret": False,
     }
     token = _step(rows, "wiz.token")
-    assert (token["state"], token["by"]) == ("todo", "user")
+    assert (token["state"], token["secret"]) == ("todo", True)
     assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
     assert _step(rows, "wiz.online.api")["state"] == "skipped"
 
 
 def test_the_first_step_registers_this_install() -> None:
     install = _step(_plan(), "install")
-    assert (install["state"], install["by"], install["plugin"]) == ("todo", "agent", "untaped")
+    assert (install["state"], install["secret"], install["plugin"]) == ("todo", False, "untaped")
     assert install["run"] == ["--profile", "default", "setup", "register"]
     assert "so cleanup keeps the store layouts it uses" in install["detail"]
 
@@ -196,7 +195,7 @@ def test_the_token_step_is_auth_login_with_or_without_a_password_store(
         install_fake_stores(tmp_path, monkeypatch, *stores)
         token = _step(_plan(), "wiz.token")
         assert token["run"] == ["--profile", "default", "auth", "login", "wiz"]
-        assert (token["state"], token["by"]) == ("todo", "user")
+        assert (token["state"], token["secret"]) == ("todo", True)
         assert token["detail"] == "no wiz token for this run's wiz settings"
 
 
@@ -224,7 +223,7 @@ def test_a_token_outside_the_config_is_done(
         "state": "done",
         "detail": "url=https://wiz",
         "run": [],
-        "by": "agent",
+        "secret": False,
     }
     token = _step(rows, "wiz.token")
     assert (token["state"], token["run"]) == ("done", [])
@@ -293,7 +292,7 @@ def test_a_failed_online_check_carries_its_fix(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     FAIL.append(True)
     online = _step(_plan("--online"), "wiz.online.api")
-    assert (online["state"], online["by"]) == ("failed", "user")
+    assert (online["state"], online["secret"]) == ("failed", True)
     assert online["run"] == ["--profile", "default", "auth", "login", "wiz"]
 
 
@@ -314,10 +313,10 @@ def test_check_exits_3_while_a_step_is_pending(_isolated_config: Path) -> None:
     assert _cli("setup", "plan", "--check", "--online", "--format", "json").exit_code == 3
 
 
-def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
+def test_running_the_steps_without_a_secret_completes_them(_isolated_config: Path) -> None:
     values = {"<URL>": "https://wiz.example"}
     for row in _plan():
-        if row["state"] == "todo" and row["by"] == "agent":
+        if row["state"] == "todo" and not row["secret"]:
             argv = [values.get(arg, arg) for arg in row["run"]]
             assert _cli(*argv).exit_code == 0
     assert _step(_plan(), "wiz.server") | {"run": []} == {
@@ -326,7 +325,7 @@ def test_running_the_agent_steps_completes_them(_isolated_config: Path) -> None:
         "state": "done",
         "detail": "url=https://wiz.example",
         "run": [],
-        "by": "agent",
+        "secret": False,
     }
 
 
@@ -393,20 +392,50 @@ def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(
-    ("run", "by"),
+    ("fix", "secret"),
     [
-        (["--profile", "auth", "config", "set", "wiz.server.url", "<URL>"], "agent"),
-        (["--profile", "work", "auth", "login", "wiz"], "user"),
-        (["auth", "login", "keyed", "api_key"], "user"),
+        (["--profile", "auth", "config", "set", "wiz.server.url", "<URL>"], False),
+        (["--profile", "work", "auth", "login", "wiz"], True),
+        (["auth", "login", "keyed", "api_key"], True),
     ],
 )
-def test_who_runs_a_manual_fix_depends_on_its_command(run: list[str], by: str) -> None:
-    assert setup_plan._by(run, automatic=False) == by
+def test_whether_a_manual_fix_takes_a_secret_depends_on_its_command(
+    _isolated_config: Path, fix: list[str], secret: bool
+) -> None:
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(id="wiz.api", ok=False, detail="no", fix=fix)
+
+    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    wiz = make_plugin("wiz", settings=WizProfile, api=check)
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
+    online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
+    assert (online["state"], online["secret"]) == ("failed", secret)
 
 
-@pytest.mark.parametrize(("automatic", "by"), [(True, "agent"), (False, "user")])
-def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
-    _isolated_config: Path, automatic: bool, by: str
+class PinProfile(BaseModel):
+    """A plugin needing a ``SecretStr`` it does not mark ``Secret`` (section ``pin``)."""
+
+    pin: Annotated[SecretStr | None, NeedsSetup] = None
+
+
+def test_a_failed_check_whose_fix_sets_a_masked_value_takes_a_secret(
+    _isolated_config: Path,
+) -> None:
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(
+            id="pin.api", ok=False, detail="rejected", fix="config set pin.pin <PIN>"
+        )
+
+    check = DoctorCheck(title="pin API reachable", run=run, online=True)
+    pin = make_plugin("pin", settings=PinProfile, api=check)
+    write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
+    online = _step(_plan("--online", specs=(pin,)), "pin.online.api")
+    assert (online["state"], online["secret"]) == ("failed", True)
+
+
+@pytest.mark.parametrize(("automatic", "secret"), [(True, False), (False, True)])
+def test_an_online_rows_secret_follows_the_doctor_rows_automatic(
+    _isolated_config: Path, automatic: bool, secret: bool
 ) -> None:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(
@@ -417,12 +446,12 @@ def test_an_online_rows_runner_follows_the_doctor_rows_automatic(
     wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
-    assert (online["state"], online["by"]) == ("failed", by)
+    assert (online["state"], online["secret"]) == ("failed", secret)
     assert online["run"] == ["--profile", "default", "auth", "login", "wiz"]
 
 
 @pytest.mark.parametrize("spelling", [["--profile", "default"], ["--profile=default"]])
-def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
+def test_a_fix_that_sets_a_token_takes_a_secret_however_it_names_the_profile(
     _isolated_config: Path, spelling: list[str]
 ) -> None:
     def run(_ctx: PluginContext) -> DoctorResult:
@@ -434,7 +463,7 @@ def test_a_fix_that_sets_a_token_is_the_users_however_it_names_the_profile(
     wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
-    assert (online["state"], online["by"]) == ("failed", "user")
+    assert (online["state"], online["secret"]) == ("failed", True)
 
 
 _VALUES = {

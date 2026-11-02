@@ -1,16 +1,15 @@
-"""``untaped setup plan``: what a profile still needs, as rows an agent can act on.
+"""``untaped setup plan``: what a profile still needs, as rows a script can act on.
 
 Read-only and non-interactive. One ``untaped.setup_step`` row per step, in
 order: this install's registration (``untaped setup register``), the
 profile itself, then each service's marked fields (or its invalid
 settings), then (with ``--online``) each online check. A row's
 ``run`` is the complete argv to run after ``untaped`` (a ``<NAME>`` token
-is a value to ask the user for); ``by`` says who runs it, read from the
-marks: ``user`` for a step that asks for or reveals a declared
-credential's secret, so a secret never passes through an agent. Service
-state comes from :mod:`untaped.core.commands.setup_state` (shared with the
-setup screen) and the online rows are the plugins' own online doctor
-checks.
+is a value to supply); ``secret`` says whether the step takes a secret,
+read from the marks: a declared credential's login, or a secret or masked
+setting. Service state comes from :mod:`untaped.core.commands.setup_state`
+(shared with the setup screen) and the online rows are the plugins' own
+online doctor checks.
 """
 
 from __future__ import annotations
@@ -19,7 +18,7 @@ import shlex
 from typing import TYPE_CHECKING
 
 from untaped.core.commands.doctor import run_line
-from untaped.core.commands.records import SetupActor, SetupState, SetupStep
+from untaped.core.commands.records import SetupState, SetupStep
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_state import (
     ServiceState,
@@ -102,7 +101,7 @@ def _row(
     detail: str,
     run: list[str] | None = None,
     *,
-    by: SetupActor = "agent",
+    secret: bool = False,
 ) -> Row:
     return {
         "step": step,
@@ -110,7 +109,7 @@ def _row(
         "state": state,
         "detail": detail,
         "run": run or [],
-        "by": by,
+        "secret": secret,
     }
 
 
@@ -166,10 +165,8 @@ def _service_rows(plugin: ComposedPlugin, state: ServiceState, profile: str) -> 
             rows.append(_row(step, name, "done", _done(field, state)))
         else:
             run = command_argv(set_command(field, marks, section=section), profile=profile)
-            # A secret never passes through an agent, declared or not.
-            by: SetupActor = "user" if field.is_secret or field.masked else "agent"
             detail = f"{section}.{field.key} is not set"
-            rows.append(_row(step, name, "todo", detail, run, by=by))
+            rows.append(_row(step, name, "todo", detail, run, secret=field.masked))
     return rows
 
 
@@ -182,7 +179,7 @@ def _done(field: MarkedField, state: ServiceState) -> str:
 
 
 def _login_row(plugin: ComposedPlugin, field: MarkedField, profile: str) -> Row:
-    """A credential's step: ``auth login``, the person's, with its ``suggest`` when on PATH."""
+    """A credential's step: ``auth login``, with its ``suggest`` when on PATH."""
     credential = field.credential
     assert credential is not None
     name = plugin.name
@@ -198,7 +195,7 @@ def _login_row(plugin: ComposedPlugin, field: MarkedField, profile: str) -> Row:
         detail = f"{detail}; or, {when}let `{shlex.join(suggest.argv)}` print it: " + (
             f"`{command_line(shlex.join(command))}`"
         )
-    return _row(f"{name}.{field.key}", name, "todo", detail, run, by="user")
+    return _row(f"{name}.{field.key}", name, "todo", detail, run, secret=True)
 
 
 def _online_rows(
@@ -229,18 +226,25 @@ def _failed_check(plugin: ComposedPlugin, step: str, row: Row) -> Row:
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None
-    by = _by(run, automatic=row.get("automatic") is True)
-    return _row(step, name, "failed", detail, run, by=by)
+    secret = _takes_secret(plugin, run, automatic=row.get("automatic") is True)
+    return _row(step, name, "failed", detail, run, secret=secret)
 
 
-def _by(run: list[str] | None, *, automatic: bool) -> SetupActor:
-    """Who runs a fix: an automatic one is the agent's, any other ``auth …`` the user's.
+def _takes_secret(plugin: ComposedPlugin, run: list[str] | None, *, automatic: bool) -> bool:
+    """Whether a fix takes a secret: ``auth …``, or the command that sets a masked field.
 
-    Only ``auth`` writes a secret, and it asks for it.
+    No automatic fix asks for or prints a secret.
     """
     if automatic:
-        return "agent"
-    return "user" if split_profile(run or [])[1][:1] == ["auth"] else "agent"
+        return False
+    command = split_profile(run or [])[1]
+    if command[:1] == ["auth"]:
+        return True
+    marks = service_marks(plugin)
+    return any(
+        field.masked and set_command(field, marks, section=plugin.name) == command
+        for field in marks.required
+    )
 
 
 __all__ = ["emit_plan", "pending", "plan_rows"]
