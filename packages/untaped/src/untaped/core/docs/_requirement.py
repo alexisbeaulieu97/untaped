@@ -27,7 +27,8 @@ from untaped.sdk.projects import find_root, nearest_pyproject
 from untaped.sdk.words import shown_path
 
 _UNTAPED = "untaped"
-_FIRST_WITH_PROJECTS = Version("12")
+#: The first untaped that reads projects, its earliest pre-release included.
+_FIRST_WITH_PROJECTS = Version("12.0.0.dev0")
 
 
 @dataclass(frozen=True)

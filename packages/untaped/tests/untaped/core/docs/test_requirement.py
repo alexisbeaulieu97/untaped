@@ -159,6 +159,11 @@ def test_the_walk_never_climbs_above_both_roots(tmp_path: Path) -> None:
         ("untaped~=12.0", True),
         ("untaped", True),
         ("untaped<12; python_version < '3'", True),
+        ("untaped==12.0.0a1", True),
+        ("untaped===12.0.0a1", True),
+        ("untaped==12.0.0.dev3", True),
+        ("untaped<=12.0.0rc1", True),
+        ("untaped<12.0.0.dev0", False),
     ],
 )
 def test_a_requirement_admits_projects_when_some_version_from_12_meets_it(

@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import Field
 
@@ -57,7 +58,7 @@ from untaped.sdk.health.deprecated_keys import (
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import current_project
-from untaped.sdk.words import plural, run_hint
+from untaped.sdk.words import plural, run_hint, shown_path
 
 
 @dataclass(frozen=True)
@@ -235,7 +236,29 @@ def _repository(project: bool) -> SettingsFileRepository:
             "--project writes the project's file, and --profile names a profile; pick one",
             hint="leave out --profile to write the project's .untaped/config.yml",
         )
-    return SettingsFileRepository(project=current_project())
+    here = current_project()
+    _refuse_ignored(here.root)
+    return SettingsFileRepository(project=here)
+
+
+def _refuse_ignored(root: Path) -> None:
+    """Refuse (exit 4) a write to a project file runs here would ignore."""
+    from untaped.runtime.folder_layer import project_config_path, untrusted  # noqa: PLC0415
+    from untaped.sdk.projects import recorded_here  # noqa: PLC0415
+
+    file = project_config_path(root)
+    reason = recorded_here(root)
+    if reason is not None:
+        raise ConfigError(
+            f"runs here would ignore {shown_path(file)}: {reason}",
+            hint=f"make the folder this home's project first: `untaped project init {root}`",
+        )
+    why = untrusted(file) if file.exists() else None
+    if why is not None:
+        raise ConfigError(
+            f"runs here would ignore {shown_path(file)}: {why}",
+            hint=f"make it yours and writable by you alone: `chmod go-w {file} {file.parent}`",
+        )
 
 
 class Set(Command[CoreSettings]):

@@ -95,6 +95,7 @@ from untaped.sdk.words import (
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
+    from untaped.runtime.folder_layer import FolderLayer
     from untaped.sdk.projects import Project
     from untaped.sdk.storage._refs import Reference, RefHolder
     from untaped.sdk.storage.store import Layout, Store
@@ -851,6 +852,8 @@ def _project_config_row() -> dict[str, object] | None:
     title = "load project config file"
     try:
         layer = folder_layer()
+        if layer is not None:
+            _check_project_values(layer)
     except ConfigError as exc:
         detail = str(exc) if exc.hint is None else f"{exc}; {exc.hint}"
         return _row("config", NAME, _FAIL, title, f"{detail} (the rows below leave it out)")
@@ -860,6 +863,32 @@ def _project_config_row() -> dict[str, object] | None:
     if note is not None:
         return _row("config", NAME, _WARN, title, note)
     return _row("config", NAME, _PASS, title, str(layer.file))
+
+
+def _check_project_values(layer: FolderLayer) -> None:
+    """Refuse (:class:`ConfigError`) what the project's file may not set or sets wrong.
+
+    Each section it sets is validated as a run inside the project with no
+    pick of its own reads it: the base, the project's picks, its values.
+    """
+    from pydantic import ValidationError  # noqa: PLC0415 - only for a project
+
+    from untaped.runtime.settings import (  # noqa: PLC0415
+        get_settings_model,
+        validate_settings_section,
+    )
+    from untaped.sdk.errors import first_validation_error  # noqa: PLC0415
+
+    effective = active_settings_layout().project_effective(read_config_dict(), layer)
+    model = get_settings_model()
+    for section in sorted(set(layer.sections) & set(model.model_fields)):
+        try:
+            validate_settings_section(effective, section, model)
+        except ValidationError as exc:
+            raise ConfigError(
+                f"invalid config section {section!r} in {shown_path(layer.file)}: "
+                f"{first_validation_error(exc)}"
+            ) from exc
 
 
 def _profile_row(settings_error: str | None) -> dict[str, object]:

@@ -343,3 +343,38 @@ def test_group_write_is_trusted_only_for_your_private_group(
 ) -> None:
     _accounts(monkeypatch, group, members, primary)
     assert folder_layer_module._private_group(1000, 1000) is private
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX permissions")
+def test_a_chmod_alone_makes_the_file_read_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch, "demo: {org: Platform}\n")
+    file = root / ".untaped" / "config.yml"
+    file.chmod(0o666)
+    assert _demo_now().org == "home-org"
+    file.chmod(0o600)  # same content, size and mtime: only the inode's ctime moves
+    assert _demo_now().org == "Platform"
+
+
+def test_a_moved_project_s_file_is_still_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch, "demo: {org: Platform}\n")
+    moved = root.rename(tmp_path / "PROJ-123-moved")
+    monkeypatch.chdir(moved)
+    forget_folder_layer()
+    assert _demo_now().org == "Platform"
+
+
+def test_a_run_that_leaves_the_folder_out_reads_no_layer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.runtime.run import child_run
+
+    _project(tmp_path, monkeypatch, "demo: {org: Platform}\n")
+    with entered(start_run()):
+        assert folder_layer() is not None
+        with child_run(folder=False):
+            assert folder_layer() is None
+            assert load_settings_section("demo").org == "home-org"

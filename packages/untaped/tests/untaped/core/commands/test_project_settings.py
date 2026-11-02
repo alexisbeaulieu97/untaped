@@ -7,6 +7,7 @@ The layer itself (order, refusals, trust) is tested in
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -245,3 +246,63 @@ def test_config_set_project_keeps_the_rest_of_a_nested_value(
     result = _cli("config", "set", "untaped.ui.border", "none", "--project")
     assert result.exit_code == 0, result.output
     assert _file(root)["untaped"] == {"ui": {"theme": "plain", "border": "none"}}
+
+
+def test_doctor_fails_the_projects_row_for_a_value_it_may_not_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(tmp_path, monkeypatch, "github: {token: abc}\n")
+    rows = _doctor()
+    assert rows[0]["status"] == "fail"
+    assert all(row["status"] != "fail" for row in rows[1:])  # the rest ran without it
+
+
+def test_doctor_names_the_projects_file_for_an_invalid_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch, "untaped: {http: {timeout_seconds: nope}}\n")
+    row = _doctor()[0]
+    assert row["status"] == "fail"
+    assert str(root / ".untaped" / "config.yml") in str(row["detail"])
+
+
+def test_a_settings_error_names_the_projects_file_when_it_set_the_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from untaped.runtime.run import entered, start_run
+    from untaped.runtime.settings import load_core_part
+    from untaped.sdk.errors import ConfigError
+
+    root = _project(tmp_path, monkeypatch, "untaped: {http: {timeout_seconds: nope}}\n")
+    with entered(start_run()), pytest.raises(ConfigError) as refused:
+        load_core_part("http")
+    assert f"in {root / '.untaped' / 'config.yml'}" in str(refused.value)
+
+
+def test_config_set_project_refuses_a_file_runs_would_ignore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch)
+    copy = tmp_path / "copy"
+    shutil.copytree(root, copy)
+    monkeypatch.chdir(copy)
+    forget_folder_layer()
+    result = _cli("config", "set", "untaped.http.timeout_seconds", "90", "--project")
+    assert result.exit_code == 4, result.output
+    assert "runs here would ignore" in result.stderr
+    assert "project init" in result.stderr
+    assert not (copy / ".untaped" / "config.yml").exists()
+
+
+def test_a_project_write_is_not_hidden_by_the_projects_own_pick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """staging sets the key too, but a project's picks sit beneath its own values."""
+    _project(tmp_path, monkeypatch, "profile: staging\n")
+    result = _cli("config", "set", "untaped.http.timeout_seconds", "60", "--project")
+    assert result.exit_code == 0, result.output
+    assert "still reads" not in result.stderr
+    monkeypatch.setenv("UNTAPED_PROFILE", "staging")  # the terminal's pick does hide it
+    hidden = _cli("config", "set", "untaped.http.timeout_seconds", "61", "--project")
+    assert hidden.exit_code == 0, hidden.output
+    assert "from profile staging, picked over the project's file" in hidden.stderr

@@ -135,8 +135,10 @@ $ untaped config get awx.default_organization -f json
   repository's committed `.untaped/` is never read until you run
   `project init` there (until then it is ignored with one warning). It is read
   only when it and `.untaped/` are yours and nobody else can write them (your
-  private group may); otherwise it is ignored with one warning. `doctor`
-  reports a file it can't read, and checks the rest without it.
+  private group may, when the system lists its users); otherwise it is ignored
+  with one warning, and `config set --project` refuses to write it. `doctor`
+  reports a file it can't read or that sets what it may not, and checks the
+  rest without it.
 - An untaped older than 12.0 ignores the file, `profile:` included, and runs
   against the home's active profile. When the project's `pyproject.toml` pins
   only such versions, `doctor` and every `untaped docs` page warn.

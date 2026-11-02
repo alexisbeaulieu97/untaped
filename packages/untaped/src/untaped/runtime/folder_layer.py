@@ -46,6 +46,7 @@ from untaped.runtime.settings import (
     resolve_config_path,
 )
 from untaped.runtime.sink import Diagnostics
+from untaped.sdk._run import run_or_none
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX
 from untaped.sdk.projects import DIRECTORY, MARKER, find_root, recorded_here
@@ -109,9 +110,14 @@ def folder_layer() -> FolderLayer | None:
     """The folder layer of the project the working directory is in; ``None`` without one.
 
     ``None`` too outside a project, when the project has no ``config.yml``,
-    and when the file is ignored for being writable by others. Raises
-    :class:`ConfigError` (exit 4) for a file that can't be read.
+    when the file is ignored (not this home's project, or writable by
+    others), and in a run that leaves the folder out (``Run.folder``, as
+    ``setup`` does). Raises :class:`ConfigError` (exit 4) for a file that
+    can't be read.
     """
+    run = run_or_none()
+    if run is not None and not run.folder:
+        return None
     try:
         root = find_root(Path.cwd())
     except OSError:  # the working directory is gone
@@ -281,7 +287,9 @@ def _private_group(gid: int, uid: int) -> bool:
     """Whether group ``gid`` is ``uid``'s private group: named after them, nobody else in it.
 
     Nobody else: no other member listed, and no other user whose primary
-    group it is (primary groups aren't listed as members).
+    group it is (primary groups aren't listed as members). Only the users
+    the system lists are seen: a directory (LDAP, sssd) that doesn't
+    enumerate its users can hide one, so keep group write off there.
     """
     try:
         import grp  # noqa: PLC0415 - POSIX only, and only for a group-writable file

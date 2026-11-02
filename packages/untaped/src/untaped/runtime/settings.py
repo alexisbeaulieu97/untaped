@@ -11,7 +11,7 @@ import json
 import os
 import re
 import weakref
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import cache, lru_cache
 from pathlib import Path
@@ -47,7 +47,7 @@ from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConf
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
 from untaped.sdk._run import SECTION_OF, current_overlay
-from untaped.sdk.errors import ConfigError, first_validation_error
+from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
     Renamed,
@@ -1146,12 +1146,33 @@ def settings_error_message(exc: ValidationError, settings_cls: type[BaseModel]) 
     env_var = _env_culprit(exc, settings_cls)
     if env_var is not None:
         return f"invalid value in environment variable {env_var}: {detail}"
-    path = resolve_config_path()
     errors = exc.errors()
     loc = errors[0].get("loc", ()) if errors else ()
+    path = _file_of([part for part in loc if isinstance(part, str)])
     if loc and isinstance(loc[0], str):
         return f"invalid config section {loc[0]!r} in {path}: {detail}"
     return f"invalid config in {path}: {detail}"
+
+
+def _file_of(loc: Sequence[str]) -> Path:
+    """The config file the value at ``loc`` came from: the project's when it set it."""
+    from untaped.runtime.config_file import read_config_dict  # noqa: PLC0415
+    from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - imports this module
+    from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX  # noqa: PLC0415
+
+    home = resolve_config_path()
+    try:
+        layer = folder_layer()
+        if layer is None or not loc:
+            return home
+        provenance = active_settings_layout().resolve(read_config_dict()).provenance
+    except UntapedError, OSError:
+        return home
+    for depth in range(len(loc), 0, -1):
+        source = provenance.get(tuple(loc[:depth]))
+        if source is not None:
+            return layer.file if str(source).startswith(FOLDER_SOURCE_PREFIX) else home
+    return home
 
 
 def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | None:

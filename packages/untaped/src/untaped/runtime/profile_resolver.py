@@ -130,8 +130,7 @@ def run_layers() -> tuple[tuple[Picked, ...], FolderLayer | None]:
     """
     from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - it imports this
 
-    run = run_or_none()
-    folder = folder_layer() if run is None or run.folder else None
+    folder = folder_layer()
     env, flag = _run_picks()
     if flag == (DEFAULT_PROFILE,):
         return (), folder
