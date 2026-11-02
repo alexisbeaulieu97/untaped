@@ -6,7 +6,7 @@
 2.29 or newer (`untaped doctor` checks Git's version).
 
 ```bash
-uv tool install --compile-bytecode 'untaped[all]'   # or 'untaped[<name>]' for one plugin, e.g. 'untaped[awx]'
+uv tool install --compile-bytecode 'untaped[all]'   # or 'untaped[<name>]'
 untaped --version
 untaped --help
 ```
@@ -109,8 +109,9 @@ as yours to run, so a token never passes through the agent. Paste this into your
 ```text
 Install untaped with `uv tool install --compile-bytecode 'untaped[all]'`,
 then install its agent skills with
-`untaped skills install --all --target codex` (or `claude`). Read `untaped docs`, then `untaped docs untaped commands setup plan`,
-and set up a profile with me: run the steps that are yours and hand me the
+`untaped skills install --all --target codex` (or `claude`). Read
+`untaped docs`, then `untaped docs untaped commands setup plan`, and set up a
+profile with me: run the steps that are yours and hand me the
 ones that ask for a token.
 ```
 
