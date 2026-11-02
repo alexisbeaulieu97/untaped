@@ -193,6 +193,14 @@ def test_attributes_are_read_only_on_a_name_bound_to_one_module(site: Path) -> N
 
                 shelf.patched = 1
                 use = api.kept
+
+                def other(): ...
+
+                def typed[shelf](x: shelf) -> shelf: ...
+
+                match use:
+                    case {"x": other}:
+                        other.size
                 """,
         },
     )
@@ -248,6 +256,14 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
                 except ImportError as exc:
                     print(exc)
                     raise RuntimeError("needs a newer untaped") from exc
+
+                def load(optional):
+                    try:
+                        from untaped.sdk import optional_name
+                    except ImportError:
+                        if optional:
+                            return None
+                        raise
                 """,
         },
     )
@@ -256,6 +272,7 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
         ("untaped.sdk.logged", 18, False, False),
         ("untaped.sdk.needed", 14, False, False),
         ("untaped.sdk.newer", 6, True, False),
+        ("untaped.sdk.optional_name", 25, True, False),
         ("untaped.sdk.strict", 8, False, False),
         ("untaped.sdk.thirteen", 10, True, False),
         ("untaped.sdk.twelve", 12, True, False),

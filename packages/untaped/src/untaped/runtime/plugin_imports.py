@@ -286,18 +286,29 @@ def _suppresses_imports(context: ast.expr) -> bool:
     return name == "suppress" and any(_catches_imports(each) for each in context.args)
 
 
+#: Statements that always pass control to the next one.
+_STRAIGHT = (ast.Expr, ast.Assign, ast.AnnAssign, ast.AugAssign, ast.Pass)
+
+
 def _handles(handler: ast.ExceptHandler) -> bool:
-    """Whether ``handler`` catches a failed import and doesn't raise again."""
-    raises = any(isinstance(statement, ast.Raise) for statement in handler.body)
-    return _catches_imports(handler.type) and not raises
+    """Whether ``handler`` catches a failed import and may carry on.
+
+    One that always raises again (straight-line statements, then ``raise``)
+    is no guard; any other shape may handle the name being missing.
+    """
+    *before, last = handler.body
+    always_raises = isinstance(last, ast.Raise) and all(
+        isinstance(statement, _STRAIGHT) for statement in before
+    )
+    return _catches_imports(handler.type) and not always_raises
 
 
 def _rebound(tree: ast.Module) -> frozenset[str]:
     """Names ``tree`` binds other than by one import: an attribute on them may not be a module's.
 
     Anywhere in the file, whatever the scope: a parameter, an assignment or
-    loop target, an ``except ... as``, a ``def`` or ``class``, a ``match``
-    capture, a ``global`` or ``nonlocal``, or imports binding it to two
+    loop target, an ``except ... as``, a ``def`` or ``class``, a type
+    parameter, a ``match`` capture, a ``global`` or ``nonlocal``, or imports binding it to two
     different things. Over-counting only skips a check.
     """
     found: set[str] = set()
@@ -325,6 +336,8 @@ def _binds(node: ast.AST) -> tuple[str, ...]:
         case ast.arg(arg=name):
             return (name,)
         case ast.FunctionDef(name=name) | ast.AsyncFunctionDef(name=name) | ast.ClassDef(name=name):
+            return (name,)
+        case ast.TypeVar(name=name) | ast.ParamSpec(name=name) | ast.TypeVarTuple(name=name):
             return (name,)
         case (
             ast.ExceptHandler(name=str() as name)
