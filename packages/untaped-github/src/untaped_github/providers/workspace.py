@@ -13,7 +13,7 @@ or names another repo than ``full_name``, is refused.
 
 from __future__ import annotations
 
-from untaped.sdk import UsageError, key, run_hint
+from untaped.sdk import UsageError, key, kind_of, run_hint, setting_name
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_git.api import store_key
 from untaped_github.application.inventory import (
@@ -55,9 +55,11 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
         else:
             url = item.clone_url or f"https://{host}/{item.full_name}.git"
         if store_key(url) != store_key(f"https://{host}/{item.full_name}.git"):
+            server = setting_name(key(GithubSettings).server.url)
+            what = f"{kind_of(Repo)} {item.full_name}"
             raise UsageError(
-                f"github.repo {item.full_name}: its URL {url} is not {item.full_name} on {host}",
-                hint="pipe rows from the github profile whose github.server.url lists this repo",
+                f"{what}: its URL {url} is not {item.full_name} on {host}",
+                hint=f"pipe rows from the profile whose {server} lists this repo",
             )
         return WorkspaceRepo(
             name=item.full_name,
