@@ -13,9 +13,9 @@ import os
 from pathlib import Path
 
 from untaped.sdk import attribution
-from untaped.sdk.git import GitCommandError, GitResult, run_git
 from untaped_dotfiles.errors import DotfilesError, GitError
 from untaped_dotfiles.models import TreeFile
+from untaped_git.api import GitCommandError, GitResult, run_git
 
 
 class GitRefTree:

@@ -1,8 +1,18 @@
-"""What a git command reaching a host gets: its credential and untaped's proxy, scoped to it."""
+"""What a git command reaching a host gets: its credential and untaped's proxy, scoped to it.
+
+The one home for git auth: the settings a credential becomes
+(:func:`host_config`), and how ``run_git`` hands settings that carry a secret
+to git (:func:`auth_include`, a private file never in argv or the
+environment, with :func:`drop_traces` so git's trace output can't log them).
+"""
 
 from __future__ import annotations
 
 import base64
+import os
+import tempfile
+from collections.abc import Iterator, Mapping, MutableMapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from untaped.sdk import http_of
@@ -48,3 +58,48 @@ def basic_header(username: str, password: object) -> str:
     secret = getattr(password, "get_secret_value", lambda: str(password))()
     token = base64.b64encode(f"{username}:{secret}".encode()).decode()
     return f"AUTHORIZATION: basic {token}"
+
+
+@contextmanager
+def auth_include(settings: Mapping[str, str] | None) -> Iterator[Path | None]:
+    """Write ``settings`` (``section[.subsection].name`` → value) to a private include file.
+
+    The values never appear in argv or the environment, only in this 0600
+    file, which is deleted on exit. No settings: no file, and ``None``.
+    """
+    if not settings:
+        yield None
+        return
+    handle, name = tempfile.mkstemp(prefix="untaped-git-auth-", suffix=".config")
+    path = Path(name)
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as config:
+            config.writelines(_config_entry(key, value) for key, value in settings.items())
+        yield path
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def drop_traces(env: MutableMapping[str, str]) -> None:
+    """Remove the variables whose git/curl trace output could log an injected header."""
+    for key in [key for key in env if is_trace_variable(key)]:
+        del env[key]
+
+
+def is_trace_variable(name: str) -> bool:
+    """Whether ``name`` turns on git or curl trace output."""
+    return name.startswith("GIT_TRACE") or name == "GIT_CURL_VERBOSE"
+
+
+def _config_entry(key: str, value: str) -> str:
+    """One ``key = value`` as a git config file section, value quoted."""
+    section, _, rest = key.partition(".")
+    subsection, _, name = rest.rpartition(".")
+    if not section or not name or "\n" in key or "\n" in value:
+        raise ValueError(f"not a git config key and one-line value: {key!r}")
+    header = f"[{section}]" if not subsection else f'[{section} "{_quoted(subsection)}"]'
+    return f'{header}\n\t{name} = "{_quoted(value)}"\n'
+
+
+def _quoted(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')

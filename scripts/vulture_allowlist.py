@@ -58,7 +58,7 @@ AnchorId.ino  # compared whole: a folder's filesystem identity
 RepoStore.delete_refs
 RepoStore.worktrees_under  # workspace releases a missing project's worktrees (#773)
 
-# untaped.sdk.testing.git: fixtures for plugins that test against the repo store.
+# untaped_git.testing: fixtures for plugins that test against the repo store.
 GitRemote.delete_branch
 GitRemote.refuse_by_oid
 GitRemote.drop_pack

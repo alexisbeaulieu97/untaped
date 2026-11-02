@@ -8,7 +8,7 @@ from pathlib import Path
 
 from untaped.sdk import home
 from untaped.sdk.testing import install
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.domain.models import RepoKey
 from untaped_workspace.plugin import WorkspacePlugin
 from workspace_test_support import err, git, run, store_repo, stored

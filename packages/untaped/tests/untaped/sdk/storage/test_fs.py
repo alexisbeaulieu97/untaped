@@ -10,6 +10,7 @@ import pytest
 
 import untaped.sdk.storage._fs as fs_module
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.storage import safe_path_segment
 from untaped.sdk.storage._fs import (
     atomic_write,
     dir_bytes,
@@ -371,3 +372,26 @@ def test_dir_bytes_counts_files_and_tolerates_what_is_missing(tmp_path: Path) ->
     assert dir_bytes(tmp_path / "d") == 4
     assert dir_bytes(tmp_path / "file") == 2
     assert dir_bytes(tmp_path / "missing") == 0
+
+
+# ── path segments ────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("acme/api", "acme_api"), ("..", "_"), (".", "_"), ("", "_"), ("v1.2-rc_3", "v1.2-rc_3")],
+)
+def test_safe_path_segment(value: str, expected: str) -> None:
+    assert safe_path_segment(value) == expected
+
+
+def test_safe_path_segment_is_one_name_for_both_unicode_spellings() -> None:
+    composed, decomposed = "caf\u00e9", "cafe\u0301"
+    assert safe_path_segment(decomposed) == safe_path_segment(composed) == composed
+
+
+def test_a_long_segment_keeps_a_prefix_and_a_hash_within_the_limit() -> None:
+    first, second = "é" * 100 + "a", "é" * 100 + "b"
+    short, other = safe_path_segment(first), safe_path_segment(second)
+    assert short != other and len(short.encode()) <= 128 and len(other.encode()) <= 128
+    assert short.startswith("é" * 50) and safe_path_segment("x" * 128) == "x" * 128

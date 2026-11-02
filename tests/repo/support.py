@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, NoReturn
 import pytest
 from release import baseline_tag  # scripts/release.py
 
-from untaped.sdk.git import run_git
+from untaped_git.api import run_git
 
 if TYPE_CHECKING:
     from untaped.sdk._run import Composition

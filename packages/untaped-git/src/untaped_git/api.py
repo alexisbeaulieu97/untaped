@@ -5,6 +5,9 @@ shared by plugins, each in its own ref namespace); ``GitHost`` is the
 contract a forge plugin fills to supply credentials and a proxy for its host;
 ``ls_remote`` and ``default_branch`` query a remote with those credentials;
 ``check_names`` says why a branch or tag name is one the store refuses.
+``run_git`` runs any other git command the hardened way (no prompts, secrets
+kept out of argv, failures as :class:`GitCommandError`), and
+``git_toplevel`` finds a work tree's root.
 The closed :data:`__all__` keeps the boundary explicit.
 """
 
@@ -18,13 +21,16 @@ from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.namespace import check_names
 from untaped_git.records import TreeEntry
 from untaped_git.release import Released, Removed
+from untaped_git.run import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_git.settings import store_root
 from untaped_git.store import Prefetched, RepoStore
 from untaped_git.url import GitUrl, repo_url_parts, store_key, validate_git_url
 
 __all__ = [
     "Credential",
+    "GitCommandError",
     "GitHost",
+    "GitResult",
     "GitUrl",
     "HostAuth",
     "Prefetched",
@@ -36,8 +42,10 @@ __all__ = [
     "TreeEntry",
     "check_names",
     "default_branch",
+    "git_toplevel",
     "ls_remote",
     "repo_url_parts",
+    "run_git",
     "store_key",
     "store_root",
     "validate_git_url",

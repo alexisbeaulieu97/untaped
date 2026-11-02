@@ -9,8 +9,8 @@ import pytest
 
 from git_test_support import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
-from untaped.sdk.testing.git import GitRemote, global_config
 from untaped_git.store import RepoStore
+from untaped_git.testing import GitRemote, global_config
 
 MAIN = "refs/untaped/github/heads/main"
 

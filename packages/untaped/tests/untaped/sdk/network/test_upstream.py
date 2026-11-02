@@ -1,25 +1,22 @@
 """The upstream budget: every call capped and unretried until one succeeds, then none.
 
-``HttpClient`` and ``run_git`` read it; ``quick_probe`` (``doctor --online``)
-keeps every call capped. The back-off waits on the test's clock, so retries run instantly.
+``HttpClient`` reads it (untaped-git's tests cover ``run_git``); ``quick_probe``
+(``doctor --online``) keeps every call capped. The back-off waits on the test's
+clock, so retries run instantly.
 """
 
 from __future__ import annotations
 
 import threading
-from typing import Any
 
 import httpx
 import pytest
 import respx
 
-from untaped.sdk import git
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk.errors import HttpStatusError, HttpTransportError
-from untaped.sdk.git import GitCommandError, run_git
 from untaped.sdk.network.http import HttpClient, RetryPolicy
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, fail_fast, full_retries, quick_probe
-from untaped.sdk.process import ProcessResult
 from untaped.sdk.testing import ManualClock
 
 
@@ -56,16 +53,16 @@ def test_fail_fast_caps_every_call_until_one_succeeds_then_none(no_sleep: list[f
             for _ in range(2):  # neither the first call nor the next is retried
                 with pytest.raises(HttpStatusError):
                     client.get("/down")
-            assert capped()
+            assert capped() == PROBE_TIMEOUT
             client.get("/up")
-            assert not capped()
+            assert capped() is None
             assert client.get("/flaky").status_code == 200  # retried: the cap is lifted
     assert down.call_count == 2
     assert _timeouts(down) == [PROBE_TIMEOUT, PROBE_TIMEOUT]
     assert _timeouts(up) == [PROBE_TIMEOUT]
     assert flaky.call_count == 2
     assert _timeouts(flaky) == [30.0, 30.0]
-    assert not capped()  # outside the block
+    assert capped() is None  # outside the block
 
 
 def test_a_per_request_timeout_is_capped_too(no_sleep: list[float]) -> None:
@@ -99,7 +96,7 @@ def test_quick_probe_caps_every_call_even_after_a_success(no_sleep: list[float])
             HttpClient(base_url="https://example.com", timeout=30.0, retry=RetryPolicy()) as client,
         ):
             client.get("/x")
-            assert capped()
+            assert capped() == PROBE_TIMEOUT
             with pytest.raises(HttpStatusError):
                 client.get("/flaky", retry=RetryPolicy())
     assert _timeouts(route) == [PROBE_TIMEOUT]
@@ -155,49 +152,7 @@ def test_one_success_lifts_the_cap_for_every_worker(no_sleep: list[float]) -> No
 def test_full_retries_steps_out_of_fail_fast_but_not_out_of_quick_probe() -> None:
     with fail_fast():
         with full_retries():
-            assert not capped()
-        assert capped()
+            assert capped() is None
+        assert capped() == PROBE_TIMEOUT
     with quick_probe(), full_retries():
-        assert capped()
-
-
-# ── git ────────────────────────────────────────────────────────────────────
-
-
-def _git(calls: list[dict[str, Any]], *, returncode: int = 0, stderr: bytes = b"") -> Any:
-    def fake_run(args: list[str], **kwargs: Any) -> ProcessResult:
-        calls.append({"args": args, **kwargs})
-        return ProcessResult(
-            ended="exited", returncode=returncode, stdout=b"", stderr=stderr, duration_s=0
-        )
-
-    return fake_run
-
-
-def test_run_git_caps_a_network_command_and_never_retries_it(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(git, "run_process", _git(calls, returncode=128, stderr=b"early EOF"))
-
-    with fail_fast(), pytest.raises(GitCommandError):
-        run_git(["ls-remote", "origin"], timeout=120, retry_transient=True, sleep=lambda _s: None)
-
-    assert [call["timeout"] for call in calls] == [PROBE_TIMEOUT]
-    assert not capped()  # outside the block
-
-
-def test_run_git_leaves_a_local_command_alone_and_its_success_lifts_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(git, "run_process", _git(calls))
-
-    with fail_fast():
-        run_git(["rev-parse", "HEAD"], timeout=120)
-        assert capped()
-        run_git(["fetch", "origin"], timeout=120)
-        assert not capped()
-        run_git(["fetch", "origin"], timeout=120)
-
-    assert [call["timeout"] for call in calls] == [120, PROBE_TIMEOUT, 120]
+        assert capped() == PROBE_TIMEOUT

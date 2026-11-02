@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk.testing import install
-from untaped.sdk.testing.git import git_shim
 from untaped_git.plugin import Git
+from untaped_git.testing import git_shim
 
 
 def _version_row() -> tuple[int, dict[str, object]]:

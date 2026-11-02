@@ -14,8 +14,8 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk.testing.git import GitRemote
 from untaped_git.api import RepoStore
+from untaped_git.testing import GitRemote
 from untaped_workspace.domain.models import LocalBranch, StoredRepo, StoreUse
 from untaped_workspace.domain.safety import archive_blockers
 from untaped_workspace.errors import GitError, WorkspaceError

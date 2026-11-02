@@ -68,8 +68,8 @@ from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
-from untaped.sdk.git import GitCommandError, git_toplevel, run_git
-
+# Git runs through untaped_git, imported where it runs: the root conftest loads this module
+# in core's own test run, where no plugin is installed.
 REPO_ROOT = Path(__file__).resolve().parents[1]
 VERSION_FORMAT = re.compile(r"^\d+\.\d+\.\d+((a|b|rc)\d+)?$")
 INDEX_URLS = {
@@ -183,6 +183,8 @@ def baseline_tag(tags: Iterable[str], *, prereleases: bool = False) -> str | Non
 
 def _toplevel(root: Path) -> Path:
     """The checkout holding ``root``; ``ReleaseError`` outside one."""
+    from untaped_git.api import GitCommandError, git_toplevel  # noqa: PLC0415 - see REPO_ROOT
+
     try:
         top = git_toplevel(root)
     except GitCommandError as exc:
@@ -194,11 +196,15 @@ def _toplevel(root: Path) -> Path:
 
 def _head(top: Path) -> str:
     """The commit checked out in ``top`` (a tag's commit, never the tag object)."""
+    from untaped_git.api import run_git  # noqa: PLC0415 - see REPO_ROOT
+
     return run_git(["rev-parse", "HEAD^{commit}"], cwd=top, timeout=30, capture=True).text.strip()
 
 
 def head_commit(root: Path) -> str:
     """``_head`` of the checkout holding ``root``."""
+    from untaped_git.api import GitCommandError  # noqa: PLC0415 - see REPO_ROOT
+
     top = _toplevel(root)
     try:
         return _head(top)
@@ -208,6 +214,8 @@ def head_commit(root: Path) -> str:
 
 def check_on_main(root: Path) -> None:
     """Fetch ``origin``'s ``main`` and fail unless HEAD is on it (an ancestor or its tip)."""
+    from untaped_git.api import GitCommandError, run_git  # noqa: PLC0415 - see REPO_ROOT
+
     top = _toplevel(root)
     try:
         run_git(
@@ -317,6 +325,8 @@ def _route_main(root: Path, version: str, before: str) -> Route:
     releases again, idempotently. Otherwise only a version this push changed
     (compared with ``before``) releases, and only while its tag is absent.
     """
+    from untaped_git.api import GitCommandError  # noqa: PLC0415 - see REPO_ROOT
+
     tag = f"v{version}"
     top = _toplevel(root)
     try:
@@ -347,6 +357,8 @@ def _remote_tag_commit(top: Path, tag: str) -> str | None:
     An annotated tag lists a second, peeled ``^{}`` line naming its commit;
     a lightweight tag's only line already names it.
     """
+    from untaped_git.api import run_git  # noqa: PLC0415 - see REPO_ROOT
+
     ref = f"refs/tags/{tag}"
     listed = run_git(
         ["ls-remote", "--tags", "origin", ref, f"{ref}^{{}}"],
@@ -365,6 +377,8 @@ def _version_at(root: Path, top: Path, before: str) -> str | None:
     None when ``before`` is all zeros (a branch's first push) or the package
     file did not exist there. A ``before`` the checkout lacks is an error.
     """
+    from untaped_git.api import run_git  # noqa: PLC0415 - see REPO_ROOT
+
     if not before:
         raise ReleaseError("a push to main needs --before")
     if set(before) == {"0"}:

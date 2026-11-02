@@ -19,8 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from untaped.sdk import ConfigError, System, attribution
-from untaped.sdk.git import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_awx.infrastructure.git_head import pushed_branch
+from untaped_git.api import GitCommandError, GitResult, git_toplevel, run_git
 
 _TIMEOUT = 30.0
 DOCUMENT_SUFFIXES = (".yml", ".yaml")

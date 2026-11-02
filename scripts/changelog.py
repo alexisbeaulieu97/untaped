@@ -39,7 +39,7 @@ from pathlib import Path
 
 from release import baseline_tag  # scripts/release.py
 
-from untaped.sdk.git import GitCommandError, run_git
+from untaped_git.api import GitCommandError, run_git
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_URL = "https://github.com/alexisbeaulieu97/untaped"

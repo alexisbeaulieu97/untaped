@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk.testing.git import GitRemote, git_remote
+from untaped_git.testing import GitRemote, git_remote
 from workspace_test_support import composed
 
 

@@ -18,7 +18,6 @@ from untaped.sdk._lazy import lazy_names
 
 #: The groups a plugin imports from, besides the root (primitives, section 8).
 GROUPS = (
-    "untaped.sdk.git",
     "untaped.sdk.health",
     "untaped.sdk.network",
     "untaped.sdk.process",

@@ -16,10 +16,10 @@ from pydantic import SecretStr
 from untaped.sdk import ConfigError
 from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import Home, Install, install
-from untaped.sdk.testing.git import global_config
 from untaped_git.helper_nonce import KEY_FILE, helper_nonce
 from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.plugin import Git
+from untaped_git.testing import global_config
 
 
 class Forge(GitHost, Provider):

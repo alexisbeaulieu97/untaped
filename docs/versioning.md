@@ -96,8 +96,13 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `-` the command tells from a value itself.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
   a plugin's typed private file in a store repo.
-- The fixtures in `untaped.sdk.testing.git`, for testing a plugin against the
+- The fixtures in `untaped_git.testing`, for testing a plugin against the
   repo store.
+- The upstream budget: `capped` and `succeeded` in `untaped.sdk.network`,
+  which a call to an upstream reads and reports to so `doctor --online` and a
+  cache's automatic refresh fail fast offline.
+- `safe_path_segment` in `untaped.sdk.storage`: any text as one
+  filesystem-safe path segment.
 - `untaped.sdk.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
 - `untaped.sdk.testing.deprecation_of`, which tells a linter whether a name

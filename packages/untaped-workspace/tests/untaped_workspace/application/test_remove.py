@@ -12,7 +12,7 @@ from pathlib import Path
 
 from untaped.sdk.storage import LetGo, Refused
 from untaped.sdk.testing import plan_release, release_ask
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.application.release import plan_release as workspace_release
 from untaped_workspace.domain.models import LocalBranch
 from untaped_workspace.domain.safety import (
