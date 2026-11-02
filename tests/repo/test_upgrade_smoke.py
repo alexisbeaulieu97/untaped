@@ -32,3 +32,16 @@ def test_an_example_it_no_longer_fits_fails_loudly() -> None:
         upgrade_smoke.calling_book_titled("from untaped_shelf.api import Book\n")
     with pytest.raises(ValueError, match="no single requirement"):
         upgrade_smoke.requiring("dependencies = []\n", "untaped-shelf", "1.0")
+
+
+def test_a_failure_is_one_line_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def drifted(work: Path) -> dict[str, Path]:
+        raise ValueError("the library's provider changed: update the upgrade smoke")
+
+    monkeypatch.setattr(upgrade_smoke, "sources", drifted)
+    assert upgrade_smoke.main([str(tmp_path / "core.whl"), str(tmp_path / "work")]) == 1
+    assert capsys.readouterr().err.splitlines() == [
+        "upgrade smoke: the library's provider changed: update the upgrade smoke"
+    ]

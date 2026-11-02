@@ -121,7 +121,7 @@ def main(argv: Sequence[str]) -> int:
     work.mkdir(parents=True, exist_ok=True)
     try:
         run(core, work)
-    except Failed as failed:
+    except (Failed, ValueError, OSError) as failed:  # an example drifted, a tool is missing
         print(f"upgrade smoke: {failed}", file=sys.stderr)
         return 1
     return 0
