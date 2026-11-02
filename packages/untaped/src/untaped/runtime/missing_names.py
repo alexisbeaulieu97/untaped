@@ -156,7 +156,7 @@ def _name(exc: BaseException, tail: list[FrameType]) -> tuple[str, str] | None:
     if isinstance(exc, ImportError):
         name_from = getattr(exc, "name_from", None)
         module = sys.modules.get(exc.name or "")
-        if module is None or not isinstance(name_from, str) or _listed(module, name_from):
+        if module is None or not isinstance(name_from, str) or not _settled(module, name_from):
             return None
         return module.__name__, f"{module.__name__}.{name_from}"
     return None
@@ -168,11 +168,21 @@ def _attribute(obj: object, name: str | None) -> tuple[str, str] | None:
     if obj is None or name is None:
         return None
     if isinstance(obj, ModuleType):
-        if _listed(obj, name) or _submodule(obj, name):
+        if not _settled(obj, name) or _submodule(obj, name):
             return None
         return obj.__name__, f"{obj.__name__}.{name}"
     cls = obj if isinstance(obj, type) else type(obj)
     return cls.__module__, f"{public_name(cls)}.{name}"
+
+
+def _settled(module: ModuleType, name: str) -> bool:
+    """Whether ``module`` missing ``name`` says its owner doesn't have it.
+
+    Not when the module lists it (failing to give it is the owner's bug), nor
+    when it is a namespace package: its names are whatever is installed into
+    it (a plugin nested in ``untaped.plugins``), whoever owns its parent.
+    """
+    return getattr(module, "__file__", None) is not None and not _listed(module, name)
 
 
 def _listed(module: ModuleType, name: str) -> bool:
@@ -255,10 +265,14 @@ def _hooks(exc: BaseException) -> set[CodeType]:
         hook = owner.__dict__.get("__getattr__")
         code = getattr(hook, "__code__", None)
         return {code} if isinstance(code, CodeType) else set()
-    if isinstance(owner, BaseModel) or (isinstance(owner, type) and issubclass(owner, BaseModel)):
-        code = getattr(vars(BaseModel).get("__getattr__"), "__code__", None)
-        return {code} if isinstance(code, CodeType) else set()
-    return set()
+    if isinstance(owner, BaseModel):
+        hook = vars(BaseModel).get("__getattr__")
+    elif isinstance(owner, type) and issubclass(owner, BaseModel):
+        hook = vars(type(BaseModel)).get("__getattr__")  # the model class's: its metaclass's
+    else:
+        return set()
+    code = getattr(hook, "__code__", None)
+    return {code} if isinstance(code, CodeType) else set()
 
 
 def _module(frame: FrameType) -> str:

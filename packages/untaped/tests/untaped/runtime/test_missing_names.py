@@ -73,6 +73,7 @@ _SHELF = {
         ''',
     "untaped_shelf/fittings/__init__.py": "",
     "untaped_shelf/fittings/kinds.py": "SCREW = 'E27'\n",
+    "untaped_shelf/extras/lights.py": "",
     "untaped_shelf/api.py": '''
         """What a plugin may import from shelf."""
 
@@ -184,13 +185,17 @@ def test_verbose_shows_the_traceback(site: Site) -> None:
             "from untaped_shelf.api import Shade\n\ndef poke():\n    Shade(tint='red', hue=3)\n",
             "untaped_shelf.api.Shade(hue=)",
         ),
+        (
+            "from untaped_shelf.api import Shade\n\ndef poke():\n    Shade.from_hex('fff')\n",
+            "untaped_shelf.api.Shade.from_hex",
+        ),
     ],
-    ids=["module-attribute", "missing-module", "from-import", "extra-field"],
+    ids=["module-attribute", "missing-module", "from-import", "extra-field", "model-class"],
 )
 def test_each_kind_of_missing_name_says_what_it_is(site: Site, poke: str, spelled: str) -> None:
     found = _install(site, poke)
-    late = site.root / "untaped-acme" / "untaped_acme" / "late.py"
-    late.write_text("from untaped_shelf.api import lamp\n", encoding="utf-8")
+    acme = site.root / "untaped-acme" / "untaped_acme"
+    (acme / "late.py").write_text("from untaped_shelf.api import lamp\n", encoding="utf-8")
     result = _invoke(found, "acme", "poke")
     assert result.exit_code == 4, result.output
     assert f"it uses {spelled}, which {_OUT_OF_DATE}" in result.stderr
@@ -224,6 +229,8 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "import untaped_shelf.fittings\n\ndef poke():\n    untaped_shelf.fittings.kinds\n",
         "from untaped_shelf import api\n\ndef poke():\n    getattr(api, 'ghost')\n",
         "import importlib\n\ndef poke():\n    importlib.import_module('untaped.plugins.lamp')\n",
+        "import importlib\n\ndef poke():\n    importlib.import_module('untaped_acme.nested')\n",
+        "import untaped_shelf.extras\n\ndef poke():\n    getattr(untaped_shelf.extras, 'lamp')\n",
     ],
     ids=[
         "own-object",
@@ -236,10 +243,14 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "unimported-submodule",
         "listed-but-broken",
         "namespace-module",
+        "namespace-from-import",
+        "namespace-attribute",
     ],
 )
 def test_anything_else_stays_the_error_it_is(site: Site, poke: str) -> None:
     found = _install(site, poke)
+    nested = site.root / "untaped-acme" / "untaped_acme" / "nested.py"
+    nested.write_text("from untaped_shelf.extras import lamp\n", encoding="utf-8")
     result = _invoke(found, "acme", "poke")
     assert result.exception is not None
     assert result.exit_code != 4
