@@ -241,9 +241,7 @@ def gather[C: Contract, **P, R](
 
     def call(*args: P.args, **kwargs: P.kwargs) -> Answers[R]:
         owner = owner_of(info)
-        order = ranking(owner, info.name, wanted.name)
-        for old in old_spellings(info, wanted.name):  # a ranking kept under a renamed name
-            order = order or ranking(owner, info.name, old)
+        order = ranking(owner, info.name, wanted.name, old_spellings(info, wanted.name))
         answers: dict[str, Answer[R]] = {}
         runnable: list[tuple[BoundProvider, int | None]] = []
         reasons: list[str] = []

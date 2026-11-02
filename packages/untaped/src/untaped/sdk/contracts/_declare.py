@@ -588,22 +588,20 @@ def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
 
     The owner calls only the new name, so the provider keeps answering until
     the old name goes. A subclass overriding the old name answers instead
-    when its base filled the new name this way too; a base that defines the
-    new name itself keeps it, so ``def items(self): return self.all_items()``
-    stays a shim.
+    when its base filled the new name this way too (so its own code reaches
+    the base through ``super().items()``, never ``self.all_items()``, which
+    is now itself); a base that defines the new name itself keeps it, so
+    ``def items(self): return self.all_items()`` stays a shim.
     """
     for old, new in _renamed(info).items():
         old_at, new_at = _holder_at(cls, old), _holder_at(cls, new)
         old_holder, new_holder = cls.__mro__[old_at], cls.__mro__[new_at]
         if old_holder in info.cls.__mro__:
             continue  # the provider doesn't fill the old name
-        function = vars(old_holder)[old]
-        if new in getattr(getattr(function, "__code__", None), "co_names", ()):
-            continue  # a shim calling the new name: binding it would call itself
         if new_holder in info.cls.__mro__ or (
             old_at < new_at and new in vars(new_holder).get(_BOUND_FROM_OLD, ())
         ):
-            setattr(cls, new, function)
+            setattr(cls, new, vars(old_holder)[old])
             setattr(cls, _BOUND_FROM_OLD, frozenset({*vars(cls).get(_BOUND_FROM_OLD, ()), new}))
 
 
