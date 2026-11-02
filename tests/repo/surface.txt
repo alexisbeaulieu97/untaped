@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -6854,6 +6854,7 @@ sdk untaped.sdk.contracts.Reason.unbridged_item = unbridged-item
 sdk untaped.sdk.contracts.Reason.unresolved_item_type = unresolved-item-type
 sdk untaped.sdk.contracts.Reason.unserialisable_signature = unserialisable-signature
 sdk untaped.sdk.contracts.Reason.unused_method = unused-method
+sdk untaped.sdk.contracts.Reason.uses_missing = uses-missing
 sdk untaped.sdk.contracts.Skipped(plugin, reason, detail)
 sdk untaped.sdk.contracts.Skipped(rank@4=) default=None
 sdk untaped.sdk.contracts.Skipped.detail
@@ -7956,8 +7957,6 @@ sdk untaped_git.api.Credential.username
 sdk untaped_git.api.Credential.verify_tls
 sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
-sdk untaped_git.api.GitHost.credential(url: string) -> Credential?  [experimental]
-sdk untaped_git.api.GitHost.home() -> string?  [experimental]
 sdk untaped_git.api.GitUrl
 sdk untaped_git.api.HostAuth(plugin, credential)
 sdk untaped_git.api.HostAuth.credential
@@ -8238,8 +8237,6 @@ sdk untaped_lint.api.LintConfig.repo  [experimental]
 sdk untaped_lint.api.LintConfig.tree_root  [experimental]
 sdk untaped_lint.api.Linter base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.Linter implement=findings,rules  [experimental]
-sdk untaped_lint.api.Linter.findings(record: Record) -> Finding[]  [experimental]
-sdk untaped_lint.api.Linter.rules() -> Rule[]  [experimental]
 sdk untaped_lint.api.Location  [experimental]
 sdk untaped_lint.api.Report()  [experimental]
 sdk untaped_lint.api.Report(failures@2=) default=[]  [experimental]
@@ -8288,7 +8285,6 @@ sdk untaped_lint.api.Tree.paths  [experimental]
 sdk untaped_lint.api.Tree.root  [experimental]
 sdk untaped_lint.api.TreeReader base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_lint.api.TreeReader implement=read  [experimental]
-sdk untaped_lint.api.TreeReader.read(tree: Tree) -> Record[]  [experimental]
 sdk untaped_lint.api.finding(fix=) default=None  [experimental]
 sdk untaped_lint.api.finding(hint=) default=None  [experimental]
 sdk untaped_lint.api.finding(location=) default=None  [experimental]
@@ -8340,8 +8336,6 @@ sdk untaped_workspace.api.Repo.url  [experimental]
 sdk untaped_workspace.api.RepoName  [experimental]
 sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
-sdk untaped_workspace.api.RepoSource.repos() -> Repo[]  [experimental]
-sdk untaped_workspace.api.RepoSource.to_repo(item)  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
 state ansible.aliases Alias[]
 state ansible.aliases.alias string

@@ -1,0 +1,245 @@
+"""A provider may take fewer parameters than its contract method: core passes it its own.
+
+A provider released against an older owner still answers when the owner adds
+an optional parameter: each call is bound to the contract method's signature,
+its defaults applied, and the provider gets only the names it declares, by
+keyword. A parameter the contract can't pass it by name quarantines that
+provider alone (``uses-missing``).
+"""
+
+from __future__ import annotations
+
+import inspect
+from abc import abstractmethod
+from datetime import timedelta
+from typing import Any, ClassVar
+
+import pytest
+
+from core_test_support.contracts.support import (
+    Book,
+    BookSource,
+    Shop,
+    compose,
+    plugin,
+    shelf_plugin,
+    shop_plugin,
+)
+from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer
+from untaped.sdk import Issued, Record
+from untaped.sdk.contracts import Contract, Ok, Provider, cached, gather
+from untaped.sdk.contracts._declare import contract_of, parameter_problems
+
+
+class ByName(BookSource, Provider):
+    """Released when ``by_author`` took only ``author``."""
+
+    asked: ClassVar[list[dict[str, Any]]] = []
+
+    def books(self) -> list[Book]:
+        return []
+
+    def by_author(self, author: str) -> list[Book]:
+        type(self).asked.append({"author": author})
+        return [Book(title=author)]
+
+
+class ByLimit(BookSource, Provider):
+    """Reads ``limit`` alone, by keyword."""
+
+    asked: ClassVar[list[dict[str, Any]]] = []
+
+    def books(self) -> list[Book]:
+        return []
+
+    def by_author(self, *, limit: int) -> list[Book]:
+        type(self).asked.append({"limit": limit})
+        return [Book(title=str(limit))]
+
+
+class Everything(BookSource, Provider):
+    asked: ClassVar[list[dict[str, Any]]] = []
+
+    def books(self) -> list[Book]:
+        return []
+
+    def by_author(self, **kwargs: Any) -> list[Book]:
+        type(self).asked.append(kwargs)
+        return []
+
+
+@pytest.fixture(autouse=True)
+def _fresh() -> None:
+    for cls in (ByName, ByLimit, Everything):
+        cls.asked = []
+
+
+def _answers(provider: type, *args: object, **kwargs: object) -> list[Any]:
+    compose(shelf_plugin(), plugin("reader", fills=(provider,), module=__name__))
+    return gather(BookSource.by_author)(*args, **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("args", "kwargs"),
+    [(("Herbert", 3), {}), (("Herbert",), {"limit": 3}), ((), {"author": "Herbert", "limit": 3})],
+    ids=["positional", "mixed", "keyword"],
+)
+def test_a_provider_with_fewer_parameters_gets_only_its_own(
+    args: tuple[object, ...], kwargs: dict[str, object]
+) -> None:
+    [answer] = _answers(ByName, *args, **kwargs)
+    assert isinstance(answer, Ok)
+    assert ByName.asked == [{"author": "Herbert"}]
+
+
+def test_the_contract_s_defaults_are_applied() -> None:
+    _answers(ByLimit, "Herbert")
+    assert ByLimit.asked == [{"limit": 10}]  # by_author's own default, passed by name
+
+
+def test_a_provider_taking_keywords_gets_everything() -> None:
+    _answers(Everything, "Herbert")
+    assert Everything.asked == [{"author": "Herbert", "limit": 10}]
+
+
+def test_the_cache_keys_by_the_contract_s_arguments() -> None:
+    """``limit`` reaches no provider here, yet each value is its own entry, as the contract says."""
+    compose(shelf_plugin(), plugin("reader", fills=(ByName,), module=__name__))
+    ask = gather(BookSource.by_author)
+    ask("Herbert")
+    ask("Herbert", limit=10)
+    ask("Herbert", 3)
+    assert ByName.asked == [{"author": "Herbert"}, {"author": "Herbert"}]  # limit 10, then 3
+
+
+def test_an_adapted_method_reads_as_the_contract_s() -> None:
+    contract = contract_of(BookSource)
+    assert contract is not None
+    expected = inspect.signature(contract.methods["by_author"].function)
+    assert inspect.signature(ByName.by_author) == expected
+    assert parameter_problems(ByName, contract) == []
+
+
+def test_a_provider_with_the_contract_s_parameters_is_not_wrapped() -> None:
+    assert Shop.__dict__["by_author"].__wrapped__.__qualname__ == "Shop.by_author"
+
+
+class Renamed(BookSource, Provider):
+    """Renamed ``title`` to quiet a linter."""
+
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+    def lookup(self, _title: str) -> list[Book]:
+        return []
+
+
+class Positional(BookSource, Provider):
+    def books(self) -> list[Book]:
+        return [Book(title="Dune")]
+
+    def lookup(self, title: str, /) -> list[Book]:
+        return []
+
+
+@pytest.mark.parametrize(
+    ("provider", "problem"),
+    [
+        (Renamed, "Renamed.lookup takes '_title', which the contract method doesn't declare"),
+        (Positional, "Positional.lookup takes 'title' positional-only, and it is passed by name"),
+    ],
+    ids=["unknown", "positional-only"],
+)
+def test_a_parameter_the_contract_cannot_pass_quarantines_that_provider_alone(
+    provider: type, problem: str
+) -> None:
+    compose(shelf_plugin(), shop_plugin(), plugin("reader", fills=(provider,), module=__name__))
+    [quarantined] = [entry for entry in every_offer() if isinstance(entry, Quarantined)]
+    assert (quarantined.plugin, quarantined.reason) == ("reader", "uses-missing")
+    assert quarantined.detail == (
+        f"{problem} (BookSource.lookup takes title); untaped-reader may need a newer "
+        "untaped-shelf than it declares: upgrade untaped-shelf, or upgrade untaped-reader"
+    )
+    Shop.rows = [Book(title="Dune")]
+    answers = {answer.plugin: answer for answer in gather(BookSource.books)()}
+    assert isinstance(answers["shop"], Ok)
+    assert "reader" not in answers or not isinstance(answers["reader"], Ok)
+    rows = [(row.plugin, row.status, row.title) for row in doctor_rows()]
+    assert ("reader", "warn", "uses-missing") in rows
+
+
+def test_a_subclass_that_fills_the_method_again_answers_for_itself() -> None:
+    class Fixed(Renamed):
+        def lookup(self, title: str) -> list[Book]:
+            return []
+
+    contract = contract_of(BookSource)
+    assert contract is not None
+    assert parameter_problems(Fixed, contract) == []
+    assert parameter_problems(type("Kept", (Renamed,), {}), contract) == [
+        "Renamed.lookup takes '_title', which the contract method doesn't declare "
+        "(BookSource.lookup takes title)"
+    ]
+
+
+def test_a_mixin_s_method_is_checked_as_the_provider_s() -> None:
+    class Lookups:
+        def lookup(self, _title: str) -> list[Book]:
+            return []
+
+    class Mixed(Lookups, BookSource, Provider):
+        def books(self) -> list[Book]:
+            return []
+
+    contract = contract_of(BookSource)
+    assert contract is not None
+    [problem] = parameter_problems(Mixed, contract)
+    assert problem.endswith(
+        "Mixed.lookup takes '_title', which the contract method doesn't declare "
+        "(BookSource.lookup takes title)"
+    )
+
+
+class Tag(Issued):
+    title: str
+
+
+class TagSource[T: Record = Tag](Contract):
+    """Tags, from an owner that added optional parameters later."""
+
+    def to_tag(self, item: T, *, loud: bool = False) -> Tag:
+        raise NotImplementedError
+
+    @cached(max_age=timedelta(hours=1), label="tags")
+    @abstractmethod
+    def tags(self, prefix: str = "", *, limit: int = 5) -> list[Tag]: ...
+
+
+class OldTags(TagSource, Provider):
+    """Released when neither ``loud`` nor ``limit`` existed."""
+
+    calls: ClassVar[int] = 0
+
+    def to_tag(self, item: Tag) -> Tag:
+        return item
+
+    def tags(self, prefix: str) -> list[Tag]:
+        type(self).calls += 1
+        return [self.to_tag(Tag(title=f"{prefix}tag"))]
+
+
+def test_the_adapter_stacks_with_a_bridge_and_a_cache() -> None:
+    compose(
+        plugin("tagger", offers=(TagSource,), records=(Tag,), module=__name__),
+        plugin("old", fills=(OldTags,), module=__name__),
+    )
+    OldTags.calls = 0
+    ask = gather(TagSource.tags)
+    [first] = ask("x-", limit=2)
+    [again] = ask("x-", limit=2)
+    assert isinstance(first, Ok) and isinstance(again, Ok)
+    assert [tag.title for tag in first.value] == ["x-tag"]
+    assert first.value[0].source is not None and first.value[0].source.plugin == "old"
+    assert OldTags.calls == 1  # the second ask is the cached answer
+    ask("x-", limit=3)
+    assert OldTags.calls == 2  # another limit, another entry, though the provider ignores it

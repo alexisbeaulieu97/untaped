@@ -31,6 +31,8 @@ class Reason(StrEnum):
     missing_bridge = "missing-bridge"
     unserialisable_signature = "unserialisable-signature"
     bad_provider = "bad-provider"
+    uses_missing = "uses-missing"
+    """A provider takes a parameter its contract method doesn't pass it by name."""
     unused_method = "unused-method"
     """A provider fills a method its contract no longer has."""
     rank_unknown_method = "rank-unknown-method"
@@ -48,6 +50,7 @@ QuarantineReason = Literal[
     Reason.missing_bridge,
     Reason.unserialisable_signature,
     Reason.bad_provider,
+    Reason.uses_missing,
 ]
 
 #: Why a provider was not asked, or why its answer doesn't count.

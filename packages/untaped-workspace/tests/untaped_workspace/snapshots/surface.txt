@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg workspace.branch_template string default={name}  [experimental]
 cfg workspace.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600  [experimental]
 cfg workspace.extensions.repo_source.rank.repos string[] default=[]  [experimental]
@@ -295,8 +295,6 @@ sdk untaped_workspace.api.Repo.url  [experimental]
 sdk untaped_workspace.api.RepoName  [experimental]
 sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
-sdk untaped_workspace.api.RepoSource.repos() -> Repo[]  [experimental]
-sdk untaped_workspace.api.RepoSource.to_repo(item)  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
 state workspace.meta.archived_at string(format=date-time)? default=None  [experimental]
 state workspace.meta.created_at string(format=date-time)  [experimental]

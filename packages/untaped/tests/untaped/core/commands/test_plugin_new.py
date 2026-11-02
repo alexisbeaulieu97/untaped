@@ -103,7 +103,7 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     tests.test_gitlab_keeps_its_surface()
     # No commands, settings or modules yet: the first run writes an empty surface.
     surface = (tests_dir / "snapshots" / "surface.txt").read_text(encoding="utf-8")
-    assert surface == "# untaped surface 1\n"
+    assert surface == "# untaped surface 3\n"
     tests.test_gitlab_keeps_its_surface()
 
 

@@ -259,11 +259,16 @@ class _Walker:
             for name in {*abstract, *hooks_of(cls, self.exports)}
             if any(name in vars(klass) for klass in own)
         )
+        # A contract's methods have their ``contract`` lines, where an optional parameter
+        # added later adds a line; a typed line here would be respelled instead.
+        declared = _contract_methods(cls)
         for name in typed:
+            if name in declared:
+                continue
             member = inspect.getattr_static(cls, name)
             member_mark = own_mark(member) or mark
             lines.append(Line(f"sdk {subject}.{name}{self.typed(cls, name, member)}", member_mark))
-        lines.extend(self.members(subject, cls, mark, skip={*abstract, *typed}))
+        lines.extend(self.members(subject, cls, mark, skip={*abstract, *typed, *declared}))
         return lines
 
     def typed(self, cls: type, name: str, member: object) -> str:
@@ -580,6 +585,14 @@ def _split_mro(cls: type, *, stop: frozenset[type] = frozenset()) -> tuple[list[
 
 def _is_protocol_base(klass: type) -> bool:
     return klass.__module__ in ("typing", "abc", "builtins")
+
+
+def _contract_methods(cls: type) -> frozenset[str]:
+    """The methods of the contract ``cls`` declares itself; none for any other class."""
+    from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415 - contracts only
+
+    info = contract_of(cls)
+    return frozenset(info.methods) if info is not None and info.cls is cls else frozenset()
 
 
 def _is_protocol(cls: type) -> bool:

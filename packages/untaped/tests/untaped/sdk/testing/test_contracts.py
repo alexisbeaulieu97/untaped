@@ -231,10 +231,11 @@ def test_assert_surface_writes_the_file_then_keeps_it(tmp_path: Path) -> None:
     path = tmp_path / "surface.txt"
     assert_surface(_owner(_contract("v1")), path)
     text = path.read_text(encoding="utf-8")
-    assert text.startswith("# untaped surface 1\n")
+    assert text.startswith("# untaped surface 3\n")
     for line in (
         "contract items.item_source abstract=items",
-        'contract items.item_source.items(prefix: string = "") -> Item[]',
+        "contract items.item_source.items() -> Item[]",
+        'contract items.item_source.items(prefix=) string default=""',
         "contract items.item_source.to_item(item: Item) -> Item",
         "contract items.Item(name)",
         "contract items.Item.size integer default=0",
@@ -259,7 +260,7 @@ def test_a_removed_line_fails_until_the_file_is_deleted(tmp_path: Path) -> None:
         assert_surface(_owner(_contract("breaking")), path)
     message = str(failed.value)
     assert "delete the file and run again to accept these in a major release" in message
-    assert '  contract items.item_source.items(prefix: string = "") -> Item[]' in message
+    assert "  contract items.item_source.items() -> Item[]" in message
     path.unlink()
     assert_surface(_owner(_contract("breaking")), path)
     assert "items(prefix: integer, wanted: string)" in path.read_text(encoding="utf-8")
@@ -287,14 +288,47 @@ def _dated(removed_in: int | None) -> type[Plugin]:
     return plugin("items", settings=settings).target  # type: ignore[return-value]  # a class
 
 
-def test_an_undated_file_stays_format_1_and_a_dated_one_is_rewritten(tmp_path: Path) -> None:
+def test_a_deprecation_s_date_and_replacement_are_written(tmp_path: Path) -> None:
     path = tmp_path / "surface.txt"
     assert_surface(_dated(None), path)
-    assert path.read_text(encoding="utf-8").startswith("# untaped surface 1\n")
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# untaped surface 3\n")
+    assert "cfg items.old integer default=0  [deprecated; use items.new]\n" in text
     assert_surface(_dated(3), path)
     text = path.read_text(encoding="utf-8")
-    assert text.startswith("# untaped surface 2\n")
     assert "cfg items.old integer default=0  [deprecated, removed in 3.0; use items.new]\n" in text
+
+
+def test_an_optional_parameter_a_contract_adds_only_adds_a_line(tmp_path: Path) -> None:
+    """A provider may take fewer parameters, so an owner may add one with a default."""
+
+    class ItemSource[T: Record = Item](Contract):
+        def to_item(self, item: T) -> Item:
+            raise NotImplementedError
+
+        @abstractmethod
+        def items(self, prefix: str = "", *, limit: int = 5) -> list[Item]: ...
+
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
+    assert_surface(_owner(ItemSource), path)
+    assert "contract items.item_source.items(limit=) integer default=5\n" in path.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_a_required_parameter_a_contract_adds_fails(tmp_path: Path) -> None:
+    class ItemSource[T: Record = Item](Contract):
+        def to_item(self, item: T) -> Item:
+            raise NotImplementedError
+
+        @abstractmethod
+        def items(self, prefix: str = "", *, limit: int) -> list[Item]: ...
+
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
+    with pytest.raises(AssertionError, match=r"contract items\.item_source\.items\(\) -> Item\[\]"):
+        assert_surface(_owner(ItemSource), path)
 
 
 @pytest.mark.parametrize("version", ["2.3.0", "2.3.1.dev5+g1234"])

@@ -19,13 +19,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-#: The line format this generator reads. A PR that respells existing lines
-#: bumps it and teaches :func:`upgrade` the old spelling. Format 2 added the
-#: dated deprecation mark; :func:`render` writes the lowest format its marks
-#: need (format 1 for a file without one), so an older generator keeps reading
-#: what it can and refuses the rest plainly, and an undated plugin's snapshot
-#: stays byte-for-byte what 11.0 wrote.
-FORMAT = 2
+#: The line format this generator reads and writes. A PR that respells
+#: existing lines bumps it and teaches :func:`upgrade` the old spelling.
+#: Format 2 added the dated deprecation mark. Format 3 gives each optional
+#: parameter of a contract method a line of its own and writes a declared
+#: contract's methods only as ``contract`` lines, not again as ``sdk`` ones.
+FORMAT = 3
 
 HEADER = "# untaped surface"
 
@@ -107,19 +106,9 @@ class Line:
 
 
 def render(lines: Iterable[Line]) -> str:
-    """The file text: the format header, then each distinct line in plain string order.
-
-    The header names format 2 when a deprecated mark carries a date. Without
-    one the file is format 1, where every deprecated mark is ``[deprecated]``
-    (format 1 has no replacement), so an undated file reads as 11.0 wrote it.
-    """
-    distinct = set(lines)
-    if any(line.deprecation is not None and line.deprecation.dated for line in distinct):
-        return "\n".join([f"{HEADER} 2", *sorted(str(line) for line in distinct)]) + "\n"
-    body = sorted(
-        {str(Line(line.text, DEPRECATED) if line.deprecation else line) for line in distinct}
-    )
-    return "\n".join([f"{HEADER} 1", *body]) + "\n"
+    """The file text: the format header, then each distinct line in plain string order."""
+    body = sorted({str(line) for line in lines})
+    return "\n".join([f"{HEADER} {FORMAT}", *body]) + "\n"
 
 
 def parse(text: str) -> list[Line]:
@@ -166,11 +155,83 @@ def parse_mark(text: str) -> LineMark:
 def upgrade(lines: list[Line], from_format: int) -> list[Line]:
     """``lines`` written in ``from_format``, respelled in the current format.
 
-    Format 1's marks are format 2's undated ones, spelled the same, so they
-    need no translation; the bump exists so an older generator refuses a
-    newer mark plainly. A later format
-    adds its step here, and a major release retires it.
+    Format 1's marks are format 2's undated ones, spelled the same. Format 3
+    splits each optional parameter off a contract method's line and drops the
+    ``sdk`` method lines of a declared contract (a class whose bases name
+    ``Contract`` and not ``Provider``), which its ``contract`` lines carry. A
+    later format adds its step here, and a major release retires it.
     """
-    if from_format in (1, FORMAT):
+    if from_format == FORMAT:
         return lines
-    raise ValueError(f"no upgrade from surface format {from_format} to {FORMAT}")
+    if from_format not in (1, 2):
+        raise ValueError(f"no upgrade from surface format {from_format} to {FORMAT}")
+    declared = _declared_contracts(lines)
+    upgraded: list[Line] = []
+    for line in lines:
+        method = _SDK_METHOD.match(line.text)
+        if method is not None and method["cls"] in declared:
+            continue
+        upgraded.extend(_split_optional(line))
+    return upgraded
+
+
+_CONTRACT_BASE = "base=untaped.sdk.contracts.Contract"
+_PROVIDER_BASE = "base=untaped.sdk.contracts.Provider"
+_SDK_METHOD = re.compile(r"^sdk (?P<cls>[\w.]+)\.\w+\(")
+_CONTRACT_METHOD = re.compile(
+    r"^contract (?P<subject>[\w.]+)\((?P<params>.*)\) -> (?P<returns>.+)$"
+)
+
+
+def _declared_contracts(lines: list[Line]) -> set[str]:
+    """The classes whose ``sdk`` lines say they declare a contract, from format 2 lines."""
+    bases: dict[str, set[str]] = {}
+    for line in lines:
+        subject, _, shape = line.text.removeprefix("sdk ").partition(" ")
+        if line.area == "sdk" and shape.startswith("base="):
+            bases.setdefault(subject, set()).add(shape)
+    return {
+        cls
+        for cls, found in bases.items()
+        if _CONTRACT_BASE in found and _PROVIDER_BASE not in found
+    }
+
+
+def _split_optional(line: Line) -> list[Line]:
+    """A format-2 contract method line, as format 3 spells it: a line per optional parameter."""
+    found = _CONTRACT_METHOD.match(line.text)
+    if found is None:
+        return [line]
+    required: list[str] = []
+    optional: list[Line] = []
+    star = False
+    for part in _top_level(found["params"]):
+        name, _, rest = part.partition(": ")
+        token, has_default, default = rest.partition(" = ")
+        if part == "*":
+            star = True
+        elif has_default:
+            subject = f"{found['subject']}({name}=)"
+            optional.append(Line(f"contract {subject} {token} default={default}", line.mark))
+        else:
+            if star and "*" not in required:
+                required.append("*")
+            required.append(part)
+    text = f"contract {found['subject']}({', '.join(required)}) -> {found['returns']}"
+    return [Line(text, line.mark), *optional]
+
+
+def _top_level(params: str) -> list[str]:
+    """``params`` split on its commas outside brackets: a type may hold ``,`` in ``(...)``."""
+    parts: list[str] = []
+    depth, start = 0, 0
+    for index, char in enumerate(params):
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif char == "," and depth == 0:
+            parts.append(params[start:index].strip())
+            start = index + 1
+    tail = params[start:].strip()
+    return [*parts, tail] if tail else parts

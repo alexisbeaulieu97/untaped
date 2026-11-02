@@ -40,6 +40,7 @@ from untaped.sdk.contracts._declare import (
     contract_of,
     fills,
     item_type,
+    parameter_problems,
     settings_type,
     unused_methods,
 )
@@ -292,6 +293,9 @@ def _check(
             f"which {owner} does not declare",
         )
     provider = type(value)
+    problems = parameter_problems(provider, info)
+    if problems:
+        return quarantined(Reason.uses_missing, _uses_missing(plugin, owner, problems), info.cls)
     try:
         item = item_type(provider, info)
     except ContractError as exc:
@@ -335,6 +339,22 @@ def _check(
         )
     bind(value, binding)
     return BoundProvider(value, binding)
+
+
+def _uses_missing(plugin: ComposedPlugin, owner: str, problems: list[str]) -> str:
+    """A provider's parameters its contract can't pass, and the fix.
+
+    Usually a parameter of a newer owner than the plugin declares, so
+    upgrading the owner fixes it; else the plugin renamed one.
+    """
+    composition = _state().composition
+    owners = [each for each in composition.plugins if each.name == owner]
+    owner_dist = owners[0].plugin_ref.distribution if owners else owner
+    dist = plugin.plugin_ref.distribution
+    return (
+        f"{'; '.join(problems)}; {dist} may need a newer {owner_dist} than it declares: "
+        f"upgrade {owner_dist}, or upgrade {dist}"
+    )
 
 
 def owned_contracts() -> dict[str, list[ContractInfo]]:
