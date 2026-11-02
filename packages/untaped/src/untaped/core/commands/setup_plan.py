@@ -84,7 +84,7 @@ def emit_plan(rows: list[Row], *, profile: str, columns: list[str] | None) -> No
     # A profile that does not exist yet has no `ui` settings to theme the table
     # with; it would inherit default's.
     scope = DEFAULT_PROFILE if not profile_exists(profile) else profile
-    with child_run(profiles=scope):
+    with child_run(profiles=scope, folder=False):
         emit(shown, fmt="table", columns=columns, table_columns=default_columns(SetupStep))
 
 

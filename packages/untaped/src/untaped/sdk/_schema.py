@@ -86,6 +86,17 @@ class Argv:
     """
 
 
+@dataclass(frozen=True)
+class HomeOnly:
+    """``Annotated`` marker: a setting read from the home only, never from a project's file.
+
+    Mark a setting that locates data shared by every project (a store's
+    folder, an index): a project that set its own would split that data.
+    A project's ``.untaped/config.yml`` setting one is refused (exit 4).
+    Annotate the field itself: ``Annotated[Path | None, HomeOnly()]``.
+    """
+
+
 def field_choices(field: FieldInfo) -> Choices | None:
     """The field's :class:`Choices` marker, if it has one."""
     return next((item for item in field.metadata if isinstance(item, Choices)), None)
@@ -124,6 +135,9 @@ class FieldDescriptor:
 
     argv: bool = False
     """Whether the field carries the :class:`Argv` marker: a command's argv."""
+
+    home_only: bool = False
+    """Whether the field carries the :class:`HomeOnly` marker: never read from a project."""
 
     @property
     def key(self) -> str:
@@ -182,6 +196,7 @@ def walk_settings(
                 choices=field_choices(field),
                 bounds=tuple(item for item in field.metadata if isinstance(item, _BOUNDS)),
                 argv=any(isinstance(item, Argv) for item in field.metadata),
+                home_only=any(isinstance(item, HomeOnly) for item in field.metadata),
             )
         )
     return entries

@@ -9,12 +9,25 @@ lives here. The base (``config.yml``'s top level) reads as the profile
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from untaped.runtime.config_file import mutate_config, read_config_dict
-from untaped.runtime.profile_resolver import Picked, check_defined, current_pick, picked_names
+from untaped.runtime.config_read import load_project_config
+from untaped.runtime.folder_layer import project_config_path
+from untaped.runtime.profile_resolver import (
+    Picked,
+    check_defined,
+    current_pick,
+    explicit_pick,
+    pick_names,
+)
 from untaped.runtime.settings import active_settings_layout
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UntapedError
+
+if TYPE_CHECKING:
+    from untaped.core.profile.project_picks import ProjectPick
 
 
 def _profiles(config: dict[str, Any]) -> dict[str, Any]:
@@ -24,18 +37,19 @@ def _profiles(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _keep_pick(config: dict[str, Any], *, losing: str | None = None) -> None:
-    """Refuse a change that leaves this run's pick naming an undefined profile.
+    """Refuse a change that leaves this run's own pick naming an undefined profile.
 
     ``losing`` is the profile the change removes; picking it is refused by
     name. Called on the changed dict, so nothing is written when it raises.
+    A project's pick is not the run's own: the change rewrites it.
     """
-    if losing is not None and losing in picked_names():
+    if losing is not None and losing in explicit_pick():
         raise ConfigError(
             f"profile {losing!r} is in this run's pick",
             category="usage",
             hint="run it without that profile in UNTAPED_PROFILE or --profile",
         )
-    check_defined(picked_names(), _profiles(config))
+    check_defined(explicit_pick(), _profiles(config))
 
 
 class ProfileFileRepository:
@@ -46,7 +60,7 @@ class ProfileFileRepository:
         return active_settings_layout().profile_names(read_config_dict())
 
     def pick(self) -> tuple[Picked, ...]:
-        """The run's pick: ``UNTAPED_PROFILE``'s profiles, then ``--profile``'s; each defined."""
+        """The run's pick: the project's, ``UNTAPED_PROFILE``'s, ``--profile``'s; each defined."""
         picks = current_pick()
         check_defined([pick.name for pick in picks], _profiles(read_config_dict()))
         return picks
@@ -104,3 +118,67 @@ class ProfileFileRepository:
             _keep_pick(config, losing=old)
 
         mutate_config(_apply)
+
+
+# --------------------------------------------------------------------------- #
+# A project's ``profile:``
+# --------------------------------------------------------------------------- #
+
+
+def record_project_pick(root: Path, names: Sequence[str]) -> bool:
+    """Record ``names`` as the ``profile:`` of the project at ``root``, unless it has one.
+
+    What ``project init`` does with the run's explicit pick, so the folder
+    keeps the environment it was made in. Returns whether it wrote.
+    """
+    if not names:
+        return False
+    wrote = False
+
+    def apply(data: dict[str, Any]) -> None:
+        nonlocal wrote
+        if "profile" not in data:
+            data["profile"] = names[0] if len(names) == 1 else list(names)
+            wrote = True
+
+    mutate_config(apply, project_config_path(root), load=load_project_config)
+    return wrote
+
+
+def rewrite_project_picks(
+    found: Sequence[ProjectPick], old: str, new: str | None
+) -> list[ProjectPick]:
+    """Rename ``old`` to ``new`` in each project's ``profile:``, or drop it (``new`` ``None``).
+
+    Returns the projects left as they were: those with a problem, and those
+    whose write failed (the failure is the problem).
+    """
+    from untaped.core.profile.project_picks import ProjectPick  # noqa: PLC0415
+
+    left: list[ProjectPick] = []
+    for each in found:
+        if each.problem is not None:
+            left.append(each)
+            continue
+        try:
+            mutate_config(_renaming(old, new), each.file, load=load_project_config)
+        except (UntapedError, OSError) as exc:  # the home's rename is done: report, never crash
+            left.append(ProjectPick(each.name, each.file, str(exc)))
+    return left
+
+
+def _renaming(old: str, new: str | None) -> Callable[[dict[str, Any]], None]:
+    def apply(data: dict[str, Any]) -> None:
+        value = data.get("profile")
+        if not isinstance(value, str | list):
+            return
+        names = [new if name == old else name for name in pick_names(value)]
+        kept = list(dict.fromkeys(name for name in names if name is not None))
+        if not kept:
+            data.pop("profile", None)
+        elif isinstance(value, str) and len(kept) == 1:
+            data["profile"] = kept[0]
+        else:
+            data["profile"] = kept
+
+    return apply

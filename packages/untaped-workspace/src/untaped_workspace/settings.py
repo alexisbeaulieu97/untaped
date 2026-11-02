@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from untaped.sdk.health import HomeOnly
 
 #: The most workers a command runs: twice this machine's CPUs.
 MAX_WORKERS = (os.cpu_count() or 1) * 2
@@ -16,7 +19,7 @@ class WorkspaceSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    workspaces_dir: Path | None = Field(
+    workspaces_dir: Annotated[Path | None, HomeOnly()] = Field(
         default=None,
         description=(
             "Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one "

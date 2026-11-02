@@ -2,14 +2,16 @@
 
 Scope (profile) awareness goes through the settings layout: every write —
 including ``http``/``ui``, which are ordinary per-profile settings now — lands
-in ``profiles.<target>``.
+in ``profiles.<target>``, or, for a repository made for a project, at the top
+of the project's ``.untaped/config.yml``.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
-from typing import Any, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
@@ -22,6 +24,8 @@ from untaped.runtime.config_file import (
     set_at_path,
     unset_at_path,
 )
+from untaped.runtime.config_read import load_config_yaml, load_project_config
+from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.profile_resolver import (
     profile_entries,
     profile_path,
@@ -35,12 +39,13 @@ from untaped.runtime.settings import (
     get_settings_model,
     load_core_part,
     load_settings_section,
+    resolve_config_path,
     section_stabilities,
     validate_core_part,
     validate_settings_section,
 )
 from untaped.runtime.settings_env import env_var_name, env_var_setting
-from untaped.runtime.settings_layout import ResolvedConfig
+from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal
 from untaped.runtime.yaml_roundtrip import KeyRename
 from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
@@ -52,7 +57,11 @@ from untaped.sdk.health.deprecated_keys import (
     profile_sections,
 )
 from untaped.sdk.marks import Stability, setting_mark
+from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX
 from untaped.sdk.words import not_found
+
+if TYPE_CHECKING:
+    from untaped.sdk.projects import Project
 
 SpellingRemoved = Callable[[str], None]
 """Called with each old spelling ``config set``/``unset`` removes (``section.key``)."""
@@ -66,11 +75,37 @@ class SettingsFileRepository:
     the rest of the config through the CLI.
     """
 
-    def __init__(self, settings_cls: type[Settings] | None = None) -> None:
+    def __init__(
+        self, settings_cls: type[Settings] | None = None, *, project: Project | None = None
+    ) -> None:
         self._settings_cls = settings_cls
+        self._project = project
         self._descriptors: list[FieldDescriptor] | None = None
         self._sections: dict[str, Any] = {}
         self._resolved: ResolvedConfig | None = None
+
+    def written_file(self) -> Path:
+        """The file a write changes: the project's ``config.yml``, else the home's."""
+        if self._project is not None:
+            return project_config_path(self._project.root)
+        return resolve_config_path()
+
+    def _write_target(
+        self, data: dict[str, Any], profile: str | None
+    ) -> tuple[dict[str, Any], str]:
+        """The mapping a write lands in and its name: the project's file, or a profile's."""
+        if self._project is None:
+            return active_settings_layout().write_profile(data, profile)
+        return data, f"{FOLDER_SOURCE_PREFIX}{self._project.name}"
+
+    def _mutate(self, apply: Callable[[dict[str, Any]], None], *, dry_run: bool) -> None:
+        """Apply a mutation to the written file, or to an in-memory copy for a dry run."""
+        target = self.written_file()
+        load = load_config_yaml if self._project is None else load_project_config
+        if dry_run:
+            apply(load(target))
+        else:
+            mutate_config(apply, target, load=load)
 
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
@@ -284,9 +319,12 @@ class SettingsFileRepository:
         descriptors = {key: self.descriptor(key) for key in updates}
         resolved: str | None = None
 
+        for descriptor in descriptors.values():
+            self._check_writable(descriptor)
+
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
-            target_data, resolved = active_settings_layout().write_profile(data, profile)
+            target_data, resolved = self._write_target(data, profile)
             for key, update in updates.items():
                 descriptor = descriptors[key]
                 olds = self._old_paths(descriptor)
@@ -305,9 +343,9 @@ class SettingsFileRepository:
                         f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
                     ) from exc
 
-        _run(_apply, dry_run=dry_run)
-        # ``_run`` always runs ``_apply``, which sets ``resolved`` from
-        # ``write_profile`` (always a profile name).
+        self._mutate(_apply, dry_run=dry_run)
+        # ``_mutate`` always runs ``_apply``, which sets ``resolved`` from
+        # ``_write_target`` (always a name).
         assert resolved is not None
         return resolved
 
@@ -318,10 +356,13 @@ class SettingsFileRepository:
     def own_value(self, key: str, *, profile: str | None = None) -> Any:
         """``key``'s raw value in ``profile``'s own data, as :meth:`update_value` passes it.
 
-        ``profile`` defaults to the one a write targets; ``None`` when the key
-        (or the profile) is not set.
+        ``profile`` defaults to the one a write targets (the project's file, for
+        a repository made for one); ``None`` when the key (or the profile) is
+        not set.
         """
         descriptor = self.descriptor(key)
+        if self._project is not None and profile is None:
+            return self._own(load_project_config(self.written_file()), descriptor)
         name = profile or write_target()
         return self._own(self.profile_data(name) or {}, descriptor)
 
@@ -356,7 +397,7 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
-            target_data, resolved = active_settings_layout().write_profile(data, profile)
+            target_data, resolved = self._write_target(data, profile)
             own = unset_at_path(target_data, descriptor.path)
             olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
             if not (own or olds):
@@ -375,9 +416,9 @@ class SettingsFileRepository:
                     category="invalid",
                 ) from exc
 
-        _run(_apply, dry_run=dry_run)
-        # ``write_profile`` (run inside ``_apply``, before the early return) always
-        # sets ``resolved`` to a profile name.
+        self._mutate(_apply, dry_run=dry_run)
+        # ``_write_target`` (run inside ``_apply``, before the early return) always
+        # sets ``resolved`` to a name.
         assert resolved is not None
         return removed, resolved
 
@@ -453,9 +494,17 @@ class SettingsFileRepository:
         Merges from the *target* profile's perspective: otherwise an invalid
         value silently lands in a profile this run doesn't pick and only fails
         when a later run picks it. Env overrides are deliberately ignored:
-        the file must be valid on its own.
+        the file must be valid on its own. A project's file is validated over
+        the home's base and the profiles it picks, as a run inside it reads them.
         """
-        effective = active_settings_layout().effective(data, profile=profile)
+        layout = active_settings_layout()
+        if self._project is not None:
+            from untaped.runtime.folder_layer import layer_from  # noqa: PLC0415
+
+            layer = layer_from(self._project.root, data)
+            effective = layout.project_effective(read_config_dict(), layer)
+        else:
+            effective = layout.effective(data, profile=profile)
         written = ".".join(descriptor.path)
         part = _core_part(descriptor.path)
         if part is not None:
@@ -464,6 +513,15 @@ class SettingsFileRepository:
         validate_settings_section(
             effective, descriptor.path[0], self._profile_model(), written_key=written
         )
+
+    def _check_writable(self, descriptor: FieldDescriptor) -> None:
+        """Refuse (exit 4) writing a setting a project's file may not set into one."""
+        why = None if self._project is None else folder_refusal(descriptor)
+        if why is not None:
+            raise ConfigError(
+                f"{descriptor.key} can't be set in {self.written_file()}: {why}",
+                hint="leave out --project to set it in the home's config.yml",
+            )
 
 
 def _core_part(path: tuple[str, ...]) -> CorePart | None:
@@ -495,14 +553,6 @@ def _remove_spellings(
             if report is not None:
                 report(".".join(path))
     return removed
-
-
-def _run(apply: Callable[[dict[str, Any]], None], *, dry_run: bool) -> None:
-    """Apply a config mutation, or run it on an in-memory copy for a dry run."""
-    if dry_run:
-        apply(read_config_dict())
-    else:
-        mutate_config(apply)
 
 
 def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:

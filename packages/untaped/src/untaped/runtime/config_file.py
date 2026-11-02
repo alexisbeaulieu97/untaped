@@ -53,14 +53,19 @@ def read_state_dict(path: Path) -> dict[str, Any]:
 
 
 def write_config_dict(
-    data: dict[str, Any], path: Path | None = None, *, renames: Iterable[KeyRename] = ()
+    data: dict[str, Any],
+    path: Path | None = None,
+    *,
+    renames: Iterable[KeyRename] = (),
+    load: Callable[[Path], dict[str, Any]] = load_config_yaml,
 ) -> None:
     """Atomically write ``data`` back to the config file.
 
     Only keys that differ from the file's current content are rewritten;
     comments, key order and formatting of everything else are preserved.
     ``renames`` names keys that moved (``(old_path, new_path)``); a key renamed
-    within its mapping keeps its position and comment.
+    within its mapping keeps its position and comment. ``load`` reads the
+    file as it is now (a project's file has its own reader).
     A ``data`` without ``format_version`` is written with
     :data:`~untaped.runtime.config_read.FORMAT_VERSION` first.
     Creates parent directories if needed. The write goes through
@@ -72,7 +77,7 @@ def write_config_dict(
     target = path or resolve_config_path()
     if "format_version" not in data:
         data = {"format_version": FORMAT_VERSION, **data}
-    atomic_write(target, _render(data, target, load_config_yaml, tuple(renames)), mode=0o600)
+    atomic_write(target, _render(data, target, load, tuple(renames)), mode=0o600)
 
 
 def write_state_dict(data: dict[str, Any], path: Path) -> None:
@@ -101,6 +106,7 @@ def mutate_config(
     path: Path | None = None,
     *,
     renames: Sequence[KeyRename] = (),
+    load: Callable[[Path], dict[str, Any]] = load_config_yaml,
 ) -> None:
     """Read, mutate, and write the config file under an advisory lock.
 
@@ -122,17 +128,19 @@ def mutate_config(
     the same file from inside ``fn`` raises :class:`UntapedError` and writes
     nothing.
 
+    ``load`` reads the file (``load_project_config`` for a project's).
+
     Override the lock acquisition timeout via ``UNTAPED_CONFIG_LOCK_TIMEOUT``
     (seconds, non-negative float; anything else raises ``ConfigError``).
     Default is 5 seconds.
     """
     target = path or resolve_config_path()
     with _locked(target):
-        data = read_config_dict(target)
+        data = load(target)
         before = copy.deepcopy(data)
         fn(data)
         if data != before:
-            write_config_dict(data, target, renames=renames)
+            write_config_dict(data, target, renames=renames, load=load)
             get_settings.cache_clear()
 
 

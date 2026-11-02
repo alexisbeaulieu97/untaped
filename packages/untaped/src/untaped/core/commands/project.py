@@ -18,7 +18,10 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
+from untaped.core.profile.repository import record_project_pick
 from untaped.core.settings import CoreSettings
+from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.profile_resolver import check_defined, explicit_pick, named_profiles
 from untaped.sdk._keys import key
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
 from untaped.sdk.fields import Confirm, Output, Positional, table_row
@@ -50,14 +53,17 @@ _CHECK = "Preview, and exit 3 when a hold is refused."
 class Init(Command[CoreSettings]):
     """Make a folder a project: its .untaped/ holds project.json, and this home records it.
 
-    Creates the folder when it doesn't exist. Run again in a project, it
-    brings the project's record up to date: records it in this home, follows
-    a move, or gives a copy its own id. Refuses ~ and ~/.untaped, and a
-    folder inside another project or holding a recorded one.
+    Creates the folder when it doesn't exist. A new project made with
+    --profile or UNTAPED_PROFILE keeps that pick as the profile: of its
+    .untaped/config.yml, so every command run inside it reads those
+    profiles. Run again in a project, it brings the project's record up to
+    date: records it in this home, follows a move, or gives a copy its own
+    id. Refuses ~ and ~/.untaped, and a folder inside another project or
+    holding a recorded one.
 
     Examples:
         $ untaped project init
-        $ untaped project init ~/work/PROJ-123
+        $ untaped --profile staging project init ~/work/PROJ-123
     """
 
     path: Positional[Path | None] = Field(
@@ -69,11 +75,15 @@ class Init(Command[CoreSettings]):
     output: Output[ProjectOutcome]
 
     def run(self) -> Iterator[ProjectOutcome]:
+        pick = explicit_pick()
+        check_defined(pick, named_profiles(read_config_dict()))
         done = init(self.path if self.path is not None else Path.cwd(), new_id=self.new_id)
         if done.action == "unchanged":
             self.ctx.diag.info(done.detail)
         else:
             self.ctx.diag.success(done.detail)
+        if done.action == "created" and record_project_pick(done.project.root, pick):
+            self.ctx.diag.info(f"it picks profile {','.join(pick)} (its .untaped/config.yml)")
         yield ProjectOutcome(
             name=done.project.name,
             path=str(done.project.root),

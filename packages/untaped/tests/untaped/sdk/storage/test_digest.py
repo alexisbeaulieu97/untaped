@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
+from pathlib import Path
 from typing import Annotated, ClassVar
 
 import pytest
@@ -18,9 +19,17 @@ from untaped.runtime.section_models import section_model
 from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk._home import config_path
 from untaped.sdk.health.marks import NeedsSetup
-from untaped.sdk.network.credentials import Credential, CredentialKey, bind_credentials
+from untaped.sdk.network.credentials import (
+    Credential,
+    CredentialKey,
+    NoCredential,
+    bind_credentials,
+    folder_chose,
+    forget_provenance,
+)
 from untaped.sdk.storage._digest import digest_of, settings_digest, settings_terms
 from untaped.sdk.storage.cache import Cache
+from untaped.sdk.testing import make_project
 
 #: The credential index is core's state rows, read under a run like every block.
 pytestmark = pytest.mark.usefixtures("home_run")
@@ -209,3 +218,49 @@ def test_a_lowercase_override_is_named_as_set(monkeypatch: pytest.MonkeyPatch) -
     _config(default=_SERVER)
     monkeypatch.setenv("untaped_toy__token", "secret-value")
     assert settings_terms("toy")["credentials"]["token"].upper() == "UNTAPED_TOY__TOKEN"
+
+
+def test_a_projects_value_moves_it(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Two projects whose settings differ never share a contract answer (D11)."""
+    _config(default=_SERVER)
+    outside = _digest(monkeypatch)
+    root = make_project(tmp_path / "PROJ-1").root
+    (root / ".untaped" / "config.yml").write_text("toy: {limits: {depth: 9}}\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    assert _digest(monkeypatch) != outside
+
+
+def test_a_key_a_projects_file_chose_gets_no_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _config(default=_SERVER)
+    monkeypatch.setenv("TOY_TOKEN", "from-the-shell")
+    root = make_project(tmp_path / "PROJ-1").root
+    (root / ".untaped" / "config.yml").write_text(
+        "toy: {server: {url: https://planted.example.com}}\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(root)
+    forget_provenance()
+    planted = ToyServer(url=HttpUrl("https://planted.example.com"))
+    assert folder_chose(planted)
+    with pytest.raises(NoCredential, match="a folder's settings chose"):
+        TOKEN.get(planted)
+    forget_provenance()
+
+
+def test_a_missing_credential_for_a_key_a_projects_file_chose_says_where_to_move_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _config(default=_SERVER)
+    root = make_project(tmp_path / "PROJ-1").root
+    (root / ".untaped" / "config.yml").write_text(
+        "toy: {server: {url: https://planted.example.com}}\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(root)
+    forget_provenance()
+    with pytest.raises(NoCredential) as missing:
+        TOKEN.get(ToyServer(url=HttpUrl("https://planted.example.com")))
+    assert missing.value.hint is not None
+    assert "into a profile the project picks" in missing.value.hint
+    assert "TOY_TOKEN" not in missing.value.hint  # a variable is never read for it
+    forget_provenance()

@@ -568,12 +568,29 @@ class Credential[K: CredentialKey](OwnedBlock):
         return self._refusal(key, what) if folder_chose(key) else None
 
     def _missing(self, key: K) -> NoCredential:
+        from untaped.runtime.profile_resolver import picked_names  # noqa: PLC0415
         from untaped.sdk.words import run_hint  # noqa: PLC0415
 
+        # The line names the run's pick (its project's included), so it files
+        # the credential for this same key wherever it is typed.
+        picks = picked_names()
+        login = f"--profile {','.join(picks)} {self.login}" if picks else self.login
+        if folder_chose(key):  # filing is refused here, and elsewhere would file another key
+            sources = folder_sources(key)
+            return NoCredential(
+                f"no {self.label} for {describe_key(key)}",
+                hint=(
+                    f"a folder's settings chose its {', '.join(sorted(sources))}, so untaped "
+                    f"files no credential for it: move them from {_join(sources)} into a "
+                    f"profile the project picks, then {run_hint(login)}"
+                ),
+                system=self.plugin,
+                details={"credential": self.qualified, "key": key_data(key)},
+            )
         variable = f", or set {self.env[0]}" if self.env else ""
         return NoCredential(
             f"no {self.label} for {describe_key(key)}",
-            hint=f"{run_hint(self.login)}{variable}",
+            hint=f"{run_hint(login)}{variable}",
             system=self.plugin,
             details={"credential": self.qualified, "key": key_data(key)},
         )
@@ -582,8 +599,8 @@ class Credential[K: CredentialKey](OwnedBlock):
         sources = folder_sources(key)
         return NoCredential(
             f"{what}, but a folder's settings chose this {self.label}'s "
-            f"{', '.join(sorted(sources))}; untaped never uses or files a credential for a "
-            "key a folder chose",
+            f"{', '.join(sorted(sources))}; for a key a folder chose, untaped files no "
+            "credential and reads no variable (only one already stored for that key)",
             hint=f"run from outside that folder, or remove those settings from {_join(sources)}",
             system=self.plugin,
             details={"credential": self.qualified, "sources": dict(sorted(sources.items()))},
@@ -683,9 +700,21 @@ def _key_value_id(key: CredentialKey) -> tuple[str, str]:
     return type(key).__qualname__, json.dumps(key_data(key), sort_keys=True)
 
 
-@cache
 def _touched() -> tuple[frozenset[tuple[str, str]], dict[tuple[str, str], dict[str, str]]]:
-    """The keys a folder chose this run, by value, and which of their leaves it set where."""
+    """The keys a folder chose this run, by value, and which of their leaves it set where.
+
+    Read once per pick and project file (``settings_key``): a child run under
+    another pick, or a run in another project, reads its own.
+    """
+    from untaped.runtime.profile_resolver import settings_key  # noqa: PLC0415 - runtime
+
+    return _touched_for(settings_key())
+
+
+@cache
+def _touched_for(
+    _key: tuple[object, ...],
+) -> tuple[frozenset[tuple[str, str]], dict[tuple[str, str], dict[str, str]]]:
     leaves = folder_leaves()
     if not leaves:
         return frozenset(), {}
@@ -728,7 +757,7 @@ def folder_sources(key: CredentialKey) -> dict[str, str]:
 
 def forget_provenance() -> None:
     """Drop this run's folder-chosen keys (tests, and a change of pick)."""
-    _touched.cache_clear()
+    _touched_for.cache_clear()
 
 
 # --------------------------------------------------------------------------- #

@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 from pydantic import Field
 
@@ -34,6 +35,7 @@ from untaped.core.config.use_cases import (
 )
 from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import (
     CompositionResult,
     settings_model,
@@ -44,7 +46,7 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk._cli import echo, emit
 from untaped.sdk._keys import key
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.fields import DryRun, Output, Positional, default_columns
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
@@ -55,7 +57,8 @@ from untaped.sdk.health.deprecated_keys import (
 )
 from untaped.sdk.marks import show_deprecated
 from untaped.sdk.plugin import Command, Group
-from untaped.sdk.words import plural, run_hint
+from untaped.sdk.projects import current_project
+from untaped.sdk.words import plural, run_hint, shown_path
 
 
 @dataclass(frozen=True)
@@ -218,27 +221,72 @@ def _value(row: Setting) -> str | None:
     return None if row.value is None else str(row.value)
 
 
+_PROJECT = (
+    "Write the current project's .untaped/config.yml instead of a profile; "
+    "a secret, a command or a setting only the home holds is refused."
+)
+
+
+def _repository(project: bool) -> SettingsFileRepository:
+    """The settings file a write changes: the current project's with ``--project``."""
+    if not project:
+        return SettingsFileRepository()
+    if flag_pick():
+        raise UsageError(
+            "--project writes the project's file, and --profile names a profile; pick one",
+            hint="leave out --profile to write the project's .untaped/config.yml",
+        )
+    here = current_project()
+    _refuse_ignored(here.root)
+    return SettingsFileRepository(project=here)
+
+
+def _refuse_ignored(root: Path) -> None:
+    """Refuse (exit 4) a write to a project file runs here would ignore."""
+    from untaped.runtime.folder_layer import project_config_path, untrusted  # noqa: PLC0415
+    from untaped.sdk.projects import recorded_here  # noqa: PLC0415
+
+    file = project_config_path(root)
+    reason = recorded_here(root)
+    if reason is not None:
+        raise ConfigError(
+            f"runs here would ignore {shown_path(file)}: {reason}",
+            hint=f"make the folder this home's project first: `untaped project init {root}`",
+        )
+    why = untrusted(file)
+    if why is not None:
+        paths = " ".join(str(path) for path in (file, file.parent) if path.exists())
+        raise ConfigError(
+            f"runs here would ignore {shown_path(file)}: {why}",
+            hint=f"make it yours and writable by you alone: `chmod go-w {paths}`",
+        )
+
+
 class Set(Command[CoreSettings]):
     """Set one setting in the profile --profile names, else the base.
 
+    With --project, set it in the current project's .untaped/config.yml,
+    which every run inside the project reads above its picked profiles.
     The value is checked against the setting's type before anything is
     written; --prompt asks for it by type, --stdin reads it.
 
     Examples:
         $ untaped config set untaped.http.timeout_seconds 60
         $ printf %s "$URL" | untaped config set PLUGIN.server.url --stdin
+        $ untaped config set untaped.http.timeout_seconds 90 --project
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")
     value: Positional[str | None] = Field(None, description="The new value, checked for its type.")
     stdin: bool = Field(False, description="Read the value from stdin.")
     prompt: bool = Field(False, description="Ask for the value, by the setting's type.")
+    project: bool = Field(False, description=_PROJECT)
     dry_run: DryRun
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
         ctx = _context()
-        repo = SettingsFileRepository()
+        repo = _repository(self.project)
         resolved = ctx.resolve_key(self.key)
         value = resolve_set_value(
             resolved, self.value, stdin=self.stdin, prompt=self.prompt, repo=repo
@@ -252,17 +300,23 @@ class Set(Command[CoreSettings]):
 class Unset(Command[CoreSettings]):
     """Remove one setting from the profile --profile names, else the base.
 
+    With --project, remove it from the current project's .untaped/config.yml.
+
     Examples:
         $ untaped config unset untaped.http.timeout_seconds
+        $ untaped config unset untaped.http.timeout_seconds --project
     """
 
     key: Positional[str] = Field(description="The setting's full key (section.key).")
+    project: bool = Field(
+        False, description="Remove it from the current project's .untaped/config.yml."
+    )
     dry_run: DryRun
     output: Output[SettingOutcome]
 
     def run(self) -> SettingOutcome:
         resolved = _context().resolve_key(self.key)
-        change = UnsetSetting(SettingsFileRepository())(resolved, dry_run=bool(self.dry_run))
+        change = UnsetSetting(_repository(self.project))(resolved, dry_run=bool(self.dry_run))
         print_notes(change.notes)
         return change.outcome
 
@@ -362,7 +416,7 @@ def _emit_split_tables(entries: list[SettingEntry], *, columns: list[str] | None
 
 def _shown(entry: SettingEntry) -> bool:
     """Whether a deprecated setting is listed: set somewhere, or ``--deprecated``."""
-    return entry.source.kind in ("profile", "env") or show_deprecated()
+    return entry.source.kind in ("project", "profile", "env") or show_deprecated()
 
 
 def _warn_deprecated_setting(ctx: RootConfigContext, key: str) -> None:

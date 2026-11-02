@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import Dir, key, settings_of
+from untaped.sdk.health import HomeOnly
 
 
 class GitSettings(BaseModel):
@@ -14,7 +16,7 @@ class GitSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    store_dir: Path | None = Field(
+    store_dir: Annotated[Path | None, HomeOnly()] = Field(
         default=None,
         description=(
             "Root of the repo store: one shared bare repository per remote, under "

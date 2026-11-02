@@ -13,7 +13,7 @@ folder (:mod:`untaped.sdk.storage.state`).
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from functools import cache, lru_cache
 from pathlib import Path
@@ -39,6 +39,7 @@ from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     FILE_KEYS,
     picked_names,
+    settings_key,
 )
 from untaped.runtime.section_models import RESERVED_SECTION_KEYS, model_sections
 from untaped.runtime.settings_env import RenamingEnvSource, env_is_set, env_name_of, env_var_name
@@ -46,7 +47,7 @@ from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConf
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
 from untaped.sdk._run import current_overlay
-from untaped.sdk.errors import ConfigError, first_validation_error
+from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
     key_mappings,
@@ -326,17 +327,18 @@ def _build_settings() -> Settings:
         raise ConfigError(settings_error_message(exc, settings_cls)) from exc
 
 
-def _build_picked(_pick: tuple[str, ...]) -> Settings:
-    """The aggregate settings of the current context, whose pick is ``_pick`` (the cache key)."""
+def _build_picked(_key: tuple[object, ...]) -> Settings:
+    """The aggregate settings of the current context, whose :func:`settings_key` is ``_key``."""
     return _build_settings()
 
 
 class _SettingsGetter:
     """``get_settings``: the aggregate settings, cached per pick, uncached under a run's overlay.
 
-    The cache is keyed by the profiles the current run picks (:func:`picked_names`),
-    so runs that pick differently (a child run, a thread in one, an asyncio task
-    in another) each read their own entry and none ever clears another's. Under
+    The cache is keyed by the profiles the current run picks and its project's
+    file (:func:`settings_key`), so runs that pick differently (a child run, a
+    thread in one, an asyncio task in another) or run in another project each
+    read their own entry and none ever clears another's. Under
     a run carrying an overlay the settings are built fresh and never stored, so
     candidate values reach no cache. The key is the pick alone, not the home or
     the environment: a config write, registration or reset drops every pick's
@@ -350,7 +352,7 @@ class _SettingsGetter:
         """Return the aggregate settings of the current pick, cached."""
         if current_overlay() is not None:
             return _build_settings()
-        return self._cached(picked_names())
+        return self._cached(settings_key())
 
     def cache_clear(self) -> None:
         """Drop the cached settings of every pick."""
@@ -571,12 +573,33 @@ def settings_error_message(exc: ValidationError, settings_cls: type[BaseModel]) 
     env_var = _env_culprit(exc, settings_cls)
     if env_var is not None:
         return f"invalid value in environment variable {env_var}: {detail}"
-    path = resolve_config_path()
     errors = exc.errors()
     loc = errors[0].get("loc", ()) if errors else ()
+    path = _file_of([part for part in loc if isinstance(part, str)])
     if loc and isinstance(loc[0], str):
         return f"invalid config section {loc[0]!r} in {path}: {detail}"
     return f"invalid config in {path}: {detail}"
+
+
+def _file_of(loc: Sequence[str]) -> Path:
+    """The config file the value at ``loc`` came from: the project's when it set it."""
+    from untaped.runtime.config_file import read_config_dict  # noqa: PLC0415
+    from untaped.runtime.folder_layer import folder_layer  # noqa: PLC0415 - imports this module
+    from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX  # noqa: PLC0415
+
+    home = resolve_config_path()
+    try:
+        layer = folder_layer()
+        if layer is None or not loc:
+            return home
+        provenance = active_settings_layout().resolve(read_config_dict()).provenance
+    except UntapedError, OSError:
+        return home
+    for depth in range(len(loc), 0, -1):
+        source = provenance.get(tuple(loc[:depth]))
+        if source is not None:
+            return layer.file if str(source).startswith(FOLDER_SOURCE_PREFIX) else home
+    return home
 
 
 def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | None:

@@ -18,6 +18,7 @@ from untaped.core.commands.config import Migrate
 from untaped.core.commands.skills import Remove as RemoveSkill
 from untaped.core.commands.skills import Update as UpdateSkills
 from untaped.core.commands.skills import composed_skills
+from untaped.core.doctor_project import project_config_row
 from untaped.core.doctor_row import (
     FAIL,
     PASS,
@@ -105,6 +106,21 @@ def collect_doctor_rows(
     ``plugins`` limits the plugin-contributed checks to those
     plugins (``setup`` checks only what it configured).
     """
+    project_row = project_config_row()
+    if project_row is None:
+        return _collect_rows(result, online=online, plugins=plugins)
+    if project_row["status"] != FAIL:
+        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
+    with child_run(folder=False):  # the rest as if outside the project, so every row shows
+        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
+
+
+def _collect_rows(
+    result: CompositionResult,
+    *,
+    online: bool,
+    plugins: frozenset[str] | None,
+) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     raw, config_row = _config_row()
     rows.append(config_row)
@@ -157,7 +173,7 @@ def selected_check_rows(
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
     """``selected`` plugins' doctor rows for ``profile``, online checks included."""
-    with child_run(profiles=profile):
+    with child_run(profiles=profile, folder=False):
         rows = collect_doctor_rows(result, online=True, plugins=selected)
     # Old keys concern every plugin's settings, so setup shows them too.
     return [
@@ -194,7 +210,7 @@ def online_probe_rows(
         raise ConfigError(f"no composed plugin named {plugin!r} to check")
     scope = _plugin_scope(composed)
     overlay = SettingsOverlay(profile, scope.section, dict(values))
-    with child_run(profiles=profile, overlay=overlay):
+    with child_run(profiles=profile, overlay=overlay, folder=False):
         settings, error = None, None
         if scope.settings_model is not None:
             settings, error = _validate_section(scope, scope.settings_model, *_overlaid_effective())
