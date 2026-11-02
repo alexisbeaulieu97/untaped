@@ -162,21 +162,6 @@ def class_mark(cls: type) -> Stability | None:
     return mark if isinstance(mark, Experimental | Deprecated) else None
 
 
-# --- panels and the --deprecated flag ----------------------------------------
-
-
-# --- marks on apps -----------------------------------------------------------
-
-
-# --- replacements ------------------------------------------------------------
-
-
-# --- applying marks to a tree ------------------------------------------------
-
-
-# --- the query ---------------------------------------------------------------
-
-
 # --- marks on settings -------------------------------------------------------
 
 
@@ -188,9 +173,6 @@ def stability_name(mark: Stability | None) -> SettingStability:
     if mark is None:
         return "stable"
     return "experimental" if isinstance(mark, Experimental) else "deprecated"
-
-
-# --- renamed commands -------------------------------------------------------
 
 
 # --- removal versions and the deprecation emitter ------------------------------
@@ -313,9 +295,3 @@ def notify_deprecation(
             replacement=None if replacement is None else replacement.replace("`", ""),
         )
     )
-
-
-# --- deprecated SDK callables and parameters ----------------------------------
-
-
-# --- deprecated behaviours ---------------------------------------------------
