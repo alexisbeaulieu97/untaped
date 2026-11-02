@@ -301,9 +301,8 @@ class PlannedSettings:
             if descriptor.holds_secret
             else display_value(descriptor, repo.typed(key, value), reveal_secrets=False)
         )
-        text = json.dumps(
-            shown, separators=(",", ":"), ensure_ascii=False
-        )  # "true" the text, true the bool
+        # JSON, so the text "true" and the bool true read apart
+        text = json.dumps(shown, separators=(",", ":"), ensure_ascii=False)
         return f"set {key} to {text} in {where}"
 
     def preview(self) -> list[PreviewItem]:
