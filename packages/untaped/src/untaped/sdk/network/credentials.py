@@ -724,10 +724,11 @@ def _touched_for(
     for section, model in profile_section_models().items():
         for path, _model in key_fields(model):
             prefix = (section, *path)
+            # Strictly below the key: the key's own path is an empty mapping, which sets nothing.
             touched = {
                 ".".join(leaf): source
                 for leaf, source in leaves.items()
-                if leaf[: len(prefix)] == prefix
+                if leaf[: len(prefix)] == prefix and len(leaf) > len(prefix)
             }
             if not touched:
                 continue

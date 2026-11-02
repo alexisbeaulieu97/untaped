@@ -387,7 +387,7 @@ class Provider[S: BaseModel = BaseModel]:
 
 
 def _key_at(provider: type, section: str | None, loc: tuple[int | str, ...]) -> SettingKey | None:
-    """The settings key at a validation error's ``loc``, as far as it names fields.
+    """The settings key at a validation error's ``loc``, as far as it names fields and entries.
 
     The section loader's ``loc`` starts with the section's name, unless the
     whole section failed its default: a leading ``section`` is dropped, even
@@ -405,7 +405,10 @@ def _key_at(provider: type, section: str | None, loc: tuple[int | str, ...]) -> 
         try:
             found = getattr(found, part)
         except AttributeError:
-            break
+            try:
+                found = found[part]  # a map entry a key can name
+            except TypeError, ValueError:
+                break
     return found if SettingKey.path_of(found) else None
 
 

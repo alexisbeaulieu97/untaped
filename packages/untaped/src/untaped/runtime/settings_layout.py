@@ -329,10 +329,11 @@ def _picker(pick: Picked, layer: FolderLayer | None) -> str:
 def folder_refusal(descriptor: FieldDescriptor) -> str | None:
     """Why a project's file may not set ``descriptor``'s setting, or ``None`` when it may.
 
-    Read from the setting's type and marks, never its name: a secret, a
-    command untaped runs, or a setting marked ``HomeOnly()``.
+    Read from the setting's type and marks, never its name: a secret (or a
+    map or entry that holds one), a command untaped runs, or a setting marked
+    ``HomeOnly()``.
     """
-    if descriptor.is_secret:
+    if descriptor.holds_secret:
         return "it is a secret, which only the home's config.yml or `untaped auth login` holds"
     if descriptor.argv:
         return "it is a command untaped runs, which only the home's config.yml sets"

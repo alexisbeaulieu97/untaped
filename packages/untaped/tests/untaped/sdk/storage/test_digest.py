@@ -248,6 +248,31 @@ def test_a_key_a_projects_file_chose_gets_no_variable(
     forget_provenance()
 
 
+class DefaultServer(CredentialKey):
+    url: HttpUrl = HttpUrl("https://d.example.com")
+
+
+class DefaultToySettings(BaseModel):
+    server: DefaultServer = Field(default_factory=DefaultServer)
+
+
+def test_an_empty_key_mapping_in_a_projects_file_chooses_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server: {}`` sets no field, so the key is still the home's (the default here)."""
+    from untaped.runtime.settings import reset_config_registry
+
+    reset_config_registry()
+    _register(DefaultToySettings)
+    _config()
+    root = make_project(tmp_path / "PROJ-1").root
+    (root / ".untaped" / "config.yml").write_text("toy: {server: {}}\n", encoding="utf-8")
+    monkeypatch.chdir(root)
+    forget_provenance()
+    assert not folder_chose(DefaultServer())
+    forget_provenance()
+
+
 def test_a_missing_credential_for_a_key_a_projects_file_chose_says_where_to_move_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
