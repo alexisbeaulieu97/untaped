@@ -9,7 +9,7 @@ import pytest
 
 from git_test_support import StoreError, StoreFor, all_refs, ensure, git
 from untaped.sdk import ErrorCategory
-from untaped.sdk.testing.git import GitRemote, global_config
+from untaped_git.testing import GitRemote, global_config
 
 
 def test_a_new_url_spelling_replaces_the_old_rewrite(

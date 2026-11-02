@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,6 @@ from core_test_support.skills import install_skills
 from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
 from untaped.runtime.composed import SkillAsset
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.git import run_git
 from untaped.sdk.projects import checkout_root
 
 
@@ -95,7 +95,7 @@ def test_local_install_without_project_dir_uses_the_git_checkout_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = tmp_path / "repo"
-    run_git(["init", "-q", str(repo)], timeout=30)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True, timeout=30)
     nested = repo / "sub"
     nested.mkdir()
     monkeypatch.chdir(nested)

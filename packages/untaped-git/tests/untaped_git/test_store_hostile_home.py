@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 
 from git_test_support import StoreError, all_refs, ensure, git, objects
-from untaped.sdk.testing.git import GitRemote, git_remote, hostile_git_home
 from untaped_git import store as store_module
 from untaped_git.store import RepoStore
+from untaped_git.testing import GitRemote, git_remote, hostile_git_home
 
 # Each worktree's helper nonce depends on its path and its repo's key.
 _NONCE = re.compile(r"--nonce [0-9a-f]+")

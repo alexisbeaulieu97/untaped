@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from untaped.sdk import Source, UntapedError, key
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.testing import ManualClock, Ran, Running
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.api import Repo
 from untaped_workspace.infrastructure import LocalGitWorktrees
 from workspace_test_support import (

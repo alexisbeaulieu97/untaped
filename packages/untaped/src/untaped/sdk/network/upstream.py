@@ -10,9 +10,10 @@ is not cut short.
 
 The budget is one shared cell, so the context a worker thread copies
 (``bounded_map``) sees the same flag: one success lifts the cap for every
-worker of the block. :class:`untaped.sdk.network.http.HttpClient` and
-:func:`untaped.sdk.git.run_git` read it (:func:`capped`) and report a success
-(:func:`succeeded`); nothing else does. :func:`full_retries` steps out of
+worker of the block. A call to an upstream reads it (:func:`capped`: the
+longest timeout it may take, and no retries) and reports a success
+(:func:`succeeded`): :class:`untaped.sdk.network.HttpClient` and untaped-git's
+``run_git`` do. :func:`full_retries` steps out of
 an enclosing :func:`fail_fast` for a fill that must not be cut short.
 """
 
@@ -22,6 +23,8 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+
+from untaped.sdk.marks import experimental
 
 #: Longest timeout (seconds) of a capped call.
 PROBE_TIMEOUT = 10.0
@@ -91,14 +94,24 @@ def full_retries() -> Iterator[None]:
         yield
 
 
-def capped() -> bool:
-    """Whether a call starting now is capped and unretried."""
+@experimental
+def capped() -> float | None:
+    """The longest timeout (seconds) a call starting now may take, or ``None``: not capped.
+
+    A capped call is also tried once, never retried.
+
+    First consumer: core's ``HttpClient``; then untaped-git's ``run_git``.
+    """
     budget = _BUDGET.get()
-    return budget is not None and budget.capped()
+    return PROBE_TIMEOUT if budget is not None and budget.capped() else None
 
 
+@experimental
 def succeeded() -> None:
-    """Report that a call reached upstream and succeeded (lifts a :func:`fail_fast` cap)."""
+    """Report that a call reached upstream and succeeded (lifts a :func:`fail_fast` cap).
+
+    First consumer: core's ``HttpClient``; then untaped-git's ``run_git``.
+    """
     budget = _BUDGET.get()
     if budget is not None:
         budget.succeeded()

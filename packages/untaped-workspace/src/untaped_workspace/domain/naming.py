@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 
 from untaped.sdk import UsageError, first_validation_error, q
-from untaped.sdk.git import safe_path_segment
+from untaped.sdk.storage import safe_path_segment
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.domain.repo import Repo
 

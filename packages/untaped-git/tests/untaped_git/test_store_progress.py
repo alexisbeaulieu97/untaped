@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from git_test_support import StoreFor
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 
 NAMES = [f"b{index:03d}" for index in range(60)]
 

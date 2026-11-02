@@ -20,7 +20,7 @@ import pytest
 from untaped.sdk.projects import ProjectRemoval, known_projects
 from untaped.sdk.storage import HolderView, LetGo, Refused, ReleaseAsk
 from untaped.sdk.testing import install, make_project, plan_release
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.application.remove import RemoveWorkspace
 from untaped_workspace.domain.models import RepoKey, WorkspaceMeta, WorkspaceRecord
 from untaped_workspace.infrastructure import ProjectWorkspaceStore

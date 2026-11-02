@@ -14,10 +14,10 @@ from typing import Any
 import pytest
 
 from github_test_support import Settings, installed, using
-from untaped.sdk.git import GitResult
 from untaped.sdk.testing import Running
 from untaped_git import remote as remote_module
 from untaped_git import store as store_module
+from untaped_git.api import GitResult
 
 #: The token every test runs with, from the GitHub CLI's variable.
 TOKEN = "ghp_test"

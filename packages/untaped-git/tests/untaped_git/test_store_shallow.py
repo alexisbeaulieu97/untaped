@@ -10,9 +10,9 @@ from typing import Any
 import pytest
 
 from git_test_support import StoreFor, git
-from untaped.sdk.testing.git import GitRemote, trace2_events
 from untaped_git import store as store_module
 from untaped_git.store import RepoStore
+from untaped_git.testing import GitRemote, trace2_events
 
 
 def test_a_moved_shallow_repo_unshallows_once(

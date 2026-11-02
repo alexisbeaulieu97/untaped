@@ -147,10 +147,11 @@ or becomes an SDK helper that every plugin can use. Declare a
 - **Absolute imports only**, tests included.
 - **Lazy imports on CLI startup paths** (`tests/repo/test_import_cost.py`
   budgets them); `# noqa: PLC0415` only where Ruff flags it.
-- **Git through `run_git` and `git_toplevel`**, and advisory file locks
-  through `file_lock`, all exported by `untaped.sdk`; never hand-rolled
-  `subprocess` git plumbing. A child in its own process group starts through
-  `untaped.sdk.process`, which stops it when untaped is interrupted.
+- **Git through `run_git` and `git_toplevel`** from `untaped_git.api`, and
+  advisory file locks through `file_lock` from `untaped.sdk`; never
+  hand-rolled `subprocess` git plumbing. A child in its own process group
+  starts through `untaped.sdk.process`, which stops it when untaped is
+  interrupted.
 - **Module docstrings.** Every module opens with a docstring saying what it
   owns (re-export stubs are exempt; `house.module-docstring` checks source
   modules). Rationale that protects code goes there.

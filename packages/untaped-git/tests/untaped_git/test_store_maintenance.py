@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 
 from git_test_support import StoreFor, all_refs, objects
-from untaped.sdk.testing.git import GitRemote, git_shim, trace2_events
 from untaped_git import store as store_module
 from untaped_git.report import store_report
+from untaped_git.testing import GitRemote, git_shim, trace2_events
 
 
 def _alive(pid: int) -> bool:
@@ -83,7 +83,7 @@ def test_a_stalled_repack_is_a_warning(
     hostile: bool,
 ) -> None:
     if hostile:
-        from untaped.sdk.testing.git import hostile_git_home
+        from untaped_git.testing import hostile_git_home
 
         hostile_git_home()
     store = store_for("github")

@@ -35,7 +35,6 @@ SDK_MODULES = frozenset(
     {
         "untaped.sdk",
         "untaped.sdk.contracts",
-        "untaped.sdk.git",
         "untaped.sdk.health",
         "untaped.sdk.network",
         "untaped.sdk.process",
@@ -43,7 +42,6 @@ SDK_MODULES = frozenset(
         "untaped.sdk.prompt",
         "untaped.sdk.storage",
         "untaped.sdk.testing",
-        "untaped.sdk.testing.git",
     }
 )
 

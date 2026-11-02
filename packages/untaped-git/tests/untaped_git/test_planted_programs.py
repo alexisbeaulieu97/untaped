@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from untaped_git.api import run_git
 from untaped_git.version import git_version
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
@@ -29,3 +30,9 @@ def planted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 def test_the_version_probe_skips_a_planted_git(planted: Path) -> None:
     assert git_version() != (9, 9, 9)
+
+
+def test_run_git_skips_a_planted_git(planted: Path, tmp_path: Path) -> None:
+    (planted / "git").write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'ran')!r}, 'w')\n")
+    run_git(["--version"], cwd=planted, timeout=30)
+    assert not (tmp_path / "ran").exists()

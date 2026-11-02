@@ -9,9 +9,9 @@ import pytest
 
 from git_test_support import StoreError, StoreFor
 from untaped.sdk.testing import install
-from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_git.plugin import Git
 from untaped_git.store import RepoStore
+from untaped_git.testing import GitRemote, git_remote
 
 
 @pytest.fixture(autouse=True)

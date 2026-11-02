@@ -8,7 +8,6 @@ from __future__ import annotations
 SDK_MODULES = (
     "untaped.sdk",
     "untaped.sdk.contracts",
-    "untaped.sdk.git",
     "untaped.sdk.health",
     "untaped.sdk.network",
     "untaped.sdk.process",
@@ -16,5 +15,4 @@ SDK_MODULES = (
     "untaped.sdk.prompt",
     "untaped.sdk.storage",
     "untaped.sdk.testing",
-    "untaped.sdk.testing.git",
 )

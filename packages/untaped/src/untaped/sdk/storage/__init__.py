@@ -8,8 +8,8 @@ holds over an operation). A cache's fill reports through a
 :class:`ProgressHandle`. A :class:`Dir` with ``items=`` lets go of an item
 through a :class:`ReleaseAsk` answered by a :class:`LetGo` or a
 :class:`Refused`, and :func:`atomic_write`, :func:`file_lock`,
-:func:`read_structured_file` and :func:`dir_bytes` are the file steps the
-blocks are built from.
+:func:`read_structured_file`, :func:`dir_bytes` and :func:`safe_path_segment`
+are the file steps the blocks are built from.
 """
 
 from __future__ import annotations
@@ -20,7 +20,13 @@ from untaped.sdk._lazy import lazy_names
 
 if TYPE_CHECKING:
     from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
-    from untaped.sdk.storage._fs import atomic_write, dir_bytes, file_lock, read_structured_file
+    from untaped.sdk.storage._fs import (
+        atomic_write,
+        dir_bytes,
+        file_lock,
+        read_structured_file,
+        safe_path_segment,
+    )
     from untaped.sdk.storage.cache import (
         Cache,
         Filled,
@@ -78,13 +84,20 @@ __all__ = [
     "dir_bytes",
     "file_lock",
     "read_structured_file",
+    "safe_path_segment",
 ]
 
 if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
     __getattr__, __dir__ = lazy_names(
         globals(),
         {
-            "_fs": ("atomic_write", "dir_bytes", "file_lock", "read_structured_file"),
+            "_fs": (
+                "atomic_write",
+                "dir_bytes",
+                "file_lock",
+                "read_structured_file",
+                "safe_path_segment",
+            ),
             "cache": (
                 "Cache",
                 "Filled",

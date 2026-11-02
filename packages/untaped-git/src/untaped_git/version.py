@@ -9,8 +9,8 @@ from __future__ import annotations
 import functools
 import re
 
-from untaped.sdk.git import GitCommandError, run_git
 from untaped.sdk.network import find_program
+from untaped_git.run import GitCommandError, run_git
 
 #: The oldest git the repo store runs on.
 FLOOR = (2, 29)

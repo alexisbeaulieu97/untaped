@@ -30,9 +30,8 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from untaped.sdk._run import run_clock
 from untaped.sdk.diagnostic import Failure, format_utc, parse_utc
 from untaped.sdk.errors import ConfigError, ErrorCategory, System, UntapedError
-from untaped.sdk.git import safe_path_segment
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
-from untaped.sdk.storage._fs import file_lock
+from untaped.sdk.storage._fs import file_lock, safe_path_segment
 from untaped.sdk.words import duration_text
 
 _LOG = logging.getLogger("untaped.cache")

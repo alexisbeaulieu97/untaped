@@ -23,8 +23,8 @@ from pydantic import SecretStr
 
 from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import Ran, install
-from untaped.sdk.testing.git import GitRemote, git_remote, global_config
 from untaped_git.api import Credential, GitHost
+from untaped_git.testing import GitRemote, git_remote, global_config
 from untaped_workspace.plugin import WorkspacePlugin
 from workspace_test_support import err
 

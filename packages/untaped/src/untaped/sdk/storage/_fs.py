@@ -1,13 +1,16 @@
-"""Filesystem helpers for SDK commands: structured reads, atomic writes, file locks and sizes."""
+"""Filesystem helpers for SDK commands: structured reads, atomic writes, file locks, sizes and
+safe names."""
 
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import re
 import stat
 import threading
+import unicodedata
 import uuid
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager, suppress
@@ -18,6 +21,7 @@ import yaml
 from filelock import FileLock
 
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
+from untaped.sdk.marks import experimental
 
 
 def atomic_write(
@@ -321,3 +325,31 @@ def dir_bytes(path: Path) -> int:
             except OSError:
                 continue
     return total
+
+
+#: The most bytes :func:`safe_path_segment` returns: room for a suffix
+#: (``.git``, ``-<digest>``) under every filesystem's 255-byte name limit.
+_SEGMENT_MAX_BYTES = 128
+
+
+@experimental
+def safe_path_segment(value: str) -> str:
+    """Map ``value`` to one filesystem-safe path segment (never ``.``/``..``).
+
+    NFC-normalised first, so the composed and decomposed spellings of a name
+    (macOS file names are often decomposed) are one directory; every
+    character but letters, digits and ``._-`` becomes ``_``. A segment over
+    128 bytes keeps a prefix and a hash of the whole value, so two long
+    names stay apart.
+
+    First consumer: core's cache files; then untaped-git's store paths.
+    """
+    normal = unicodedata.normalize("NFC", value)
+    safe = "".join(char if char.isalnum() or char in "._-" else "_" for char in normal)
+    if safe in {"", ".", ".."}:
+        return "_"
+    if len(safe.encode()) <= _SEGMENT_MAX_BYTES:
+        return safe
+    digest = hashlib.sha256(normal.encode()).hexdigest()[:12]
+    prefix = safe.encode()[: _SEGMENT_MAX_BYTES - len(digest) - 1].decode("utf-8", "ignore")
+    return f"{prefix}-{digest}"
