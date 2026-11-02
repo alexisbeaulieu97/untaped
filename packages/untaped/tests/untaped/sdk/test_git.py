@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from untaped.sdk import _process_groups, git
-from untaped.sdk.errors import UntapedError
+from untaped.sdk.errors import ErrorCategory, UntapedError
 from untaped.sdk.git import (
     GitCommandError,
     git_env,
@@ -337,6 +337,16 @@ def test_timeout_maps_to_timed_out_error(monkeypatch: pytest.MonkeyPatch) -> Non
         run_git(["fetch", "--prune", "origin"], timeout=60.0)
     assert excinfo.value.timed_out is True
     assert excinfo.value.returncode is None
+
+
+def test_a_stopped_run_is_an_interrupted_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def stopped(args: list[str], **kwargs: Any) -> ProcessResult:
+        return ProcessResult(ended="stopped", returncode=None, stdout=b"", stderr=b"", duration_s=0)
+
+    monkeypatch.setattr(git, "run_process", stopped)
+    with pytest.raises(GitCommandError, match=r"git fetch was stopped: untaped is") as excinfo:
+        run_git(["fetch", "origin"], timeout=60.0)
+    assert excinfo.value.category is ErrorCategory.INTERRUPTED
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX executable script stands in for git")

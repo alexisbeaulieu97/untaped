@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import _process_groups
+from untaped.sdk.errors import ErrorCategory, UntapedError
 from untaped.sdk.process import ProcessResult, run_process, start_process
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
@@ -299,6 +300,40 @@ def test_a_child_that_exits_on_its_own_is_deregistered_when_seen() -> None:
     child.close()
     child.stdout.close()
     child.stderr.close()
+
+
+def test_a_child_that_exits_of_a_forwarded_signal_was_stopped() -> None:
+    results: list[ProcessResult] = []
+    worker = threading.Thread(
+        target=lambda: results.append(run_process(_py("import time; time.sleep(30)"), timeout=30))
+    )
+    worker.start()
+    deadline = time.monotonic() + 10
+    while not _process_groups._S.groups:
+        assert time.monotonic() < deadline, "the child never started"
+        time.sleep(0.02)
+    _process_groups.ending(signal.SIGTERM)  # what the handler forwards, short of raising
+    worker.join(timeout=10)
+    assert (results[0].ended, results[0].returncode) == ("stopped", None)
+
+
+def test_once_closing_a_worker_starts_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_process_groups._S, "closing", (signal.SIGTERM, time.monotonic()))
+    outcomes: list[object] = []
+
+    def work() -> None:
+        outcomes.append(run_process(["true"], timeout=5).ended)
+        try:
+            start_process(["true"])
+        except UntapedError as error:
+            outcomes.append(error.category)
+
+    worker = threading.Thread(target=work)
+    worker.start()
+    worker.join()
+    assert outcomes == ["stopped", ErrorCategory.INTERRUPTED]
+    with pytest.raises(ValueError, match="argv is empty"):
+        start_process([])
 
 
 # ── untaped's own signals (in a child Python) ───────────────────────────────
