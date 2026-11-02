@@ -32,15 +32,10 @@ from typing import IO, Any
 from pydantic import ValidationError
 
 from untaped.core.commands._render import emit_fix_list, emit_isolated, fix_plan
-from untaped.core.commands.doctor import (
-    Check,
-    collect_doctor_rows,
-    group_fixes,
-    is_automatic,
-    placeholders,
-    run_line,
-)
+from untaped.core.commands.doctor import Check, group_fixes, is_automatic, run_line
 from untaped.core.commands.records import FixOutcome
+from untaped.core.doctor_row import placeholders
+from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import CompositionResult
 from untaped.runtime.run_output import (

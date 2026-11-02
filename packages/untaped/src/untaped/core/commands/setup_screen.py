@@ -17,7 +17,7 @@ settings, a token source as tabs, buttons;
 Saving it checks before it writes: the form's values become a
 :class:`Candidate`, the plugin's online checks run against them inside a
 settings overlay (nothing is stored yet,
-:func:`untaped.core.commands.doctor.online_probe_rows`), and only a pass runs the
+:func:`untaped.core.doctor_rows.online_probe_rows`), and only a pass runs the
 write, as a write command, so quitting never leaves it half done. A failed
 check shows its reason under the form and offers ``Save anyway``, for that
 plugin until its form changes or saves (each plugin keeps its own). A Command
@@ -55,7 +55,7 @@ from typing import TYPE_CHECKING, Literal
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.core.commands.doctor import Check, online_probe_rows, run_line
+from untaped.core.commands.doctor import Check, run_line
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_connection import (
     anyway_buttons,
@@ -88,6 +88,7 @@ from untaped.core.commands.setup_write import (
     write_candidate,
 )
 from untaped.core.config.use_cases import Note
+from untaped.core.doctor_rows import online_probe_rows
 from untaped.runtime.registry import CompositionResult, contract_owners
 from untaped.runtime.settings import resolve_config_path
 from untaped.screen.components.buttons import Button, Buttons, Pressed

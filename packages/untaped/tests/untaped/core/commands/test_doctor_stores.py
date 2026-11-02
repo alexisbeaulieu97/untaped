@@ -11,7 +11,7 @@ import pytest
 from pydantic import BaseModel
 
 from core_test_support.commands.support import make_plugin
-from untaped.core.commands.doctor import collect_doctor_rows
+from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.run import build_run
 from untaped.sdk import Dir, key

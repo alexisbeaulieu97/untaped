@@ -354,7 +354,7 @@ def test_doctor_refuses_a_secret_even_when_the_home_is_unreadable(
 
 
 def test_only_a_single_value_the_file_sets_is_its_own_error() -> None:
-    from untaped.core.commands.doctor import _sets
+    from untaped.core.doctor_project import _sets
 
     node = {"pair": {"hi": 3}, "tags": ["a"]}
     assert _sets(node, ("pair", "hi"))
