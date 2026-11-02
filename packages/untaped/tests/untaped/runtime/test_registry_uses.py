@@ -10,6 +10,7 @@ import os
 from collections.abc import Iterator
 from importlib.metadata import version
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 
@@ -17,7 +18,7 @@ import untaped.runtime.registry as registry
 from core_test_support.runtime.plugin_uses_site import FILLS_BOOKS, OTHER, Site, installed_site
 from untaped.runtime import bootstrap
 from untaped.runtime.declaration import UseDecl
-from untaped.runtime.registry import CompositionResult, compose
+from untaped.runtime.registry import CompositionResult, PluginCandidate, compose
 from untaped.sdk.marks import forget_notices
 from untaped.sdk.storage import installed_code as installed_code_module
 from untaped.sdk.testing import CliInvoker
@@ -37,9 +38,9 @@ def reads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     read: list[str] = []
     real = registry.read_imports
 
-    def counted(module: str):  # type: ignore[no-untyped-def]
+    def counted(module: str, package: str | None = None):  # type: ignore[no-untyped-def]
         read.append(module)
-        return real(module)
+        return real(module, package)
 
     monkeypatch.setattr(registry, "read_imports", counted)
     return read
@@ -254,3 +255,26 @@ def test_a_distribution_released_with_untaped_is_not_read(site: Site, reads: lis
     result = compose([pinned])
     assert reads == []
     assert _composed(result) == ["untaped", "other"]
+
+
+def test_two_plugins_of_one_distribution_are_each_read(site: Site) -> None:
+    acme = site.acme("from untaped.sdk import plural\n")
+    beta_plugin = dedent(OTHER).replace("Other", "Beta").replace("other", "beta")
+    site.install(
+        "untaped-acme",
+        {
+            "untaped_beta/__init__.py": "",
+            "untaped_beta/plugin.py": beta_plugin + "\nfrom untaped.sdk import gone\n",
+        },
+    )
+    beta = PluginCandidate(
+        distribution="untaped-acme",
+        name="beta",
+        target="untaped_beta.plugin:Beta",
+        distribution_version="1.0",
+    )
+    result = compose([acme, beta])
+    assert _composed(result) == ["untaped", "acme"]
+    reason, detail, _ = _quarantined(result)["beta"]
+    assert reason == "uses-missing"
+    assert detail.startswith("untaped-acme 1.0: untaped_beta/plugin.py:")

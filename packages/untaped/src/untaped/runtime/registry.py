@@ -519,10 +519,12 @@ class _CompositionState:
     @cached_property
     def owners(self) -> dict[str, Owner]:
         """Who each top-level package a plugin may import from belongs to: untaped, or a plugin."""
+        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415 - composing
+
         owners = {
             package: Owner(each.distribution, each.name)
             for each in self._candidates
-            if each.distribution.strip() and (package := _target_package(each))
+            if each.distribution.strip() and (package := candidate_package(each.target))
         }
         owners["untaped"] = Owner(_CORE_DISTRIBUTION, "untaped", core=True)
         return owners
@@ -1006,21 +1008,26 @@ def _imports_of(candidate: PluginCandidate) -> tuple[ImportRecord, ...]:
     Keyed by the candidate's own code, so an edit to it (or a reinstall)
     reads it again and installing another plugin doesn't.
     """
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415 - composing
+
     module = str(candidate.target).partition(":")[0]
+    package = candidate_package(candidate.target)
 
     def fill(_key: str, _progress: ProgressHandle) -> Filled[PluginImports]:
-        return Filled(value=read_imports(module))
+        return Filled(value=read_imports(module, package))
 
     try:
         from untaped.core.settings import IMPORTS  # noqa: PLC0415 - core imports the runtime
 
         code = distribution_code(importlib_metadata.distribution(candidate.distribution))
-        key = f"{_key_word(candidate.distribution)}.h{code[:24]}"
+        # one distribution may hold several plugins; the stdlib's names are the Python's
+        python = f"py{sys.version_info.major}{sys.version_info.minor}"
+        key = f"{_key_word(candidate.distribution)}.{_key_word(module)}.{python}.h{code[:24]}"
         served = IMPORTS.serve({key: f"{candidate.distribution} imports"}, refresh=None, fill=fill)
         return served.value[key].records
     except Exception:  # no metadata to key by, or the cache failed: read, as before it existed
         _LOG.debug("reading %s's imports without the cache", candidate.distribution, exc_info=True)
-        return read_imports(module).records
+        return read_imports(module, package).records
 
 
 def _key_word(distribution: str) -> str:
@@ -1287,14 +1294,6 @@ def _package_of(candidate: PluginCandidate) -> str:
     if isinstance(target, str) and ":" in target:
         return target.partition(":")[0].partition(".")[0]
     return "untaped_" + candidate.name.replace("-", "_")
-
-
-def _target_package(candidate: PluginCandidate) -> str:
-    """The top-level package ``candidate``'s plugin class lives in; ``""`` when unknown."""
-    target = candidate.target
-    if isinstance(target, str):
-        return target.partition(":")[0].partition(".")[0]
-    return str(getattr(target, "__module__", None) or "").partition(".")[0]
 
 
 def _class_name(candidate: PluginCandidate) -> str:

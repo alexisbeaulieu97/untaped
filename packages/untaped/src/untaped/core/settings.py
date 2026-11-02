@@ -43,7 +43,8 @@ DECLARATION = Cache(
 IMPORTS = Cache(
     label="what plugins import",
     model=PluginImports,
-    version=installed_code("untaped.runtime.plugin_imports"),
+    # the reader, and how it finds files: a change to either reads every plugin again
+    version=installed_code("untaped.runtime.plugin_imports", "untaped.sdk.storage.installed_code"),
     max_age=None,
     split="none",
 )._bound_to(NAME, "imports")

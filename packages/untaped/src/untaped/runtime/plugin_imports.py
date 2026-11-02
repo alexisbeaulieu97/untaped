@@ -15,8 +15,11 @@ standard library's, and composition keeps those of untaped and the plugins:
   ``M.N``;
 - an import under ``if TYPE_CHECKING:`` never runs, so it isn't recorded;
 - one inside a ``try`` whose handler catches ``ImportError`` (or a base of
-  it), or under an ``if`` testing ``hasattr``, is *guarded*: the plugin
-  handles the name being missing;
+  it), a ``with suppress(ImportError)``, or any other ``if`` (a version
+  check, a ``hasattr`` test) is *guarded*: the plugin decides whether it
+  runs and handles the name being missing;
+- a name bound in a function (a parameter, an assignment) hides an imported
+  module of the same name there;
 - a star import is recorded as such: nobody can tell what it binds.
 
 Core keeps the result per plugin version in its ``imports`` cache
@@ -69,19 +72,22 @@ class PluginImports(BaseModel):
     records: tuple[ImportRecord, ...] = ()
 
 
-def read_imports(entry_module: str) -> PluginImports:
+def read_imports(entry_module: str, package: str | None = None) -> PluginImports:
     """What the plugin whose entry point module is ``entry_module`` imports, read from source.
 
-    The plugin's package is the module's top-level package. A file that
-    doesn't parse is skipped: importing it fails anyway, and composition
-    says so.
+    ``package`` is the plugin's package (``untaped.plugins.acme`` for one
+    nested in untaped), its entry module's top-level package by default. A
+    file that doesn't parse is skipped: importing it fails anyway, and
+    composition says so.
     """
-    package = entry_module.partition(".")[0]
+    package = package or entry_module.partition(".")[0]
     top = module_source(package)
     base = None if top is None else (top.parent.parent if top.name == "__init__.py" else top.parent)
+    if base is not None:
+        base = base.parents[package.count(".") - 1] if "." in package else base
     records: dict[tuple[str, str | None, str], ImportRecord] = {}
     seen: set[str] = set()
-    waiting = [*_parents(entry_module), entry_module]
+    waiting = [each for each in (*_parents(entry_module), entry_module) if _within(each, package)]
     while waiting:
         module = waiting.pop()
         if module in seen:
@@ -101,8 +107,16 @@ def read_imports(entry_module: str) -> PluginImports:
         for record in reader.records:
             records.setdefault((record.module, record.name, record.file), record)
         for own in reader.own:
-            waiting.extend(name for name in (*_parents(own), own) if name not in seen)
+            waiting.extend(
+                name
+                for name in (*_parents(own), own)
+                if name not in seen and _within(name, package)
+            )
     return PluginImports(records=tuple(records.values()))
+
+
+def _within(module: str, package: str) -> bool:
+    return module == package or module.startswith(f"{package}.")
 
 
 def _parents(module: str) -> Iterator[str]:
@@ -135,11 +149,35 @@ class _Reader(ast.NodeVisitor):
             for child in node.orelse:
                 self.visit(child)
             return
-        if _tests_hasattr(node.test):
-            self._guarded(node.body, node.orelse)
-            self.visit(node.test)
+        self.visit(node.test)
+        self._guarded(node.body, node.orelse)
+
+    def visit_With(self, node: ast.With) -> None:
+        if any(_suppresses_imports(item.context_expr) for item in node.items):
+            for item in node.items:
+                self.visit(item)
+            self._guarded(node.body)
             return
         self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._scope(node)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self._scope(node)
+
+    def _scope(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> None:
+        """Visit a function with the names it binds itself hiding imported modules."""
+        saved = self.bound
+        local = _locals(node)
+        self.bound = {name: module for name, module in saved.items() if name not in local}
+        try:
+            self.generic_visit(node)
+        finally:
+            self.bound = saved
 
     def visit_Try(self, node: ast.Try) -> None:
         self._try(node)
@@ -148,7 +186,7 @@ class _Reader(ast.NodeVisitor):
         self._try(node)
 
     def _try(self, node: ast.Try | ast.TryStar) -> None:
-        if any(_catches_imports(handler.type) for handler in node.handlers):
+        if any(_handles(handler) for handler in node.handlers):
             self._guarded(node.body)
         else:
             for child in node.body:
@@ -201,7 +239,7 @@ class _Reader(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         chain = _chain(node)
-        if chain is not None and chain[0] in self.bound:
+        if chain is not None and chain[0] in self.bound and isinstance(node.ctx, ast.Load):
             spelled = ".".join((self.bound[chain[0]], *chain[1:]))
             for module in sorted(self.imported, key=len, reverse=True):
                 if spelled.startswith(f"{module}."):
@@ -227,7 +265,7 @@ class _Reader(ast.NodeVisitor):
         )
 
     def _own(self, module: str) -> bool:
-        return module == self.package or module.startswith(f"{self.package}.")
+        return _within(module, self.package)
 
     def _absolute(self, node: ast.ImportFrom) -> str | None:
         """The module a ``from`` import names, its dots resolved against this file's package."""
@@ -249,11 +287,42 @@ def _is_type_checking(test: ast.expr) -> bool:
     )
 
 
-def _tests_hasattr(test: ast.expr) -> bool:
-    return any(
-        isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hasattr"
-        for node in ast.walk(test)
+def _suppresses_imports(context: ast.expr) -> bool:
+    """``suppress(ImportError)`` (or ``contextlib.suppress``) catching a failed import."""
+    if not isinstance(context, ast.Call):
+        return False
+    func = context.func
+    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+    return name == "suppress" and any(_catches_imports(each) for each in context.args)
+
+
+def _locals(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> set[str]:
+    """The names a function binds itself: its parameters and what its body assigns."""
+    arguments = node.args
+    found = {
+        each.arg
+        for each in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+            *(each for each in (arguments.vararg, arguments.kwarg) if each is not None),
+        )
+    }
+    body = node.body if isinstance(node.body, list) else [node.body]
+    found.update(
+        each.id
+        for statement in body
+        for each in ast.walk(statement)
+        if isinstance(each, ast.Name) and isinstance(each.ctx, ast.Store)
     )
+    return found
+
+
+def _handles(handler: ast.ExceptHandler) -> bool:
+    """Whether ``handler`` catches a failed import and doesn't only raise it again."""
+    only = handler.body[0] if len(handler.body) == 1 else None
+    reraises = isinstance(only, ast.Raise) and only.exc is None
+    return _catches_imports(handler.type) and not reraises
 
 
 def _catches_imports(caught: ast.expr | None) -> bool:

@@ -87,36 +87,46 @@ def look_up(
     verdict = Verdict()
     off = {str(canonicalize_name(each)) for each in disabled}
     for record in records:
-        owner = owners.get(record.module.partition(".")[0])
+        owner = owner_of(record.module, owners)
         if owner is None:
             continue
-        if str(canonicalize_name(owner.distribution)) in off:
-            verdict.cascade = Cascade(record, owner)
+        found = _one(record, owner, off)
+        if isinstance(found, Cascade):
+            verdict.cascade = found
             return verdict
-        try:
-            module = importlib.import_module(record.module)
-        except ModuleNotFoundError as exc:
-            if _names(exc.name, record.module):
-                if not record.guarded:
-                    verdict.missing.append(Missing(record, owner))
-                continue
-            verdict.cascade = Cascade(record, owner, error=f"{type(exc).__name__}: {exc}")
-            return verdict
-        except Exception as exc:  # the owner's module fails to import: that owner is broken
-            verdict.cascade = Cascade(record, owner, error=f"{type(exc).__name__}: {exc}")
-            return verdict
-        if record.star or record.name is None:
-            continue
-        found, mark = _find(module, record.name)
-        if not found:
-            if not record.guarded:
-                verdict.missing.append(Missing(record, owner))
-            continue
-        if mark is not None:
-            verdict.uses.append(
-                _use(f"sdk {record.module}.{record.name}", mark, owner, record=record)
-            )
+        if isinstance(found, Missing):
+            verdict.missing.append(found)
+        elif found is not None:
+            verdict.uses.append(found)
     return verdict
+
+
+def _one(record: ImportRecord, owner: Owner, off: set[str]) -> Missing | Cascade | UseDecl | None:
+    """What one record finds; ``None`` when it is fine, or guarded and not there.
+
+    A guarded import handles an ``ImportError`` of its own, so only a module
+    failing otherwise disables the plugin then.
+    """
+    if str(canonicalize_name(owner.distribution)) in off:
+        return None if record.guarded else Cascade(record, owner)
+    try:
+        module = importlib.import_module(record.module)
+        if record.star or record.name is None:
+            return None
+        found, mark = _find(module, record.name)
+    except ImportError as exc:
+        if record.guarded:
+            return None
+        if isinstance(exc, ModuleNotFoundError) and _names(exc.name, record.module):
+            return Missing(record, owner)
+        return Cascade(record, owner, error=f"{type(exc).__name__}: {exc}")
+    except Exception as exc:  # the owner's module fails to import or give the name: it is broken
+        return Cascade(record, owner, error=f"{type(exc).__name__}: {exc}")
+    if not found:
+        return None if record.guarded else Missing(record, owner)
+    if mark is None:
+        return None
+    return _use(f"sdk {record.module}.{record.name}", mark, owner, record=record)
 
 
 def filled_uses(providers: Sequence[type], owners: Mapping[str, Owner]) -> list[UseDecl]:
@@ -128,7 +138,7 @@ def filled_uses(providers: Sequence[type], owners: Mapping[str, Owner]) -> list[
         info = contract_of(provider)
         if info is None:
             continue
-        owner = owners.get(info.cls.__module__.partition(".")[0])
+        owner = owner_of(info.cls.__module__, owners)
         if owner is None:
             continue
         for name, method in info.methods.items():
@@ -139,6 +149,19 @@ def filled_uses(providers: Sequence[type], owners: Mapping[str, Owner]) -> list[
                     _use(f"contract {owner.plugin}.{info.name}.{name}", mark, owner, where=where)
                 )
     return uses
+
+
+def owner_of(module: str, owners: Mapping[str, Owner]) -> Owner | None:
+    """Who owns ``module``: the owner of its longest package in ``owners`` (keyed by package).
+
+    A plugin nested in ``untaped`` (``untaped.plugins.acme``) is its own owner, not core.
+    """
+    parts = module.split(".")
+    for end in range(len(parts), 0, -1):
+        found = owners.get(".".join(parts[:end]))
+        if found is not None:
+            return found
+    return None
 
 
 def missing_words(
@@ -216,14 +239,19 @@ def use_name(use: UseDecl) -> str:
 def _find(module: object, name: str) -> tuple[bool, Deprecated | None]:
     """Whether ``module`` has ``name``, and the deprecation it carries when it does.
 
-    An old name is read from the module's table, never looked up, so finding
-    it doesn't warn as a use would.
+    The name is looked up as ``from module import name`` would: an attribute
+    (a module ``__getattr__`` included), else a submodule. An old name is read
+    from the module's table, never looked up, so finding it doesn't warn as a
+    use would. Anything but ``AttributeError`` raised giving the name is the
+    owner's failure, and propagates.
     """
     old = old_names_of(module)  # type: ignore[arg-type]
     if name in old:
         return True, old[name]
-    if name in getattr(module, "__all__", ()) or name in vars(module) or name in dir(module):
+    try:
         return True, _mark(getattr(module, name))
+    except AttributeError:
+        pass
     if hasattr(module, "__path__"):  # a package: the name may be a submodule
         spec = importlib.util.find_spec(f"{getattr(module, '__name__', '')}.{name}")
         if spec is not None:
@@ -301,6 +329,7 @@ __all__ = [
     "look_up",
     "missing_words",
     "notify_use",
+    "owner_of",
     "use_line",
     "use_name",
 ]

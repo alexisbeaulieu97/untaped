@@ -182,9 +182,10 @@ each name is looked up in what is installed:
   untaped");
 - a name of a disabled plugin disables this one too, with that plugin's fix.
 
-An import inside a `try` that catches `ImportError`, or under an `if` that
-tests `hasattr`, is the plugin's own fallback: a missing name there changes
-nothing. A contract method a plugin's provider fills is checked the same
+An import inside a `try` that catches `ImportError`, a
+`with suppress(ImportError)`, or any `if` (a version check, a `hasattr`
+test) is the plugin's own fallback: a missing name there, or one of a
+disabled plugin, changes nothing. A contract method a plugin's provider fills is checked the same
 way: a deprecated one warns and gets a `plugin-uses` row. `untaped lint`
 reports each deprecated name a plugin uses as a `uses-deprecated` warning,
 and a star import of untaped or another plugin as an `import-boundary`

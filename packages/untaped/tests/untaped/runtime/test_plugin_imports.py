@@ -18,7 +18,9 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     site.mkdir()
     monkeypatch.syspath_prepend(str(site))
     yield site
-    for name in [each for each in sys.modules if each.split(".")[0] == "untaped_acme"]:
+    for name in [
+        each for each in sys.modules if each.split(".")[0] in ("untaped_acme", "untaped_host")
+    ]:
         del sys.modules[name]
 
 
@@ -166,3 +168,83 @@ def test_a_file_that_does_not_parse_is_skipped(site: Path) -> None:
         },
     )
     assert found == [("untaped.sdk.plural", 1, False, False)]
+
+
+def test_a_name_a_function_binds_hides_the_imported_module(site: Path) -> None:
+    found = _read(
+        site,
+        {
+            "untaped_acme/plugin.py": """
+                import untaped_other.api as other
+
+                def run(other):
+                    return other.size
+
+                def keep():
+                    other = None
+                    return other.size
+
+                other.patched = 1
+                use = other.kept
+                """,
+        },
+    )
+    assert found == [
+        ("untaped_other.api", 1, False, False),
+        ("untaped_other.api.kept", 11, False, False),
+    ]
+
+
+def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site: Path) -> None:
+    found = _read(
+        site,
+        {
+            "untaped_acme/plugin.py": """
+                import contextlib
+                from contextlib import suppress
+                from untaped.sdk import VERSION
+
+                with contextlib.suppress(ImportError):
+                    from untaped.sdk import newer
+                with suppress(ValueError):
+                    from untaped.sdk import strict
+                if VERSION >= (13,):
+                    from untaped.sdk import thirteen
+                else:
+                    from untaped.sdk import twelve
+                try:
+                    from untaped.sdk import needed
+                except ImportError:
+                    raise
+                """,
+        },
+    )
+    assert found == [
+        ("untaped.sdk.VERSION", 3, False, False),
+        ("untaped.sdk.needed", 14, False, False),
+        ("untaped.sdk.newer", 6, True, False),
+        ("untaped.sdk.strict", 8, False, False),
+        ("untaped.sdk.thirteen", 10, True, False),
+        ("untaped.sdk.twelve", 12, True, False),
+    ]
+
+
+def test_a_plugin_nested_in_another_package_reads_only_its_own_modules(site: Path) -> None:
+    _write(
+        site,
+        {
+            "untaped_host/__init__.py": "from untaped.sdk import host_name\n",
+            "untaped_host/sdk.py": "from untaped.sdk import host_only\n",
+            "untaped_host/plugins/__init__.py": "",
+            "untaped_host/plugins/acme/__init__.py": "",
+            "untaped_host/plugins/acme/plugin.py": (
+                "from untaped_host.sdk import plural\nfrom untaped_host.plugins.acme import words\n"
+            ),
+            "untaped_host/plugins/acme/words.py": "from untaped_host import sdk\n",
+        },
+    )
+    records = read_imports("untaped_host.plugins.acme.plugin", "untaped_host.plugins.acme").records
+    assert sorted((each.spelled, each.file, each.line) for each in records) == [
+        ("untaped_host.sdk", "untaped_host/plugins/acme/words.py", 1),
+        ("untaped_host.sdk.plural", "untaped_host/plugins/acme/plugin.py", 1),
+    ]

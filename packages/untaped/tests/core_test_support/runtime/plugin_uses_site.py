@@ -121,7 +121,7 @@ FILLS_BOOKS = """
     FILLS = (Shelved,)
     """
 
-PACKAGES = ("untaped_acme", "untaped_shelf", "untaped_other")
+PACKAGES = ("untaped_acme", "untaped_shelf", "untaped_other", "untaped_beta")
 
 
 class Site:
