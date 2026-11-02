@@ -170,28 +170,55 @@ def test_a_file_that_does_not_parse_is_skipped(site: Path) -> None:
     assert found == [("untaped.sdk.plural", 1, False, False)]
 
 
-def test_a_name_a_function_binds_hides_the_imported_module(site: Path) -> None:
+def test_attributes_are_read_only_on_a_name_bound_to_one_module(site: Path) -> None:
+    found = _read(
+        site,
+        {
+            "untaped_acme/plugin.py": """
+                import untaped_other.api as other
+                import untaped_git.api as api
+                import untaped_shelf.api as shelf
+
+                def run(other):
+                    return other.size
+
+                def dumps(p):
+                    import json as api
+                    return api.dumps(p)
+
+                try:
+                    pass
+                except Exception as shelf:
+                    shelf.args
+
+                shelf.patched = 1
+                use = api.kept
+                """,
+        },
+    )
+    assert found == [
+        ("untaped_git.api", 2, False, False),
+        ("untaped_other.api", 1, False, False),
+        ("untaped_shelf.api", 3, False, False),
+    ]
+
+
+def test_a_name_bound_to_one_module_is_read_through_attributes(site: Path) -> None:
     found = _read(
         site,
         {
             "untaped_acme/plugin.py": """
                 import untaped_other.api as other
 
-                def run(other):
-                    return other.size
-
-                def keep():
-                    other = None
-                    return other.size
-
-                other.patched = 1
-                use = other.kept
+                def run(x):
+                    return other.size(x), [other.kept for _ in x]
                 """,
         },
     )
     assert found == [
         ("untaped_other.api", 1, False, False),
-        ("untaped_other.api.kept", 11, False, False),
+        ("untaped_other.api.kept", 4, False, False),
+        ("untaped_other.api.size", 4, False, False),
     ]
 
 
@@ -216,11 +243,17 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
                     from untaped.sdk import needed
                 except ImportError:
                     raise
+                try:
+                    from untaped.sdk import logged
+                except ImportError as exc:
+                    print(exc)
+                    raise RuntimeError("needs a newer untaped") from exc
                 """,
         },
     )
     assert found == [
         ("untaped.sdk.VERSION", 3, False, False),
+        ("untaped.sdk.logged", 18, False, False),
         ("untaped.sdk.needed", 14, False, False),
         ("untaped.sdk.newer", 6, True, False),
         ("untaped.sdk.strict", 8, False, False),

@@ -18,8 +18,9 @@ standard library's, and composition keeps those of untaped and the plugins:
   it), a ``with suppress(ImportError)``, or any other ``if`` (a version
   check, a ``hasattr`` test) is *guarded*: the plugin decides whether it
   runs and handles the name being missing;
-- a name bound in a function (a parameter, an assignment) hides an imported
-  module of the same name there;
+- an attribute step is read only on a name the file binds to one module and
+  never rebinds (a parameter, an assignment, another import): such a name
+  may not be the module where it is used;
 - a star import is recorded as such: nobody can tell what it binds.
 
 Core keeps the result per plugin version in its ``imports`` cache
@@ -103,6 +104,7 @@ def read_imports(entry_module: str, package: str | None = None) -> PluginImports
         inside = base is not None and path.is_relative_to(base)
         where = path.relative_to(base).as_posix() if base is not None and inside else path.name
         reader = _Reader(module, package, where, is_package=path.name == "__init__.py")
+        reader.rebound = _rebound(tree)
         reader.visit(tree)
         for record in reader.records:
             records.setdefault((record.module, record.name, record.file), record)
@@ -138,6 +140,8 @@ class _Reader(ast.NodeVisitor):
         self.own: list[str] = []
         #: Each name an ``import`` bound to another package's module: the module it spells.
         self.bound: dict[str, str] = {}
+        #: Names the file binds otherwise too (:func:`_rebound`): never read as a module.
+        self.rebound: frozenset[str] = frozenset()
         #: The modules this file imports with ``import``, longest first when an attribute is read.
         self.imported: set[str] = set()
         self.guarded = 0
@@ -159,25 +163,6 @@ class _Reader(ast.NodeVisitor):
             self._guarded(node.body)
             return
         self.generic_visit(node)
-
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self._scope(node)
-
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self._scope(node)
-
-    def visit_Lambda(self, node: ast.Lambda) -> None:
-        self._scope(node)
-
-    def _scope(self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> None:
-        """Visit a function with the names it binds itself hiding imported modules."""
-        saved = self.bound
-        local = _locals(node)
-        self.bound = {name: module for name, module in saved.items() if name not in local}
-        try:
-            self.generic_visit(node)
-        finally:
-            self.bound = saved
 
     def visit_Try(self, node: ast.Try) -> None:
         self._try(node)
@@ -239,7 +224,12 @@ class _Reader(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         chain = _chain(node)
-        if chain is not None and chain[0] in self.bound and isinstance(node.ctx, ast.Load):
+        if (
+            chain is not None
+            and chain[0] in self.bound
+            and chain[0] not in self.rebound
+            and isinstance(node.ctx, ast.Load)
+        ):
             spelled = ".".join((self.bound[chain[0]], *chain[1:]))
             for module in sorted(self.imported, key=len, reverse=True):
                 if spelled.startswith(f"{module}."):
@@ -296,33 +286,56 @@ def _suppresses_imports(context: ast.expr) -> bool:
     return name == "suppress" and any(_catches_imports(each) for each in context.args)
 
 
-def _locals(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda) -> set[str]:
-    """The names a function binds itself: its parameters and what its body assigns."""
-    arguments = node.args
-    found = {
-        each.arg
-        for each in (
-            *arguments.posonlyargs,
-            *arguments.args,
-            *arguments.kwonlyargs,
-            *(each for each in (arguments.vararg, arguments.kwarg) if each is not None),
-        )
-    }
-    body = node.body if isinstance(node.body, list) else [node.body]
-    found.update(
-        each.id
-        for statement in body
-        for each in ast.walk(statement)
-        if isinstance(each, ast.Name) and isinstance(each.ctx, ast.Store)
-    )
-    return found
-
-
 def _handles(handler: ast.ExceptHandler) -> bool:
-    """Whether ``handler`` catches a failed import and doesn't only raise it again."""
-    only = handler.body[0] if len(handler.body) == 1 else None
-    reraises = isinstance(only, ast.Raise) and only.exc is None
-    return _catches_imports(handler.type) and not reraises
+    """Whether ``handler`` catches a failed import and doesn't raise again."""
+    raises = any(isinstance(statement, ast.Raise) for statement in handler.body)
+    return _catches_imports(handler.type) and not raises
+
+
+def _rebound(tree: ast.Module) -> frozenset[str]:
+    """Names ``tree`` binds other than by one import: an attribute on them may not be a module's.
+
+    Anywhere in the file, whatever the scope: a parameter, an assignment or
+    loop target, an ``except ... as``, a ``def`` or ``class``, a ``match``
+    capture, a ``global`` or ``nonlocal``, or imports binding it to two
+    different things. Over-counting only skips a check.
+    """
+    found: set[str] = set()
+    imported: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        found.update(_binds(node))
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.asname or alias.name.partition(".")[0]
+                target = alias.name if alias.asname else name
+                imported.setdefault(name, set()).add(target)
+        elif isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                where = f"{'.' * node.level}{node.module or ''}:{alias.name}"
+                imported.setdefault(alias.asname or alias.name, set()).add(where)
+    found.update(name for name, targets in imported.items() if len(targets) > 1)
+    return frozenset(found)
+
+
+def _binds(node: ast.AST) -> tuple[str, ...]:
+    """The names ``node`` binds other than by an import."""
+    match node:
+        case ast.Name(id=name, ctx=ast.Store() | ast.Del()):
+            return (name,)
+        case ast.arg(arg=name):
+            return (name,)
+        case ast.FunctionDef(name=name) | ast.AsyncFunctionDef(name=name) | ast.ClassDef(name=name):
+            return (name,)
+        case (
+            ast.ExceptHandler(name=str() as name)
+            | ast.MatchAs(name=str() as name)
+            | ast.MatchStar(name=str() as name)
+            | ast.MatchMapping(rest=str() as name)
+        ):
+            return (name,)
+        case ast.Global(names=names) | ast.Nonlocal(names=names):
+            return tuple(names)
+    return ()
 
 
 def _catches_imports(caught: ast.expr | None) -> bool:
