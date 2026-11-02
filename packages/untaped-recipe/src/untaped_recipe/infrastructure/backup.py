@@ -16,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, JsonValue
 
 from untaped.sdk import not_found
-from untaped.sdk.storage import Absent, Found, OtherVersion, read_data_file, write_data_file
+from untaped.sdk.storage import Absent, DataFile, Found, OtherVersion
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped_recipe.errors import BackupNotFoundError, LocalChangesError
@@ -149,7 +149,7 @@ class BackupDraft:
                 "files": self.entries,
             }
         )
-        write_data_file(self.path / METADATA_FILE, metadata)
+        DataFile[BackupMetadata].at(self.path / METADATA_FILE).write(metadata)
 
     def discard_if_empty(self) -> None:
         """Remove an unused bundle directory."""
@@ -321,7 +321,7 @@ def prune_selection(
 
 def read_metadata(bundle: BackupBundle) -> BackupMetadata:
     """One bundle's metadata; ``ValueError`` when it cannot be read."""
-    match read_data_file(bundle.path / METADATA_FILE, BackupMetadata):
+    match DataFile[BackupMetadata].at(bundle.path / METADATA_FILE).read():
         case Found(value=metadata):
             return metadata
         case Absent():

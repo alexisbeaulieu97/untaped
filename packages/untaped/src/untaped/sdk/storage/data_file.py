@@ -6,9 +6,9 @@ go stale, when it was last refreshed. Two layouts share the stamp:
 
 - the *object* layout, ``{"untaped": {...}, <the model's fields>}``: one JSON
   object whose other keys are a model's fields, at the top level.
-  :func:`read_data_file` and :func:`write_data_file` read and write it, for a
-  file whose place its owner decides (a repo store, a backup folder, a
-  project's ``.untaped/``).
+  :class:`DataFile` reads and writes it, for a file whose place its owner
+  decides (a repo store, a backup folder, a project's ``.untaped/``), on
+  :func:`read_data_file` and :func:`write_data_file`.
 - the *line* layout, core's caches: line 1 ``{"untaped": {...}}`` with a key's
   freshness, line 2 the value, any JSON. Freshness is read without parsing
   the value, and a failed refresh rewrites line 1 and copies line 2's bytes.
@@ -256,8 +256,6 @@ class DataFile[M: BaseModel]:
     :meth:`read` answers what is there; :meth:`write` writes under the file's
     lock and keeps the keys the model doesn't know (a newer untaped's), and
     never overwrites a newer untaped's file.
-
-    First consumer: git's repo store's private file, moving off ``read_data_file``.
     """
 
     __slots__ = ("model", "path")

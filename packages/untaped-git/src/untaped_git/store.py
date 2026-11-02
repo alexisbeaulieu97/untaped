@@ -45,6 +45,7 @@ from typing import TYPE_CHECKING, Self
 from pydantic import BaseModel
 
 from untaped.sdk import (
+    ConfigError,
     Diagnostics,
     ErrorCategory,
     System,
@@ -289,9 +290,9 @@ class RepoStore:
         ``Found.refreshed_at`` is the freshness :meth:`write_private` was given.
         """
         # the data file loads on first use
-        from untaped.sdk.storage import read_data_file  # noqa: PLC0415
+        from untaped.sdk.storage import DataFile  # noqa: PLC0415
 
-        return read_data_file(private_file(self._path, self._plugin), model)
+        return DataFile(private_file(self._path, self._plugin), model).read()
 
     @experimental
     def write_private(
@@ -303,10 +304,11 @@ class RepoStore:
         :meth:`release` know the plugin uses the repo; ``value`` is the
         plugin's own data, and ``refreshed_at`` when it was last refreshed,
         for data that can go stale. With no ``value`` the file only marks the
-        repo as used: one already there is kept as it is. The repo must exist.
+        repo as used: one already there is kept as it is. A newer untaped's file is
+        replaced, as the plugin refetched its data. The repo must exist.
         """
         # the data file loads on first use
-        from untaped.sdk.storage import write_data_file  # noqa: PLC0415
+        from untaped.sdk.storage import DataFile, OtherVersion  # noqa: PLC0415
 
         path = private_file(self._path, self._plugin)
         if value is None:
@@ -324,12 +326,17 @@ class RepoStore:
                 )
             try:
                 if value is None:
-                    write_data_file(path, _UsesRepo(), exclusive=True)
+                    DataFile(path, _UsesRepo).write(_UsesRepo(), exclusive=True)
                 else:
-                    write_data_file(path, value, refreshed_at=refreshed_at)
-            except OSError as exc:
+                    file = DataFile(path, type(value))
+                    if isinstance(file.read(), OtherVersion):
+                        # the plugin's data, refetched: a newer untaped's copy is replaced
+                        path.unlink(missing_ok=True)
+                    file.write(value, refreshed_at=refreshed_at)
+            except ConfigError as exc:  # the store reports its own failures
                 raise self._error(
-                    f"could not write {path}: {exc.strerror or exc}",
+                    str(exc),
+                    hint=exc.hint,
                     category=ErrorCategory.FAILED,
                     system=System.LOCAL,
                 ) from exc

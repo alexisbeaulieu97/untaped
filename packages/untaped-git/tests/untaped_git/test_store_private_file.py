@@ -77,7 +77,7 @@ def test_a_failed_write_is_the_plugins_error(store_for: StoreFor) -> None:
     store.fetch(branches=["main"])
     _file(store_for, "github").mkdir()  # a directory where the file goes
 
-    with pytest.raises(StoreError, match="could not write") as raised:
+    with pytest.raises(StoreError, match="is not written over") as raised:
         store.write_private(Listing(repo="acme/app"))
     assert (raised.value.category, raised.value.system) == (ErrorCategory.FAILED, "local")
 

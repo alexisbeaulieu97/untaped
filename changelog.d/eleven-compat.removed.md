@@ -8,5 +8,5 @@ maps the setting names 11.x retired (`ansible.cache_dir`,
 (a repo's private files, recipe backups, github corpus metadata, project
 markers) are unreadable; an ansible index from before its schema stamp is
 rebuilt; and a workspace's repo rows validate their name and URL like any
-repo. For plugins, the experimental `read_data_file` loses `unstamped=`
-and `legacy_stamps=`.
+repo. For plugins, the experimental `read_data_file` and
+`write_data_file` give way to `DataFile`, which reads stamped files only.
