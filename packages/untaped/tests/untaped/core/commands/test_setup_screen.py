@@ -38,13 +38,8 @@ from core_test_support.commands.support import (
 )
 from core_test_support.screen.support import FakeHost
 from untaped.core.commands.setup_connection import token_choices as _token_choices
-from untaped.core.commands.setup_screen import (
-    CapRow,
-    SetupModel,
-    SetupResult,
-    _check_hint,
-    setup_screen,
-)
+from untaped.core.commands.setup_screen import SetupModel, SetupResult, setup_screen
+from untaped.core.commands.setup_screen_model import CapRow, _check_hint
 from untaped.core.commands.setup_state import (
     ServiceState,
     setup_sections,
