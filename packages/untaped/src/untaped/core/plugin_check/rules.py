@@ -183,7 +183,7 @@ def _floor_violations(
     versions = {
         canonicalize_name(each.distribution): each.distribution_version for each in candidates
     }
-    versions["untaped"] = _version("untaped")
+    versions[canonicalize_name("untaped")] = _version("untaped")
     found: list[str] = []
     described = bool(candidate.requires_dist) or bool(_version(candidate.distribution))
     if described and not plain_requirements(candidate.requires_dist, "untaped"):
