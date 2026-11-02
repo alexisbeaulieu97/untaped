@@ -171,7 +171,7 @@ class _Reader(ast.NodeVisitor):
         self._try(node)
 
     def _try(self, node: ast.Try | ast.TryStar) -> None:
-        if any(_handles(handler) for handler in node.handlers):
+        if any(_handles(handler) for handler in node.handlers) or _leaves(node.finalbody):
             self._guarded(node.body)
         else:
             for child in node.body:
@@ -301,6 +301,15 @@ def _handles(handler: ast.ExceptHandler) -> bool:
         isinstance(statement, _STRAIGHT) for statement in before
     )
     return _catches_imports(handler.type) and not always_raises
+
+
+def _leaves(body: list[ast.stmt]) -> bool:
+    """Whether ``body`` (a ``finally``) may return, break or continue, swallowing the error."""
+    return any(
+        isinstance(node, ast.Return | ast.Break | ast.Continue)
+        for statement in body
+        for node in ast.walk(statement)
+    )
 
 
 def _rebound(tree: ast.Module) -> frozenset[str]:

@@ -170,45 +170,39 @@ def test_a_file_that_does_not_parse_is_skipped(site: Path) -> None:
     assert found == [("untaped.sdk.plural", 1, False, False)]
 
 
-def test_attributes_are_read_only_on_a_name_bound_to_one_module(site: Path) -> None:
-    found = _read(
-        site,
-        {
-            "untaped_acme/plugin.py": """
-                import untaped_other.api as other
-                import untaped_git.api as api
-                import untaped_shelf.api as shelf
-
-                def run(other):
-                    return other.size
-
-                def dumps(p):
-                    import json as api
-                    return api.dumps(p)
-
-                try:
-                    pass
-                except Exception as shelf:
-                    shelf.args
-
-                shelf.patched = 1
-                use = api.kept
-
-                def other(): ...
-
-                def typed[shelf](x: shelf) -> shelf: ...
-
-                match use:
-                    case {"x": other}:
-                        other.size
-                """,
-        },
-    )
-    assert found == [
-        ("untaped_git.api", 2, False, False),
-        ("untaped_other.api", 1, False, False),
-        ("untaped_shelf.api", 3, False, False),
-    ]
+@pytest.mark.parametrize(
+    "rebinds",
+    [
+        "def run(other):\n    return other.size",
+        "def run():\n    import json as other\n    return other.size",
+        "def run():\n    from untaped_acme import other\n    return other.size",
+        "try:\n    pass\nexcept Exception as other:\n    other.size",
+        "def other(): ...\nother.size",
+        "class other: ...\nother.size",
+        "def run[other](x: other) -> other:\n    return other.size",
+        "match 1:\n    case {'x': other}:\n        other.size",
+        "sizes = [other.size for other in []]",
+        "other = None\nother.size",
+        "other.size = 1",
+    ],
+    ids=[
+        "parameter",
+        "stdlib-import",
+        "own-import",
+        "except",
+        "def",
+        "class",
+        "type-parameter",
+        "match",
+        "comprehension",
+        "assignment",
+        "attribute-store",
+    ],
+)
+def test_attributes_are_read_only_on_a_name_bound_to_one_module(site: Path, rebinds: str) -> None:
+    source = f"import untaped_other.api as other\n{rebinds}\n"
+    found = _read(site, {"untaped_acme/plugin.py": source})
+    assert found == [("untaped_other.api", 1, False, False)]
 
 
 def test_a_name_bound_to_one_module_is_read_through_attributes(site: Path) -> None:
@@ -264,6 +258,14 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
                         if optional:
                             return None
                         raise
+
+                def swallow():
+                    try:
+                        from untaped.sdk import swallowed
+                    except ImportError:
+                        raise
+                    finally:
+                        return None
                 """,
         },
     )
@@ -274,6 +276,7 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
         ("untaped.sdk.newer", 6, True, False),
         ("untaped.sdk.optional_name", 25, True, False),
         ("untaped.sdk.strict", 8, False, False),
+        ("untaped.sdk.swallowed", 33, True, False),
         ("untaped.sdk.thirteen", 10, True, False),
         ("untaped.sdk.twelve", 12, True, False),
     ]
