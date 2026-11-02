@@ -120,6 +120,21 @@ def test_a_literal_with_no_mark_over_it_carries_no_id() -> None:
     assert _fields(UntapedDeprecationWarning("nothing marks this")) == (None, None, None, None)
 
 
+def test_a_callable_marked_again_keeps_its_id() -> None:
+    literal = "again is deprecated and will be removed in 3.0"
+
+    def define() -> None:
+        @deprecated(removed_in=3)
+        @warnings.deprecated(literal, category=UntapedDeprecationWarning)
+        def again() -> None: ...
+
+    define()
+    define()  # a reloaded module marks its callables again
+    assert _fields(UntapedDeprecationWarning(literal))[0] == (
+        f"sdk {__name__}.test_a_callable_marked_again_keeps_its_id.<locals>.define.<locals>.again"
+    )
+
+
 def test_a_literal_two_callables_share_carries_no_id() -> None:
     literal = "twin is deprecated and will be removed in 3.0"
 

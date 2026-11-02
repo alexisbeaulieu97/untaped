@@ -12,6 +12,8 @@ import os
 import subprocess
 import sys
 import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from textwrap import dedent
 
@@ -31,6 +33,10 @@ _LAMP = {
         from untaped.sdk import UntapedDeprecationWarning, deprecated, deprecated_parameters
 
 
+        class LampDeprecation(UntapedDeprecationWarning):
+            """Lamp's own, still untaped's."""
+
+
         def bright() -> str:
             return "bright"
 
@@ -38,7 +44,7 @@ _LAMP = {
         @deprecated(removed_in=3, replacement=bright)
         @warnings.deprecated(
             "dim is deprecated and will be removed in untaped-lamp 3.0; use `bright`",
-            category=UntapedDeprecationWarning,
+            category=LampDeprecation,
         )
         def dim() -> str:
             return "dim"
@@ -163,24 +169,53 @@ def test_a_filter_someone_set_decides_first(tmp_path: Path, flag: str, shown: in
 def test_a_filter_the_program_set_decides_first(tmp_path: Path) -> None:
     prelude = (
         "import warnings\n"
-        "from untaped.sdk import UntapedDeprecationWarning\n"
-        "warnings.filterwarnings('ignore', category=UntapedDeprecationWarning)\n"
+        "from untaped_lamp._bulbs import LampDeprecation\n"
+        "warnings.filterwarnings('ignore', category=LampDeprecation)\n"
     )
-    assert _shown(_run(tmp_path, prelude=prelude)) == 0
+    lines = _run(tmp_path, prelude=prelude)
+    assert [line["id"] for line in lines] == [
+        "sdk untaped_lamp.api.glow(fade=)",
+        "behaviour lamp.old-way",
+    ]
+
+
+_ENTRY = ("default", None, UntapedDeprecationWarning, None, 0)
+
+
+@contextmanager
+def _open_run() -> Iterator[None]:
+    _show_deprecations(opening=True)
+    try:
+        yield
+    finally:
+        _show_deprecations(opening=False)
 
 
 def test_the_entry_stays_while_any_run_is_open_and_goes_alone() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", DeprecationWarning, append=True)  # Python's own, last
         before = list(_current_filters())
-        _show_deprecations(opening=True)
-        _show_deprecations(opening=True)  # another thread's run, or a nested one
-        added = [each for each in _current_filters() if each not in before]
-        assert added == [("default", None, UntapedDeprecationWarning, None, 0)]
-        place = _current_filters().index(added[0])
-        assert _current_filters()[place + 1] == ("ignore", None, DeprecationWarning, None, 0)
-        warnings.filterwarnings("error", category=UserWarning)  # set by a command meanwhile
-        _show_deprecations(opening=False)
-        assert added[0] in _current_filters()
-        _show_deprecations(opening=False)
+        with _open_run(), _open_run():  # another thread's run, or a nested one
+            added = [each for each in _current_filters() if each not in before]
+            assert added == [_ENTRY]
+            place = _current_filters().index(_ENTRY)
+            assert _current_filters()[place + 1] == ("ignore", None, DeprecationWarning, None, 0)
+            warnings.filterwarnings("error", category=UserWarning)  # set by a command meanwhile
         assert _current_filters() == [("error", None, UserWarning, None, 0), *before]
+
+
+def test_the_entry_goes_from_the_filters_it_went_into() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning, append=True)
+        before = list(_current_filters())
+        first = _open_run()
+        first.__enter__()
+        closed = False
+        try:
+            with warnings.catch_warnings(), _open_run():  # the last to close reads a copy
+                first.__exit__(None, None, None)
+                closed = True
+        finally:
+            if not closed:
+                first.__exit__(None, None, None)
+        assert _current_filters() == before

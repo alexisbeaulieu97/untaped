@@ -100,9 +100,11 @@ class _ChangedFilters(Warning):
 
 
 _SHOWING = threading.Lock()
-#: How many runs are open, and the filter entry untaped put in while any is.
+#: How many runs are open, the filter entry untaped put in while any is, and the filters
+#: it went into (a thread's own with context-aware warnings or a ``catch_warnings`` copy).
 _open_runs = 0
 _shown_entry: tuple[object, ...] | None = None
+_shown_in: list[tuple[object, ...]] = []
 
 
 def _show_deprecations(*, opening: bool) -> None:
@@ -112,30 +114,30 @@ def _show_deprecations(*, opening: bool) -> None:
     Python's own startup filter hiding deprecations, so every filter set
     before that one (a ``-W`` flag, ``PYTHONWARNINGS``, a test harness's,
     the program's own) still decides first; the last run to close takes
-    out that entry alone. Without Python's filters in their startup order
-    (``-X dev``, filters reset, the same ``ignore`` set again: setting a
-    filter moves an equal one to the front) nothing is put in: whoever
-    changed them decides.
+    out that entry alone, from the filters it went into. Without Python's
+    filters in their startup order (filters reset, the same ``ignore`` set
+    again: setting a filter moves an equal one to the front) nothing is put
+    in: whoever changed them decides. A filter equal to that entry, set
+    while a run is open, is that entry, and goes with it.
     """
-    global _open_runs, _shown_entry
+    global _open_runs, _shown_entry, _shown_in
     with _SHOWING:
         _open_runs += 1 if opening else -1
         if opening and _open_runs == 1:
-            _shown_entry = _put_shown_entry()
+            _shown_in = _current_filters()
+            _shown_entry = _put_shown_entry(_shown_in)
         elif not opening and _open_runs == 0 and _shown_entry is not None:
-            current = _current_filters()
-            for index, each in enumerate(current):
+            for index, each in enumerate(_shown_in):
                 if each is _shown_entry:
-                    del current[index]
+                    del _shown_in[index]
                     _filters_changed()
                     break
-            _shown_entry = None
+            _shown_entry, _shown_in = None, []
 
 
-def _put_shown_entry() -> tuple[object, ...] | None:
+def _put_shown_entry(current: list[tuple[object, ...]]) -> tuple[object, ...] | None:
     from untaped.sdk.marks import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
 
-    current = _current_filters()
     shows = [index for index, each in enumerate(current) if _spelled(each) == _PYTHON_SHOWS]
     hides = [index for index, each in enumerate(current) if each == _PYTHON_HIDES]
     if not shows or not hides or hides[-1] < shows[0]:

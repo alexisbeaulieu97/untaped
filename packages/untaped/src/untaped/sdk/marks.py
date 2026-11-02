@@ -105,7 +105,10 @@ class Deprecated(_Marker):
         else:
             literal = getattr(marked, "__deprecated__", None)
         if isinstance(literal, str):
-            _LITERALS.setdefault(literal, []).append(marked)
+            named = _LITERALS.setdefault(literal, [])
+            # Marked again (a reloaded module): the newer object replaces the older.
+            named[:] = [each for each in named if _spelling(each) != _spelling(marked)]
+            named.append(marked)
             _FIELDS.pop(literal, None)
         return super().__call__(target)
 
@@ -253,6 +256,10 @@ def removal_text(removed_in: int | None, owner: str | None) -> str | None:
     if removed_in is None:
         return None
     return f"{removed_in}.0" if owner is None else f"{owner} {removed_in}.0"
+
+
+def _spelling(obj: object) -> tuple[str, str]:
+    return str(getattr(obj, "__module__", "")), str(getattr(obj, "__qualname__", ""))
 
 
 # A ``warnings.deprecated`` literal → the callables it decorates, recorded by the
