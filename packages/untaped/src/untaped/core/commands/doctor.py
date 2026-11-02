@@ -918,7 +918,11 @@ def _check_project_values(layer: FolderLayer) -> None:
 
 
 def _sets(node: object, loc: tuple[int | str, ...]) -> bool:
-    """Whether ``node`` holds a value at ``loc`` (a missing field is not the file's error)."""
+    """Whether ``node`` holds a single value at ``loc``: the file's own error.
+
+    A missing field, or a check of a whole model or list (which may rest on
+    values the home supplies), is left to the check with the home.
+    """
     for step in loc:
         held = (isinstance(node, dict) and step in node) or (
             isinstance(node, list) and isinstance(step, int) and step < len(node)
@@ -926,7 +930,7 @@ def _sets(node: object, loc: tuple[int | str, ...]) -> bool:
         if not held:
             return False
         node = node[step]  # type: ignore[index]
-    return True
+    return not isinstance(node, (dict, list))
 
 
 def _section_error(

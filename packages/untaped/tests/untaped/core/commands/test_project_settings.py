@@ -350,3 +350,14 @@ def test_doctor_refuses_a_secret_even_when_the_home_is_unreadable(
     _isolated_config.write_text("untaped: [unclosed\n")
     get_settings.cache_clear()
     assert _doctor()[0]["status"] == "fail"
+
+
+def test_only_a_single_value_the_file_sets_is_its_own_error() -> None:
+    from untaped.core.commands.doctor import _sets
+
+    node = {"pair": {"hi": 3}, "tags": ["a"]}
+    assert _sets(node, ("pair", "hi"))
+    assert _sets(node, ("tags", 0))
+    assert not _sets(node, ())  # a check of the whole section may rest on the home's values
+    assert not _sets(node, ("pair",))
+    assert not _sets(node, ("pair", "lo"))  # missing here: the home may supply it
