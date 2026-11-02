@@ -654,10 +654,12 @@ def _invocation(tokens: Sequence[str], result: CompositionResult, root: App) -> 
 
 
 def _record_uses(ran: Sequence[Dispatched]) -> None:
-    """Record what the command was seen calling, when a warning loaded the recorder at all."""
+    """Record what the command was seen calling, once the recorder is loaded (core's own
+    commands load it; a plugin's only when a warning did)."""
     recorder = sys.modules.get("untaped.core.run_uses")
-    if recorder is not None and ran:
-        recorder.flush(" ".join(("untaped", *ran[-1].decl.path)))
+    if recorder is not None and ran and _ATTACHED is not None:
+        words = _ATTACHED.mount.declaration.words(ran[-1].decl)
+        recorder.flush(" ".join(("untaped", *words)))
 
 
 def _install_root_callback(

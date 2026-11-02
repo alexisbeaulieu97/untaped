@@ -73,6 +73,8 @@ _PENDING: dict[tuple[str, str], tuple[str, str, str, UntapedDeprecationWarning]]
 _WRITTEN: set[str] = set()
 #: A module's file -> its name, for the modules imported when it was last filled.
 _FILES: dict[str, str] = {}
+#: A plugin's entry point target -> its package (``None``: unresolvable).
+_PACKAGES: dict[str, str | None] = {}
 
 
 def note(warning: UntapedDeprecationWarning, filename: str) -> None:
@@ -131,6 +133,7 @@ def forget() -> None:
     _PENDING.clear()
     _WRITTEN.clear()
     _FILES.clear()
+    _PACKAGES.clear()
 
 
 def _row(
@@ -162,15 +165,31 @@ def _plugin_of(filename: str) -> tuple[str, str, str] | None:
     module = _module_of(filename)
     if result is None or module is None:
         return None
-    declaration = result.mount.declaration
-    name = declaration.owner_of(module)
-    plugin = next((each for each in declaration.plugins if each.name == name), None)
-    if plugin is None or plugin.lockstep or plugin.root:
+    owners = [
+        (package, plugin)
+        for plugin in result.mount.declaration.plugins
+        if (package := _package(plugin.target)) is not None
+        and (module == package or module.startswith(f"{package}."))
+    ]
+    if not owners:
         return None
-    candidate = next((each for each in result.candidates if each.name == name), None)
+    # The deepest package: plugins may share a namespace package, or nest in another's.
+    _, plugin = max(owners, key=lambda each: each[0].count("."))
+    if plugin.lockstep or plugin.root:
+        return None
+    candidate = next((each for each in result.candidates if each.name == plugin.name), None)
     if candidate is None:
         return None
     return plugin.name, candidate.distribution, candidate.distribution_version
+
+
+def _package(target: str) -> str | None:
+    """The package of a plugin's entry point ``target``, read once per process."""
+    if target not in _PACKAGES:
+        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
+
+        _PACKAGES[target] = candidate_package(target)
+    return _PACKAGES[target]
 
 
 def _module_of(filename: str) -> str | None:
