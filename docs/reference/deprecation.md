@@ -110,7 +110,8 @@ deprecated setting and "from acme.old_key, removed in untaped-acme 3.0" on a
 value read through an old key; `doctor` names the version beside each old key.
 A plugin importing or filling a deprecated name warns once, when untaped first
 reads it, with the line's `plugin` naming it, and `doctor` lists it as a
-`plugin-uses` row ([Versioning](../versioning.md#plugins-across-releases)).
+`plugin-uses` row; so does a deprecated name its code was seen calling while
+a command ran ([Versioning](../versioning.md#plugins-across-releases)).
 
 ## The checks
 

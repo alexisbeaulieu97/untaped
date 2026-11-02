@@ -7567,6 +7567,7 @@ sdk untaped.sdk.storage.StateRows.problems()  [experimental]
 sdk untaped.sdk.storage.StateRows.put(value)  [experimental]
 sdk untaped.sdk.storage.StateRows.qualified  [experimental]
 sdk untaped.sdk.storage.StateRows.replace_all(change) callback(change, 1)  [experimental]
+sdk untaped.sdk.storage.StateRows.replace_all(wait=) default=None  [experimental]
 sdk untaped.sdk.storage.StateRows.spelled  [experimental]
 sdk untaped.sdk.storage.StateRows.update(key, change) callback(change, 1)  [experimental]
 sdk untaped.sdk.storage.StateRows.where  [experimental]
@@ -8509,6 +8510,16 @@ state untaped.credentials.key object default={}
 state untaped.credentials.label string default=""
 state untaped.credentials.name string
 state untaped.credentials.plugin string
+state untaped.run_uses RunUse[]
+state untaped.run_uses.command string
+state untaped.run_uses.distribution string
+state untaped.run_uses.id string
+state untaped.run_uses.key string
+state untaped.run_uses.owner string?
+state untaped.run_uses.plugin string
+state untaped.run_uses.removed_in integer? default=None
+state untaped.run_uses.replacement string? default=None
+state untaped.run_uses.version string
 state workspace.meta.archived_at string(format=date-time)? default=None  [experimental]
 state workspace.meta.created_at string(format=date-time)  [experimental]
 state workspace.meta.created_by choice=user  [experimental]

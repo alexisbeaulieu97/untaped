@@ -856,7 +856,10 @@ def _compose(
             for index, found_here in sorted(uses.items())
             if found_here and index in claims
         }
-        mount = mount.with_uses(kept)
+        lockstep = frozenset(
+            ordered[index].name for index in claims if _lockstep(ordered[index], state)
+        )
+        mount = mount.with_uses(kept, lockstep)
         found = tuple((name, use) for name, found_here in kept.items() for use in found_here)
     plugins.insert(0, _root_plugin(mount, core))
     return CompositionResult(

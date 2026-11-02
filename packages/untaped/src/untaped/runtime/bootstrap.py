@@ -138,6 +138,18 @@ def _credentials(plugin: ComposedPlugin) -> Callable[[], Sequence[Credential[Any
     return lambda: plugin.credentials
 
 
+#: The root composition last attached to an invocation's run (:func:`attached`).
+_ATTACHED: CompositionResult | None = None
+
+
+def attached() -> CompositionResult | None:
+    """The root composition attached to the latest invocation's run; ``None`` before one.
+
+    What a run's records about its plugins (:mod:`untaped.core.run_uses`) read.
+    """
+    return _ATTACHED
+
+
 def _attach(run: Run, result: CompositionResult) -> None:
     """Attach the root composition ``result`` to the invocation's ``run``, and warn.
 
@@ -150,6 +162,8 @@ def _attach(run: Run, result: CompositionResult) -> None:
     """
     from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
 
+    global _ATTACHED
+    _ATTACHED = result
     mount = result.mount
     run.attach(composition_of(mount.declaration, mount.settings, mount.plugins))
     for record in result.quarantine:
@@ -639,6 +653,15 @@ def _invocation(tokens: Sequence[str], result: CompositionResult, root: App) -> 
         yield line
 
 
+def _record_uses(ran: Sequence[Dispatched]) -> None:
+    """Record what the command was seen calling, once the recorder is loaded (core's own
+    commands load it; a plugin's only when a warning did)."""
+    recorder = sys.modules.get("untaped.core.run_uses")
+    if recorder is not None and ran and _ATTACHED is not None:
+        words = _ATTACHED.mount.declaration.words(ran[-1].decl)
+        recorder.flush(" ".join(("untaped", *words)))
+
+
 def _install_root_callback(
     app: App,
     root_options: dict[str, _RootOption],
@@ -677,6 +700,8 @@ def _install_root_callback(
             failed = exc.code not in (0, None)
             raise
         finally:
+            if dispatched:
+                _record_uses(ran)
             # Runs on failures too: a stale skill is a likely cause of one.
             if after_command is not None and dispatched:
                 after_command(command_tokens, ran, failed)

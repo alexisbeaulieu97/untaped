@@ -191,6 +191,15 @@ reports each deprecated name a plugin uses as a `uses-deprecated` warning,
 and a star import of untaped or another plugin as an `import-boundary`
 error, since nobody can tell what it binds.
 
+A name reached on an object the plugin got back (`store.prefetched(...).cat`)
+is no import, so only running it shows it. When a plugin's code calls a
+deprecated one while a command runs, untaped records it in its own state,
+once per plugin version, name and command, and `doctor` lists it as a
+`plugin-uses` row saying the release that removes it makes that command
+fail. Recording never fails or slows the command: on a home it can't write,
+or a lock another untaped holds, it skips, and a later run records it. Rows
+of plugin versions no longer installed are dropped on the next record.
+
 ## Breaking changes
 
 - A command that goes away with no successor is marked deprecated: it is
