@@ -275,10 +275,10 @@ def test_testing_helpers_load_contracts_only_when_called() -> None:
 _LISTED_PROBE = (
     "import os, sys\n"
     "from untaped.runtime.bootstrap import build_root_app\n"
-    "from untaped.sdk import marks\n"
+    "import untaped.sdk._behaviours as _behaviours\n"
     "build_root_app()\n"
     "before = set(sys.modules)\n"
-    "list(marks._listed())\n"
+    "list(_behaviours._listed())\n"
     "new = sorted(set(sys.modules) - before)\n"
     "core = ('untaped.core.commands', 'untaped.core.plugin')\n"
     "print(' '.join(m for m in new if m.startswith(core)))\n"

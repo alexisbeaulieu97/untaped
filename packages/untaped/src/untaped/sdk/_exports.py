@@ -11,9 +11,11 @@ from __future__ import annotations
 from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.theme import OutputFormat
 from untaped.runtime.yaml_roundtrip import yaml_mapping_indent
+from untaped.sdk._behaviours import DeprecatedBehaviour
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._home import home
 from untaped.sdk._keys import SettingKey, key
+from untaped.sdk._parameter_marks import deprecated_parameters
 from untaped.sdk._run import (
     Context,
     Diag,
@@ -86,14 +88,7 @@ from untaped.sdk.fields import (
     TextOrStdin,
     Verbatim,
 )
-from untaped.sdk.marks import (
-    Deprecated,
-    DeprecatedBehaviour,
-    UntapedDeprecationWarning,
-    deprecated,
-    deprecated_parameters,
-    experimental,
-)
+from untaped.sdk.marks import Deprecated, UntapedDeprecationWarning, deprecated, experimental
 from untaped.sdk.plugin import Command, Group, Plugin, StubSkill, derive
 from untaped.sdk.plugin_records import InstalledPlugin, installed_plugins
 from untaped.sdk.records import (

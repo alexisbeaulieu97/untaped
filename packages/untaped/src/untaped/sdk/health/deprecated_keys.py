@@ -35,18 +35,17 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from untaped.runtime.profile_resolver import profile_entries
+from untaped.runtime.stability_marks import field_marks, mark_errors
+from untaped.sdk._replacement import replacement_text
 from untaped.sdk._schema import unwrap_optional, walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.marks import (
     Deprecated,
     Stability,
     check_removed_in,
-    field_marks,
     forget_notices,
-    mark_errors,
     notify_deprecation,
     owner,
-    replacement_text,
 )
 
 DECLARATIONS = ("renamed_keys", "retired_keys")

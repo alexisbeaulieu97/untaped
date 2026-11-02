@@ -57,26 +57,27 @@ from untaped.core.surface._sdk import foreign
 from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.root_options import resolve_command
 from untaped.runtime.settings import get_settings_model, profile_section_models
-from untaped.sdk._schema import walk_settings
-from untaped.sdk.marks import (
-    COMMAND_TEXT,
-    KEY_TEXT,
-    Deprecated,
-    Experimental,
+from untaped.runtime.stability_help import mark_of
+from untaped.runtime.stability_marks import (
     Mark,
-    Stability,
-    children,
-    class_mark,
-    deprecation_sentence,
-    descriptor_function,
     field_descriptions,
-    function_mark,
-    mark_of,
     marks,
     pydantic_deprecated_fields,
+)
+from untaped.sdk._parameter_marks import (
+    deprecation_sentence,
     read_parameter_marks,
-    replacement_path,
     warns_parameters,
+)
+from untaped.sdk._replacement import COMMAND_TEXT, KEY_TEXT, children, replacement_path
+from untaped.sdk._schema import walk_settings
+from untaped.sdk.marks import (
+    Deprecated,
+    Experimental,
+    Stability,
+    class_mark,
+    descriptor_function,
+    function_mark,
 )
 
 if TYPE_CHECKING:
@@ -107,7 +108,7 @@ def stability_violations(
 
     ``plugin`` is the checked one: its settings section is checked too, as
     are the ``sections`` named (core's).
-    The marks come from :func:`untaped.sdk.marks.marks` over the whole
+    The marks come from :func:`untaped.runtime.stability_marks.marks` over the whole
     composition: the checked plugin's subtree is resolved by ``root[name]``;
     a lazy sibling is never imported (its plugin's mark is still seen).
     """

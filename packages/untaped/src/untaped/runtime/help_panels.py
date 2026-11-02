@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from cyclopts import Group
 
-from untaped.sdk.marks import DEPRECATED_GROUP, DEPRECATED_OPTIONS, EXPERIMENTAL_GROUP
+from untaped.runtime.stability_help import DEPRECATED_GROUP, DEPRECATED_OPTIONS, EXPERIMENTAL_GROUP
 
 PLUGINS_GROUP = Group("Plugins", sort_key=50)
 GLOBAL_OPTIONS_GROUP = Group("Global options", sort_key=300)

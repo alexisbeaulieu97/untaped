@@ -44,22 +44,15 @@ from untaped.runtime.declaration import (
     target_of,
 )
 from untaped.runtime.registry import resolve_target
+from untaped.runtime.stability_help import DEPRECATED_OPTIONS, docs_footer, mark_app
+from untaped.runtime.stability_marks import deprecated_alias
 from untaped.sdk._block import FieldBlock, Invocation
 from untaped.sdk._cli import follows_user_format, report_errors
 from untaped.sdk._run import Run
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk.errors import Failed, Matched, UntapedError, UsageError, first_validation_error
 from untaped.sdk.fields import Confirm, DryRun, File, Output, Stdin, _Stream
-from untaped.sdk.marks import (
-    DEPRECATED_OPTIONS,
-    Deprecated,
-    Stability,
-    deprecated,
-    deprecated_alias,
-    docs_footer,
-    experimental,
-    mark_app,
-)
+from untaped.sdk.marks import Deprecated, Stability, deprecated, experimental
 from untaped.sdk.plugin import Command, Plugin, field_block, held_by
 from untaped.sdk.plugin import Group as CommandGroup
 

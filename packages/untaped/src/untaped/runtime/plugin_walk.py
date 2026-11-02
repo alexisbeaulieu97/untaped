@@ -39,11 +39,8 @@ from untaped.runtime.describe import (
 )
 from untaped.sdk._block import Block, OwnedBlock
 from untaped.sdk._names import kebab, snake
-from untaped.sdk.marks import (
-    COMMAND_TEXT,
-    class_mark,
-    stability_refusal,
-)
+from untaped.sdk._replacement import COMMAND_TEXT
+from untaped.sdk.marks import class_mark, stability_refusal
 from untaped.sdk.plugin import (
     RESERVED_NAMES,
     Command,

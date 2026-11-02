@@ -11,13 +11,9 @@ from cyclopts import App, Parameter
 from untaped.core.surface import DeprecatedMark
 from untaped.core.surface._cli import root_plugin_lines, subtree_lines
 from untaped.runtime.bootstrap import build_root_app, kept_composition
-from untaped.sdk.marks import (
-    DEPRECATED_OPTIONS,
-    apply_marks,
-    deprecated,
-    deprecated_alias,
-    experimental,
-)
+from untaped.runtime.stability_help import DEPRECATED_OPTIONS, apply_marks
+from untaped.runtime.stability_marks import deprecated_alias
+from untaped.sdk.marks import deprecated, experimental
 
 
 @Parameter(name="*")

@@ -21,12 +21,8 @@ from untaped.core.commands.config import _emit_split_tables
 from untaped.core.config.models import SettingEntry, Source
 from untaped.runtime import bootstrap
 from untaped.runtime.settings import profile_section_models, section_stabilities
-from untaped.sdk.marks import (
-    deprecated,
-    experimental,
-    setting_mark,
-    stability_name,
-)
+from untaped.runtime.stability_marks import setting_mark
+from untaped.sdk.marks import deprecated, experimental, stability_name
 from untaped.sdk.testing import CliInvoker, CliResult, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

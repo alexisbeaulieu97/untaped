@@ -9,7 +9,7 @@ from cyclopts import App
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import canonical_command_tokens
-from untaped.sdk.marks import deprecated_alias
+from untaped.runtime.stability_marks import deprecated_alias
 from untaped.sdk.testing import invoke_cli
 
 

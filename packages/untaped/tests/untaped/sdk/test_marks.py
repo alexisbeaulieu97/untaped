@@ -10,13 +10,13 @@ from cyclopts import App
 from core_test_support.commands.support import make_plugin
 from untaped.runtime import bootstrap
 from untaped.sdk import Command, Group
+from untaped.sdk._replacement import replacement_text
 from untaped.sdk.marks import (
     Deprecated,
     Experimental,
     deprecated,
     experimental,
     function_mark,
-    replacement_text,
     stability_refusal,
 )
 from untaped.sdk.testing import CliInvoker, plugin_candidate
