@@ -44,6 +44,7 @@ from untaped_workspace.domain.safety import (
     releasable_branches,
     unpushed_branch_blocker,
 )
+from untaped_workspace.errors import GitError
 from untaped_workspace.infrastructure.git_worktrees import LocalGitWorktrees
 
 #: The plugin the repo store keeps workspace's refs under.
@@ -117,13 +118,17 @@ def _nothing(_fresh: ReleaseAsk[RepoKey]) -> str:
 def _keep_repo(fresh: ReleaseAsk[RepoKey], url: str) -> str | Refused:
     if not fresh.others:  # the other holder let go since the preview: deleting is more than it said
         return Refused(reason="now the last holder", hint="run the removal again to release it")
-    dropped = LocalGitWorktrees(plugin=PLUGIN).drop_worktrees(url, fresh.holder.anchor)
+    dropped = _drop(fresh, url, LocalGitWorktrees(plugin=PLUGIN))
+    if isinstance(dropped, Refused):
+        return dropped
     kept = f"kept the repo for {fresh.others[0].label}"
     return f"removed {_count(dropped)}; {kept}" if dropped else kept
 
 
-def _release_repo(fresh: ReleaseAsk[RepoKey], url: str, git: LocalGitWorktrees) -> str:
-    dropped = git.drop_worktrees(url, fresh.holder.anchor)
+def _release_repo(fresh: ReleaseAsk[RepoKey], url: str, git: LocalGitWorktrees) -> str | Refused:
+    dropped = _drop(fresh, url, git)
+    if isinstance(dropped, Refused):
+        return dropped
     done = f"removed {_count(dropped)}; " if dropped else ""
     if fresh.others:  # another holder came since the preview: keep, which is less than it said
         return f"{done}kept the repo for {fresh.others[0].label}"
@@ -132,6 +137,27 @@ def _release_repo(fresh: ReleaseAsk[RepoKey], url: str, git: LocalGitWorktrees) 
         return f"{done}the repo store has no repo for it"
     released = git.release(url, branches=releasable_branches(use.branches, force=fresh.force))
     return done + _released_text(released.action, released.detail)
+
+
+def _drop(fresh: ReleaseAsk[RepoKey], url: str, git: LocalGitWorktrees) -> list[Path] | Refused:
+    """Remove the project's worktree of the repo: the one its row names, checked again first.
+
+    Work that appeared since the preview refuses unless forced (the holds
+    service lets an apply do less than its preview, never more). A project
+    not here has no row to read: every entry under its folder goes.
+    """
+    held = _held(fresh, git)
+    checked = (
+        {held.project.root / held.row.dir: held.row.base}
+        if held.project is not None and held.row is not None
+        else None
+    )
+    try:
+        return git.drop_worktrees(url, fresh.holder.anchor, checked=checked, force=fresh.force)
+    except GitError as exc:
+        if exc.category != "conflict":
+            raise
+        return Refused(reason=str(exc), hint=exc.hint or "run status, then the removal again")
 
 
 def _released_text(action: str, detail: str) -> str:

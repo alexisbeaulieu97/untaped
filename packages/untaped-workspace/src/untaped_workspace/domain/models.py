@@ -84,7 +84,8 @@ class RepoKey(RootModel[str]):
     """A repo as a project holds it through workspace: its repo store key, ``host/owner/name``.
 
     A clone URL normalises to it (the https and ssh URLs of a repo are one
-    hold), and so does the key with ``.git``.
+    hold), and so does the key itself however it is spelled (``.git``, case
+    the URL's key folds).
     """
 
     @field_validator("root")
@@ -94,7 +95,7 @@ class RepoKey(RootModel[str]):
 
         if "://" in value or _SCP.match(value):
             return store_ident(value)
-        return value.removesuffix(".git")
+        return store_ident(f"https://{value}")  # a key spelled by hand reads as its URL would
 
 
 class RepoArg(BaseModel):

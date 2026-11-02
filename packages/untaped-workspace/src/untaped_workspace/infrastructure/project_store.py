@@ -27,6 +27,7 @@ from untaped.sdk import (
     LetGo,
     MoveAsk,
     Project,
+    ProjectRemoval,
     Refused,
     ReleaseAsk,
     StateRows,
@@ -42,7 +43,7 @@ from untaped.sdk import (
     shown_path,
 )
 from untaped_workspace.domain.models import RepoKey, RepoSpec, WorkspaceMeta, WorkspaceRecord
-from untaped_workspace.domain.naming import store_ident, workspace_key
+from untaped_workspace.domain.naming import store_ident, validate_workspace_name, workspace_key
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError
 from untaped_workspace.settings import WorkspaceSettings
 
@@ -70,6 +71,29 @@ HELD_REPOS = Dir(items=RepoKey, release=_release, moved=_moved)
 WORKTREES = StateRows[RepoSpec].per_project()
 #: The row that makes a project a workspace (one per project).
 META = StateRows[WorkspaceMeta].per_project()
+
+
+def copy_refusal(record: WorkspaceRecord) -> WorkspaceError | None:
+    """Why workspace runs no git in ``record``'s folder: it is a copy (design §1.6.7).
+
+    Before its first writing use a copy still has the original's id
+    (``copy_of`` is set); after it, its rows name repos it holds nothing of.
+    Even ``git status`` in a copied worktree refreshes the original's index.
+    """
+    project = record.project
+    held = {key.root for key in project.holds(HELD_REPOS.items())}
+    orphans = [spec.dir for spec in record.repos if store_ident(spec.url) not in held]
+    if project.copy_of is None and not orphans:
+        return None
+    dirs = orphans or [spec.dir for spec in record.repos]
+    original = shown_path(project.copy_of) if project.copy_of is not None else "another project"
+    here = " and ".join(f"{name}/" for name in dirs) or "its worktrees"
+    return WorkspaceError(
+        f"repos in this copy belong to {original}: delete {here} here, then "
+        "`untaped workspace add --repo REPO`",
+        category="conflict",
+        hint="or work in the original folder",
+    )
 
 
 def record_of(project: Project) -> WorkspaceRecord:
@@ -101,20 +125,20 @@ class ProjectWorkspaceStore:
             if project is None:
                 continue
             record = record_of(project)
-            if record.meta is not None:
+            if record.meta is not None and copy_refusal(record) is None:  # a copy isn't listed
                 found.append(record)
         return sorted(found, key=lambda record: (record.name, str(record.root)))
 
     def current(self) -> WorkspaceRecord:
         """The workspace of the project the working directory is in (exit 2 outside one)."""
-        return record_of(current_project())
+        return _usable(record_of(current_project()))
 
     def at(self, root: Path) -> WorkspaceRecord | None:
         """The workspace of the project at ``root`` exactly, or ``None``."""
         project = project_at(root)
         if project is None or project.root != root.expanduser().resolve():
             return None
-        return record_of(project)
+        return _usable(record_of(project))
 
     def find(self, name: str) -> WorkspaceRecord:
         """The workspace ``name`` names: a path to a project, else a workspace's name.
@@ -127,26 +151,24 @@ class ProjectWorkspaceStore:
             project = project_at(path)
             if project is None:
                 raise UsageError(f"{shown_path(path.resolve())} is in no project")
-            return record_of(project)
+            return _usable(record_of(project))
         wanted = workspace_key(name)
         every = self.all()
         named = [record for record in every if record.name == wanted]
         active = [record for record in named if not record.archived]
-        if len(active) > 1:
-            folders = ", ".join(shown_path(record.root) for record in active)
-            raise UsageError(
-                f"workspace {q(wanted)} is ambiguous: {folders}",
-                hint="name it by its folder instead",
-            )
+        _refuse_ambiguous(wanted, active)
         if active:
-            return active[0]
+            return _usable(active[0])
         if named:
-            return max(named, key=lambda record: _archived_at(record))
+            return _usable(max(named, key=lambda record: _archived_at(record)))
         known = sorted({record.name for record in every})
         raise WorkspaceNotFoundError(not_found("workspace", wanted, known=known))
 
     def named(self, name: str) -> list[WorkspaceRecord]:
-        """Every workspace of ``name``, active and archived (or the one a path names)."""
+        """Every workspace of ``name``, active and archived (or the one a path names).
+
+        Two active ones are ambiguous (exit 2, listing both folders), as for :meth:`find`.
+        """
         if _is_path(name):
             return [self.find(name)]
         wanted = workspace_key(name)
@@ -155,6 +177,7 @@ class ProjectWorkspaceStore:
         if not named:
             known = sorted({record.name for record in every})
             raise WorkspaceNotFoundError(not_found("workspace", wanted, known=known))
+        _refuse_ambiguous(wanted, [record for record in named if not record.archived])
         return named
 
     def start(self, root: Path, name: str, *, at: datetime) -> WorkspaceRecord:
@@ -180,7 +203,8 @@ class ProjectWorkspaceStore:
         """Make the project a workspace if it isn't one yet (an ``add`` in any project)."""
         if record.meta is not None:
             return record
-        meta = WorkspaceMeta(name=record.project.name, created_by="user", created_at=at)
+        name = validate_workspace_name(record.project.name)  # the folder's name names it
+        meta = WorkspaceMeta(name=name, created_by="user", created_at=at)
         META.of(record.project).add(meta)
         return record.model_copy(update={"meta": meta})
 
@@ -214,11 +238,8 @@ class ProjectWorkspaceStore:
         forced: tuple[Any, ...] = record.project.holds(store) if force else ()
         return record.project.release(store, force=forced, dry_run=dry_run)
 
-    def remove_project(self, record: WorkspaceRecord) -> tuple[str, ...]:
-        """Remove the project as ``untaped project remove`` does once it holds nothing.
-
-        Returns what stays in its folder; refuses while it holds anything.
-        """
+    def remove_project(self, record: WorkspaceRecord) -> ProjectRemoval:
+        """Remove the project as ``untaped project remove`` does, unless it still holds items."""
         return remove_project(record.project)
 
     def _meta(
@@ -227,6 +248,24 @@ class ProjectWorkspaceStore:
         if record.meta is None:
             raise WorkspaceNotFoundError(f"{shown_path(record.root)} is no workspace")
         META.of(record.project).update(record.meta.name, change)
+
+
+def _usable(record: WorkspaceRecord) -> WorkspaceRecord:
+    """``record``, unless it is a copy workspace runs no git in (:func:`copy_refusal`)."""
+    refusal = copy_refusal(record)
+    if refusal is not None:
+        raise refusal
+    return record
+
+
+def _refuse_ambiguous(name: str, active: Sequence[WorkspaceRecord]) -> None:
+    """Exit 2 when two active workspaces share ``name``, listing their folders."""
+    if len(active) > 1:
+        folders = ", ".join(shown_path(record.root) for record in active)
+        raise UsageError(
+            f"workspace {q(name)} is ambiguous: {folders}",
+            hint="name it by its folder instead",
+        )
 
 
 def _is_path(name: str) -> bool:

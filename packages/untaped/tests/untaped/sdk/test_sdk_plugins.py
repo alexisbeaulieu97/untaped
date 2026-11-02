@@ -174,6 +174,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "LetGo",
         "MoveAsk",
         "Project",
+        "ProjectRemoval",
         "Refused",
         "ReleaseAsk",
         "UnknownHolder",

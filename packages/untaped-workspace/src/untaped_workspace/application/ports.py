@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from untaped.sdk import OutcomeRecord, ProgressHandle
+    from untaped.sdk import OutcomeRecord, ProgressHandle, ProjectRemoval
     from untaped_workspace.domain.models import (
         Checkout,
         CommandResult,
@@ -84,8 +84,10 @@ class GitWorktrees(Protocol):
         """Release ``url``'s store repo for workspace, deleting the local ``branches`` named."""
         ...
 
-    def drop_worktrees(self, url: str, under: Path) -> list[Path]:
-        """Remove workspace's worktrees of ``url``'s store repo at or under ``under`` (forced)."""
+    def drop_worktrees(
+        self, url: str, under: Path, *, checked: Mapping[Path, str] | None, force: bool
+    ) -> list[Path]:
+        """Remove the worktrees ``checked`` names (or all) under ``under``; unforced, rechecked."""
         ...
 
     def repair(self, url: str, worktree: Path) -> bool:
@@ -136,8 +138,8 @@ class WorkspaceStore(Protocol):
         """Let go of the project's repos through the holds service."""
         ...
 
-    def remove_project(self, record: WorkspaceRecord) -> tuple[str, ...]:
-        """Remove the project once it holds nothing; what stays in its folder."""
+    def remove_project(self, record: WorkspaceRecord) -> ProjectRemoval:
+        """Remove the project unless it still holds items (then nothing is removed)."""
         ...
 
 

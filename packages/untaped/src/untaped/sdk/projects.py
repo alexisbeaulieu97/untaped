@@ -46,9 +46,9 @@ from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.runtime.run_output import Diagnostics
 from untaped.sdk._home import CORE, DEFAULT_HOME, PLUGINS_FOLDER, home
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
+from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
-from untaped.sdk.storage._fs import atomic_write
+from untaped.sdk.storage._fs import atomic_write, unlink_lock_file
 from untaped.sdk.storage._refs import (
     PROJECT,
     REFS,
@@ -837,9 +837,9 @@ def _reserved(folder: Path) -> str | None:
     The current home and ``~/.untaped`` are both untaped's own. A checkout may
     hold a moved home (``UNTAPED_HOME=<checkout>/.untaped-home``) and stay a
     project; only ``~/.untaped``'s parents are refused for holding it. A
-    plugin's own place (``plugins/<plugin>/<place>/``, core's aside) may hold
-    projects in its folders: workspace makes each workspace a project in its
-    ``checkouts`` place.
+    folder directly in a plugin's own place (``plugins/<plugin>/<place>/NAME``,
+    core's aside) may be a project, and nothing deeper: workspace makes each
+    workspace a project in its ``checkouts`` place.
     """
     home = Path.home().resolve()
     if folder == home:
@@ -852,7 +852,7 @@ def _reserved(folder: Path) -> str | None:
             return f"it is {shown_path(untaped)}, untaped's own folder"
         plugins = untaped / PLUGINS_FOLDER
         if folder.is_relative_to(plugins) and (
-            len(parts := folder.relative_to(plugins).parts) < 3 or parts[0] == CORE
+            len(parts := folder.relative_to(plugins).parts) != 3 or parts[0] == CORE
         ):
             return f"{shown_path(plugins)} is untaped's own"
     if default.is_relative_to(folder):
@@ -943,7 +943,21 @@ _CORE_FILES = (MARKER,)
 
 
 @experimental
-def remove_project(project: Project) -> tuple[str, ...]:
+@dataclass(frozen=True)
+class ProjectRemoval:
+    """What :func:`remove_project` did.
+
+    ``held`` counts the items the project still holds: when it is not zero,
+    nothing was removed. Otherwise ``kept`` names what stays in the folder
+    (empty when the folder went too).
+    """
+
+    held: int = 0
+    kept: tuple[str, ...] = ()
+
+
+@experimental
+def remove_project(project: Project) -> ProjectRemoval:
     """Delete what core wrote in ``project`` and forget it, once it holds nothing.
 
     What ``untaped project remove`` ends with, for a plugin that let go of its
@@ -951,18 +965,16 @@ def remove_project(project: Project) -> tuple[str, ...]:
     ``project.json``, ``plugins/`` (every plugin's project files), core's lock
     file and an untouched ``.gitignore`` go, then the home's record;
     ``config.yml`` and people's files stay, and so does the folder unless
-    nothing else is in it. Returns what stays, by name (empty when the folder
-    went too). Refuses (exit 1) while the project still holds items.
+    nothing else is in it. While the project still holds items (another
+    plugin's, say) nothing is removed and the result says how many. The lock
+    file goes once the caller's outermost :meth:`Project.locked` ends.
     """
     with project.locked():
         here = writing(project)[0]
         holder = holder_of(here)
         left = holds_left(holder)
         if left:
-            raise UntapedError(
-                f"project {here.name} still holds {left} item{'s' if left != 1 else ''}; it stays",
-                hint=f"see what it holds with `untaped project remove {here.root} --dry-run`",
-            )
+            return ProjectRemoval(held=left)
         try:
             kept = delete_core_files(here.root)
             with locked(), suppress(FileNotFoundError):
@@ -972,10 +984,8 @@ def remove_project(project: Project) -> tuple[str, ...]:
                 f"could not remove project {here.name}: {exc.strerror or exc}"
             ) from exc
         _forget(here.root)
-    if not reference_file(holder).exists():
-        with suppress(OSError):
-            holder_lock_file(holder).unlink()
-    return tuple(kept)
+        unlink_lock_file(holder_lock_file(holder))
+    return ProjectRemoval(kept=tuple(kept))
 
 
 def _forget(root: Path | None = None) -> None:

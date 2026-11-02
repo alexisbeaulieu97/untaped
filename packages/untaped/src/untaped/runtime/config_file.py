@@ -221,8 +221,8 @@ def record_project_pick(root: Path, names: Sequence[str]) -> bool:
             data["profile"] = names[0] if len(names) == 1 else list(names)
             wrote = True
 
-    from untaped.runtime.folder_layer import project_config_path  # noqa: PLC0415 - reads settings
     from untaped.runtime.config_read import load_project_config  # noqa: PLC0415
+    from untaped.runtime.folder_layer import project_config_path  # noqa: PLC0415 - reads settings
 
     mutate_config(apply, project_config_path(root), load=load_project_config)
     return wrote

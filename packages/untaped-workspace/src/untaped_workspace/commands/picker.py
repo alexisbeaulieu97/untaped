@@ -133,7 +133,10 @@ def name_validator(store: WorkspaceStore, root: Path) -> Callable[[str], str | N
         except UsageError as exc:
             return str(exc)
         folder = workspace_root(root, name)
-        existing = store.at(folder)
+        try:
+            existing = store.at(folder)
+        except UntapedError as exc:  # a copy there
+            return str(exc)
         if existing is not None and existing.meta is not None and not existing.archived:
             return f"workspace {q(name)} already exists"
         if existing is None:

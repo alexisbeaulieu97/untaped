@@ -24,6 +24,7 @@ import pytest
 
 from untaped.core.project_lifecycle import preview_check
 from untaped.sdk import projects
+from untaped.sdk._home import CORE
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
 from untaped.sdk.projects import (
     Project,
@@ -265,7 +266,7 @@ def test_init_accepts_a_folder_in_a_plugins_own_place() -> None:
     """Workspace makes each workspace a project in its ``checkouts`` place under the home."""
     done = init(Path.home() / ".untaped" / "plugins" / "workspace" / "checkouts" / "PROJ-1")
     assert done.action == "created"
-    for place in ("workspace", "workspace/checkouts"):
+    for place in ("workspace", "workspace/checkouts", "git/store/github.com/acme", f"{CORE}/x/y"):
         with pytest.raises(UsageError, match="is untaped's own"):
             init(Path.home() / ".untaped" / "plugins" / place)
 

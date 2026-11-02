@@ -6,7 +6,7 @@ from collections.abc import Iterator, Sequence
 
 from pydantic import Field
 
-from untaped.sdk import Confirm, Output, Positional, now, plural, q
+from untaped.sdk import Confirm, Output, Positional, now, plural, q, shown_path
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.remove import RemovalPlan, RemoveWorkspace
 from untaped_workspace.commands._workspace import NAME_HELP, WorkspaceCommand
@@ -78,7 +78,8 @@ class Remove(WorkspaceCommand):
     and it holds nothing else: config.yml and your own files stay, as with
     `untaped project remove`.
 
-    Always confirms; without a terminal it needs --yes (else exit 2).
+    Always confirms; without a terminal it needs --yes (else exit 2). A
+    workspace whose repos change while the question waits is kept (exit 1).
     --dry-run previews with `planned` and `refused` rows and exits 0.
 
     Examples
@@ -119,7 +120,7 @@ class Remove(WorkspaceCommand):
             self.confirm(_question(plan), preview=lambda: _preview(plan))
             outcomes = remove(plan, force=self.force)
         self.report(outcomes, lambda row: f"{row.workspace}/{row.repo}")
-        if not any(row.failed or row.action == "kept" for row in outcomes):
+        if not any(row.failed or row.action in {"kept", "refused"} for row in outcomes):
             self.ctx.diag.success(f"removed workspace {q(located[0].name)}")
         yield from outcomes
 
@@ -145,4 +146,9 @@ def _question(plan: RemovalPlan) -> str:
 
 def _preview(plan: RemovalPlan) -> list[str]:
     """What the question shows first: each repo's planned row."""
-    return [f"{row.workspace} {row.repo or '(workspace)'}: {row.detail}" for row in plan.rows]
+    return [
+        f"{shown_path(row.target_path)} {row.repo or '(workspace)'}: {row.detail}"
+        if row.target_path is not None
+        else f"{row.workspace} {row.repo or '(workspace)'}: {row.detail}"
+        for row in plan.rows
+    ]

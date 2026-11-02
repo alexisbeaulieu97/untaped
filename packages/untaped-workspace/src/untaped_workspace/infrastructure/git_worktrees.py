@@ -26,7 +26,7 @@ the last workspace of a URL. The repo store lock is always the inner lock (see
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
@@ -109,6 +109,7 @@ class LocalGitWorktrees:
         picked = base if base is not None else self._default_branch(store, url)
         refs = self._refs(store, branch, picked)
         start = _base_ref(picked, refs, url)
+        self._forget_gone(store, target)
         store.run(["worktree", "prune"])
         if branch is None:
             store.worktree_add(target, start.ref, lock_reason=lock)
@@ -217,6 +218,8 @@ class LocalGitWorktrees:
             if not force:
                 self._recheck(store, dest, base)
             self._remove_worktree(store, dest, force=force)
+        else:
+            self._forget_gone(store, dest.absolute())
         store.run(["worktree", "prune"])
 
     def store_use(self, url: str, *, bases: Collection[str]) -> StoreUse | None:
@@ -282,23 +285,39 @@ class LocalGitWorktrees:
             freed_bytes=outcome.freed_bytes,
         )
 
-    def drop_worktrees(self, url: str, under: Path) -> list[Path]:
-        """Remove workspace's worktrees of ``url``'s store repo at or under ``under``; forced.
+    def drop_worktrees(
+        self, url: str, under: Path, *, checked: Mapping[Path, str] | None, force: bool
+    ) -> list[Path]:
+        """Remove workspace's worktrees of ``url``'s store repo at or under ``under``.
 
         Read from the repo's entries, so a project folder that was moved away
-        or is out of reach still loses its entries. The caller checked the
-        work first. Returns the worktrees removed.
+        or is out of reach still loses its entries. ``checked`` maps the
+        worktrees the caller checked to their base: only those go (``None``:
+        every one under ``under``, for a project whose folder is not here).
+        Unforced, each is checked again right before it goes and work that
+        appeared since refuses (:class:`GitError`, ``conflict``), leaving the
+        ones not yet removed. Returns the worktrees removed.
         """
         store = self._store(url)
         if not store.exists():
             return []
         found = store.worktrees_under(under)
+        bases = None if checked is None else {path.absolute(): b for path, b in checked.items()}
+        if bases is not None:
+            found = [worktree for worktree in found if worktree.absolute() in bases]
+        removed: list[Path] = []
         for worktree in found:
-            # unlocked first: a gone folder's entry is then pruned, as git prunes any other
-            store.run(["worktree", "unlock", str(worktree)], check=False)
+            if not worktree.exists():
+                self._forget_gone(store, worktree)
+                removed.append(worktree)
+                continue
+            if not force and bases is not None:
+                self._recheck(store, worktree, bases[worktree.absolute()])
+            # unlocked first: forced remove takes a locked one too, and a refusal relocks it
             self._remove_worktree(store, worktree, force=True)
+            removed.append(worktree)
         store.run(["worktree", "prune"])
-        return found
+        return removed
 
     def repair(self, url: str, worktree: Path) -> bool:
         """Reconnect a worktree a project's move carried to ``worktree``; ``False``: none there."""
@@ -352,14 +371,28 @@ class LocalGitWorktrees:
         directly.
         """
         flags = ["--force", "--force"] if force else []
-        if not force:  # workspace locks its worktrees; its own remove lets go of the lock
+        reason = None if force else _lock_reason(store, dest.absolute())
+        if reason is not None:  # workspace locks its worktrees; its own remove lets go of the lock
             store.run(["worktree", "unlock", str(dest.absolute())], check=False)
         try:
             store.run(["worktree", "remove", *flags, str(dest.absolute())])
         except GitError:
             if not force:
+                if reason is not None:  # still there: locked again, as it was
+                    store.lock_worktree(dest.absolute(), reason=reason)
                 raise
             _delete_tree(dest)
+
+    def _forget_gone(self, store: RepoStore, worktree: Path) -> None:
+        """Unlock workspace's entry for a worktree whose folder is gone, so prune drops it.
+
+        Only when the folder is truly absent: a locked entry for a folder on
+        a drive that is away is kept by never reaching here (its folder's
+        parent is gone too, and the caller skips it).
+        """
+        if worktree.exists() or not worktree.parent.exists():
+            return
+        store.run(["worktree", "unlock", str(worktree)], check=False)
 
     def _stash_branches(self, store: RepoStore) -> set[str]:
         """Branches stash entries were made on (``WIP on <b>:``, ``On <b>:``)."""
@@ -606,6 +639,18 @@ class LocalGitWorktrees:
     def _is_ancestor(self, store: RepoStore, ancestor: str, descendant: str) -> bool:
         args = ["merge-base", "--is-ancestor", ancestor, descendant]
         return store.run(args, check=False).returncode == 0
+
+
+def _lock_reason(store: RepoStore, worktree: Path) -> str | None:
+    """Why the worktree at ``worktree`` is locked (``""`` with no reason); ``None``: not locked."""
+    listed = store.run(["worktree", "list", "--porcelain"], capture=True).text
+    for block in listed.split("\n\n"):
+        lines = block.splitlines()
+        if lines and lines[0] == f"worktree {worktree}":
+            for line in lines[1:]:
+                if line == "locked" or line.startswith("locked "):
+                    return line.removeprefix("locked").strip()
+    return None
 
 
 def _delete_tree(path: Path) -> None:

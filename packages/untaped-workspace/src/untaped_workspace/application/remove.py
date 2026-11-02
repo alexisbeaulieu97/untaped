@@ -21,7 +21,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, OutcomeRecord, UntapedError, shown_path
+from untaped.sdk import Failure, OutcomeRecord, UntapedError, plural, shown_path
 from untaped_workspace.domain.naming import store_ident
 from untaped_workspace.records import RemoveOutcome
 
@@ -41,6 +41,8 @@ class RemovalPlan:
     records: tuple[WorkspaceRecord, ...]
     rows: tuple[RemoveOutcome, ...]
     hints: tuple[str, ...] = ()
+    previews: tuple[tuple[RemoveOutcome, ...], ...] = ()
+    """Each record's repo rows as shown, to apply only what was confirmed."""
 
     @property
     def blocked(self) -> list[RemoveOutcome]:
@@ -62,21 +64,35 @@ class RemoveWorkspace:
             records = tuple(stack.enter_context(self._store.locked(r)) for r in located)
             rows: list[RemoveOutcome] = []
             hints: list[str] = []
+            previews: list[tuple[RemoveOutcome, ...]] = []
             for record in records:
                 held = self._store.release(record, force=force, dry_run=True)
-                rows += [_row(record, outcome) for outcome in held]
+                previews.append(tuple(_row(record, outcome) for outcome in held))
+                rows += previews[-1]
                 hints += [hint for outcome in held if (hint := getattr(outcome, "hint", None))]
                 rows.append(_own(record, "planned", _intent(record)))
-            yield RemovalPlan(name=name, records=records, rows=tuple(rows), hints=tuple(hints))
+            yield RemovalPlan(
+                name=name,
+                records=records,
+                rows=tuple(rows),
+                hints=tuple(hints),
+                previews=tuple(previews),
+            )
 
     def __call__(self, plan: RemovalPlan, *, force: bool) -> list[RemoveOutcome]:
         """Remove ``plan``'s workspaces (the caller holds :meth:`hold`).
 
         A project whose release is refused or fails keeps workspace's rows,
-        so ``remove`` can run again.
+        so ``remove`` can run again; so does one whose repos changed since
+        the preview was shown (new work while the question waited), since
+        ``--force`` would discard what nobody confirmed.
         """
         rows: list[RemoveOutcome] = []
-        for record in plan.records:
+        for index, record in enumerate(plan.records):
+            if index < len(plan.previews) and self._changed(record, plan.previews[index], force):
+                why = "kept the workspace: its repos changed since the preview; run remove again"
+                rows.append(_own(record, "refused", why, Failure.plain(why)))
+                continue
             done = [
                 _row(record, outcome)
                 for outcome in self._store.release(record, force=force, dry_run=False)
@@ -88,20 +104,41 @@ class RemoveWorkspace:
             rows.append(self._drop(record))
         return rows
 
+    def _changed(
+        self, record: WorkspaceRecord, shown: Sequence[RemoveOutcome], force: bool
+    ) -> bool:
+        """Whether ``record``'s release would now do other than the rows ``shown``."""
+        now = [_row(record, row) for row in self._store.release(record, force=force, dry_run=True)]
+        return [_seen(row) for row in now] != [_seen(row) for row in shown]
+
     def _drop(self, record: WorkspaceRecord) -> RemoveOutcome:
-        """Drop workspace's rows, then the project when workspace made it."""
+        """The project when workspace made it and it holds nothing else, else workspace's rows."""
         try:
-            self._store.forget(record)
             if record.meta is None or record.meta.created_by != "workspace":
+                self._store.forget(record)
                 return _own(record, "removed", "dropped the workspace's rows; the project stays")
-            kept = self._store.remove_project(record)
+            removal = self._store.remove_project(record)  # its rows go with plugins/
+            if removal.held:
+                self._store.forget(record)
+                items = plural(removal.held, "item")
+                return _own(
+                    record,
+                    "removed",
+                    f"dropped the workspace's rows; the project stays: it holds {items}",
+                )
         except UntapedError as exc:
             failure = Failure.from_exception(exc, message=str(exc))
             return _own(record, "failed", str(exc), failure)
         where = shown_path(record.root)
-        if kept:
-            return _own(record, "removed", f"removed the project; kept {where}: {', '.join(kept)}")
+        if removal.kept:
+            kept = ", ".join(removal.kept)
+            return _own(record, "removed", f"removed the project; kept {where}: {kept}")
         return _own(record, "removed", f"removed the project and {where}")
+
+
+def _seen(row: RemoveOutcome) -> tuple[str, str, str]:
+    """What the preview showed of a repo's row."""
+    return (row.repo, row.action, row.detail)
 
 
 def _intent(record: WorkspaceRecord) -> str:

@@ -223,11 +223,14 @@ def archived_records() -> list[WorkspaceRecord]:
 
 
 def new_workspace(name: str, *repos: RepoSpec) -> WorkspaceRecord:
-    """``workspace create NAME`` with no repo, then ``repos``' rows written as they are."""
+    """``workspace create NAME`` with no repo, then ``repos`` held and their rows written."""
     created = run(["create", name, "--empty"])
     assert created.exit == 0, err(created)
     record = stored(name)
     assert record is not None
     if repos:
-        record = ProjectWorkspaceStore().put_repos(record, repos)
+        store = ProjectWorkspaceStore()
+        for spec in repos:
+            store.hold(record, spec.url)
+        record = store.put_repos(record, repos)
     return record

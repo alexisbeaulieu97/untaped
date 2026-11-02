@@ -157,6 +157,7 @@ from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
 from untaped.sdk.projects import (
     Initialized,
     Project,
+    ProjectRemoval,
     checkout_root,
     current_project,
     init_project,
@@ -488,6 +489,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "LetGo",
     "MoveAsk",
     "Project",
+    "ProjectRemoval",
     "Refused",
     "ReleaseAsk",
     "UnknownHolder",

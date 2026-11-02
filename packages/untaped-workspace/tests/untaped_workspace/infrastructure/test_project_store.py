@@ -89,7 +89,8 @@ def test_two_active_workspaces_of_one_name_are_ambiguous(tmp_path: Path) -> None
     with pytest.raises(UsageError, match="ambiguous") as refused:
         store.find("w")
     assert str(first) in str(refused.value) and str(second) in str(refused.value)
-    assert len(store.named("w")) == 2
+    with pytest.raises(UsageError, match="ambiguous"):
+        store.named("w")  # remove refuses too, rather than removing both
     assert store.find(str(second)).root == second  # a folder names one
 
 
