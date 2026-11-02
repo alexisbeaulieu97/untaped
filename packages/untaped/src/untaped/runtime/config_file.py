@@ -239,10 +239,12 @@ def set_at_path(data: dict[str, Any], path: tuple[str, ...], value: Any) -> None
     cur[path[-1]] = _to_yaml_value(value)
 
 
-def unset_at_path(data: dict[str, Any], path: tuple[str, ...]) -> bool:
-    """Remove ``path`` from ``data``, cleaning up empty parents.
+def unset_at_path(data: dict[str, Any], path: tuple[str, ...], *, keep: int = 0) -> bool:
+    """Remove ``path`` from ``data``, cleaning up empty parents deeper than ``keep``.
 
-    Returns ``True`` if something was removed.
+    ``keep`` is the path length of a parent that stays even when empty (a map
+    entry whose existence is the setting). Returns ``True`` if something was
+    removed.
     """
     chain: list[tuple[dict[str, Any], str]] = []
     cur: Any = data
@@ -255,7 +257,9 @@ def unset_at_path(data: dict[str, Any], path: tuple[str, ...]) -> bool:
     if not isinstance(cur, dict) or last not in cur:
         return False
     del cur[last]
-    for parent, key in reversed(chain):
+    for depth, (parent, key) in reversed(list(enumerate(chain, start=1))):
+        if depth <= keep:
+            break
         if isinstance(parent[key], dict) and not parent[key]:
             del parent[key]
     return True

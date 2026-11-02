@@ -33,7 +33,7 @@ from pydantic import RootModel as PydanticRootModel
 
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._home import CORE, PLUGINS_FOLDER
-from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import SettingKey, value_in
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.marks import experimental
 from untaped.sdk.storage.lock import operation_lock
@@ -167,11 +167,7 @@ class Dir(OwnedBlock):
         default = run.home / PLUGINS_FOLDER / self.plugin / self.name
         if self.at is None:
             return default
-        model = SettingKey.model_of(self.at)
-        path = SettingKey.path_of(self.at)
-        value: object = settings_of(model)
-        for part in path:
-            value = getattr(value, part)
+        value = value_in(self.at, settings_of(SettingKey.model_of(self.at)))
         if value is None:
             return default  # an optional setting left unset
         folder = Path(value).expanduser() if isinstance(value, str | Path) and value else None

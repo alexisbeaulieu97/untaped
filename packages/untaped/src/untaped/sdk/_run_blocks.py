@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from untaped.sdk._block import FieldBlock, FieldOption, Invocation
 from untaped.sdk._confirm import Confirm
 from untaped.sdk._input_blocks import Lines, Stdin
-from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import SettingKey, value_in
 from untaped.sdk._output import Output, _copy
 from untaped.sdk.errors import (
     ConfigError,
@@ -128,9 +128,7 @@ class Parallel(FieldBlock):
         from untaped.sdk._run import setting_name, settings_of  # noqa: PLC0415 - a setting pays
 
         model = SettingKey.model_of(self.default)
-        value: object = settings_of(model)
-        for part in SettingKey.path_of(self.default):
-            value = getattr(value, part)
+        value = value_in(self.default, settings_of(model))
         if value is None and self.unset is not None:
             return self.unset if self.cap is None else min(self.unset, self.cap)
         setting = setting_name(self.default)

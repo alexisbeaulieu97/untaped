@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
+from pydantic_core import to_jsonable_python
 
 from untaped.core.config.models import OldSpelling
 from untaped.core.settings import NAME, CoreSettings
@@ -49,7 +50,8 @@ from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
 from untaped.runtime.yaml_roundtrip import KeyRename
-from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
+from untaped.sdk._keys import map_value_type, model_in
+from untaped.sdk._schema import EntryNameError, FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     apply_move,
@@ -83,6 +85,7 @@ class SettingsFileRepository:
         self._settings_cls = settings_cls
         self._project = project
         self._descriptors: list[FieldDescriptor] | None = None
+        self._walked: dict[tuple[str, ...], FieldDescriptor] = {}
         self._sections: dict[str, Any] = {}
         self._resolved: ResolvedConfig | None = None
 
@@ -112,18 +115,29 @@ class SettingsFileRepository:
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
             self._descriptors = walk_settings(self._profile_model(), include_collections=True)
+            self._walked = {each.path: each for each in self._descriptors}
         return self._descriptors
 
     def descriptor(self, key: str) -> FieldDescriptor:
         descriptors = self.descriptors()
-        descriptor = find_descriptor(descriptors, key)
+        try:
+            descriptor = find_descriptor(descriptors, key)
+        except EntryNameError as exc:
+            raise ConfigError(str(exc), category="usage") from exc
         if descriptor is None:
             # The section's keys when the section exists, else the sections.
             section = key.partition(".")[0]
             known = [d.key for d in descriptors if d.key.partition(".")[0] == section] or sorted(
                 {d.key.partition(".")[0] for d in descriptors}
             )
-            raise ConfigError(not_found("setting", key, known=known), category="not_found")
+            whole = _plain_map_above(descriptors, key)
+            raise ConfigError(
+                not_found("setting", key, known=known),
+                category="not_found",
+                hint=None
+                if whole is None
+                else f"an entry whose name holds a dot is reached only through the map {whole}",
+            )
         return descriptor
 
     def setting_value(self, descriptor: FieldDescriptor) -> Any:
@@ -132,11 +146,18 @@ class SettingsFileRepository:
         Validates only the leaf's section (a part of core's, for ``untaped.*``);
         raises ``ConfigError`` when it is invalid.
         """
-        holder = self.holder_value(descriptor)
-        return None if holder is None else getattr(holder, descriptor.path[-1], None)
+        value = _child(self.holder_value(descriptor), descriptor.path[-1])
+        declared = self._declared(descriptor)
+        choices = declared.choices
+        if value is None and choices is not None and descriptor.path[:-1] == declared.path:
+            # An entry a map's declared names give a default (a theme's symbol).
+            defaults = choices.defaults
+            if defaults is not None:
+                value = defaults(self.holder_value(declared)).get(descriptor.path[-1])
+        return value
 
     def holder_value(self, descriptor: FieldDescriptor) -> Any:
-        """The validated model that holds one leaf: its section, or a model nested in it.
+        """The validated value that holds one leaf: its section, a model in it, or a map.
 
         Raises ``ConfigError`` when the leaf's section is invalid.
         """
@@ -150,9 +171,7 @@ class SettingsFileRepository:
             )
         cursor: Any = self._sections[loaded]
         for segment in descriptor.path[len(loaded.split(".")) : -1]:
-            cursor = getattr(cursor, segment, None)
-            if cursor is None:
-                return None
+            cursor = _child(cursor, segment)
         return cursor
 
     def validated_with(self, descriptor: FieldDescriptor) -> str:
@@ -240,12 +259,25 @@ class SettingsFileRepository:
         return self._section_models().get(section)
 
     def mark(self, descriptor: FieldDescriptor) -> Stability | None:
-        """The effective stability mark of ``descriptor``: its own, else its plugin's."""
+        """The effective stability mark of ``descriptor``: its own, else its plugin's.
+
+        A map entry, or a setting inside one, has the map setting's mark.
+        """
         return setting_mark(
-            descriptor.key,
+            self._declared(descriptor).key,
             sections=self._section_models(),
             section_stability=section_stabilities(),
         )
+
+    def _declared(self, descriptor: FieldDescriptor) -> FieldDescriptor:
+        """The setting a settings model declares that holds ``descriptor``: it, or its map."""
+        self.descriptors()
+        walked = self._walked
+        for depth in range(len(descriptor.path), 0, -1):
+            found = walked.get(descriptor.path[:depth])
+            if found is not None:
+                return found
+        return descriptor
 
     def deprecated_source(self, descriptor: FieldDescriptor) -> OldSpelling | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.
@@ -329,10 +361,11 @@ class SettingsFileRepository:
             target_data, resolved = self._write_target(data, profile)
             for key, update in updates.items():
                 descriptor = descriptors[key]
+                self._carry_old_map(target_data, descriptor, on_spelling_removed)
                 olds = self._old_paths(descriptor)
                 raw_value = update(resolved, self._own(target_data, descriptor))
                 if raw_value is None:
-                    unset_at_path(target_data, descriptor.path)
+                    unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
                 else:
                     value = _coerce_value(key, descriptor, raw_value)
                     set_at_path(target_data, descriptor.path, value)
@@ -368,6 +401,39 @@ class SettingsFileRepository:
         name = profile or write_target()
         return self._own(self.profile_data(name) or {}, descriptor)
 
+    def _carry_old_map(
+        self,
+        data: dict[str, Any],
+        descriptor: FieldDescriptor,
+        report: SpellingRemoved | None,
+        *,
+        only_if_set: bool = False,
+    ) -> None:
+        """Move a map still under an old spelling to its name before one of its entries changes.
+
+        Otherwise the entry would land under the new name, which wins over the
+        old one, and the map's other entries would stop being read. Only the
+        spelling the reader reads is carried: the closest one still read.
+        ``only_if_set`` (an unset) leaves the map where it is unless it holds
+        ``descriptor``, so removing nothing changes nothing.
+        """
+        declared = self._declared(descriptor)
+        if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
+            return
+        model = self.section_model(declared.path[0])
+        readable = key_mappings(model).readable if model is not None else {}
+        for old in self._old_paths(declared):
+            value = _at_path(data, old)
+            if value is None or ".".join(old[1:]) not in readable:
+                continue  # a retired spelling is no longer read, so it isn't carried
+            if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
+                return  # the closest old spelling is the one read; the others are ignored
+            unset_at_path(data, old)
+            set_at_path(data, declared.path, value)
+            if report is not None:
+                report(".".join(old))
+            return
+
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
         """The key's raw value in one profile's ``data``: its own spelling, else an old one."""
         paths = [descriptor.path, *self._old_paths(descriptor)]
@@ -400,7 +466,8 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = self._write_target(data, profile)
-            own = unset_at_path(target_data, descriptor.path)
+            self._carry_old_map(target_data, descriptor, on_spelling_removed, only_if_set=True)
+            own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
             olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
             if not (own or olds):
                 return
@@ -522,7 +589,8 @@ class SettingsFileRepository:
         Only writing is refused: ``config unset`` still removes such a value.
         """
         if self._project is not None:
-            why = folder_refusal(descriptor)
+            # Its map's refusal too: a project's file is refused the whole map when it reads.
+            why = folder_refusal(descriptor) or folder_refusal(self._declared(descriptor))
             if why is not None:
                 raise ConfigError(
                     f"{descriptor.key} can't be set in {self.written_file()}: {why}",
@@ -551,6 +619,30 @@ def _relative(descriptor: FieldDescriptor) -> str:
     return ".".join(descriptor.path[1:])
 
 
+def _plain_map_above(descriptors: list[FieldDescriptor], key: str) -> str | None:
+    """The deepest map of plain values ``key`` goes past by more than one entry name, if any.
+
+    Past such a map, only an entry whose name holds a dot can be meant.
+    """
+    parts = key.split(".")
+    for depth in range(len(parts) - 2, 0, -1):
+        try:
+            found = find_descriptor(descriptors, ".".join(parts[:depth]))
+        except EntryNameError:
+            continue
+        value = None if found is None else map_value_type(found.annotation)
+        if value is not None and model_in(value) is None:
+            return ".".join(parts[:depth])
+    return None
+
+
+def _child(value: Any, name: str) -> Any:
+    """``value``'s field or map entry ``name``; ``None`` when it has none."""
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return None if value is None else getattr(value, name, None)
+
+
 def _at_path(data: Any, path: tuple[str, ...]) -> Any:
     for segment in path:
         data = data.get(segment) if isinstance(data, dict) else None
@@ -575,7 +667,8 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
 
     ``str``/``SecretStr`` fields keep the input verbatim (no YAML parsing, so
     ``p4ss #word`` or ``0123`` survive intact). Mapping and list fields parse
-    the input as JSON or YAML and replace the whole value. Other types
+    the input as JSON or YAML and replace the whole value (a map entry
+    whose value is a model too, without the defaults it fills). Other types
     validate the raw string in pydantic's lax mode and store the JSON-mode
     dump (e.g. a ``Path`` as a string). For those non-string types the
     literal ``null`` stores ``None``; the section validation in ``update_value``
@@ -598,7 +691,21 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         ) from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
-    return adapter.dump_python(value, mode="json")
+    # A model's defaults stay unwritten, as if the value had been typed into the file;
+    # a secret inside is written as given (the JSON dump would mask it).
+    dumped = adapter.dump_python(value, exclude_unset=descriptor.is_collection)
+    return to_jsonable_python(_revealed(dumped))
+
+
+def _revealed(value: Any) -> Any:
+    """``value`` with every ``SecretStr`` inside it replaced by its secret."""
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    if isinstance(value, dict):
+        return {key: _revealed(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_revealed(item) for item in value]
+    return value
 
 
 def _parse_structured(key: str, raw_value: str) -> Any:
