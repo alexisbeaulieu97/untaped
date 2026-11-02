@@ -35,6 +35,9 @@ class HookWorkerPort(Protocol):
     ) -> HookWorkerCallResult:
         """Send one hook request and return the validated result plus diagnostics."""
 
+    def close(self) -> None:
+        """Stop every worker; a request still waiting on one ends with an error."""
+
 
 class HookExecutorPort(Protocol):
     """Execute trusted hooks through their resolved runtime."""

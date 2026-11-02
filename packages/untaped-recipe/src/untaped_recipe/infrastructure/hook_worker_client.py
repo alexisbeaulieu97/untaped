@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+import io
 import json
-import os
-import signal
-import subprocess
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Condition, Lock, Thread
-from typing import TextIO
+from typing import IO
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictStr, model_validator
 
 from untaped.sdk import ErrorCategory
+from untaped.sdk.process import RunningProcess, start_process
 from untaped_recipe._worker import hook_worker
 from untaped_recipe._worker import worker_protocol as protocol
 from untaped_recipe.domain.hook_project import UvHookRef
@@ -27,8 +25,6 @@ from untaped_recipe.infrastructure.uv_project import uv_environment
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
 DEBUG_DIAGNOSTIC_SETTLE_SECONDS = 0.05
-# How long close() waits for an exit before each escalation (EOF, SIGTERM, SIGKILL).
-CLOSE_GRACE_SECONDS = 2.0
 
 
 class HookWorkerResponse(BaseModel):
@@ -78,6 +74,7 @@ class UvHookWorkerPool:
         self._startup_notice = startup_notice
         self._groups: dict[Path, _UvHookWorkerGroup] = {}
         self._lock = Lock()
+        self._closed = False
 
     def __enter__(self) -> UvHookWorkerPool:
         return self
@@ -104,6 +101,7 @@ class UvHookWorkerPool:
     def close(self) -> None:
         """Stop all worker processes."""
         with self._lock:
+            self._closed = True
             groups = tuple(self._groups.values())
             self._groups.clear()
         first_error: Exception | None = None
@@ -119,6 +117,8 @@ class UvHookWorkerPool:
     def _group_for(self, project_root: Path) -> _UvHookWorkerGroup:
         resolved = project_root.resolve()
         with self._lock:
+            if self._closed:  # stopped mid-run: start no worker the stop would miss
+                raise FatalHookWorkerError("hook worker pool is closed")
             group = self._groups.get(resolved)
             if group is None:
                 group = _UvHookWorkerGroup(
@@ -233,7 +233,13 @@ class _UvHookWorkerGroup:
 
 
 class UvHookWorker:
-    """Long-lived worker process for one uv hook project."""
+    """Long-lived worker process for one uv hook project.
+
+    The worker runs in its own process group through ``untaped.sdk.process``:
+    untaped's Ctrl-C, SIGTERM and SIGHUP reach it and whatever its hooks
+    started (``uv run`` passes the signal on too, so a hook may see it twice),
+    and :meth:`close` stops the whole group, what hooks left running included.
+    """
 
     def __init__(
         self,
@@ -253,20 +259,14 @@ class UvHookWorker:
         self._stderr: Queue[str] = Queue()
         self._stdout: Queue[str | None] = Queue()
         self._process = self._start()
-        if self._process.stdout is not None:
-            self._stdout_thread = Thread(
-                target=_drain_stdout,
-                args=(self._process.stdout, self._stdout),
-                daemon=True,
-            )
-            self._stdout_thread.start()
-        if self._process.stderr is not None:
-            self._stderr_thread = Thread(
-                target=_drain_stderr,
-                args=(self._process.stderr, self._stderr),
-                daemon=True,
-            )
-            self._stderr_thread.start()
+        self._stdout_thread = Thread(
+            target=_drain_stdout, args=(self._process.stdout, self._stdout), daemon=True
+        )
+        self._stdout_thread.start()
+        self._stderr_thread = Thread(
+            target=_drain_stderr, args=(self._process.stderr, self._stderr), daemon=True
+        )
+        self._stderr_thread.start()
 
     def request(
         self,
@@ -292,11 +292,8 @@ class UvHookWorker:
                     f"hook request for {hook_name!r} is not JSON-serializable: {exc}"
                 ) from exc
             stdin = self._process.stdin
-            stdout = self._process.stdout
-            if stdin is None or stdout is None:
-                raise FatalHookWorkerError("hook worker was not started with pipes")
             try:
-                stdin.write(line)
+                stdin.write(line.encode("utf-8"))
                 stdin.flush()
             except BrokenPipeError as exc:
                 message = self._failure_message(
@@ -429,36 +426,10 @@ class UvHookWorker:
             raise FatalHookWorkerError(message) from exc
 
     def close(self) -> None:
-        """Terminate the worker process."""
-        if self._process.stdin is not None:
-            with suppress(OSError):
-                self._process.stdin.close()
-        try:
-            self._process.wait(timeout=CLOSE_GRACE_SECONDS)
-        except subprocess.TimeoutExpired:
-            self._signal_process(signal.SIGTERM)
-            try:
-                self._process.wait(timeout=CLOSE_GRACE_SECONDS)
-            except subprocess.TimeoutExpired:
-                self._signal_process(signal.SIGKILL)
-                self._process.wait(timeout=CLOSE_GRACE_SECONDS)
+        """End the worker: end of file on its stdin, one grace, then stop its group."""
+        self._process.close()
 
-    def _signal_process(self, sig: signal.Signals) -> None:
-        pid = getattr(self._process, "pid", None)
-        if pid is not None and hasattr(os, "getpgid") and hasattr(os, "killpg"):
-            try:
-                os.killpg(os.getpgid(pid), sig)  # untaped: allow process-group (#579)
-                return
-            except ProcessLookupError:
-                return
-            except OSError:
-                pass
-        if sig == signal.SIGTERM:
-            self._process.terminate()
-        else:
-            self._process.kill()
-
-    def _start(self) -> subprocess.Popen[str]:
+    def _start(self) -> RunningProcess:
         worker_path = Path(hook_worker.__file__).resolve()
         # Only what uv needs: never the caller's tokens. An inherited
         # VIRTUAL_ENV or PYTHONPATH (not allowlisted) would point uv or the
@@ -466,7 +437,7 @@ class UvHookWorker:
         env = uv_environment()
         env["PYTHONPATH"] = str(self._project_root / "src")
         try:
-            return subprocess.Popen(  # untaped: allow process-group (#579)
+            return start_process(
                 [
                     "uv",
                     "run",
@@ -482,13 +453,6 @@ class UvHookWorker:
                 ],
                 cwd=self._project_root,
                 env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                start_new_session=True,
             )
         except FileNotFoundError as exc:
             raise UvMissingError("uv executable not found for hook project execution") from exc
@@ -540,15 +504,20 @@ def _is_stale_lock_failure(diagnostics: str) -> bool:
     return "lockfile" in lowered and "--locked" in lowered
 
 
-def _drain_stderr(stream: TextIO, queue: Queue[str]) -> None:
-    for line in stream:
-        queue.put(str(line))
+def _drain_stderr(stream: IO[bytes], queue: Queue[str]) -> None:
+    with _text(stream) as text:
+        for line in text:
+            queue.put(line)
 
 
-def _drain_stdout(stream: TextIO, queue: Queue[str | None]) -> None:
-    while True:
-        line = stream.readline()
-        if line == "":
-            queue.put(None)
-            return
-        queue.put(str(line))
+def _drain_stdout(stream: IO[bytes], queue: Queue[str | None]) -> None:
+    """Queue each line, then ``None`` at end of file."""
+    with _text(stream) as text:
+        while line := text.readline():
+            queue.put(line)
+    queue.put(None)
+
+
+def _text(stream: IO[bytes]) -> io.TextIOWrapper:
+    """``stream`` read as UTF-8 text with universal newlines; closing it closes ``stream``."""
+    return io.TextIOWrapper(stream, encoding="utf-8", errors="replace")

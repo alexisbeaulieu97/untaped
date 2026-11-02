@@ -2,18 +2,19 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Buffer, Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
 from importlib.metadata import version
-from io import StringIO
+from io import BytesIO
 from pathlib import Path
 from threading import Barrier, Event
 from typing import Literal
@@ -290,10 +291,7 @@ def test_uv_hook_worker_reports_missing_uv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_popen(*args: object, **kwargs: object) -> object:
-        raise FileNotFoundError("uv")
-
-    monkeypatch.setattr(subprocess, "Popen", fail_popen)
+    monkeypatch.setenv("PATH", str(tmp_path))  # no uv on it
 
     with pytest.raises(UvMissingError, match="uv executable not found"):
         UvHookWorker(tmp_path)
@@ -311,14 +309,14 @@ def test_uv_hook_worker_excludes_dev_dependencies(
         call_kwargs.append(kwargs)
         return _FakeProcess(stdout="")
 
-    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(worker_client, "start_process", popen)
 
     UvHookWorker(tmp_path)
 
     assert calls
     assert "--no-dev" in calls[0]
     assert calls[0].index("--no-dev") < calls[0].index("python")
-    assert call_kwargs[0]["start_new_session"] is True
+    assert call_kwargs[0]["cwd"] == tmp_path
 
 
 def test_uv_hook_worker_times_out_and_closes_hung_process(
@@ -329,7 +327,7 @@ def test_uv_hook_worker_times_out_and_closes_hung_process(
     # timeout can end the request; the generous wall-clock bound just proves
     # it did not wait for the stall (CI scheduling jitter stays well inside).
     fake = _SlowProcess(delay=60)
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path, hook_timeout_seconds=0.01)
 
     start = time.monotonic()
@@ -348,7 +346,7 @@ def test_hook_timeout_starts_after_ready(
         ready_delay=0.1,
         lines=['{"id": "1", "ok": true, "result": "after"}\n'],
     )
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path, hook_timeout_seconds=0.05, startup_timeout_seconds=5)
 
     result = worker.request({"kind": "transform", "module": "hooks.sample"})
@@ -361,7 +359,7 @@ def test_startup_timeout_names_environment_not_hook(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _SlowProcess(delay=0.2, ready=False)
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path, hook_timeout_seconds=60, startup_timeout_seconds=0.01)
 
     with pytest.raises(worker_client.FatalHookWorkerError) as exc_info:
@@ -383,7 +381,7 @@ def test_startup_notice_fires_once_per_worker(
             '{"id": "1", "ok": true, "result": "one"}\n{"id": "2", "ok": true, "result": "two"}\n'
         )
     )
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     notices: list[Path] = []
     worker = UvHookWorker(tmp_path, startup_notice=notices.append)
 
@@ -401,7 +399,7 @@ def test_stale_lock_death_names_uv_lock(
         "error: The lockfile at `uv.lock` needs to be updated, but `--locked` was provided.\n"
     )
     fake = _FakeProcess(stdout="", ready=False, stderr=uv_stderr)
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path)
 
     with pytest.raises(worker_client.FatalHookWorkerError) as exc_info:
@@ -425,7 +423,7 @@ def test_worker_env_scrubs_virtual_env(
         captured.update(kwargs["env"])  # type: ignore[call-overload]
         return _FakeProcess(stdout='{"id": "1", "ok": true, "result": "after"}\n')
 
-    monkeypatch.setattr(subprocess, "Popen", _capture)
+    monkeypatch.setattr(worker_client, "start_process", _capture)
     worker = UvHookWorker(tmp_path)
 
     result = worker.request({"kind": "transform", "module": "hooks.sample"})
@@ -464,7 +462,7 @@ def test_worker_env_passes_only_allowlisted_variables(
         captured.update(kwargs["env"])  # type: ignore[call-overload]
         return _FakeProcess(stdout="")
 
-    monkeypatch.setattr(subprocess, "Popen", _capture)
+    monkeypatch.setattr(worker_client, "start_process", _capture)
     UvHookWorker(tmp_path)
 
     assert not set(secrets) & set(captured)
@@ -504,7 +502,7 @@ def test_uv_hook_worker_rejects_non_json_serializable_request_values(
     import datetime as dt
 
     fake = _FakeProcess(stdout='{"id": "1", "ok": true, "result": "after"}\n')
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path)
 
     with pytest.raises(ValueError, match="is not JSON-serializable"):
@@ -516,7 +514,7 @@ def test_uv_hook_worker_rejects_non_json_serializable_request_values(
             }
         )
 
-    assert fake.stdin.getvalue() == ""
+    assert fake.stdin.getvalue() == b""
 
 
 def test_uv_hook_worker_discards_success_diagnostics_before_failure(
@@ -529,7 +527,7 @@ def test_uv_hook_worker_discards_success_diagnostics_before_failure(
             '{"id": "2", "ok": false, "error": "failed"}\n'
         )
     )
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path)
     worker._stderr.put("success diagnostic\n")
 
@@ -543,6 +541,22 @@ def test_uv_hook_worker_discards_success_diagnostics_before_failure(
     assert "failed" in message
     assert "failure diagnostic" in message
     assert "success diagnostic" not in message
+
+
+def test_uv_hook_worker_splits_stderr_on_carriage_returns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A progress bar's \r updates are lines of their own, so the bound keeps the latest.
+    fake = _FakeProcess(stdout=_OK_LINE, stderr="10%\r50%\r100%\r\ndone\r\n")
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
+    worker = UvHookWorker(tmp_path)
+
+    result = worker.request(
+        {"kind": "transform", "module": "hooks.sample"}, diagnostic_limit=10, settle_seconds=0.05
+    )
+
+    assert result.diagnostics == "100%\ndone"
 
 
 def test_uv_hook_worker_survives_non_utf8_stderr(tmp_path: Path) -> None:
@@ -586,64 +600,63 @@ def test_uv_hook_worker_survives_non_utf8_stderr(tmp_path: Path) -> None:
     assert "\ufffd\ufffd" in result.diagnostics
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX")
-def test_close_kills_the_whole_process_group(
+def _gone(pid: int) -> bool:
+    """Gone, or a zombie waiting for a reaper (it no longer runs)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except OSError:
+        return False
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX (#1013)")
+def test_close_stops_the_whole_process_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    marker = tmp_path / "child.pid"
+    # A worker that ignores SIGTERM and has started a child: close() gives it
+    # end of file and a grace, SIGTERM and a grace, then SIGKILL for both.
+    marker = tmp_path / "pids"
     script = tmp_path / "ignore_term.py"
     script.write_text(
-        "import pathlib\n"
-        "import signal\n"
-        "import subprocess\n"
-        "import sys\n"
-        "import time\n\n"
+        "import os, pathlib, signal, subprocess, sys, time\n"
         "signal.signal(signal.SIGTERM, lambda *_: None)\n"
         "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-        "pathlib.Path(sys.argv[1]).write_text(str(child.pid), encoding='utf-8')\n"
+        "pathlib.Path(sys.argv[1] + '.tmp').write_text(f'{os.getpid()} {child.pid}')\n"
+        "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+        "sys.stdin.read()\n"  # end of file does not end it either
         "while True:\n"
         "    time.sleep(60)\n",
         encoding="utf-8",
     )
-
-    def start(self: UvHookWorker) -> subprocess.Popen[str]:
-        return subprocess.Popen(
-            [sys.executable, str(script), str(marker)],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            start_new_session=True,
-        )
-
-    monkeypatch.setattr(UvHookWorker, "_start", start)
-    # The parent ignores SIGTERM, so close() waits out two grace periods.
-    monkeypatch.setattr(worker_client, "CLOSE_GRACE_SECONDS", 0.1)
+    start = worker_client.start_process
+    monkeypatch.setattr(
+        worker_client,
+        "start_process",
+        lambda argv, **kwargs: start([sys.executable, str(script), str(marker)]),
+    )
     worker = UvHookWorker(tmp_path)
-    pgid = os.getpgid(worker._process.pid)
+    pids: list[int] = []
     try:
-        deadline = time.monotonic() + 5
-        while not marker.exists() and time.monotonic() < deadline:
+        deadline = time.monotonic() + 10
+        while not marker.exists():
+            assert time.monotonic() < deadline, "the worker did not start"
             time.sleep(0.01)
-        assert marker.exists()
+        pids = [int(pid) for pid in marker.read_text().split()]
 
         worker.close()
 
         deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            try:
-                os.killpg(pgid, 0)
-            except ProcessLookupError:
-                break
-            time.sleep(0.01)
-        with pytest.raises(ProcessLookupError):
-            os.killpg(pgid, 0)
+        while not all(_gone(pid) for pid in pids):
+            assert time.monotonic() < deadline, "close() left the group running"
+            time.sleep(0.02)
     finally:
-        with suppress(ProcessLookupError):
-            os.killpg(pgid, signal.SIGKILL)
+        for pid in pids:
+            with suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGKILL)
 
 
 class _CannedWorkers:
@@ -663,6 +676,9 @@ class _CannedWorkers:
     ) -> HookWorkerCallResult:
         self.payloads.append(payload)
         return self.reply
+
+    def close(self) -> None:
+        return None
 
 
 def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None:
@@ -848,23 +864,19 @@ _READY_LINE = '{"ready": true}\n'
 
 
 class _FakeProcess:
+    """Stands in for ``start_process``'s handle: canned stdout and stderr."""
+
     def __init__(self, *, stdout: str, ready: bool = True, stderr: str = "") -> None:
-        self.stdin = StringIO()
-        self.stdout = StringIO((_READY_LINE if ready else "") + stdout)
-        self.stderr = StringIO(stderr)
+        self.stdin = BytesIO()
+        self.stdout = BytesIO(((_READY_LINE if ready else "") + stdout).encode())
+        self.stderr = BytesIO(stderr.encode())
 
-    def wait(self, timeout: float | None = None) -> int:
+    def close(self) -> int | None:
         return 0
-
-    def terminate(self) -> None:
-        return None
-
-    def kill(self) -> None:
-        return None
 
 
 class _BrokenStdin:
-    def write(self, line: str) -> int:
+    def write(self, line: bytes) -> int:
         raise BrokenPipeError
 
     def flush(self) -> None:
@@ -874,8 +886,11 @@ class _BrokenStdin:
         return None
 
 
-class _SlowStdout:
-    """Ready arrives after ``ready_delay`` (never if not ``ready``), then ``lines``, then stalls."""
+class _SlowStdout(io.RawIOBase):
+    """Ready arrives after ``ready_delay`` (never if not ``ready``), then ``lines``, then stalls.
+
+    One line per read, as from a pipe; end of file once the stall is over.
+    """
 
     def __init__(self, delay: float, *, ready: bool, ready_delay: float, lines: list[str]) -> None:
         self._delay = delay
@@ -883,15 +898,24 @@ class _SlowStdout:
         self._ready_delay = ready_delay
         self._lines = list(lines)
 
-    def readline(self) -> str:
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer) -> int:
+        line = self._next()
+        view = memoryview(buffer).cast("B")
+        view[: len(line)] = line
+        return len(line)
+
+    def _next(self) -> bytes:
         if self._ready_pending:
             self._ready_pending = False
             time.sleep(self._ready_delay)
-            return _READY_LINE
+            return _READY_LINE.encode()
         if self._lines:
-            return self._lines.pop(0)
+            return self._lines.pop(0).encode()
         time.sleep(self._delay)
-        return ""
+        return b""
 
 
 class _SlowProcess:
@@ -903,21 +927,16 @@ class _SlowProcess:
         ready_delay: float = 0,
         lines: list[str] | None = None,
     ) -> None:
-        self.stdin = StringIO()
-        self.stdout = _SlowStdout(delay, ready=ready, ready_delay=ready_delay, lines=lines or [])
-        self.stderr = StringIO()
+        self.stdin = BytesIO()
+        self.stdout = io.BufferedReader(
+            _SlowStdout(delay, ready=ready, ready_delay=ready_delay, lines=lines or [])
+        )
+        self.stderr = BytesIO()
         self.killed = False
 
-    def wait(self, timeout: float | None = None) -> int:
-        if self.killed:
-            return 0
-        raise subprocess.TimeoutExpired("slow", timeout)
-
-    def terminate(self) -> None:
+    def close(self) -> int | None:
         self.killed = True
-
-    def kill(self) -> None:
-        self.killed = True
+        return None
 
 
 @pytest.mark.parametrize("shadowed", ["settings", "cli", "domain", "worker_protocol"])
@@ -942,7 +961,7 @@ def test_uv_hook_worker_launch_does_not_shadow_pack_top_level_modules(
         calls.append(args)
         return _FakeProcess(stdout="")
 
-    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(worker_client, "start_process", popen)
     UvHookWorker(project)
     monkeypatch.undo()
     # Re-run the exact interpreter arguments the client launches uv with.
@@ -1011,7 +1030,7 @@ def test_uv_hook_worker_protocol_failures(
     fake = _FakeProcess(stdout=stdout, ready=ready, stderr=stderr)
     if broken_stdin:
         fake.stdin = _BrokenStdin()  # type: ignore[assignment]
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path)
 
     with pytest.raises(error, match=match):
@@ -1035,7 +1054,7 @@ def test_uv_hook_worker_request_returns_result_json_payload_and_bounded_diagnost
         "options": {"mode": "strict", "empty": None},
     }
     fake = _FakeProcess(stdout=_OK_LINE, stderr="12345\n67890\n")
-    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake)
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
     worker = UvHookWorker(tmp_path)
 
     result = worker.request(
@@ -1226,3 +1245,12 @@ def test_uv_hook_worker_pool_wakes_waiters_after_fatal_retirement(
             raise AssertionError(msg) from exc
 
     assert [worker.closed for worker in workers] == [True, True]
+
+
+def test_a_closed_pool_starts_no_worker(tmp_path: Path) -> None:
+    # Stopped mid-run, a planning thread between two hooks must not start a fresh worker.
+    pool = UvHookWorkerPool()
+    pool.close()
+
+    with pytest.raises(worker_client.FatalHookWorkerError, match="pool is closed"):
+        pool.request(_sample_ref(tmp_path), {"kind": "transform"})

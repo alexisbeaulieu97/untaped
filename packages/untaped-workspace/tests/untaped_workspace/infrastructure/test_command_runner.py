@@ -125,6 +125,7 @@ def _start(
     return thread
 
 
+@_GROUPS
 def test_cancel_stops_running_commands(tmp_path: Path) -> None:
     runner = SubprocessRunner()
     results: list[CommandResult] = []
