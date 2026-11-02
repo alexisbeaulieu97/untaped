@@ -36,7 +36,7 @@ else only declares what they need or provide, and uses the owner's interface
 rather than doing the job itself, so installing a plugin that provides a
 capability is all it takes for every plugin to use it. untaped owns the CLI, so
 it mounts the commands plugins build and wires help and agent support from what
-they declare. It never guesses what a plugin doesn't declare; that's its
+they declare. It never guesses what a plugin doesn't declare; declaring is its
 author's job. When one side has to know something only the other cares about,
 the boundary is in the wrong place. The checks on these boundaries catch honest
 mistakes; they don't wall plugins off. A plugin runs with the user's rights and
