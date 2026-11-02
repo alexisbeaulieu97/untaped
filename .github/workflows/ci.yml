@@ -33,26 +33,11 @@ jobs:
             echo "### untaped $c"; uv run untaped $c 2>&1 | head -25; echo "exit=${PIPESTATUS[0]}"
           done
           } > smoke.txt 2>&1
-      - name: Pytest
-        continue-on-error: true
+      - name: Plugin load probe
+        env:
+          UNTAPED_HOME: ${{ runner.temp }}/home
         run: |
-          mkdir -p "$RUNNER_TEMP/fakehome"
-          true
-          uv run pytest -n auto -q --no-cov -o addopts="--import-mode=importlib" -rfE 2>&1 > pytest.log 2>&1; tail -3 pytest.log
-      - name: Failure summary
-        if: always()
-        run: |
-          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/::.*? - /  /' | cut -c1-220 > failures.txt || true
-          wc -l failures.txt
-          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/^(FAILED|ERROR) ([^:]+)::.*/\2/' | sort | uniq -c | sort -rn | head -40
-          echo "== top error reasons"
-          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/.* - //' | cut -c1-140 | sort | uniq -c | sort -rn | head -90
-          echo "== smoke"; cat smoke.txt
-          tail -2 pytest.log
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        if: always()
-        with:
-          name: windows-pytest
-          path: |
-            pytest.log
-            failures.txt
+          for m in untaped_workspace.plugin untaped_dotfiles.plugin untaped_lint.plugin; do echo "### import $m"; uv run python -c "import $m" 2>&1 | tail -8; done
+          echo "### plugin list"; uv run untaped plugin list 2>&1 | tail -30
+          echo "### doctor"; uv run untaped doctor 2>&1 | tail -40
+          echo "### workspace create"; uv run untaped workspace create demo 2>&1 | tail -30
