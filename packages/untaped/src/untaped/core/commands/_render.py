@@ -146,7 +146,7 @@ def fix_plan(
     arrow = _symbol(build_terminal(strict=False), "check.fix")
     width = max((len(command) for command, _checks in (*runnable, *manual)), default=0)
     lines: list[str] = []
-    for heading, fixes in (("Fixes to run", runnable), ("Needs you", manual)):
+    for heading, fixes in (("Fixes to run", runnable), ("Skipped", manual)):
         if fixes:
             lines.append(f"{heading} ({len(fixes)}):")
             lines += [f"  {arrow} {cmd.ljust(width)}  {', '.join(checks)}" for cmd, checks in fixes]

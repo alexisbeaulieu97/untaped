@@ -56,8 +56,6 @@ contract lint.Failure.category choice=usage
 contract lint.Failure.category string
 contract lint.Failure.details object default={}
 contract lint.Failure.exit_code integer default=1
-contract lint.Failure.fix_by choice=user
-contract lint.Failure.fix_by string? default=None
 contract lint.Failure.hint string? default=None
 contract lint.Failure.item string? default=None
 contract lint.Failure.message string

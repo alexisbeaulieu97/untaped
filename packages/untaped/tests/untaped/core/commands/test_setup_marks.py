@@ -328,9 +328,9 @@ class PinProfile(BaseModel):
     pin: Annotated[SecretStr | None, NeedsSetup] = None
 
 
-def test_an_unset_secret_value_is_the_users_step_even_without_a_secret_mark() -> None:
+def test_an_unset_secret_value_takes_a_secret_even_without_a_secret_mark() -> None:
     row = _plan_rows(make_plugin("pin", settings=PinProfile))["pin.pin"]
-    assert (row["state"], row["by"]) == ("todo", "user")
+    assert (row["state"], row["secret"]) == ("todo", True)
 
 
 def test_a_set_masked_value_is_shown_as_set(_isolated_config: Path) -> None:

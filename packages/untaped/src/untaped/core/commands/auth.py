@@ -180,7 +180,6 @@ def _key(
                 f"{credential.plugin} is not set up, so there is no server to file "
                 f"its {credential.name} for ({target.problem})",
                 hint=run_hint(Plan.spelled("--only", credential.plugin)),
-                fix_by="user",
             )
         return target.key
     try:
@@ -198,7 +197,6 @@ def _key(
 def _refuse_folder(credential: Credential[Any], key: CredentialKey, what: str) -> None:
     refused = credential.refusal(key, what)
     if refused is not None:
-        refused.fix_by = "user"
         raise refused
 
 
