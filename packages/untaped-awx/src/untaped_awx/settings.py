@@ -8,15 +8,10 @@ from typing import TYPE_CHECKING, Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import (
-    Cache,
-    Credential,
-    CredentialKey,
-    NeedsSetup,
-    TlsVerify,
-    code_version,
-    experimental,
-)
+from untaped.sdk import experimental
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify
+from untaped.sdk.storage import Cache, code_version
 
 if TYPE_CHECKING:
     from untaped_awx.domain.lint.resources import Resources

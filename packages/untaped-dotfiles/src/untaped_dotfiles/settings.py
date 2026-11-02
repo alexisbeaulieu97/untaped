@@ -7,8 +7,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Dir, key
+from untaped.sdk import key
 from untaped.sdk.health import HomeOnly
+from untaped.sdk.storage import Dir
 from untaped_dotfiles.models import OsName
 
 

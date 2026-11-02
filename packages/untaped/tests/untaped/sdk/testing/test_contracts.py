@@ -30,8 +30,8 @@ from core_test_support.contracts.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import Plugin, deprecated, experimental
-from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, Source, cached, gather
+from untaped.sdk import Issued, Plugin, Record, Source, deprecated, experimental
+from untaped.sdk.contracts import Contract, Ok, Provider, cached, gather
 from untaped.sdk.storage import Cache
 from untaped.sdk.testing import (
     assert_fills,

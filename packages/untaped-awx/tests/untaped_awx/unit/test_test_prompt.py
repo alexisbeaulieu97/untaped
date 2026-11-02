@@ -8,7 +8,8 @@ from typing import cast
 
 import pytest
 
-from untaped.sdk import PromptChoice, Terminal
+from untaped.sdk import Terminal
+from untaped.sdk.prompt import PromptChoice
 from untaped_awx.domain.suites.suite import VariableSpec
 from untaped_awx.infrastructure.suites.prompt import UiPrompt
 

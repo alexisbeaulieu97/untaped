@@ -9,7 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UsageError, git_toplevel, not_found, q, run_hint
+from untaped.sdk import UsageError, not_found, q, run_hint
+from untaped.sdk.git import git_toplevel
 from untaped_dotfiles.errors import DotfilesError, GitError, RepoNotFoundError
 from untaped_dotfiles.manifest import DEFAULT_MANIFEST
 from untaped_dotfiles.models import RepoRecord

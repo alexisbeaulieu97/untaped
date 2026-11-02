@@ -12,14 +12,14 @@ from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.run import invocation
-from untaped.sdk import Cache, ConfigError
+from untaped.sdk import ConfigError
 from untaped.sdk.contracts import cached
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.plugin import Plugin
 from untaped.sdk.projects import holder_of
+from untaped.sdk.storage import Cache, holds
 from untaped.sdk.storage import _refs as refs
-from untaped.sdk.storage import holds
 from untaped.sdk.storage._refs import RefTarget
 from untaped.sdk.storage.cache import Filled
 from untaped.sdk.storage.dir import Dir

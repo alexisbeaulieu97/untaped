@@ -14,7 +14,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Sequence
 
-from untaped.sdk import NO_PROGRESS, ProgressHandle, UsageError, not_found, q
+from untaped.sdk import UsageError, not_found, q
 from untaped.sdk.contracts import (
     Answers,
     NoProviderReady,
@@ -24,6 +24,7 @@ from untaped.sdk.contracts import (
     gather,
     select_one,
 )
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_git.api import GitHost, repo_url_parts
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.naming import looks_like_url, typed_repo, workspace_match

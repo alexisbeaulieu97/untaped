@@ -6,7 +6,8 @@ module: the class imports every command.
 
 from __future__ import annotations
 
-from untaped.sdk import DoctorCheck, Plugin, StubSkill, experimental
+from untaped.sdk import Plugin, StubSkill, experimental
+from untaped.sdk.health import DoctorCheck
 from untaped_lint.application.rules import Linter, TreeReader
 from untaped_lint.commands.lint import Lint, New, Rules
 from untaped_lint.doctor import ignore_ids_check

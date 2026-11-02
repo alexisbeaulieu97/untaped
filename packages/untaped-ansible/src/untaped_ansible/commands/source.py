@@ -10,7 +10,6 @@ from pydantic import Field
 from untaped.sdk import (
     Confirm,
     Failure,
-    FreshnessRecord,
     Group,
     Output,
     Parallel,
@@ -26,6 +25,7 @@ from untaped.sdk import (
     run_hint,
     size_text,
 )
+from untaped.sdk.storage import FreshnessRecord
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.commands._ansible import (
     BACKEND,

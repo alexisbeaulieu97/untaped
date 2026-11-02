@@ -13,7 +13,7 @@ from contextlib import AbstractContextManager
 from datetime import timedelta
 from pathlib import Path
 
-from untaped.sdk import Lock, StateRows, atomic_write
+from untaped.sdk.storage import Lock, StateRows, atomic_write
 from untaped_dotfiles.models import AppliedRecord, ItemChoice, RepoRecord, item_id
 from untaped_dotfiles.records import StatusSummary
 

@@ -39,7 +39,8 @@ def lint_config(start: Path, *, config: Path | None = None, tree: bool = True) -
     root of ``start`` without one. ``tree=False`` lints records only: the
     repository's rules and ignores still apply, but no file of it is read.
     """
-    from untaped.sdk import checkout_root, installed_plugins, settings_of  # noqa: PLC0415
+    from untaped.sdk import installed_plugins, settings_of  # noqa: PLC0415
+    from untaped.sdk.projects import checkout_root  # noqa: PLC0415
     from untaped_lint.application import repo_file  # noqa: PLC0415
     from untaped_lint.settings import LintSettings  # noqa: PLC0415
 

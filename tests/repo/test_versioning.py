@@ -10,6 +10,7 @@ plugin's own settings are covered by its bullet).
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import re
 from types import ModuleType
@@ -148,9 +149,12 @@ def test_a_setting_the_page_does_not_name_fails() -> None:
 
 def test_every_experimental_sdk_object_is_on_the_versioning_page() -> None:
     text = (REPO_ROOT / "docs" / "versioning.md").read_text(encoding="utf-8")
-    marked = experimental_objects(sdk)
+    groups = ("storage", "network", "health", "git", "projects", "prompt", "contracts")
+    marked = experimental_objects(sdk).union(
+        *(experimental_objects(importlib.import_module(f"untaped.sdk.{g}")) for g in groups)
+    )
 
-    assert marked >= {"Screen", "Cmd", "Quit", "Footer", "Terminal.run"}
+    assert marked >= {"Lock", "Terminal.run"}
     assert unlisted_objects(text, marked) == []
 
 

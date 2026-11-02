@@ -12,17 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from untaped.sdk import (
-    NO_PROGRESS,
-    Filled,
-    NeverRefreshed,
-    ProgressHandle,
-    System,
-    UntapedError,
-    attribution,
-    bounded_map,
-    most_severe,
-)
+from untaped.sdk import System, UntapedError, attribution, bounded_map, most_severe
+from untaped.sdk.storage import NO_PROGRESS, Filled, NeverRefreshed, ProgressHandle
 from untaped_github.application.inventory import RepositoryInventoryScope
 from untaped_github.application.ports import GitCorpus
 from untaped_github.domain import (

@@ -21,7 +21,6 @@ from untaped.sdk import (
     KeyJson,
     KeyValue,
     Limit,
-    NeedsYesError,
     OutcomeRecord,
     Output,
     Parallel,
@@ -36,6 +35,7 @@ from untaped.sdk import (
 )
 from untaped.sdk._block import POSITIONAL, Invocation
 from untaped.sdk._keys import SettingKey
+from untaped.sdk.errors import NeedsYesError
 from untaped.sdk.fields import CORE_SHORTS, column_fields, default_columns, key_field
 
 

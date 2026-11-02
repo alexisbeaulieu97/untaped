@@ -21,7 +21,8 @@ import time
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import paginate_pages, plural
+from untaped.sdk import plural
+from untaped.sdk.network import paginate_pages
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.jobs.job import JOB_ROUTES, poll_until_terminal
 from untaped_awx.errors import AwxApiError

@@ -27,8 +27,8 @@ from untaped.sdk import (
     UntapedError,
     attribution,
     not_found,
-    rejected_token_error,
 )
+from untaped.sdk.network import rejected_token_error
 from untaped_jira.settings import JiraSettings
 
 JIRA = Service(JiraSettings)

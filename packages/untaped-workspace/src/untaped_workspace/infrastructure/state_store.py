@@ -11,7 +11,8 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
-from untaped.sdk import Dir, RowExists, StateRows, key, not_found, q
+from untaped.sdk import key, not_found, q
+from untaped.sdk.storage import Dir, RowExists, StateRows
 from untaped_workspace.domain.models import ArchivedRecord, RepoSpec, WorkspaceRecord
 from untaped_workspace.domain.naming import repo_key, workspace_key
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError

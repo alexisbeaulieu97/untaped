@@ -55,10 +55,11 @@ from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import Cancel, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import Runtime
-from untaped.sdk import OnlineCheck, Plugin
+from untaped.sdk import Plugin
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health import OnlineCheck
 from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.testing import MemoryCredentials, ScreenKeys, drive_screen, install

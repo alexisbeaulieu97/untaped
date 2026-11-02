@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, run_git
+from untaped.sdk.git import GitCommandError, run_git
 
 _TIMEOUT = 60.0
 

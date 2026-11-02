@@ -19,7 +19,7 @@ import os
 import secrets
 from pathlib import Path
 
-from untaped.sdk import run_git
+from untaped.sdk.git import run_git
 
 KEY_FILE = "untaped-helper.key"
 _LENGTH = 32

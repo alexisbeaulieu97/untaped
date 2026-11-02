@@ -14,7 +14,8 @@ from typing import ClassVar, Self
 from pydantic import model_validator
 
 from core_test_support.commands.support import make_plugin
-from untaped.sdk.contracts import Contract, Issued, Ok, Provider, Record, cached, gather
+from untaped.sdk import Issued, Record
+from untaped.sdk.contracts import Contract, Ok, Provider, cached, gather
 from untaped.sdk.testing import install
 
 

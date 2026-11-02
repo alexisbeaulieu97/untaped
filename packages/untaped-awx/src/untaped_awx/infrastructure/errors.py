@@ -15,12 +15,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from untaped.sdk import (
-    HttpError,
-    UntapedError,
-    attribution,
-    rejected_token_error,
-)
+from untaped.sdk import HttpError, UntapedError, attribution
+from untaped.sdk.network import rejected_token_error
 from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import (
     AwxApiError,

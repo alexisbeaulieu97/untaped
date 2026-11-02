@@ -14,7 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import NO_PROGRESS, Failure, UntapedError, UsageError, bounded_map, q
+from untaped.sdk import Failure, UntapedError, UsageError, bounded_map, q
+from untaped.sdk.storage import NO_PROGRESS
 from untaped_workspace.application.locate import active_workspace, workspace_root
 from untaped_workspace.application.status import resumes
 from untaped_workspace.domain.models import (
@@ -35,7 +36,7 @@ from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.records import RepoOutcome
 
 if TYPE_CHECKING:
-    from untaped.sdk import ProgressHandle
+    from untaped.sdk.storage import ProgressHandle
     from untaped_workspace.application.ports import (
         GitWorktrees,
         RepoCatalog,

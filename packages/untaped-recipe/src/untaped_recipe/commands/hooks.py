@@ -20,9 +20,9 @@ from untaped.sdk import (
     UsageError,
     Verbatim,
     not_found,
-    run_editor,
     unified_diff_text,
 )
+from untaped.sdk.prompt import run_editor
 from untaped_recipe.application.run_hook import (
     AmbiguousHookVerbError,
     RunHook,

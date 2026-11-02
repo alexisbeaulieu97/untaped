@@ -18,7 +18,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, HttpUrl
 
-from untaped.sdk import Command, Credential, CredentialKey, NeedsSetup, Plugin, TlsVerify
+from untaped.sdk import Command, Plugin
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify
 
 
 class AcmeServer(CredentialKey):

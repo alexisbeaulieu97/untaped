@@ -19,7 +19,8 @@ import pytest
 
 from ansible_index_support import index_path
 from ansible_test_support import configure, run, running, write_state
-from untaped.sdk import ErrorCategory, GitCommandError, GitResult, plugin_of
+from untaped.sdk import ErrorCategory, plugin_of
+from untaped.sdk.git import GitCommandError, GitResult
 from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.domain.payloads import GitRef

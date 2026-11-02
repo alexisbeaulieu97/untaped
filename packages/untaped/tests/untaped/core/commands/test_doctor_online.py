@@ -23,21 +23,9 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
-from untaped.sdk import (
-    ConfigError,
-    Credential,
-    CredentialKey,
-    DoctorCheck,
-    DoctorResult,
-    HttpClient,
-    HttpStatusError,
-    HttpTransportError,
-    NeedsSetup,
-    OnlineCheck,
-    Plugin,
-    PluginContext,
-    RetryPolicy,
-)
+from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, Plugin
+from untaped.sdk.health import DoctorCheck, DoctorResult, NeedsSetup, OnlineCheck, PluginContext
+from untaped.sdk.network import Credential, CredentialKey, HttpClient, RetryPolicy
 from untaped.sdk.testing import CliInvoker, CliResult
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

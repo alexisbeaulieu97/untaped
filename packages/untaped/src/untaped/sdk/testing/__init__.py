@@ -583,7 +583,7 @@ def release_ask(
     others: int | Sequence[HolderState] = 0,
     force: bool = False,
 ) -> ReleaseAsk[Any]:
-    """A :class:`~untaped.sdk.ReleaseAsk` for ``item`` with made-up holders, for unit tests.
+    """A :class:`~untaped.sdk.storage.ReleaseAsk` for ``item`` with made-up holders, for unit tests.
 
     ``holder`` is the state of the project letting go; ``others`` the number
     of other present holders, or each other holder's state.
@@ -599,7 +599,7 @@ def release_ask(
 
 @experimental
 def move_ask(store: ItemStore[Any], item: object, *, moved_from: Path) -> MoveAsk[Any]:
-    """A :class:`~untaped.sdk.MoveAsk` for ``item``: a present project moved from ``moved_from``."""
+    """A :class:`~untaped.sdk.storage.MoveAsk` for ``item``: a present project moved from there."""
     holder = _view(0, "present")
     if moved_from == holder.anchor:
         holder = holder.model_copy(update={"anchor": holder.anchor.with_name("moved-here")})

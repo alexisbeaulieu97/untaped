@@ -1,6 +1,6 @@
 """Core's own doctor checks: what ``untaped doctor`` says about core's config file.
 
-``Core`` holds each :class:`~untaped.sdk.DoctorCheck` as an attribute, so its
+``Core`` holds each :class:`~untaped.sdk.health.DoctorCheck` as an attribute, so its
 row is ``untaped.<attribute>`` in kebab case (``untaped.config-permissions``),
 run like any plugin's check, whose result names no id. Each reads
 the config file itself when it runs; when the file doesn't load, the ``load

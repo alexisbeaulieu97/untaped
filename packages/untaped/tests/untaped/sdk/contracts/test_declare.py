@@ -23,7 +23,8 @@ from core_test_support.contracts.support import (
     shelf_plugin,
     write_config,
 )
-from untaped.sdk.contracts import Contract, Ok, Record, cached, gather
+from untaped.sdk import Record
+from untaped.sdk.contracts import Contract, Ok, cached, gather
 from untaped.sdk.contracts._declare import ContractError, contract_of, item_type
 from untaped.sdk.marks import Experimental, deprecated, function_mark
 from untaped.sdk.storage.cache import Cache

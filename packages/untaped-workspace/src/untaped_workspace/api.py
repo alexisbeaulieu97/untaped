@@ -12,8 +12,8 @@ from __future__ import annotations
 from abc import abstractmethod
 from datetime import timedelta
 
-from untaped.sdk import experimental
-from untaped.sdk.contracts import Contract, Record, cached
+from untaped.sdk import Record, experimental
+from untaped.sdk.contracts import Contract, cached
 from untaped_workspace.domain.repo import Repo, RepoName
 
 __all__ = ["Repo", "RepoName", "RepoSource"]

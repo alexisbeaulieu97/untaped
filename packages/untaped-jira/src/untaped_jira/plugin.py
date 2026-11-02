@@ -7,7 +7,8 @@ without them.
 
 from __future__ import annotations
 
-from untaped.sdk import OnlineCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import OnlineCheck
 from untaped_jira.commands.boards import Boards
 from untaped_jira.commands.issues import Issues
 from untaped_jira.commands.projects import Projects

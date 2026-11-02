@@ -7,18 +7,8 @@ from functools import partial
 from pathlib import Path
 
 from untaped.core.api import Set
-from untaped.sdk import (
-    Command,
-    ConfigError,
-    Filled,
-    ProgressHandle,
-    Refresh,
-    atomic_write,
-    key,
-    plural,
-    run_hint,
-    shown_path,
-)
+from untaped.sdk import Command, ConfigError, Refresh, key, plural, run_hint, shown_path
+from untaped.sdk.storage import Filled, ProgressHandle, atomic_write
 from untaped_hello.errors import HelloError
 from untaped_hello.settings import COPIES, MOTD, HelloSettings
 

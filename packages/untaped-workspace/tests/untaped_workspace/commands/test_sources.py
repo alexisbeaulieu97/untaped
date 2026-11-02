@@ -15,8 +15,8 @@ from typing import ClassVar
 import pytest
 from pydantic import BaseModel
 
-from untaped.sdk import UntapedError, key
-from untaped.sdk.contracts import NotReady, Source
+from untaped.sdk import Source, UntapedError, key
+from untaped.sdk.contracts import NotReady
 from untaped.sdk.testing import ManualClock, Ran, Running
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.api import Repo

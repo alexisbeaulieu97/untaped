@@ -27,10 +27,10 @@ from core_test_support.commands.support import (
 )
 from untaped.core.doctor_rows import online_probe_rows
 from untaped.runtime.registry import CompositionResult
-from untaped.sdk import OnlineCheck
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health import OnlineCheck
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.testing import MemoryCredentials
 

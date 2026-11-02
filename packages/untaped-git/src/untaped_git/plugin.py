@@ -7,7 +7,8 @@ other plugins import) imports without them.
 
 from __future__ import annotations
 
-from untaped.sdk import DoctorCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import DoctorCheck
 from untaped_git.commands.credential import Credential
 from untaped_git.commands.hosts import Hosts
 from untaped_git.commands.store import Store

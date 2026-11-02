@@ -36,13 +36,12 @@ def test_every_listed_name_resolves(path: str) -> None:
 
 
 @pytest.mark.parametrize("path", GROUPS)
-def test_a_group_name_is_the_roots_object(path: str) -> None:
+def test_a_group_name_is_not_also_the_roots(path: str) -> None:
+    """Each name has one spelling (layout-12.0 decision 2): the group's, never the root's too."""
     import untaped.sdk as root
 
     group = importlib.import_module(path)
-    for name in group.__all__:
-        assert name in root.__all__, f"{path}.{name}"
-        assert getattr(group, name) is getattr(root, name), f"{path}.{name}"
+    assert set(group.__all__).isdisjoint(root.__all__), path
 
 
 def test_an_unknown_name_is_an_attribute_error() -> None:

@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from untaped.sdk import UntapedError
-from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped, Source
+from untaped.sdk import Source, UntapedError
+from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock
 from untaped_workspace.api import Repo

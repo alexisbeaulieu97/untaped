@@ -29,13 +29,10 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
-from untaped.sdk import (
-    Credential,
-    CredentialKey,
-    Plugin,
-    Suggest,
-)
+from untaped.sdk import Plugin
+from untaped.sdk.health import Suggest
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
+from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.testing import (
     CliResult,
     ScreenKeys,

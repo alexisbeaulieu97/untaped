@@ -20,6 +20,7 @@ from core_test_support.contracts.support import (
     shop_plugin,
     write_config,
 )
+from untaped.sdk import Source
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts import (
     Ambiguous,
@@ -29,7 +30,6 @@ from untaped.sdk.contracts import (
     Ok,
     Provider,
     Skipped,
-    Source,
     select_one,
 )
 from untaped.sdk.contracts._select import bridged

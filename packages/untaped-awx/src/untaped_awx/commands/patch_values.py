@@ -22,7 +22,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from untaped.sdk import read_structured_file
+from untaped.sdk.storage import read_structured_file
 
 
 def parse_set_pairs(

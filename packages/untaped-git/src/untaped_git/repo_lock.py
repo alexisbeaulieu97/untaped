@@ -16,7 +16,8 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import UntapedError, file_lock
+from untaped.sdk import UntapedError
+from untaped.sdk.storage import file_lock
 
 
 @dataclass

@@ -7,7 +7,8 @@ imports without them.
 
 from __future__ import annotations
 
-from untaped.sdk import ExecutableCheck, Plugin, StubSkill, experimental
+from untaped.sdk import Plugin, StubSkill, experimental
+from untaped.sdk.health import ExecutableCheck
 from untaped_dotfiles.commands.apply import Apply, Remove, Sync
 from untaped_dotfiles.commands.items import Disable, Enable, Items
 from untaped_dotfiles.commands.repos import Repos, Subscribe, Unsubscribe

@@ -7,7 +7,8 @@ from contextlib import nullcontext
 
 from pydantic import Field
 
-from untaped.sdk import NO_PROGRESS, Matched, Output, Positional, UsageError
+from untaped.sdk import Matched, Output, Positional, UsageError
+from untaped.sdk.storage import NO_PROGRESS
 from untaped_workspace.commands._workspace import NAME_HELP, WorkspaceCommand
 from untaped_workspace.domain.models import ArchivedRecord, WorkspaceRecord
 from untaped_workspace.infrastructure import StateWorkspaceStore

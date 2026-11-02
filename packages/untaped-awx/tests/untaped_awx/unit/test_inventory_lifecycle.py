@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped_awx.application.resources.apply_ordering import topological_sort
 from untaped_awx.application.resources.apply_verifier import ApplyVerifier
 from untaped_awx.application.resources.delete_resource import DeleteResource

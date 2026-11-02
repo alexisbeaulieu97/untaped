@@ -22,7 +22,7 @@ from core_test_support.commands.support import (
 from core_test_support.skills import install_skills
 from untaped.core.commands.skills import composed_skills
 from untaped.core.skills import SkillInstallScope, SkillInstallTarget
-from untaped.sdk import ExecutableCheck
+from untaped.sdk.health import ExecutableCheck
 from untaped.sdk.storage._refs import RefHolder
 from untaped.sdk.testing import CliInvoker
 

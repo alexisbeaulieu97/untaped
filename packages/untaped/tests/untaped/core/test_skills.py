@@ -10,9 +10,9 @@ import untaped.core.skills as skills_module
 from core_test_support.skills import install_skills
 from untaped.core.skills import PackagedSkill, SkillInstallScope, SkillInstallTarget
 from untaped.runtime.composed import SkillAsset
-from untaped.sdk import checkout_root
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.git import run_git
+from untaped.sdk.projects import checkout_root
 
 
 def _skill(name: str = "untaped-demo") -> PackagedSkill:

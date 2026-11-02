@@ -15,7 +15,8 @@ from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
 
-from untaped.sdk import ConfigError, Filled, ProgressHandle, UsageError, plural
+from untaped.sdk import ConfigError, UsageError, plural
+from untaped.sdk.storage import Filled, ProgressHandle
 from untaped_awx.application.lint.controller import load_controller
 from untaped_awx.application.lint.documents import load_documents
 from untaped_awx.application.resources.ports import Catalog

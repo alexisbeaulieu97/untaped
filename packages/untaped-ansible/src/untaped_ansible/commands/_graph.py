@@ -21,7 +21,8 @@ from typing import Literal, NamedTuple
 
 from pydantic import Field
 
-from untaped.sdk import NeverRefreshed, Parallel, Refresh, UsageError, key, plural, q
+from untaped.sdk import Parallel, Refresh, UsageError, key, plural, q
+from untaped.sdk.storage import NeverRefreshed
 from untaped_ansible.application.graph import GraphDirection, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
 from untaped_ansible.commands._ansible import AnsibleCommand

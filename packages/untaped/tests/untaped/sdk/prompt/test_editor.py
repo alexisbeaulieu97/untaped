@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 import untaped.sdk as api
+from untaped.sdk import prompt
 
 
 def test_editor_prefers_visual_and_never_interprets_shell(
@@ -18,8 +19,8 @@ def test_editor_prefers_visual_and_never_interprets_shell(
     literal = "literal $(touch never) ; value"
     monkeypatch.setenv("VISUAL", shlex.join([sys.executable, str(script), literal]))
     monkeypatch.setenv("EDITOR", "does-not-exist")
-    assert hasattr(api, "run_editor")
-    api.run_editor(target)
+    assert hasattr(prompt, "run_editor")
+    prompt.run_editor(target)
     assert target.read_text() == literal
 
 
@@ -29,16 +30,16 @@ def test_editor_failures_are_clean(
 ) -> None:
     monkeypatch.delenv("VISUAL", raising=False)
     monkeypatch.setenv("EDITOR", editor)
-    assert hasattr(api, "run_editor")
+    assert hasattr(prompt, "run_editor")
     with pytest.raises(api.ConfigError):
-        api.run_editor(tmp_path / "file")
+        prompt.run_editor(tmp_path / "file")
 
 
 def test_editor_explicit_argv_and_streams(tmp_path: Path) -> None:
     target = tmp_path / "file"
-    assert hasattr(api, "run_editor")
+    assert hasattr(prompt, "run_editor")
     with (tmp_path / "terminal").open("w+") as terminal:
-        api.run_editor(
+        prompt.run_editor(
             target,
             argv=[
                 sys.executable,

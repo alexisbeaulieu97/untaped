@@ -7,13 +7,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
-from untaped.sdk import (
-    NO_PROGRESS,
-    ConfigError,
-    ProgressHandle,
-    UsageError,
-    bounded_map,
-)
+from untaped.sdk import ConfigError, UsageError, bounded_map
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_github.application.corpus_repos import (
     CorpusUseCase,
     ReadyRepo,

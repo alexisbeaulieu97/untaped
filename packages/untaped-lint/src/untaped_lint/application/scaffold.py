@@ -20,7 +20,8 @@ from pathlib import Path
 
 import yaml
 
-from untaped.sdk import ErrorCategory, System, UntapedError, UsageError, checkout_root
+from untaped.sdk import ErrorCategory, System, UntapedError, UsageError
+from untaped.sdk.projects import checkout_root
 from untaped_lint.application import repo_file
 from untaped_lint.application.hints import lint_line
 from untaped_lint.records import RULE_ID, ScaffoldOutcome

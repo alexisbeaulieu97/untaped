@@ -15,7 +15,7 @@ import respx
 from pydantic import HttpUrl
 
 from awx_test_support import installed
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.settings import TOKEN, AwxServer, AwxSettings
 

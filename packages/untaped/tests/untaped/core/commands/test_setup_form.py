@@ -31,8 +31,10 @@ from untaped.runtime.settings import active_settings_layout, load_settings_secti
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen.core import KeyPress, Paste, Quit, Screen
 from untaped.screen.runtime import Runtime
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, OnlineCheck, Plugin
+from untaped.sdk import Plugin
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health import NeedsSetup, OnlineCheck
+from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.network._token_store import pick_store
 from untaped.sdk.testing import drive_screen
 from untaped.sdk.testing.screens import ScreenKey, ScreenRun

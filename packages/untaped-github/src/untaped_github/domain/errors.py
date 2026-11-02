@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from untaped.sdk import ErrorCategory, HttpError, UntapedError, rejected_token_error
+from untaped.sdk import ErrorCategory, HttpError, UntapedError
+from untaped.sdk.network import rejected_token_error
 from untaped_github.errors import GITHUB, GithubGraphqlError
 
 __all__ = [

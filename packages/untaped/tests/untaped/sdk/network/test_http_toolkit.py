@@ -16,9 +16,11 @@ from untaped.runtime.settings import (
     HttpSettings,
     reset_config_registry,
 )
-from untaped.sdk import CredentialKey, NeedsSetup, Service
+from untaped.sdk import Service
 from untaped.sdk._home import config_path
 from untaped.sdk.errors import ConfigError, HttpError, UntapedError
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import CredentialKey
 from untaped.sdk.network.http import (
     connected_client,
     paginate_link,

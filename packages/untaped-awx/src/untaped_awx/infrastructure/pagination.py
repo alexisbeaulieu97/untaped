@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from untaped.sdk import paginate_pages
+from untaped.sdk.network import paginate_pages
 from untaped_awx.infrastructure.awx_client import AwxClient
 
 # `paginate_pages`'s default `max_pages=100` is sized for short cursor

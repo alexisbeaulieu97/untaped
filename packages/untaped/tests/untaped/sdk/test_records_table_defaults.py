@@ -12,8 +12,9 @@ from typing import Annotated
 import pytest
 from pydantic import BaseModel
 
-from untaped.sdk import Column, OutcomeRecord, TableGlyph
+from untaped.sdk import Column, OutcomeRecord
 from untaped.sdk._cli import emit
+from untaped.sdk.records import TableGlyph
 
 
 class _Repo(OutcomeRecord):

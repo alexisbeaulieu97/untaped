@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, Protocol
 
-from untaped.sdk import NO_PROGRESS
+from untaped.sdk.storage import NO_PROGRESS
 
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from untaped.sdk import ProgressHandle
+    from untaped.sdk.storage import ProgressHandle
     from untaped_github.domain import (
         CorpusFreshness,
         CorpusRepoTarget,

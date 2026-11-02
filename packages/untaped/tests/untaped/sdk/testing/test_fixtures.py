@@ -7,19 +7,9 @@ from collections.abc import Callable
 import pytest
 from pydantic import BaseModel, Field
 
-from untaped.sdk import (
-    Command,
-    Confirm,
-    Credential,
-    CredentialKey,
-    PickCatalog,
-    Picked,
-    PickItem,
-    PickRequest,
-    PickResult,
-    Plugin,
-    Positional,
-)
+from untaped.sdk import Command, Confirm, Plugin, Positional
+from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.prompt import PickCatalog, Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.testing import Install, MemoryCredentials, ScriptedTerminal
 
 Installer = Callable[..., Install]

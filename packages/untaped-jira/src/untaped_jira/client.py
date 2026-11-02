@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import Any, Literal
 from urllib.parse import quote
 
-from untaped.sdk import HttpFactory, RetryPolicy, paginate_offset
+from untaped.sdk.network import HttpFactory, RetryPolicy, paginate_offset
 from untaped_jira.errors import map_jira_errors
 from untaped_jira.parse import ISSUE_DETAIL_FIELDS, ISSUE_ROW_FIELDS
 from untaped_jira.settings import TOKEN, JiraSettings
