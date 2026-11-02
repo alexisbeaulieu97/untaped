@@ -172,6 +172,8 @@ def _attribute(obj: object, name: str | None) -> tuple[str, str] | None:
             return None
         return obj.__name__, f"{obj.__name__}.{name}"
     cls = obj if isinstance(obj, type) else type(obj)
+    if obj is cls and name in (getattr(cls, "__pydantic_fields__", None) or {}):
+        return None  # a field read on its model class: it has it, on its instances
     return cls.__module__, f"{public_name(cls)}.{name}"
 
 
@@ -179,10 +181,13 @@ def _settled(module: ModuleType, name: str) -> bool:
     """Whether ``module`` missing ``name`` says its owner doesn't have it.
 
     Not when the module lists it (failing to give it is the owner's bug), nor
-    when it is a namespace package: its names are whatever is installed into
-    it (a plugin nested in ``untaped.plugins``), whoever owns its parent.
+    when it is a namespace package or ``untaped`` itself: their names are
+    whatever is installed into them (a plugin nested in ``untaped.plugins``),
+    whoever owns the package around them.
     """
-    return getattr(module, "__file__", None) is not None and not _listed(module, name)
+    if module.__name__ == "untaped" or getattr(module, "__file__", None) is None:
+        return False
+    return not _listed(module, name)
 
 
 def _listed(module: ModuleType, name: str) -> bool:
@@ -248,7 +253,8 @@ def _hooks(exc: BaseException) -> set[CodeType]:
     """The lookup hooks a miss of ``exc`` may pass through.
 
     A module's ``__getattr__`` (its names, a lazy table's included) and
-    pydantic's, which only adds a model's private and extra attributes. A
+    pydantic's, on a model and on its class (whose fields are only on its
+    instances, so :func:`_attribute` keeps a field read on the class). A
     class's own ``__getattr__`` decides what exists as it likes
     (``key(Model).field``), so a miss there says nothing about what its owner
     removed.

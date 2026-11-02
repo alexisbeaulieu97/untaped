@@ -231,6 +231,8 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "import importlib\n\ndef poke():\n    importlib.import_module('untaped.plugins.lamp')\n",
         "import importlib\n\ndef poke():\n    importlib.import_module('untaped_acme.nested')\n",
         "import untaped_shelf.extras\n\ndef poke():\n    getattr(untaped_shelf.extras, 'lamp')\n",
+        "from untaped_shelf.api import Shade\n\ndef poke():\n    getattr(Shade, 'tint')\n",
+        "import untaped\n\ndef poke():\n    getattr(untaped, 'plugins')\n",
     ],
     ids=[
         "own-object",
@@ -245,6 +247,8 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "namespace-module",
         "namespace-from-import",
         "namespace-attribute",
+        "model-field-on-class",
+        "untaped-top",
     ],
 )
 def test_anything_else_stays_the_error_it_is(site: Site, poke: str) -> None:
