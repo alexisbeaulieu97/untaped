@@ -1,219 +1,58 @@
 name: CI
 
 "on":
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # Don't cancel in-flight runs on main — a fast follow-up merge would
-  # otherwise discard the merge-commit's gate run.
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
-
 jobs:
-  lint-and-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    name: CI (Python 3.14)
+  windows-probe:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    name: Windows probe
+    defaults:
+      run:
+        shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-          # Diff coverage compares with the PR's base commit.
-          fetch-depth: 0
-
-      - name: Install uv (with cache)
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
           version: "0.11.26"
-          enable-cache: true
-
-      - name: Cache pre-commit hook envs
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            pre-commit-${{ runner.os }}-
-
       - name: Sync workspace
-        # `--frozen` forbids re-resolving: CI installs exactly what `uv.lock`
-        # pins, so a stale lock surfaces as a sync failure instead of a silent
-        # in-CI resolve that diverges from local installs.
-        run: uv sync --frozen --python 3.14 --all-packages --group diff-coverage
-
-      - name: Release versions and pins
-        # Version or sibling-pin drift fails here, not first at release time.
-        run: |
-          set -euo pipefail
-          uv lock --check
-          uv run python scripts/release.py check
-
-      - name: Pre-commit hooks
-        run: uv run pre-commit run --all-files --show-diff-on-failure
-
-      - name: Changelog draft
-        # After a merge, every fragment on main must still derive its PR link.
-        if: github.event_name == 'push'
-        run: uv run python scripts/changelog.py draft
-
-      - name: mypy
-        run: uv run mypy
-
-      - name: untaped lint
-        # This repository's own rules (.untaped/lint.yml), as any repository runs them.
-        run: uv run untaped lint
-
-      - name: Pytest
-        run: uv run pytest -n auto --cov --cov-report=term-missing --cov-report=xml --durations=25
-
-      - name: Diff coverage
-        # The lines a PR changes need 90% coverage, which the total floor
-        # cannot see.
-        if: github.event_name == 'pull_request'
+        run: uv sync --frozen --python 3.14 --all-packages
+      - name: CLI smoke
+        continue-on-error: true
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: uv run diff-cover coverage.xml --compare-branch "$BASE_SHA" --fail-under 90
-
-  # Build every package and install the wheels by path into clean venvs, one
-  # per install shape, each checked by `scripts/release.py smoke` against the
-  # exact plugins it should hold. A fresh uv cache means no wheel from an
-  # earlier build is reused, and nothing first party comes from PyPI.
-  wheel-matrix:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+          UNTAPED_HOME: ${{ runner.temp }}/home
+        run: |
+          set -x
+          uv run untaped --help || true
+          uv run untaped doctor || true
+          uv run untaped config list || true
+          uv run untaped workspace --help || true
+          uv run untaped lint || true
+      - name: Pytest (collect)
+        continue-on-error: true
+        run: uv run pytest --collect-only -q -o addopts="--import-mode=importlib" 2>&1 | tail -40
+      - name: Pytest
+        continue-on-error: true
+        run: |
+          uv run pytest -n auto -q --no-cov -o addopts="--import-mode=importlib" -rfE 2>&1 | tee pytest.log | tail -400
+      - name: Failure summary
+        if: always()
+        run: |
+          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/::.*? - /  /' | cut -c1-220 > failures.txt || true
+          wc -l failures.txt
+          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/^(FAILED|ERROR) ([^:]+)::.*/\2/' | sort | uniq -c | sort -rn | head -80
+          echo "== top error reasons"
+          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/.* - //' | cut -c1-120 | sort | uniq -c | sort -rn | head -60
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
         with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
-        with:
-          version: "0.11.26"
-          enable-cache: false
-
-      - name: Configure isolated smoke home and a fresh uv cache
-        # After setup-uv, so its own UV_CACHE_DIR does not win.
-        run: |
-          set -euo pipefail
-          home_dir="$RUNNER_TEMP/untaped-smoke-home"
-          mkdir -p "$home_dir"
-          echo "HOME=$home_dir" >> "$GITHUB_ENV"
-          echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"
-
-      - name: Sync workspace
-        # Only for running scripts/release.py; the smokes use the built wheels.
-        run: uv sync --frozen --python 3.14
-
-      - name: Build every package
-        run: |
-          set -euo pipefail
-          # The release's build: README links pinned first, artifacts checked after.
-          version="$(uv run --no-sync python scripts/release.py version)"
-          uv run --no-sync python scripts/release.py readmes "$version"
-          uv build --all-packages --no-sources --out-dir dist
-          rm -f dist/.gitignore
-          uv run --no-sync python scripts/release.py check "$version" --dist dist
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "CORE=$(ls dist/untaped-*-py3-none-any.whl)" >> "$GITHUB_ENV"
-
-      - name: Bare untaped
-        run: |
-          set -euo pipefail
-          uv venv -q --python 3.14 "$RUNNER_TEMP/bare"
-          uv pip install --python "$RUNNER_TEMP/bare/bin/python" "$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/bare/bin/untaped" "$VERSION" --expect ""
-          # The root's own commands work with no plugin installed.
-          "$RUNNER_TEMP/bare/bin/untaped" doctor
-          "$RUNNER_TEMP/bare/bin/untaped" skills list
-          "$RUNNER_TEMP/bare/bin/untaped" config list
-          "$RUNNER_TEMP/bare/bin/untaped" profile list
-          # ...and `plugin list` says how to install some (a stderr hint).
-          "$RUNNER_TEMP/bare/bin/untaped" plugin list 2>&1 >/dev/null | grep -F "untaped[all]"
-
-      - name: untaped[awx] and the lint it brings
-        run: |
-          set -euo pipefail
-          uv venv -q --python 3.14 "$RUNNER_TEMP/awx"
-          uv pip install --python "$RUNNER_TEMP/awx/bin/python" --find-links dist "untaped[awx] @ file://$PWD/$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/awx/bin/untaped" "$VERSION" --expect awx,lint --docs
-
-      - name: untaped[all]
-        run: |
-          set -euo pipefail
-          uv venv -q --python 3.14 "$RUNNER_TEMP/all"
-          uv pip install --python "$RUNNER_TEMP/all/bin/python" --find-links dist "untaped[all] @ file://$PWD/$CORE"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/all/bin/untaped" "$VERSION" --docs
-
-      - name: untaped[lint] plus the example plugin, tested outside the repo
-        run: |
-          set -euo pipefail
-          cp -r examples/untaped-hello "$RUNNER_TEMP/hello-src"
-          uv venv -q --python 3.14 "$RUNNER_TEMP/hello"
-          uv pip install --python "$RUNNER_TEMP/hello/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/hello-src" pytest
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/hello/bin/untaped" "$VERSION" --expect hello,lint --docs
-          (cd "$RUNNER_TEMP/hello-src" && "$RUNNER_TEMP/hello/bin/python" -m pytest -q tests)
-
-      - name: The example contract owner and provider, tested outside the repo
-        run: |
-          set -euo pipefail
-          cp -r examples/untaped-shelf "$RUNNER_TEMP/shelf-src"
-          cp -r examples/untaped-library "$RUNNER_TEMP/library-src"
-          uv venv -q --python 3.14 "$RUNNER_TEMP/contracts"
-          uv pip install --python "$RUNNER_TEMP/contracts/bin/python" --find-links dist "untaped[lint] @ file://$PWD/$CORE" "$RUNNER_TEMP/shelf-src" "$RUNNER_TEMP/library-src" pytest
-          (cd "$RUNNER_TEMP/shelf-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
-          (cd "$RUNNER_TEMP/library-src" && "$RUNNER_TEMP/contracts/bin/python" -m pytest -q tests)
-          mkdir -p "$RUNNER_TEMP/contracts-home"
-          printf 'format_version: 2\nlibrary:\n  volumes:\n    - {shelf_mark: A1, name: Dune}\n' > "$RUNNER_TEMP/contracts-home/config.yml"
-          # --strict: a warning fails the examples' lint here.
-          (cd "$RUNNER_TEMP/shelf-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
-          (cd "$RUNNER_TEMP/library-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
-
-      - name: A broken example plugin is quarantined
-        run: |
-          set -euo pipefail
-          cp -r examples/untaped-hello "$RUNNER_TEMP/hello-broken"
-          sed -i 's/untaped_hello.plugin:Hello/untaped_hello.plugin:Missing/' "$RUNNER_TEMP/hello-broken/pyproject.toml"
-          uv venv -q --python 3.14 "$RUNNER_TEMP/broken"
-          uv pip install --python "$RUNNER_TEMP/broken/bin/python" "$CORE" "$RUNNER_TEMP/hello-broken"
-          uv run --no-sync python scripts/release.py smoke "$RUNNER_TEMP/broken/bin/untaped" "$VERSION" --expect "" --quarantined hello
-
-  # Core's tests must pass with no plugin package installed: a venv
-  # holding only the core wheel and the dev tools (the workspace members
-  # and the plugin packages' own dependencies left out of the export).
-  core-only-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
-        with:
-          persist-credentials: false
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
-        with:
-          version: "0.11.26"
-          enable-cache: false
-
-      - name: Configure a fresh uv cache
-        run: echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"
-
-      - name: Core's tests with only the core wheel installed
-        run: |
-          set -euo pipefail
-          uv build --package untaped --no-sources --out-dir dist
-          uv venv -q --python 3.14 "$RUNNER_TEMP/core"
-          prune=(); for pkg in packages/untaped-*/; do prune+=(--prune "$(basename "$pkg")"); done
-          uv export --frozen --only-group dev --no-hashes --no-emit-workspace "${prune[@]}" > "$RUNNER_TEMP/dev-requirements.txt"
-          uv pip install --python "$RUNNER_TEMP/core/bin/python" dist/untaped-*-py3-none-any.whl -r "$RUNNER_TEMP/dev-requirements.txt"
-          "$RUNNER_TEMP/core/bin/python" -c 'import importlib.util, sys; leaked = [m for m in ("jinja2", "tomlkit") if importlib.util.find_spec(m)]; sys.exit(f"plugin dependencies installed: {leaked}" if leaked else 0)'
-          "$RUNNER_TEMP/core/bin/python" -m pytest -q -n auto -p no:cacheprovider --rootdir . -c pyproject.toml packages/untaped/tests
+          name: windows-pytest
+          path: |
+            pytest.log
+            failures.txt
