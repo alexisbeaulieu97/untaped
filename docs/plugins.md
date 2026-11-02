@@ -83,10 +83,11 @@ version, any other by presence. One that isn't met disables that plugin alone
 (`unmet-requirement`) with the fix, and so does requiring a plugin that is
 disabled. Running one of its commands exits 4 with the reason. A floor that is
 too low shows up in your own CI if one job installs the lowest versions you
-declare and runs your tests and `untaped lint`:
+declare, and a name a new release deprecates if another installs the newest:
 
 ```bash
 uv sync --resolution lowest-direct && uv run pytest && uv run untaped lint
+uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy
 ```
 
 The [changelog](../CHANGELOG.md) says what each version added or broke.
@@ -270,8 +271,8 @@ class (`plugin.py`) filling the owner's contract, the provider
 since a stub would count as filling them), tests mirroring the package (lint's
 `assert_clean` and `assert_surface` beside the plugin, `assert_fills` with a
 list of samples to fill in beside the provider) and a `pyproject.toml` with
-the floors below (`untaped[lint]` in its `dev` group). It never writes into an
-existing directory.
+the floors below (`untaped[lint]` and mypy, set to report deprecated calls, in
+its `dev` group). It never writes into an existing directory.
 
 A plugin that fills a contract declares, besides its `untaped` floor, the owner
 in its dependencies with a floor of the owner's version, since the provider
@@ -383,6 +384,13 @@ scripted) and `credentials` are the clock, terminal and password store
 commands meet; and `check(install(Hello))` guards its composition checks.
 To waive a rule on one line, see
 [Enforcement](./reference/conventions.md#enforcement).
+
+`untaped lint` reports each deprecated name your code imports or your provider
+fills (`uses-deprecated`), old names included, which type checkers can't see.
+Your type checker sees the rest: a deprecated method called on an object you
+got back. Turn its report on, mypy with `enable_error_code = ["deprecated"]`
+under `[tool.mypy]` (as `untaped plugin new` writes) and pyright with
+`reportDeprecated`.
 
 Exercise root config, profile, skill, pipe and error paths too.
 `untaped plugin list`, `untaped acme --help` and `untaped doctor` show

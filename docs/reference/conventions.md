@@ -15,9 +15,6 @@ A plugin also follows these rules:
   `domain/`, `application/` and `infrastructure/` folders resolve no settings.
 - Errors raise with a category and a system (see
   [Raise with a category](#raise-with-a-category-or-inherit-one)).
-- Commands that ask before they write declare `confirm: Confirm`, which
-  gives them `--yes` and `--dry-run`; one that writes without asking takes
-  `dry_run: DryRun` (see [Options](#options)).
 
 [`untaped lint`](#enforcement) flags part of this:
 
@@ -29,10 +26,9 @@ A plugin also follows these rules:
   exception that is not an `UntapedError`, or a plugin's base error
   class without a `system`.
 
-It does not check state writes or an error's category. Composition, not
-`untaped lint`, refuses a command class that breaks the option rules below,
-naming the rule and the field. The message rules have their own checks,
-named in each violation line.
+It does not check state writes or an error's category. Composition refuses a
+command class breaking the option rules below, naming the rule and the field;
+the message rules have their own checks, named in each violation line.
 
 ## Exit codes
 
@@ -143,9 +139,8 @@ Declare a shared field block instead of a flag of your own:
 | `parallel: Parallel` | `-j/--parallel N`: N >= 1, clamped to its `cap` |
 | `limit: Limit` | `--limit N`: N >= 1 |
 
-These short flags are reserved and have one meaning each: `-f --format`,
-`-c --columns`, `-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`,
-`-r --repo`.
+Reserved short flags, one meaning each: `-f --format`, `-c --columns`,
+`-y --yes`, `-j --parallel`, `-o --out`, `-i --ignore-case`, `-r --repo`.
 
 Rules for fields, which composition checks:
 
@@ -161,10 +156,7 @@ To rename a command, keep the old spelling as a hidden alias on its class,
 `aliases = (Deprecated(replacement="me", removed_in=13),)`;
 [Deprecating something](deprecation.md) covers every kind.
 
-Command names are kebab-case; use plural nouns for collections. A command
-that asks before it writes declares `confirm: Confirm`, which gives it `--yes`
-and `--dry-run`; one that writes without asking takes `dry_run: DryRun`; one
-that prints records declares `Output[R]`, which gives it `--format`.
+Command names are kebab-case; use plural nouns for collections.
 
 ## Confirmation and stdin
 
@@ -244,8 +236,7 @@ and in [Depending on another plugin](#depending-on-another-plugin);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
 keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
-`# untaped: allow <rule>` on the flagged node's first line allows one violation,
-except the stability rules, the settings rules, and the command, option and panel rules.
+`# untaped: allow <rule>` on the flagged node's first line allows one violation, except the stability rules, the settings rules, and the command, option and panel rules.
 
 ## Depending on another plugin
 
@@ -398,3 +389,12 @@ A plugin imports from `untaped` only `untaped.sdk`, its groups
 public; any other name of these modules, or of a plugin's `api` and
 `testing`, goes only two majors after its deprecation
 ([Names plugins use](../versioning.md#names-plugins-use)).
+
+## What a plugin author keeps
+
+untaped acts only on what a plugin declares and on what happens while it runs,
+so its author declares [floors](../plugins.md#plugin-package) on each plugin
+it imports or fills, `untaped` included, changes its own names only by
+[deprecation](deprecation.md), runs `untaped lint` and the type checker's
+deprecation report, and [tests](../plugins.md#validation-and-checks) on the
+lowest versions it declares and the newest.
