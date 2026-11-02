@@ -1,8 +1,10 @@
-"""Aliased GraphQL queries for the batched repository ref probe.
+"""The batched repository ref probe over aliased GraphQL queries.
 
-This module isolates GraphQL mechanics — query building, alias
-bookkeeping, response parsing, missing-repo classification, per-repo ref
-pagination, and transient 5xx/transport retry splitting. ``GithubClient``
+This module runs the probe: chunking, alias bookkeeping, per-repo ref
+pagination, and transient 5xx/transport retry splitting. The query text
+and how answers read live in
+:mod:`untaped_github.infrastructure.graphql_queries`, and how failures read
+in :mod:`untaped_github.infrastructure.graphql_errors`. ``GithubClient``
 only wires an ``HttpClient`` and the derived GraphQL endpoint into
 :func:`fetch_repo_refs`.
 
@@ -22,14 +24,11 @@ tags connection from the query entirely.
 
 from __future__ import annotations
 
-import json
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from datetime import datetime
+from collections.abc import Callable, Iterable, Sequence
 from itertools import batched
-from typing import Any, NamedTuple, cast
+from typing import Any, NamedTuple
 
 from untaped.sdk import (
-    ErrorCategory,
     HttpClient,
     HttpError,
     HttpTransportError,
@@ -37,7 +36,6 @@ from untaped.sdk import (
     Service,
     UntapedError,
     bounded_map,
-    parse_utc,
 )
 from untaped_github.domain.models import (
     BatchRepoRefsFailure,
@@ -46,15 +44,26 @@ from untaped_github.domain.models import (
     RepoRef,
     RepoRefs,
 )
-from untaped_github.domain.repo_id import split_repo_id
-from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
+from untaped_github.errors import GithubGraphqlError
+from untaped_github.infrastructure.graphql_errors import classify_errors, graphql_http_error
+from untaped_github.infrastructure.graphql_queries import (
+    RateLimit,
+    RepoTarget,
+    batch_query,
+    default_branch_query,
+    merge_rate_limit,
+    page_query,
+    parse_ref_nodes,
+    parse_repo_target,
+    peel_oid,
+    reported_rate_limit,
+    validate_kinds,
+)
 from untaped_github.settings import GithubSettings
 
-_REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
-_PAGE_SIZE = 100
-_MISSING_ERROR_TYPES = frozenset({"NOT_FOUND", "FORBIDDEN"})
 _GRAPHQL_ACCESS_STATUSES = frozenset({401, 403, 429})
-_RATE_LIMIT_FIELD = "rateLimit { cost remaining resetAt }"
+
+
 # These short delays only catch immediate blips. Sustained transient
 # failures are handled by adaptive splitting and by callers rerunning.
 # A probe query only reads, so a resent POST is safe: retry 5xx and transport
@@ -66,31 +75,16 @@ _TRANSIENT_RETRY = RetryPolicy(
     idempotent_methods=frozenset({"POST"}),
 )
 _NO_PROGRESS_SPLIT_LOOKAHEAD = 1
-# Annotated tags point at a Tag object instead of a commit; peel via
-# nested ``target { oid }`` two levels deep (covers tags-of-tags).
-_TARGET_FIELD = "target { oid ... on Tag { target { oid ... on Tag { target { oid } } } } }"
-
-
-class _RepoTarget(NamedTuple):
-    full_name: str
-    owner: str
-    name: str
-
-
-class _RateLimit(NamedTuple):
-    cost: int | None = None
-    remaining: int | None = None
-    reset_at: datetime | None = None
 
 
 type ProgressFn = Callable[[int, int], None]
 type _Resolve = Callable[
-    [_RepoTarget, dict[str, Any]], tuple[RepoRefs | BatchRepoRefsFailure, _RateLimit]
+    [RepoTarget, dict[str, Any]], tuple[RepoRefs | BatchRepoRefsFailure, RateLimit]
 ]
 
 
 class _ChunkExecution(NamedTuple):
-    payloads: list[tuple[tuple[_RepoTarget, ...], dict[str, Any]]]
+    payloads: list[tuple[tuple[RepoTarget, ...], dict[str, Any]]]
     failures: list[BatchRepoRefsFailure]
 
 
@@ -120,7 +114,7 @@ def fetch_repo_refs(
     on_progress: ProgressFn | None = None,
 ) -> BatchRepoRefsResult:
     """Probe refs for ``repos`` in batches of ``chunk_size`` per POST."""
-    ref_kinds = _validate_kinds(kinds)
+    ref_kinds = validate_kinds(kinds)
     return _probe(
         http,
         endpoint,
@@ -128,7 +122,7 @@ def fetch_repo_refs(
         chunk_size=chunk_size,
         concurrency=concurrency,
         on_progress=on_progress,
-        query=lambda chunk: _build_batch_query(chunk, ref_kinds),
+        query=lambda chunk: batch_query(chunk, ref_kinds),
         resolve=lambda target, node: _resolve_repo(http, endpoint, target, node, ref_kinds),
     )
 
@@ -150,8 +144,8 @@ def fetch_default_branch_refs(
         chunk_size=chunk_size,
         concurrency=concurrency,
         on_progress=on_progress,
-        query=_build_default_branch_query,
-        resolve=lambda target, node: (_resolve_default_branch_repo(target, node), _RateLimit()),
+        query=default_branch_query,
+        resolve=lambda target, node: (_resolve_default_branch_repo(target, node), RateLimit()),
     )
 
 
@@ -163,7 +157,7 @@ def _probe(
     chunk_size: int,
     concurrency: int,
     on_progress: ProgressFn | None,
-    query: Callable[[tuple[_RepoTarget, ...]], str],
+    query: Callable[[tuple[RepoTarget, ...]], str],
     resolve: _Resolve,
 ) -> BatchRepoRefsResult:
     """POST ``repos`` in chunks, ``concurrency`` at a time, and merge what they read.
@@ -173,7 +167,7 @@ def _probe(
     """
     if chunk_size < 1:
         raise ValueError(f"chunk_size must be positive, got {chunk_size}")
-    targets = [_parse_repo_target(repo) for repo in repos]
+    targets = [parse_repo_target(repo) for repo in repos]
     chunks = list(batched(targets, chunk_size, strict=False))
     results: dict[int, BatchRepoRefsResult] = {}
 
@@ -197,19 +191,19 @@ def _probe(
 def _probe_chunk(
     http: HttpClient,
     endpoint: str,
-    chunk: tuple[_RepoTarget, ...],
-    query: Callable[[tuple[_RepoTarget, ...]], str],
+    chunk: tuple[RepoTarget, ...],
+    query: Callable[[tuple[RepoTarget, ...]], str],
     resolve: _Resolve,
 ) -> BatchRepoRefsResult:
     collected: list[RepoRefs] = []
     missing: list[str] = []
-    rate_limit = _RateLimit()
+    rate_limit = RateLimit()
     execution = _execute_chunk(http, endpoint, chunk, query)
     failures = list(execution.failures)
     for subchunk, payload in execution.payloads:
-        missing_aliases = _classify_errors(payload)
+        missing_aliases = classify_errors(payload)
         data = payload.get("data") or {}
-        rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
+        rate_limit = merge_rate_limit(rate_limit, reported_rate_limit(payload))
         for index, target in enumerate(subchunk):
             alias = f"r{index}"
             node = data.get(alias)
@@ -223,7 +217,7 @@ def _probe_chunk(
                 missing.append(target.full_name)
                 continue
             result, page_rate_limit = resolve(target, node)
-            rate_limit = _merge_rate_limit(rate_limit, page_rate_limit)
+            rate_limit = merge_rate_limit(rate_limit, page_rate_limit)
             if isinstance(result, BatchRepoRefsFailure):
                 failures.append(result)
             else:
@@ -243,14 +237,14 @@ def _merged(results: Iterable[BatchRepoRefsResult]) -> BatchRepoRefsResult:
     repos: list[RepoRefs] = []
     missing: list[str] = []
     failures: list[BatchRepoRefsFailure] = []
-    rate_limit = _RateLimit()
+    rate_limit = RateLimit()
     for result in results:
         repos.extend(result.repos)
         missing.extend(result.missing)
         failures.extend(result.failures)
-        rate_limit = _merge_rate_limit(
+        rate_limit = merge_rate_limit(
             rate_limit,
-            _RateLimit(
+            RateLimit(
                 result.rate_limit_cost, result.rate_limit_remaining, result.rate_limit_reset_at
             ),
         )
@@ -265,7 +259,7 @@ def _merged(results: Iterable[BatchRepoRefsResult]) -> BatchRepoRefsResult:
 
 
 def _request_failures(
-    chunk: tuple[_RepoTarget, ...], exc: UntapedError
+    chunk: tuple[RepoTarget, ...], exc: UntapedError
 ) -> tuple[BatchRepoRefsFailure, ...]:
     return tuple(
         BatchRepoRefsFailure(
@@ -280,35 +274,11 @@ def _request_failures(
     )
 
 
-def _validate_kinds(kinds: Sequence[str]) -> tuple[RefKind, ...]:
-    if not kinds:
-        raise ValueError("kinds must not be empty")
-    for kind in kinds:
-        if kind not in _REF_PREFIXES:
-            raise ValueError(f"invalid ref kind {kind!r}: expected 'heads' or 'tags'")
-    # Dedupe preserving order: GraphQL merges duplicate aliased
-    # connections, so a repeated kind would double every ref.
-    # Membership in _REF_PREFIXES is exactly the RefKind literal set.
-    return tuple(cast("RefKind", kind) for kind in dict.fromkeys(kinds))
-
-
-def _parse_repo_target(value: str) -> _RepoTarget:
-    # UntapedError, not ValueError: repo strings can originate from user
-    # source config (typos), and core's error boundary renders
-    # UntapedError as a message instead of a traceback.
-    parts = split_repo_id(value)
-    if parts is None:
-        raise UntapedError(
-            f"invalid repository {value!r}: expected 'owner/name'", category="invalid"
-        )
-    return _RepoTarget(value, *parts)
-
-
 def _execute_chunk(
     http: HttpClient,
     endpoint: str,
-    chunk: tuple[_RepoTarget, ...],
-    query: Callable[[tuple[_RepoTarget, ...]], str],
+    chunk: tuple[RepoTarget, ...],
+    query: Callable[[tuple[RepoTarget, ...]], str],
 ) -> _ChunkExecution:
     """POST one chunk; adaptively isolate retryable transient failures."""
     try:
@@ -339,13 +309,13 @@ def _is_transient_probe_error(exc: HttpError) -> bool:
 def _split_failed_chunk(
     http: HttpClient,
     endpoint: str,
-    chunk: tuple[_RepoTarget, ...],
-    query: Callable[[tuple[_RepoTarget, ...]], str],
+    chunk: tuple[RepoTarget, ...],
+    query: Callable[[tuple[RepoTarget, ...]], str],
     *,
     no_progress_split_lookahead: int,
 ) -> _ChunkExecution:
     mid = len(chunk) // 2
-    attempts: list[tuple[tuple[_RepoTarget, ...], dict[str, Any] | HttpError]] = []
+    attempts: list[tuple[tuple[RepoTarget, ...], dict[str, Any] | HttpError]] = []
     any_success = False
     for half in (chunk[:mid], chunk[mid:]):
         try:
@@ -364,7 +334,7 @@ def _split_failed_chunk(
         ]
         return _ChunkExecution([], failed)
 
-    payloads: list[tuple[tuple[_RepoTarget, ...], dict[str, Any]]] = []
+    payloads: list[tuple[tuple[RepoTarget, ...], dict[str, Any]]] = []
     failures: list[BatchRepoRefsFailure] = []
     for half, outcome in attempts:
         if isinstance(outcome, dict):
@@ -388,13 +358,13 @@ def _split_failed_chunk(
 
 
 def _transient_failures(
-    chunk: tuple[_RepoTarget, ...],
+    chunk: tuple[RepoTarget, ...],
     exc: HttpError,
 ) -> list[BatchRepoRefsFailure]:
     return [_transient_failure(target, exc) for target in chunk]
 
 
-def _transient_failure(target: _RepoTarget, exc: HttpError) -> BatchRepoRefsFailure:
+def _transient_failure(target: RepoTarget, exc: HttpError) -> BatchRepoRefsFailure:
     return BatchRepoRefsFailure(
         full_name=target.full_name,
         reason=str(exc),
@@ -409,7 +379,7 @@ def _post(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
         payload = http.post_json(endpoint, json={"query": query}, retry=_TRANSIENT_RETRY)
     except HttpError as exc:
         if exc.status_code in _GRAPHQL_ACCESS_STATUSES:
-            raise _graphql_http_error(exc) from exc
+            raise graphql_http_error(exc) from exc
         raise
     if not isinstance(payload, dict):
         raise HttpError(
@@ -419,225 +389,41 @@ def _post(http: HttpClient, endpoint: str, query: str) -> dict[str, Any]:
     return payload
 
 
-def _build_batch_query(chunk: tuple[_RepoTarget, ...], kinds: tuple[RefKind, ...]) -> str:
-    fields = " ".join(
-        _repository_field(f"r{index}", target, kinds) for index, target in enumerate(chunk)
-    )
-    return f"{{ {fields} {_RATE_LIMIT_FIELD} }}"
-
-
-def _build_default_branch_query(chunk: tuple[_RepoTarget, ...]) -> str:
-    fields = " ".join(
-        (
-            f"r{index}: repository(owner: {json.dumps(target.owner)}, "
-            f"name: {json.dumps(target.name)}) "
-            f"{{ nameWithOwner defaultBranchRef {{ name target {{ oid }} }} }}"
-        )
-        for index, target in enumerate(chunk)
-    )
-    return f"{{ {fields} {_RATE_LIMIT_FIELD} }}"
-
-
-def _repository_field(alias: str, target: _RepoTarget, kinds: tuple[RefKind, ...]) -> str:
-    refs = " ".join(_refs_field(kind) for kind in kinds)
-    return (
-        f"{alias}: repository(owner: {json.dumps(target.owner)}, "
-        f"name: {json.dumps(target.name)}) "
-        f"{{ nameWithOwner defaultBranchRef {{ name }} {refs} }}"
-    )
-
-
-def _build_page_query(target: _RepoTarget, kind: RefKind, cursor: str) -> str:
-    return (
-        f"{{ r0: repository(owner: {json.dumps(target.owner)}, "
-        f"name: {json.dumps(target.name)}) "
-        f"{{ {_refs_field(kind, after=cursor)} }} {_RATE_LIMIT_FIELD} }}"
-    )
-
-
-def _refs_field(kind: RefKind, *, after: str | None = None) -> str:
-    cursor = f", after: {json.dumps(after)}" if after is not None else ""
-    return (
-        f"{kind}: refs(refPrefix: {json.dumps(_REF_PREFIXES[kind])}, "
-        f"first: {_PAGE_SIZE}{cursor}) "
-        f"{{ pageInfo {{ hasNextPage endCursor }} nodes {{ name {_TARGET_FIELD} }} }}"
-    )
-
-
-def _classify_errors(payload: dict[str, Any]) -> set[str]:
-    """Return aliases of missing repos; raise on any other GraphQL error."""
-    missing: set[str] = set()
-    for error in payload.get("errors") or ():
-        if not isinstance(error, dict):
-            raise _graphql_payload_error(error)
-        alias = _repo_alias_from_path(error.get("path"))
-        if error.get("type") in _MISSING_ERROR_TYPES and alias is not None:
-            missing.add(alias)
-            continue
-        raise _graphql_payload_error(error)
-    return missing
-
-
-def _repo_alias_from_path(path: object) -> str | None:
-    if not isinstance(path, list | tuple) or len(path) != 1:
-        return None
-    alias = path[0]
-    if isinstance(alias, str) and alias.startswith("r") and alias[1:].isdigit():
-        return alias
-    return None
-
-
-def _graphql_http_error(exc: HttpError) -> GithubGraphqlError:
-    detail = _message_from_body(exc.body)
-    kind = _classify_graphql_failure(status_code=exc.status_code, message=detail)
-    return _github_graphql_error(
-        kind,
-        detail,
-        status_code=exc.status_code,
-        url=exc.url,
-        body=exc.body,
-        category=exc.category if kind == "unknown" else None,
-        details=exc.details,
-    )
-
-
-def _graphql_payload_error(error: object) -> GithubGraphqlError:
-    if isinstance(error, dict):
-        detail = _message_from_graphql_error(error)
-        error_type = error.get("type")
-        kind = _classify_graphql_failure(
-            status_code=None,
-            message=detail,
-            error_type=str(error_type) if error_type is not None else None,
-        )
-    else:
-        detail = repr(error)
-        kind = "unknown"
-    return _github_graphql_error(kind, detail)
-
-
-def _message_from_graphql_error(error: dict[str, Any]) -> str | None:
-    message = error.get("message")
-    if isinstance(message, str) and message.strip():
-        return message
-    return repr(error)
-
-
-def _message_from_body(body: str | None) -> str | None:
-    if body is None:
-        return None
-    stripped = body.strip()
-    if not stripped:
-        return None
-    try:
-        decoded = json.loads(stripped)
-    except ValueError:
-        return stripped
-    if isinstance(decoded, dict):
-        for key in ("message", "error", "detail"):
-            message = decoded.get(key)
-            if isinstance(message, str) and message.strip():
-                return message.strip()
-        errors = decoded.get("errors")
-        if isinstance(errors, list):
-            for item in errors:
-                if isinstance(item, dict):
-                    message = item.get("message")
-                    if isinstance(message, str) and message.strip():
-                        return message.strip()
-    return stripped
-
-
-def _classify_graphql_failure(
-    *,
-    status_code: int | None,
-    message: str | None,
-    error_type: str | None = None,
-) -> GithubGraphqlErrorKind:
-    haystack = f"{message or ''} {error_type or ''}".lower()
-    if status_code == 401 or "bad credentials" in haystack or "requires authentication" in haystack:
-        return "auth"
-    if "secondary rate limit" in haystack or "abuse detection" in haystack:
-        return "secondary_rate_limited"
-    if (
-        error_type == "RATE_LIMITED"
-        or status_code == 429
-        or "rate limit exceeded" in haystack
-        or "api rate limit" in haystack
-    ):
-        return "rate_limited"
-    if status_code == 403 or error_type == "FORBIDDEN" or "resource not accessible" in haystack:
-        return "forbidden"
-    return "unknown"
-
-
-def _github_graphql_error(
-    kind: GithubGraphqlErrorKind,
-    detail: str | None,
-    *,
-    status_code: int | None = None,
-    url: str | None = None,
-    body: str | None = None,
-    category: ErrorCategory | None = None,
-    details: Mapping[str, object] | None = None,
-) -> GithubGraphqlError:
-    prefixes = {
-        "rate_limited": "github graphql rate limit exceeded",
-        "secondary_rate_limited": "github graphql secondary rate limit exceeded",
-        "auth": "github graphql authentication failed",
-        "forbidden": "github graphql access forbidden",
-        "unknown": "github graphql error",
-    }
-    fallback = f"HTTP {status_code}" if status_code is not None else "unknown failure"
-    if url and status_code is not None:
-        fallback = f"{fallback} for {url}"
-    message = f"{prefixes[kind]}: {detail or fallback}"
-    return GithubGraphqlError(
-        message,
-        kind=kind,
-        status_code=status_code,
-        url=url,
-        body=body,
-        category=category,
-        details=details,
-    )
-
-
 def _resolve_repo(
     http: HttpClient,
     endpoint: str,
-    target: _RepoTarget,
+    target: RepoTarget,
     node: dict[str, Any],
     kinds: tuple[RefKind, ...],
-) -> tuple[RepoRefs | BatchRepoRefsFailure, _RateLimit]:
+) -> tuple[RepoRefs | BatchRepoRefsFailure, RateLimit]:
     """Build one :class:`RepoRefs`, following ref-pagination cursors.
 
     Repos with >100 refs in a namespace are rare; follow-up single-repo
     queries run serially with ``after: <cursor>`` until exhausted.
     """
-    rate_limit = _RateLimit()
+    rate_limit = RateLimit()
     refs: list[RepoRef] = []
     for kind in kinds:
         connection = node[kind]
         while True:
-            refs.extend(_parse_ref_nodes(kind, connection["nodes"]))
+            refs.extend(parse_ref_nodes(kind, connection["nodes"]))
             page = connection["pageInfo"]
             if not page["hasNextPage"]:
                 break
             try:
-                payload = _post(http, endpoint, _build_page_query(target, kind, page["endCursor"]))
+                payload = _post(http, endpoint, page_query(target, kind, page["endCursor"]))
             except HttpError as exc:
                 if not _is_transient_probe_error(exc):
                     raise
                 return _transient_failure(target, exc), rate_limit
             # The repo resolved in the batch query, so even NOT_FOUND
             # here (deleted mid-probe) is unexpected enough to raise.
-            if _classify_errors(payload):
+            if classify_errors(payload):
                 raise UntapedError(
                     f"github graphql lost access to {target.full_name} during ref pagination",
                     system=Service(GithubSettings),
                 )
-            rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
+            rate_limit = merge_rate_limit(rate_limit, reported_rate_limit(payload))
             connection = payload["data"]["r0"][kind]
     default_branch_ref = node.get("defaultBranchRef")
     default_branch = default_branch_ref["name"] if isinstance(default_branch_ref, dict) else None
@@ -647,7 +433,7 @@ def _resolve_repo(
     )
 
 
-def _resolve_default_branch_repo(target: _RepoTarget, node: dict[str, Any]) -> RepoRefs:
+def _resolve_default_branch_repo(target: RepoTarget, node: dict[str, Any]) -> RepoRefs:
     default_branch_ref = node.get("defaultBranchRef")
     if not isinstance(default_branch_ref, dict):
         return RepoRefs(full_name=target.full_name, default_branch=None, refs=())
@@ -655,71 +441,8 @@ def _resolve_default_branch_repo(target: _RepoTarget, node: dict[str, Any]) -> R
     branch_name = name if isinstance(name, str) and name else None
     target_node = default_branch_ref.get("target")
     refs = (
-        (RepoRef(kind="heads", name=branch_name, sha=_peel_oid(target_node)),)
+        (RepoRef(kind="heads", name=branch_name, sha=peel_oid(target_node)),)
         if branch_name is not None and isinstance(target_node, dict)
         else ()
     )
     return RepoRefs(full_name=target.full_name, default_branch=branch_name, refs=refs)
-
-
-def _parse_ref_nodes(kind: RefKind, nodes: list[dict[str, Any]]) -> list[RepoRef]:
-    # GitHub's schema allows ``Ref.target`` to be null; a ref without a
-    # resolvable object is useless to the freshness probe, so skip it.
-    return [
-        RepoRef(kind=kind, name=node["name"], sha=_peel_oid(node["target"]))
-        for node in nodes
-        if node.get("target") is not None
-    ]
-
-
-def _peel_oid(target: dict[str, Any]) -> str:
-    """Return the deepest oid: annotated tags nest the commit under ``target``."""
-    oid = target.get("oid", "")
-    inner = target.get("target")
-    while isinstance(inner, dict):
-        if inner.get("oid"):
-            oid = inner["oid"]
-        inner = inner.get("target")
-    return str(oid)
-
-
-def _rate_limit(payload: dict[str, Any]) -> _RateLimit:
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        return _RateLimit()
-    rate_limit = data.get("rateLimit")
-    if not isinstance(rate_limit, dict):
-        return _RateLimit()
-    cost = rate_limit.get("cost")
-    remaining = rate_limit.get("remaining")
-    reset_at = parse_utc(rate_limit.get("resetAt"))
-    return _RateLimit(
-        cost=cost if isinstance(cost, int) else None,
-        remaining=remaining if isinstance(remaining, int) else None,
-        reset_at=reset_at,
-    )
-
-
-def _merge_rate_limit(current: _RateLimit, latest: _RateLimit) -> _RateLimit:
-    # Chunks run side by side, so the lowest budget and the latest reset win.
-    return _RateLimit(
-        cost=_sum_optional_ints(current.cost, latest.cost),
-        remaining=_min_optional(current.remaining, latest.remaining),
-        reset_at=_max_optional(current.reset_at, latest.reset_at),
-    )
-
-
-def _min_optional(left: int | None, right: int | None) -> int | None:
-    return right if left is None else left if right is None else min(left, right)
-
-
-def _max_optional(left: datetime | None, right: datetime | None) -> datetime | None:
-    return right if left is None else left if right is None else max(left, right)
-
-
-def _sum_optional_ints(left: int | None, right: int | None) -> int | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
-    return left + right
