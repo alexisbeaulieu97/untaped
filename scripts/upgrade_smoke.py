@@ -57,11 +57,15 @@ __all__ = [*__all__, "book_titled"]
 CONFIG = "format_version: 2\nlibrary:\n  volumes:\n    - {shelf_mark: A1, name: Dune}\n"
 
 
+class Failed(Exception):
+    """One check of the smoke failed."""
+
+
 def versioned(pyproject: str, version: str) -> str:
     """``pyproject`` with its project ``version`` set to ``version``."""
     updated, count = re.subn(r'(?m)^version = "[^"]*"$', f'version = "{version}"', pyproject)
     if count != 1:
-        raise ValueError("pyproject has no single version line")
+        raise Failed("pyproject has no single version line")
     return updated
 
 
@@ -71,7 +75,7 @@ def requiring(pyproject: str, distribution: str, floor: str) -> str:
         rf'"{re.escape(distribution)}>=[^"]*"', f'"{distribution}>={floor}"', pyproject
     )
     if count != 1:
-        raise ValueError(f"pyproject has no single requirement on {distribution}")
+        raise Failed(f"pyproject has no single requirement on {distribution}")
     return updated
 
 
@@ -80,7 +84,7 @@ def calling_book_titled(provider: str) -> str:
     imports = "from untaped_shelf.api import Book, BookSource\n"
     body = "        return Book(title=item.name, pages=item.pages)\n"
     if imports not in provider or body not in provider:
-        raise ValueError("the library's provider changed: update the upgrade smoke")
+        raise Failed("the library's provider changed: update the upgrade smoke")
     return provider.replace(
         imports, "from untaped_shelf.api import Book, BookSource, book_titled\n"
     ).replace(body, "        return book_titled(item.name, item.pages)\n")
@@ -118,17 +122,13 @@ def main(argv: Sequence[str]) -> int:
         print("usage: upgrade_smoke.py CORE_WHEEL WORKDIR", file=sys.stderr)
         return 1
     core, work = Path(argv[0]).resolve(), Path(argv[1]).resolve()
-    work.mkdir(parents=True, exist_ok=True)
     try:
+        work.mkdir(parents=True, exist_ok=True)
         run(core, work)
-    except (Failed, ValueError, OSError) as failed:  # an example drifted, a tool is missing
+    except (Failed, OSError) as failed:  # a check, a drifted example, a missing tool or directory
         print(f"upgrade smoke: {failed}", file=sys.stderr)
         return 1
     return 0
-
-
-class Failed(Exception):
-    """One check of the smoke failed."""
 
 
 def run(core: Path, work: Path) -> None:
