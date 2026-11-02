@@ -197,7 +197,7 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
         with open(path, encoding="utf-8") as tty_in, open(path, "w", encoding="utf-8") as tty_out:
             cooked = termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO)
             assert cooked == termios.ICANON | termios.ECHO
-            with pytest.raises(SystemExit) as raised:
+            with pytest.raises(KeyboardInterrupt) as raised:
                 run_terminal_screen(
                     screen,
                     input=create_input(tty_in),
@@ -205,7 +205,7 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
                     theme=BUILTIN_THEMES["default"],
                     environ={"TERM": "xterm-256color"},
                 )
-            assert raised.value.code == 128 + sig
+            assert raised.type is KeyboardInterrupt  # Ctrl-C's: its cleanups run
             assert termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO) == cooked
         seen = _drain(master, until=b"\x1b[?1049l")
         assert b"\x1b[?1049h" in seen

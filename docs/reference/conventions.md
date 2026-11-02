@@ -233,10 +233,9 @@ plugin's tests call `untaped_lint.testing.assert_clean(NAME)`. `import-boundary`
 and in [Depending on another plugin](#depending-on-another-plugin);
 `requirement-floor` the [floors a plugin declares](../plugins.md#plugin-package);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
-keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
+keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); `process-group` and `signal-handler` leave process groups and signal handlers to `untaped.sdk.process`; the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
-`# untaped: allow <rule>` on the flagged node's first line allows one violation,
-except the stability rules, the settings rules, and the command, option and panel rules.
+`# untaped: allow <rule>` on the flagged node's first line allows one violation, except the stability rules, the settings rules, and the command, option and panel rules.
 
 ## Depending on another plugin
 
@@ -265,6 +264,7 @@ The sections above name the helper for each rule. Beyond those:
   [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
+- Start a child through `untaped.sdk.process`, which stops its whole group on a timeout or interrupt, when it runs in its own group, must stop as a tree, or may run on a worker thread past an interrupt; a short synchronous child in untaped's own group may stay plain (Ctrl-C reaches it).
 - To keep a repository, use `RepoStore.for_url(url, plugin=..., error=...)`
   from `untaped_git.api`, not a bare repo or a root setting of your own:
   `plugin=` takes your plugin's name or what names it (a command's
@@ -382,7 +382,7 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 A plugin imports from `untaped` only `untaped.sdk`, its groups
 ([`untaped.sdk.contracts`](../contracts.md), `untaped.sdk.git`,
-`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.projects`,
+`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.process`, `untaped.sdk.projects`,
 `untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`,
 `untaped.sdk.testing.git`) and `untaped.core.api`, core's commands for a hint
 (`Login.spelled()`); `import-boundary` flags any other. A `_` name is never

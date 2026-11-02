@@ -21,6 +21,7 @@ GROUPS = (
     "untaped.sdk.git",
     "untaped.sdk.health",
     "untaped.sdk.network",
+    "untaped.sdk.process",
     "untaped.sdk.projects",
     "untaped.sdk.prompt",
     "untaped.sdk.storage",
@@ -69,7 +70,7 @@ def test_a_resolved_name_is_kept_in_the_group() -> None:
     assert namespace["plural"] is plural
 
 
-#: The groups that are packages (``git`` and ``projects`` are one module each).
+#: The groups that are packages (``git``, ``process`` and ``projects`` are one module each).
 PACKAGES = (
     "untaped.sdk.health",
     "untaped.sdk.network",

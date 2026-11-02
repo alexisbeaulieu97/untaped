@@ -12,6 +12,10 @@ Every `untaped` command uses the same exit codes. Scripts can rely on them.
 | 5 | Temporary: the network is down, a request timed out, the service answered 5xx or 429, or another `untaped` process holds a lock. Retry later. |
 | 130 | Interrupted with Ctrl-C, including at a prompt. |
 
+A SIGTERM or SIGHUP (`kill`, `timeout`, a closed terminal, a cancelled CI job)
+stops untaped's child processes and runs the same cleanup as Ctrl-C, then
+untaped ends by that signal, as a process killed by it does.
+
 ## Categories
 
 Every failure has a **category**, which selects its exit code, and a
