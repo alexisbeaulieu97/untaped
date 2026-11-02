@@ -35,7 +35,7 @@ from collections.abc import Iterator
 from pydantic import Field
 
 from untaped.core.commands import records
-from untaped.core.commands.doctor import report_check_rows, selected_check_rows
+from untaped.core.commands.doctor import report_check_rows
 from untaped.core.commands.notes import print_notes
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_plan import (
@@ -45,6 +45,7 @@ from untaped.core.commands.setup_plan import (
 )
 from untaped.core.commands.setup_prune import Prune
 from untaped.core.commands.setup_state import service_store, setup_sections, setup_services
+from untaped.core.doctor_rows import selected_check_rows
 from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, picked_names, write_target

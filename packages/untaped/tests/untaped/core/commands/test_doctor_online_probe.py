@@ -25,7 +25,7 @@ from core_test_support.commands.support import (
     wiz_probe,
     write_config,
 )
-from untaped.core.commands.doctor import online_probe_rows
+from untaped.core.doctor_rows import online_probe_rows
 from untaped.runtime.registry import CompositionResult
 from untaped.sdk import OnlineCheck
 from untaped.sdk._app_context import app_context

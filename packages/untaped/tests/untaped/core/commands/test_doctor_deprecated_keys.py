@@ -15,7 +15,7 @@ from core_test_support.commands.support import (
     root_group,
     write_config,
 )
-from untaped.core.commands.doctor import selected_check_rows
+from untaped.core.doctor_rows import selected_check_rows
 from untaped.sdk.health.deprecated_keys import Retired
 from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import CliInvoker
