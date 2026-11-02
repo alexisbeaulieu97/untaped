@@ -6,9 +6,9 @@ terminal. A signal sent to untaped's group (Ctrl-C, a closed terminal,
 ``timeout``, a cancelled CI job) then no longer reaches the child: the handler
 :func:`install` puts in place passes SIGINT, SIGTERM and SIGHUP on to every
 registered group and raises one plain ``KeyboardInterrupt`` on the main
-thread, so every ``except KeyboardInterrupt`` cleanup runs for all three (and
-``Popen.__exit__``, which knows only that exact type, kills its child at once).
-:func:`closing_signal` tells which signal it was.
+thread, so every ``except KeyboardInterrupt`` cleanup runs for all three
+(``Popen.__exit__`` treats only that exact type as an interrupt, and then
+stops waiting for its child). Closing records which signal it was.
 
 A group gets one soft signal, ever, and SIGKILL one grace after it (many
 tools read a second interrupt as "force quit now"). Each group's clock is
@@ -184,7 +184,7 @@ def stop(process: subprocess.Popen[bytes]) -> None:
         while not (gone := emptied(process)) and (left := deadline - time.monotonic()) > 0:
             time.sleep(min(0.02, left))
     finally:
-        if not gone:
+        if not gone and registered(pgid):  # an interrupt may land after emptied() forgot it
             try:
                 _signal(pgid, _KILL)
                 with contextlib.suppress(subprocess.TimeoutExpired, OSError):
@@ -286,12 +286,6 @@ def ending(signum: int, *, closing: bool = True) -> bool:
         if _claim(pgid):
             _signal(pgid, signum)
     return True
-
-
-def closing_signal() -> int | None:
-    """The signal that started closing, ``None`` before one did (or when exit started it)."""
-    closing = _S.closing
-    return closing[0] if closing is not None and closing[0] else None
 
 
 def _replay_deferred() -> None:

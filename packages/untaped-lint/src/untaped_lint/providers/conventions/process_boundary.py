@@ -9,7 +9,8 @@ Two rules keep a plugin from going around it, read from the syntax tree:
   (``start_new_session=``, ``process_group=``, ``preexec_fn=os.setsid``,
   ``posix_spawn``'s ``setsid=``/``setpgroup=``, ``os.setsid``, ``os.setpgid``,
   ``os.setpgrp``, ``os.killpg``, ``os.kill`` with a negative pid, ``pty.fork``,
-  ``os.forkpty``), which untaped's interrupt would leave running;
+  ``pty.spawn``, ``os.forkpty``, ``os.login_tty``), which untaped's interrupt
+  would leave running;
 - ``signal-handler``: ``signal.signal``, a loop's ``add_signal_handler`` or
   ``signal.pthread_sigmask``, which replaces or blocks the handler that stops
   every plugin's children.
@@ -42,7 +43,16 @@ _GROUP_KEYWORDS = frozenset({"start_new_session", "process_group"})
 _SPAWN_KEYWORDS = frozenset({"setsid", "setpgroup"})  # os.posix_spawn's
 _SPAWN_CALLS = frozenset({"os.posix_spawn", "os.posix_spawnp"})
 _GROUP_CALLS = frozenset(
-    {"os.setsid", "os.setpgid", "os.setpgrp", "os.killpg", "os.forkpty", "pty.fork"}
+    {
+        "os.setsid",
+        "os.setpgid",
+        "os.setpgrp",
+        "os.killpg",
+        "os.forkpty",
+        "os.login_tty",
+        "pty.fork",
+        "pty.spawn",
+    }
 )
 _MODULES = frozenset({"os", "pty", "signal"})
 

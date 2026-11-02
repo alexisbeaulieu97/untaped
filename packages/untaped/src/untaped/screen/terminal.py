@@ -204,10 +204,10 @@ def run_terminal_screen[M, R](
     """Run ``screen`` on ``input`` and ``output`` and return how it ended.
 
     Raises ``KeyboardInterrupt`` for an external SIGINT, SIGTERM or SIGHUP
-    (as untaped's own handler does; ``closing_signal`` tells which), ``EOFError``
-    when the input closes, and whatever a screen's own code raised. The terminal is
-    restored in every case. An interrupt (the ctrl-c key included) reaches
-    every child process as untaped's own signal handling would pass it on.
+    (as untaped's own handler does), ``EOFError`` when the input closes, and
+    whatever a screen's own code raised. The terminal is restored in every
+    case. An interrupt (the ctrl-c key included) reaches every child process
+    as untaped's own signal handling would pass it on.
     """
     application, host, runtime = build_application(
         screen, input=input, output=output, theme=theme, environ=environ

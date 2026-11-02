@@ -8,7 +8,9 @@ would leave behind. Checks name real root commands of a test composition.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -621,3 +623,29 @@ def test_unparsable_output_has_no_rows() -> None:
     assert fix._parse_rows("not json") == []
     assert fix._parse_rows('{"action": "x"}') == [{"action": "x"}]
     assert fix._parse_lines(["oops\n", '"s"\n', '{"level": "info"}\n']) == [{"level": "info"}]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="an executable script stands in for Python")
+def test_an_interrupt_while_a_fix_runs_ends_its_child(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A SIGTERM sent to untaped alone arrives as the interrupt: the child must not hold it.
+    child = tmp_path / "python"
+    child.write_text("#!/bin/sh\nexec sleep 30\n")
+    child.chmod(0o755)
+    monkeypatch.setattr(sys, "executable", str(child))
+    started: list[subprocess.Popen[str]] = []
+
+    class InterruptedOnce(subprocess.Popen[str]):
+        def wait(self, timeout: float | None = None) -> int:
+            if not started:
+                started.append(self)
+                raise KeyboardInterrupt
+            return super().wait(timeout)
+
+    monkeypatch.setattr(fix.subprocess, "Popen", InterruptedOnce)
+    begun = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        fix._run_one(["status"])
+    assert time.monotonic() - begun < 10
+    assert started[0].poll() is not None

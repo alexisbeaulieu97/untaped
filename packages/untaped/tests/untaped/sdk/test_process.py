@@ -375,31 +375,36 @@ import os, signal, sys, threading, time
 from untaped.sdk import _process_groups
 from untaped.sdk.process import run_process
 _process_groups.GRACE_S = {grace}
-{before}
 _process_groups.install()
 results = []
 def work():
     results.append(run_process({argv!r}, timeout=60).ended)
     print('worker', results[-1], flush=True)
+def wait_for(worker):  # short joins: a long one can hold a signal's handler back
+    while worker.is_alive():
+        worker.join(0.05)
 worker = threading.Thread(target=work)
-worker.start()
 try:
-    {main}
-except KeyboardInterrupt as interrupt:
-    print('interrupted', _process_groups.closing_signal(), flush=True)
-    worker.join()
+    worker.start()
+    print('ready', flush=True)
+    wait_for(worker)
+except KeyboardInterrupt:
+    print('interrupted', _process_groups._S.closing[0], flush=True)
+    wait_for(worker)
     print('joined', flush=True)
     raise SystemExit(130)
 """
 
 
-def _untaped(
-    argv: list[str], *, main: str = "worker.join()", before: str = "", grace: float = GRACE
-) -> subprocess.Popen[str]:
-    code = _UNTAPED.format(grace=grace, argv=argv, main=main, before=before)
-    return subprocess.Popen(
+def _untaped(argv: list[str], *, grace: float = GRACE) -> subprocess.Popen[str]:
+    """untaped running ``argv`` on a worker thread, once it is ready for a signal."""
+    code = _UNTAPED.format(grace=grace, argv=argv)
+    untaped = subprocess.Popen(
         [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
+    assert untaped.stdout is not None
+    assert untaped.stdout.readline() == "ready\n", untaped.stderr
+    return untaped
 
 
 @pytest.mark.parametrize(

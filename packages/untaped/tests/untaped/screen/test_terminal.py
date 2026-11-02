@@ -257,10 +257,15 @@ def test_an_unhandled_ctrl_c_key_cancels_as_an_interrupt() -> None:
 
 
 def _a_job_child_that_ignores_sigint(tmp_path: Path) -> list[ProcessResult]:
-    """Start, on a worker thread, a child that ignores SIGINT; return once it does."""
-    ready = tmp_path / "ready"
+    """Start, on a worker thread, a child that ignores SIGINT; return once it does.
+
+    A SIGTERM makes it write ``got-sigterm`` and exit, so a test sees which signal came.
+    """
+    ready, term = tmp_path / "ready", tmp_path / "got-sigterm"
     ignores = (
-        "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        "import signal, sys, time; signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        f"def term(*_):\n    open({str(term)!r}, 'w').close(); sys.exit(1)\n"
+        "signal.signal(signal.SIGTERM, term)\n"
         f"open({str(ready)!r}, 'w').close(); time.sleep(60)"
     )
     results: list[ProcessResult] = []
@@ -294,6 +299,7 @@ def test_ctrl_c_at_a_screen_reaches_child_processes(
     assert _run(Typing(), "\x03") == Cancel(interrupted=True)
 
     assert _ended(results) == ["stopped"]
+    assert not (tmp_path / "got-sigterm").exists()  # SIGINT, then SIGKILL
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
@@ -315,6 +321,7 @@ def test_an_external_signal_at_a_screen_reaches_child_processes(
         _run(Typing(extra=send), "x", close=False)
 
     assert _ended(results) == ["stopped"]
+    assert (tmp_path / "got-sigterm").exists() == (sig == "SIGTERM")  # the screen's own signal
 
 
 def test_a_named_key_is_not_held_back_waiting_for_a_longer_sequence() -> None:

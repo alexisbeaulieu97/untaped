@@ -61,6 +61,11 @@ def died(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return deaths
 
 
+def _closing(state: _process_groups._State) -> int | None:
+    """The signal that started closing; ``None`` before one did or when exit started it."""
+    return state.closing[0] or None if state.closing is not None else None
+
+
 def _spawn(argv: list[str] = SLEEP) -> subprocess.Popen[bytes]:
     process = _process_groups.spawn(argv, cwd=None, env=None, stdin=subprocess.DEVNULL)
     assert process is not None
@@ -129,8 +134,8 @@ def test_the_handler_raises_interrupted_once_and_ignores_a_repeat(
     state.installed = True
     with pytest.raises(KeyboardInterrupt) as raised:
         _process_groups._on_signal(signal.SIGTERM, None)
-    assert raised.type is KeyboardInterrupt  # exactly: Popen.__exit__ kills its child for it
-    assert _process_groups.closing_signal() == signal.SIGTERM
+    assert raised.type is KeyboardInterrupt  # exactly: the only type Popen.__exit__ treats so
+    assert _closing(state) == signal.SIGTERM
     _process_groups._on_signal(signal.SIGHUP, None)  # the same event: no second raise
 
 
@@ -142,7 +147,7 @@ def test_every_deferred_signal_is_replayed_and_raises_once(
     with pytest.raises(KeyboardInterrupt):
         _process_groups._replay_deferred()
     assert not state.deferred  # nothing left to replay at a later spawn
-    assert _process_groups.closing_signal() == signal.SIGTERM
+    assert _closing(state) == signal.SIGTERM
 
 
 def test_a_signal_while_the_exit_net_runs_is_recorded_not_raised(
@@ -151,10 +156,10 @@ def test_a_signal_while_the_exit_net_runs_is_recorded_not_raised(
     state.installed, state.netting = True, True
     state.closing = (0, time.monotonic())
     _process_groups._on_signal(signal.SIGINT, None)
-    assert _process_groups.closing_signal() is None
+    assert _closing(state) is None
     _process_groups._on_signal(signal.SIGTERM, None)
     _process_groups._on_signal(signal.SIGHUP, None)
-    assert _process_groups.closing_signal() == signal.SIGTERM  # the net dies by it
+    assert _closing(state) == signal.SIGTERM  # the net dies by it
 
 
 def test_the_handler_defers_a_signal_while_the_main_thread_starts_a_child(

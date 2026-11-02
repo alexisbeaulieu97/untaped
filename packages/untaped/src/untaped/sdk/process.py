@@ -259,14 +259,15 @@ class RunningProcess:
     def close(self) -> int | None:
         """Close stdin, give the child one grace to exit, then stop whatever is left of its group.
 
-        Idempotent; returns the child's exit status (``None`` only when even
-        SIGKILL could not end it, as for a process stuck in the kernel). The
-        stop runs even when the grace is interrupted.
+        Idempotent; returns the child's exit status, or ``None`` when it could
+        not be reaped: SIGKILL could not end it (a process stuck in the
+        kernel), or another interrupt cut the stop short. The stop runs even
+        when the grace is interrupted.
         """
         with self._lock:
             if not self._closed:
-                self._closed = True
                 try:
+                    self._closed = True
                     with contextlib.suppress(OSError):
                         self.stdin.close()
                     with contextlib.suppress(subprocess.TimeoutExpired):

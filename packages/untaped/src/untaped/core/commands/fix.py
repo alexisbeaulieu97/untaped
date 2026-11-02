@@ -228,7 +228,13 @@ def _run_one(argv: Sequence[str]) -> ChildRun:
         ]
         for reader in readers:
             reader.start()
-        code = process.wait()
+        try:
+            code = process.wait()
+        except BaseException:
+            # A SIGTERM sent to this process alone is untaped's interrupt here, and
+            # leaving the ``with`` waits for the readers, so end the child first.
+            process.terminate()
+            raise
         for reader in readers:
             reader.join()
     return ChildRun(code=code, rows=_parse_rows("".join(out)), diagnostics=_parse_lines(err))

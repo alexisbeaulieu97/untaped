@@ -59,6 +59,8 @@ def test_the_messages_say_what_they_protect() -> None:
         "import os\nos.posix_spawnp('x', ['x'], {}, setpgroup=0)\n",
         "import pty\npty.fork()\n",
         "import os\nos.forkpty()\n",
+        "import pty\npty.spawn(['x'])\n",
+        "import os\nos.login_tty(3)\n",
     ],
 )
 def test_a_group_by_hand_is_a_violation(tmp_path: Path, source: str) -> None:
