@@ -18,19 +18,18 @@ as ``plugin-uses``; each write drops the rows of versions no longer installed.
 
 from __future__ import annotations
 
-import sys
 from datetime import timedelta
 from typing import TYPE_CHECKING, Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.core.settings import NAME
+from untaped.runtime import plugin_frames
 from untaped.runtime.declaration import UseDecl
 from untaped.sdk.fields import Key
 from untaped.sdk.storage.state import StateRows
 
 if TYPE_CHECKING:
-    from untaped.runtime.declaration import PluginDecl
     from untaped.runtime.registry import CompositionResult
     from untaped.sdk.marks import UntapedDeprecationWarning
 
@@ -72,19 +71,22 @@ RUN_USES = StateRows[RunUse]()._bound_to(NAME, "run_uses")
 _PENDING: dict[tuple[str, str], tuple[str, str, str, UntapedDeprecationWarning]] = {}
 #: Row keys this process wrote or found written.
 _WRITTEN: set[str] = set()
-#: A module's file -> its name, for the modules imported when it was last filled.
-_FILES: dict[str, str] = {}
-#: The composed plugins last read, and each by its entry point's package.
-_PACKAGES: list[tuple[tuple[PluginDecl, ...], dict[str, PluginDecl]]] = []
 
 
 def note(warning: UntapedDeprecationWarning, filename: str) -> None:
     """Keep ``warning``'s use when ``filename`` is a composed plugin's own code."""
-    plugin = _plugin_of(filename)
-    if plugin is None or warning.id is None:
+    from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap imports this lazily
+
+    result = attached()
+    module = plugin_frames.module_of(filename)
+    if result is None or module is None or warning.id is None:
         return
-    name, distribution, version = plugin
-    _PENDING.setdefault((name, warning.id), (name, distribution, version, warning))
+    plugin = plugin_frames.plugin_at(module, result)
+    if plugin is None:
+        return
+    _PENDING.setdefault(
+        (plugin.name, warning.id), (plugin.name, plugin.distribution, plugin.version, warning)
+    )
 
 
 def flush(command: str) -> None:
@@ -133,8 +135,7 @@ def forget() -> None:
     """Forget what this process saw and wrote (tests, embedding)."""
     _PENDING.clear()
     _WRITTEN.clear()
-    _FILES.clear()
-    _PACKAGES.clear()
+    plugin_frames.forget()
 
 
 def _row(
@@ -156,47 +157,3 @@ def _row(
         replacement=warning.replacement,
         command=command,
     )
-
-
-def _plugin_of(filename: str) -> tuple[str, str, str] | None:
-    """The name, distribution and version of the composed plugin whose code ``filename`` is."""
-    from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap imports this lazily
-    from untaped.runtime.plugin_uses import owner_of  # noqa: PLC0415 - only once a warning shows
-
-    result = attached()
-    module = _module_of(filename)
-    if result is None or module is None:
-        return None
-    plugin = owner_of(module, _packages(result))
-    if plugin is None or plugin.lockstep or plugin.root:
-        return None
-    candidate = next((each for each in result.candidates if each.name == plugin.name), None)
-    if candidate is None:
-        return None
-    return plugin.name, candidate.distribution, candidate.distribution_version
-
-
-def _packages(result: CompositionResult) -> dict[str, PluginDecl]:
-    """Each composed plugin by its entry point's package, read once per composition."""
-    plugins = result.mount.declaration.plugins
-    if not _PACKAGES or _PACKAGES[0][0] is not plugins:
-        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
-
-        found: dict[str, PluginDecl] = {}
-        for plugin in plugins:
-            package = candidate_package(plugin.target)
-            if package is not None:
-                found.setdefault(package, plugin)
-        _PACKAGES[:] = [(plugins, found)]
-    return _PACKAGES[0][1]
-
-
-def _module_of(filename: str) -> str | None:
-    """The imported module whose file ``filename`` is."""
-    if filename not in _FILES:
-        _FILES.clear()
-        for name, module in list(sys.modules.items()):
-            path = getattr(module, "__file__", None)
-            if isinstance(path, str):
-                _FILES[path] = name
-    return _FILES.get(filename)
