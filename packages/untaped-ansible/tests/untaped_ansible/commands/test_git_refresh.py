@@ -20,8 +20,6 @@ import pytest
 from ansible_index_support import index_path
 from ansible_test_support import configure, run, running, write_state
 from untaped.sdk import ErrorCategory, plugin_of
-from untaped.sdk.git import GitCommandError, GitResult
-from untaped.sdk.testing.git import GitRemote, git_remote
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
@@ -29,8 +27,9 @@ from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, Sq
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_git import remote as remote_module
 from untaped_git import store as store_module
-from untaped_git.api import Released, RepoStore, store_key
+from untaped_git.api import GitCommandError, GitResult, Released, RepoStore, store_key
 from untaped_git.host_auth import basic_header
+from untaped_git.testing import GitRemote, git_remote
 
 _REQS = "roles/requirements.yml"
 _META = "meta/main.yml"

@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from pydantic import AfterValidator
 
 from untaped.sdk import InvalidValue
-from untaped.sdk.git import safe_path_segment
+from untaped.sdk.storage import safe_path_segment
 
 _UNKNOWN = "_unknown"
 _SCP = re.compile(r"^[A-Za-z0-9._-]+@(?P<host>[A-Za-z0-9.-]+):(?P<path>[^/].*)$")

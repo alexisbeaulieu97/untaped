@@ -17,7 +17,6 @@ from untaped.sdk.errors import (
     combine_exit_codes,
     most_severe,
 )
-from untaped.sdk.git import GitCommandError
 
 
 def test_untaped_error_is_exception() -> None:
@@ -164,8 +163,6 @@ def test_instance_fields_override_the_class_defaults() -> None:
         (UsageError("x"), ErrorCategory.USAGE, "untaped", 2),
         (PromptInterruptedError("x"), ErrorCategory.INTERRUPTED, "untaped", 130),
         (OperationCancelledError(), ErrorCategory.FAILED, "untaped", 1),
-        (GitCommandError("x"), ErrorCategory.FAILED, "git", 1),
-        (GitCommandError("x", timed_out=True), ErrorCategory.UNAVAILABLE, "git", 5),
         (HttpTransportError("x"), ErrorCategory.UNAVAILABLE, "http", 5),
         (HttpError("bad json", status_code=200), ErrorCategory.FAILED, "http", 1),
     ],

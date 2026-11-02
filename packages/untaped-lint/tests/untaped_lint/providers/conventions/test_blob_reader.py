@@ -74,7 +74,7 @@ def test_checkout_and_worktree_add_are_flagged_even_through_a_handle(tmp_path: P
 def test_run_git_and_a_bound_argv_are_read(tmp_path: Path) -> None:
     source = IMPORT + dedent(
         """
-        from untaped.sdk.git import run_git
+        from untaped_git.api import run_git
 
         def search(repo):
             argv = ["grep", "needle"]

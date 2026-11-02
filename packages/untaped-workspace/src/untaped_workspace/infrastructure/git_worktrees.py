@@ -33,8 +33,8 @@ from typing import TYPE_CHECKING, Literal, NamedTuple
 from pydantic import BaseModel
 
 from untaped.sdk import System, UntapedError, attribution, plural, size_text
-from untaped.sdk.git import GitCommandError, GitResult, run_git
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
+from untaped_git.api import GitCommandError, GitResult, run_git
 from untaped_workspace.domain.models import (
     Checkout,
     LocalBranch,

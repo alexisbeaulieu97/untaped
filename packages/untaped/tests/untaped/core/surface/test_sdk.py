@@ -197,14 +197,15 @@ def test_a_module_without_all_stops_generation() -> None:
 
 
 def test_a_plugin_mark_reaches_every_line_without_its_own() -> None:
+    # untaped.sdk.prompt marks nothing itself: every line takes the plugin's mark.
     lines = module_lines(
-        "untaped.sdk.testing.git",
+        "untaped.sdk.prompt",
         "experimental",
-        collect_exports({"untaped.sdk.testing.git": "experimental"}),
+        collect_exports({"untaped.sdk.prompt": "experimental"}),
     )
     assert lines
     assert {line.mark for line in lines} == {"experimental"}
-    assert Line("sdk untaped.sdk.testing.git.git_remote", "experimental") not in lines
+    assert Line("sdk untaped.sdk.prompt.PickItem(id, label)", "experimental") in lines
 
 
 def test_an_implementer_lists_what_plugins_implement_with_full_signatures() -> None:

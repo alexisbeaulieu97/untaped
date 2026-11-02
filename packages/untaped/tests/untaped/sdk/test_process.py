@@ -497,40 +497,31 @@ def test_untaped_still_ends_by_sigterm_when_its_cleanup_fails(tmp_path: Path, cl
 
 
 @pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP], ids=["sigterm", "sighup"])
-def test_no_credential_file_is_left_after_a_signal_in_the_middle_of_git(
+def test_a_signal_in_the_middle_of_a_child_runs_the_callers_cleanup(
     tmp_path: Path, sig: signal.Signals
 ) -> None:
-    # SIGHUP is what a closing terminal sends untaped.
-    pid_file, temp = tmp_path / "git.pid", tmp_path / "tmp"
-    temp.mkdir()
-    fake_git = tmp_path / "git"
-    fake_git.write_text(
-        f"#!{sys.executable}\nimport sys, time\n"
-        "if sys.argv[1] == 'config':\n    sys.exit(1)\n"  # the SSH config probe
-        + _record_pid(pid_file)
-        + "time.sleep(60)\n"
-    )
-    fake_git.chmod(0o755)
+    # SIGHUP is what a closing terminal sends untaped. A caller's finally block (run_git
+    # deletes its credential file there) must run before untaped ends by the signal.
+    pid_file, secret = tmp_path / "child.pid", tmp_path / "secret"
+    child = [sys.executable, "-c", _record_pid(pid_file) + "import time\ntime.sleep(60)\n"]
     code = (
-        "from untaped.sdk import _process_groups\nfrom untaped.sdk.git import run_git\n"
+        "import pathlib\nfrom untaped.sdk import _process_groups\n"
+        "from untaped.sdk.process import run_process\n"
         f"_process_groups.GRACE_S = {GRACE}\n_process_groups.install()\n"
-        f"run_git(['fetch'], timeout=60, git={str(fake_git)!r},\n"
-        "        auth_config={'http.extraHeader': 'Authorization: Bearer secret'})\n"
+        f"secret = pathlib.Path({str(secret)!r})\nsecret.write_text('token')\n"
+        f"try:\n    run_process({child!r}, timeout=60)\n"
+        "finally:\n    secret.unlink()\n"
     )
-    untaped = subprocess.Popen(
-        [sys.executable, "-c", code],
-        stderr=subprocess.PIPE,
-        env={**os.environ, "TMPDIR": str(temp)},
-    )
+    untaped = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE)
     try:
         _pid(pid_file)
-        assert [path.name[:17] for path in temp.iterdir()] == ["untaped-git-auth-"]
+        assert secret.exists()
         untaped.send_signal(sig)
         _, err = untaped.communicate(timeout=15)
     finally:
         untaped.kill()
     assert untaped.returncode == -sig, err
-    assert list(temp.iterdir()) == []
+    assert not secret.exists()
 
 
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_CHILD_SUBREAPER")

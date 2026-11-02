@@ -1,4 +1,4 @@
-"""Real-git fixtures for tests that fetch: a local remote that behaves like a Git host.
+"""Real-git fixtures for tests that fetch (``untaped_git.testing``): a local remote like a host.
 
 :func:`git_remote` makes a bare repository that answers at an ``https://``
 URL (the test ``HOME``'s git config rewrites it to the local path), with an
@@ -32,7 +32,7 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk.marks import experimental
+from untaped.sdk import experimental
 
 __all__ = [
     "GitRemote",

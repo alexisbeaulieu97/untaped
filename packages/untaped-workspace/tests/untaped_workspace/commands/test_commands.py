@@ -16,7 +16,7 @@ from untaped.sdk import Failure
 from untaped.sdk.projects import holder_of
 from untaped.sdk.storage.holds import holder_lock_file
 from untaped.sdk.testing import Ran, ScriptedTerminal
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.infrastructure import LocalGitWorktrees
 from workspace_test_support import (
     add_submodule,

@@ -12,7 +12,7 @@ from untaped.sdk import Source
 from untaped.sdk.contracts import gather
 from untaped.sdk.prompt import Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.testing import ScriptedTerminal
-from untaped.sdk.testing.git import GitRemote, global_config
+from untaped_git.testing import GitRemote, global_config
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.infrastructure import LocalGitWorktrees

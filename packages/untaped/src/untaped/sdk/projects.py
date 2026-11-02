@@ -228,9 +228,9 @@ def checkout_root(start: Path) -> Path | None:
     """Return the nearest ancestor of ``start`` holding ``.git``, else ``None``.
 
     The git checkout a command acts on: where ``skills install --scope local``
-    puts skills and where a plugin looks for its repo file. Unlike
-    :func:`~untaped.sdk.git.git_toplevel` it runs no git (the per-run skills check
-    stays cheap) and never fails: outside a checkout, or with no git
+    puts skills and where a plugin looks for its repo file. Unlike asking git
+    (``git rev-parse --show-toplevel``) it runs nothing (the per-run skills
+    check stays cheap) and never fails: outside a checkout, or with no git
     installed, there is no checkout and the caller picks its fallback.
     """
     start = start.resolve()

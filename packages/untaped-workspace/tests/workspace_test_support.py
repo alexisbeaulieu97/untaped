@@ -21,8 +21,8 @@ from typing import ClassVar
 from untaped.sdk import Record, UntapedError, UsageError, home
 from untaped.sdk.contracts import NotReady, Provider
 from untaped.sdk.testing import Ran, Running, install
-from untaped.sdk.testing.git import GitRemote
 from untaped_git.api import Credential, GitHost, store_key
+from untaped_git.testing import GitRemote
 from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import ProjectWorkspaceStore

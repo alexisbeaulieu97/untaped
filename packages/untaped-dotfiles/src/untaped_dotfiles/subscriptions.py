@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import UsageError, not_found, q, run_hint
-from untaped.sdk.git import git_toplevel
 from untaped_dotfiles.errors import DotfilesError, GitError, RepoNotFoundError
 from untaped_dotfiles.manifest import DEFAULT_MANIFEST
 from untaped_dotfiles.models import RepoRecord
 from untaped_dotfiles.records import RepoOutcome
+from untaped_git.api import git_toplevel
 
 if TYPE_CHECKING:
     from untaped_dotfiles.inventory import Inventory

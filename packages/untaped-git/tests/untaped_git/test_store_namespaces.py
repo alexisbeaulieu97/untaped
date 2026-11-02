@@ -8,7 +8,7 @@ import pytest
 
 from git_test_support import StoreError, StoreFor, all_refs, git
 from untaped.sdk import ErrorCategory
-from untaped.sdk.testing.git import GitRemote, trace2_events
+from untaped_git.testing import GitRemote, trace2_events
 
 
 def test_sweep_and_workspace_share_a_repo(

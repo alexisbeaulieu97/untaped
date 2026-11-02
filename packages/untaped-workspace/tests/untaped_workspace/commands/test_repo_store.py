@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk.testing import install
-from untaped.sdk.testing.git import GitRemote, git_remote, git_shim, global_config, trace2_events
 from untaped_git.api import RepoStore
+from untaped_git.testing import GitRemote, git_remote, git_shim, global_config, trace2_events
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.plugin import WorkspacePlugin
 from workspace_test_support import commit_in, err, git, run, store_repo

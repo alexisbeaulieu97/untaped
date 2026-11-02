@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import Source, UsageError
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.domain.models import Checkout, RepoArg

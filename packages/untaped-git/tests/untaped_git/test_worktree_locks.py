@@ -10,9 +10,9 @@ import pytest
 
 from git_test_support import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
-from untaped.sdk.testing.git import GitRemote
 from untaped_git.helper_nonce import helper_nonce
 from untaped_git.store import RepoStore
+from untaped_git.testing import GitRemote
 
 _MAIN = "refs/remotes/origin/main"
 

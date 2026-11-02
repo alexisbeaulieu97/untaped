@@ -26,7 +26,6 @@ SDK_GROUPS = (
     "untaped.sdk.storage",
     "untaped.sdk.network",
     "untaped.sdk.health",
-    "untaped.sdk.git",
     "untaped.sdk.process",
     "untaped.sdk.projects",
     "untaped.sdk.prompt",

@@ -15,8 +15,8 @@ from pathlib import Path
 import tomlkit
 
 from untaped.sdk import ErrorCategory, UsageError, attribution, not_found
-from untaped.sdk.git import GitCommandError, run_git
 from untaped.sdk.storage import atomic_write, file_lock
+from untaped_git.api import GitCommandError, run_git
 from untaped_recipe.domain.hook_project import hook_module_file
 from untaped_recipe.domain.pack import (
     HookEntry,
