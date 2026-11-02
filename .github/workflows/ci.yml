@@ -177,6 +177,12 @@ jobs:
           (cd "$RUNNER_TEMP/shelf-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
           (cd "$RUNNER_TEMP/library-src" && UNTAPED_HOME="$RUNNER_TEMP/contracts-home" "$RUNNER_TEMP/contracts/bin/untaped" lint --strict)
 
+      - name: Upgrading past a removal disables only the plugin that used it
+        run: |
+          set -euo pipefail
+          # The examples built as shelf 1.0 (a name deprecated), library 1.0 using it, then shelf 3.0.
+          uv run --no-sync python scripts/upgrade_smoke.py "$CORE" "$RUNNER_TEMP/upgrade"
+
       - name: A broken example plugin is quarantined
         run: |
           set -euo pipefail
