@@ -40,8 +40,10 @@ from untaped.runtime.declaration import (
     Quarantined,
 )
 from untaped.runtime.requirements import (
+    UNEVALUABLE,
     Installed,
     Malformed,
+    applies,
     distribution_present,
     is_plain,
     parse_requirement,
@@ -62,6 +64,8 @@ from untaped.sdk.network.credentials import (
 from untaped.sdk.storage.cache import Filled
 
 if TYPE_CHECKING:
+    from packaging.requirements import Requirement
+
     from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.composition import PluginEntry
     from untaped.runtime.mount import Mount
@@ -329,20 +333,21 @@ def _check_requirements(candidate: PluginCandidate, state: _CompositionState) ->
 def _requiring_disabled(
     candidate: PluginCandidate, disabled: Mapping[str, QuarantineRecord]
 ) -> _Quarantine | None:
-    """The quarantine of ``candidate`` when a plugin distribution it requires is disabled."""
+    """The quarantine of ``candidate`` when a plugin distribution it requires is disabled.
+
+    A requirement its marker leaves out here is not read, as :func:`unmet` reads none.
+    """
     own = canonicalize_name(candidate.distribution)
     for line in candidate.requires_dist:
         parsed = parse_requirement(line)
-        if parsed is None or not is_plain(parsed):
+        if parsed is None or not is_plain(parsed) or not _applies(parsed):
             continue
         name = canonicalize_name(parsed.name)
         record = disabled.get(name)
         if record is None or name == own:
             continue
         who = f"{candidate.distribution} {candidate.distribution_version}".strip()
-        fix = f"fix {record.distribution} first"
-        if record.fix:
-            fix = f"{fix} ({record.fix})"
+        fix = _first(record)
         return _Quarantine(
             "unmet-requirement",
             f"{who} requires {record.distribution}, which is disabled [{record.reason}]; {fix}",
@@ -351,14 +356,44 @@ def _requiring_disabled(
     return None
 
 
+def _first(record: QuarantineRecord) -> str:
+    """What to fix first when ``record``'s plugin is disabled: its own fix, or its root's.
+
+    A plugin disabled because one it requires is disabled already names the
+    plugin to fix first, so its dependents pass that on instead of nesting it.
+    """
+    if record.fix.startswith(_FIX_FIRST):
+        return record.fix
+    fix = f"{_FIX_FIRST}{record.distribution} first"
+    return f"{fix}: {record.fix}" if record.fix else fix
+
+
+#: How a cascaded quarantine's fix starts.
+_FIX_FIRST = "fix "
+
+
+def _applies(requirement: Requirement) -> bool:
+    """Whether ``requirement``'s marker holds here; one that can't be evaluated doesn't."""
+    try:
+        return applies(requirement)
+    except UNEVALUABLE:
+        return False
+
+
 def _disabled(
     ordered: Sequence[PluginCandidate], quarantined: Mapping[int, QuarantineRecord]
 ) -> dict[str, QuarantineRecord]:
-    """Each distribution with a quarantined plugin, by canonical name, with one of its records."""
-    return {
+    """Each distribution with a quarantined plugin, by canonical name, with one of its records.
+
+    Core's own distribution is never one: core always composes, whatever a
+    candidate shipped from it does.
+    """
+    disabled: dict[str, QuarantineRecord] = {
         canonicalize_name(ordered[index].distribution): record
         for index, record in sorted(quarantined.items())
     }
+    disabled.pop(canonicalize_name(_CORE_DISTRIBUTION), None)
+    return disabled
 
 
 def _spread(
@@ -759,10 +794,10 @@ def _compose(
     provided: dict[int, type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
     classes: set[int] = set()  # the plugin classes, as :func:`_refused` reads them
-    contested = _replay(ordered, declared, replayed, quarantined, state)
+    contested = _replay(ordered, declared, replayed, quarantined)
+    # Those the declaration doesn't account for: refused before the mount, so checked
+    # again at each start; one that is now a plugin class makes the declaration stale.
     waiting = [i for i in range(len(ordered)) if i not in replayed and i not in quarantined]
-    if declared is not None and waiting:
-        raise _StaleDeclaration(ordered[waiting[0]].name)
     for index in waiting:  # metadata only, before any plugin's import
         try:
             _check_metadata(ordered[index], state)
@@ -780,6 +815,8 @@ def _compose(
                 classes.add(index)
     for index in _spread(ordered, quarantined, provided):
         del provided[index]
+    if declared is not None and (classes or provided):
+        raise _StaleDeclaration(ordered[min(classes | provided.keys())].name)
     classes |= provided.keys()
     claimants = provided.keys() | replayed.keys() | contested
     for index, contest in _contested(ordered, claimants).items():
@@ -810,14 +847,10 @@ def _replay(
     declared: Declaration | None,
     replayed: dict[int, PluginDecl],
     quarantined: dict[int, QuarantineRecord],
-    state: _CompositionState,
 ) -> set[int]:
     """Each candidate ``declared`` composed or refused, unimported; the ones it found contested.
 
     A contested one is still a claimant, so the plugin sharing its name is quarantined again.
-    An ``unmet-requirement`` verdict is checked again, from metadata, since installing a
-    library the declaration's version doesn't follow can meet it: one met now makes
-    ``declared`` stale.
     """
     if declared is None:
         return set()
@@ -836,22 +869,7 @@ def _replay(
             )
             if found.reason == "duplicate-name":
                 contested.add(index)
-    disabled = _disabled(ordered, quarantined)
-    for index, record in quarantined.items():
-        if record.reason == "unmet-requirement" and _met_now(ordered[index], state, disabled):
-            raise _StaleDeclaration(ordered[index].name)
     return contested
-
-
-def _met_now(
-    candidate: PluginCandidate, state: _CompositionState, disabled: Mapping[str, QuarantineRecord]
-) -> bool:
-    """Whether ``candidate``'s requirements are met now, no plugin it requires disabled."""
-    try:
-        _check_requirements(candidate, state)
-    except _Quarantine:
-        return False
-    return _requiring_disabled(candidate, disabled) is None
 
 
 def _refused(

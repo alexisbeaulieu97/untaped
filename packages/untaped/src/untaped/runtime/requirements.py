@@ -207,41 +207,40 @@ def _unmet(
             f"{who} requires {wanted}, which is not installed",
             f"install {requirement.name}, or remove {requirer}",
         )
-    have = installed.versions[name]
-    if requirement.url or not have:
-        return None
-    try:
-        rejecting = next(
-            (spec for spec in requirement.specifier if not spec.contains(have, prereleases=True)),
-            None,
-        )
-    except InvalidVersion:
-        return None
+    text = installed.versions[name]
+    have = _version(text)
+    if requirement.url or have is None:
+        return None  # a version it can't compare is read as unknown
+    rejecting = next(
+        (spec for spec in requirement.specifier if not spec.contains(have, prereleases=True)),
+        None,
+    )
     if rejecting is None:
         return None
-    facts = f"{who} requires {wanted}, but {requirement.name} {have} is installed"
+    facts = f"{who} requires {wanted}, but {requirement.name} {text} is installed"
     return Unmet(facts, _fix(rejecting, requirement.name, have, requirer))
 
 
-def _fix(rejecting: Specifier, required: str, have: str, requirer: str) -> str:
+def _version(text: str) -> Version | None:
+    """``text`` as a version; ``None`` when unknown (``""``) or not a version at all."""
+    try:
+        return Version(text)
+    except InvalidVersion:
+        return None
+
+
+def _fix(rejecting: Specifier, required: str, have: Version, requirer: str) -> str:
     """What to do when ``rejecting`` refuses version ``have`` of ``required``."""
     if rejecting.operator == "!=":
         return f"install another release of {required}, or remove {requirer}"
-    floor = floor_of(rejecting)
-    below = floor is not None and _older(have, floor)
+    floor = _version(floor_of(rejecting) or "")
+    below = floor is not None and (have <= floor if rejecting.operator == ">" else have < floor)
     if is_exact(rejecting):
         older, newer = (required, requirer) if below else (requirer, required)
         return f"upgrade {older} to match {newer}"
     if below:
         return f"upgrade {required}, or remove {requirer}"
     return f"upgrade {requirer}, or remove it"
-
-
-def _older(have: str, floor: str) -> bool:
-    try:
-        return Version(have) < Version(floor)
-    except InvalidVersion:
-        return False
 
 
 def distribution_present(name: str) -> bool:

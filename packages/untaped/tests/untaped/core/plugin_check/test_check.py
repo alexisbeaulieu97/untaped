@@ -176,7 +176,7 @@ def test_a_provider_requiring_a_quarantined_owner_is_quarantined_with_it(
             "unmet-requirement",
             "fail",
             "untaped-bin 1.0 requires untaped-rack, which is disabled [unmet-requirement]; "
-            "fix untaped-rack first (upgrade untaped, or remove untaped-rack)",
+            "fix untaped-rack first: upgrade untaped, or remove untaped-rack",
         )
     ]
 

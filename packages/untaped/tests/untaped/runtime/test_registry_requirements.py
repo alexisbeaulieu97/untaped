@@ -113,6 +113,19 @@ def test_an_unmet_requirement_quarantines_without_importing(
     assert calls == []  # read from metadata, never imported
 
 
+def test_a_requirement_above_an_exclusive_floor_names_the_package_to_upgrade() -> None:
+    [record] = compose([_base(), _acme("untaped-base>2.0.0")]).quarantine
+    assert record.fix == "upgrade untaped-base, or remove untaped-acme"
+
+
+@pytest.mark.parametrize("installed", ["not a version", ""], ids=["invalid", "unknown"])
+def test_a_plugin_version_that_cannot_be_compared_meets_the_requirement(installed: str) -> None:
+    base = make_candidate(make_plugin("base"), "untaped-base", distribution_version=installed)
+    result = compose([base, _acme("untaped-base>=1")])
+    assert _composed(result) == ["untaped", "acme", "base"]
+    assert result.quarantine == ()
+
+
 def test_untaped_s_own_version_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(registry.importlib_metadata, "version", lambda name: "12.2.0")
     [record] = compose([_acme("untaped>=12.3")]).quarantine
@@ -155,14 +168,31 @@ def test_a_plugin_requiring_a_disabled_plugin_is_disabled_two_levels_deep() -> N
     result = compose([upper, middle, lower, _base()])
     assert _composed(result) == ["untaped", "base"]
     details = {record.name: record.detail for record in result.quarantine}
+    root = "fix untaped-lower first: install untaped-gone, or remove untaped-lower"
     assert details["middle"] == (
-        "untaped-middle 1.0 requires untaped-lower, which is disabled [unmet-requirement]; "
-        "fix untaped-lower first (install untaped-gone, or remove untaped-lower)"
+        f"untaped-middle 1.0 requires untaped-lower, which is disabled [unmet-requirement]; {root}"
     )
-    assert details["upper"].startswith(
-        "untaped-upper 1.0 requires untaped-middle, which is disabled [unmet-requirement]; "
-        "fix untaped-middle first (fix untaped-lower first"
+    assert details["upper"] == (
+        f"untaped-upper 1.0 requires untaped-middle, which is disabled [unmet-requirement]; {root}"
     )
+
+
+def test_a_requirement_on_a_disabled_plugin_its_marker_leaves_out_is_not_read() -> None:
+    lower = make_candidate(
+        make_plugin("lower"),
+        "untaped-lower",
+        distribution_version="1.0",
+        requires_dist=("untaped-gone>=1",),
+    )
+    upper = make_candidate(
+        make_plugin("upper"),
+        "untaped-upper",
+        distribution_version="1.0",
+        requires_dist=("untaped-lower>=1; python_version < '3'",),
+    )
+    result = compose([upper, lower])
+    assert _composed(result) == ["untaped", "upper"]
+    assert [record.name for record in result.quarantine] == ["lower"]
 
 
 def test_a_plugin_requiring_a_disabled_plugin_waits_for_it_however_it_was_refused() -> None:
@@ -240,3 +270,24 @@ def test_a_disabled_plugin_named_after_a_root_command_leaves_it_alone() -> None:
     taken = make_candidate(make_plugin("doctor"), "untaped-doctor", requires_dist=("untaped>=999",))
     root = bootstrap.build_root_app(candidates=[taken])
     assert root["doctor"].show  # core's command, not a stand-in
+
+
+def test_a_disabled_plugin_sharing_a_composed_plugin_s_name_leaves_it_alone() -> None:
+    """A candidate refused from metadata claims no name, so the composed one keeps it."""
+    other = make_candidate(
+        make_plugin("acme"), "untaped-other", requires_dist=("untaped-nowhere-lib>=1",)
+    )
+    root = bootstrap.build_root_app(candidates=[_acme(), other])
+    [record] = bootstrap.composition().quarantine
+    assert (record.distribution, record.reason) == ("untaped-other", "unmet-requirement")
+    assert "acme" not in root  # no commands of its own, and no stand-in
+
+
+def test_a_candidate_from_core_s_distribution_disables_no_dependent() -> None:
+    shipped = make_candidate(make_plugin("extra"), "untaped", requires_dist=("untaped>=999",))
+    dependent = make_candidate(
+        make_plugin("dependent"), "untaped-dependent", requires_dist=("untaped>=1",)
+    )
+    result = compose([shipped, dependent])
+    assert _composed(result) == ["untaped", "dependent"]
+    assert [record.name for record in result.quarantine] == ["extra"]

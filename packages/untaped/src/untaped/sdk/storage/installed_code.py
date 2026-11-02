@@ -217,7 +217,7 @@ def _distribution_parts(name: str, distribution: importlib.metadata.Distribution
     parts = [f"distribution:{name}=={distribution.version}".encode()]
     record = distribution.read_text("RECORD")
     parts.append(b"record:" + (record or "").encode())
-    root = _editable_root(distribution)
+    root = editable_root(distribution)
     if root is not None:
         parts.extend(_stat_parts(name, root))
     return parts
@@ -238,7 +238,7 @@ def _stat_parts(name: str, *roots: Path) -> list[bytes]:
     return parts
 
 
-def _editable_root(distribution: importlib.metadata.Distribution) -> Path | None:
+def editable_root(distribution: importlib.metadata.Distribution) -> Path | None:
     """The source root of an editable install (``direct_url.json``), its ``src`` when it has one."""
     import json  # noqa: PLC0415 - read when a version is asked for
     from urllib.parse import unquote, urlparse  # noqa: PLC0415 - as above

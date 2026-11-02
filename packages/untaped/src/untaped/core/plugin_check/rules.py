@@ -44,7 +44,7 @@ from untaped.runtime.requirements import (
     parse_requirement,
     plain_requirements,
 )
-from untaped.sdk.storage.installed_code import _editable_root
+from untaped.sdk.storage.installed_code import editable_root
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
@@ -185,7 +185,7 @@ def _floor_violations(
     }
     versions[canonicalize_name("untaped")] = _version("untaped")
     found: list[str] = []
-    described = bool(candidate.requires_dist) or bool(_version(candidate.distribution))
+    described = bool(candidate.requires_dist or candidate.distribution_version)
     if described and not plain_requirements(candidate.requires_dist, "untaped"):
         found.append(f"{rule}requires no untaped: declare untaped{floor_for(_version('untaped'))}")
     for line in candidate.requires_dist:
@@ -245,7 +245,7 @@ def _workspace_root(distribution: str) -> Path | None:
     ``[tool.uv.workspace]``.
     """
     try:
-        source = _editable_root(importlib.metadata.distribution(distribution))
+        source = editable_root(importlib.metadata.distribution(distribution))
     except importlib.metadata.PackageNotFoundError:
         return None
     if source is None:

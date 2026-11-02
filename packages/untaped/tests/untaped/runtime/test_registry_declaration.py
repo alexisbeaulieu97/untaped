@@ -491,33 +491,85 @@ def test_a_second_start_routes_a_fill_to_its_owner_and_imports_the_owner_class_n
     assert "toyplugowner.plugin" not in sys.modules
 
 
+def _composing(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """Whether each composition from now on is a fresh one (no kept declaration read)."""
+    fresh: list[bool] = []
+    compose = registry._compose
+
+    def recorded(ordered: list[PluginCandidate], declared: object = None) -> CompositionResult:
+        fresh.append(declared is None)
+        return compose(ordered, declared)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(registry, "_compose", recorded)
+    return fresh
+
+
 def test_a_requirement_met_since_the_last_start_composes_the_plugin(
     toys: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A library installed later changes no plugin's code, so the kept verdict is read again."""
+    """A verdict read from metadata is read again at each start, the declaration still kept."""
+    fresh = _composing(monkeypatch)
     toy = dataclasses.replace(_package(toys, "toyplug"), requires_dist=("zz-later-lib>=1",))
     first = compose_root(candidates=[toy])
     assert [record.reason for record in first.quarantine] == ["unmet-requirement"]
-    _unload("toyplug")
     still = compose_root(candidates=[toy])
     assert [record.reason for record in still.quarantine] == ["unmet-requirement"]
-    assert "toyplug" not in sys.modules  # replayed from the declaration, unimported
+    assert "toyplug" not in sys.modules  # read from metadata, never imported
+    assert fresh == [True, False]  # the second start kept the declaration
     monkeypatch.setattr(registry, "distribution_present", lambda name: True)
     again = compose_root(candidates=[toy])
     assert [plugin.name for plugin in again.plugins] == ["untaped", "toy"]
     assert again.quarantine == ()
+    assert fresh == [True, False, False, True]  # now a plugin class: composed afresh
+
+
+@pytest.mark.parametrize("refused", ["unmet", "import-failed", "cascaded"])
+def test_a_plugin_refused_before_the_mount_keeps_the_declaration_for_the_others(
+    toys: Path, monkeypatch: pytest.MonkeyPatch, refused: str
+) -> None:
+    """Beside a healthy plugin, a disabled one makes no later start compose afresh."""
+    fresh = _composing(monkeypatch)
+    healthy = _package(toys, "toyplug")
+    broken = dataclasses.replace(
+        _package(toys, "toyplugbroken"), name="broken", distribution="untaped-broken"
+    )
+    if refused == "unmet":
+        broken = dataclasses.replace(broken, requires_dist=("zz-later-lib>=1",))
+    else:
+        (toys / "toyplugbroken" / "settings.py").write_text(
+            "raise RuntimeError('broken on import')\n", encoding="utf-8"
+        )
+    found = [healthy, broken]
+    if refused == "cascaded":
+        upper = dataclasses.replace(
+            _package(toys, "toyplugupper"),
+            name="upper",
+            distribution="untaped-upper",
+            requires_dist=("untaped-broken>=0",),
+        )
+        found.append(upper)
+    reasons = [record.reason for record in compose_root(candidates=found).quarantine]
+    _unload("toyplug")
+    again = compose_root(candidates=found)
+    assert [record.reason for record in again.quarantine] == reasons
+    assert [plugin.name for plugin in again.plugins] == ["untaped", "toy"]
+    assert "toyplug.plugin" not in sys.modules  # the healthy one replayed, unimported
+    assert fresh == [True, False]
 
 
 def test_a_disabled_plugin_s_command_exits_4_on_every_start(
-    toys: Path, capsys: pytest.CaptureFixture[str]
+    toys: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The first start composes; the next reads the kept declaration: both say why, exit 4."""
     from untaped.runtime.bootstrap import run_root
 
+    fresh = _composing(monkeypatch)
     toy = dataclasses.replace(_package(toys, "toyplug"), requires_dist=("untaped>=999",))
     for _ in range(2):
+        bootstrap._clear_for_tests()
         with pytest.raises(SystemExit) as exit_info:
             run_root(["toy", "hello"], candidates=[toy])
         assert exit_info.value.code == 4
         err = capsys.readouterr().err
         assert "error: toy is disabled [unmet-requirement]; upgrade untaped, or remove" in err
+    assert fresh == [True, False]

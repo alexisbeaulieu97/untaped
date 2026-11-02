@@ -42,9 +42,9 @@ every start.
 Every violation quarantines that plugin and composition continues: a
 warning names it, `untaped plugin list` lists it as quarantined, and
 `untaped doctor` shows the reason. Running one of its commands exits 4 with
-the reason and the fix, rather than reporting an unknown command. The root owns configuration, profiles,
-themes and the management commands, and aggregates every plugin's skills
-and doctor checks.
+the reason and the fix, rather than reporting an unknown command. The root
+owns configuration, profiles, themes and the management commands, and
+aggregates every plugin's skills and doctor checks.
 
 When two distributions claim the same plugin name, all of them are quarantined
 and a warning names every claimant: no plugin can take over another's

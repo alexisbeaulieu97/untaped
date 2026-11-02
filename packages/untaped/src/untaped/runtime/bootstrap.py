@@ -496,9 +496,13 @@ def _mount_plugin(root: App, plugin: ComposedPlugin) -> None:
 
 
 def _mount_disabled(root: App, result: CompositionResult) -> None:
-    """Mount a stand-in under each quarantined plugin's name that nothing else holds."""
+    """Mount a stand-in under each quarantined plugin's name that nothing else holds.
+
+    A plugin that composed holds its name even with no commands mounted.
+    """
+    composed = {plugin.name for plugin in result.plugins}
     for record in result.quarantine:
-        if record.name in root or record.name in result.taken:
+        if record.name in root or record.name in result.taken or record.name in composed:
             continue
         try:
             check_plugin_name(record.name)

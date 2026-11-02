@@ -164,8 +164,8 @@ class AcmeRules(Rules):
 ```
 
 A plugin lists `AcmeRules` in its plugin class's `fills`
-and requires `untaped-lint` in its dependencies with a version range, as a
-fill requires any owner it subclasses. Its ids are then `acme.readme`. `Rules` hands
+and requires `untaped-lint` in its dependencies with a floor
+(`untaped-lint>=12.0`), as a fill requires any owner it subclasses. Its ids are then `acme.readme`. `Rules` hands
 each record to the rules that read its model, as its own copy, runs each
 rule on its own, and turns a rule that raises into a failure row (exit 1)
 while the other rules' findings still count. A rule over `InstalledPlugin`

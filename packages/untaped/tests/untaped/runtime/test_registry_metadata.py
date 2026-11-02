@@ -110,7 +110,7 @@ def _compose_with_sdk_version(
         ("6.1.0", "untaped>=99; extra == 'dev'", True),
         ("6.1.0", "untaped>=99; python_version < '3'", True),
         ("6.1.0", "untaped>=99; python_version >= '3'", False),
-        # Requirements on other distributions and direct references are ignored.
+        # Present libraries meet theirs; a direct reference is not compared.
         ("6.1.0", "httpx>=99", True),
         ("6.1.0", "untaped@ git+https://example.invalid/untaped.sdk.git@main", True),
     ],
