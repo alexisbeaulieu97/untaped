@@ -254,7 +254,7 @@ def gather[C: Contract, **P, R](
                 answers[entry.plugin] = _excluded(
                     entry.plugin, entry.reason, entry.detail, rank, entry.fix
                 )
-                reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.detail}")
+                reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.described}")
                 quarantined[entry.plugin] = entry.reason
                 continue
             if not fills(type(entry.instance), info, wanted.name):
@@ -355,7 +355,8 @@ def _excluded[R](
     The failure hints at ``fix``, else at upgrading ``plugin``.
     """
     if rank is None:
-        return Skipped(plugin, cast("SkipReason", reason), detail, rank)
+        said = f"{detail}; {fix}" if fix else detail
+        return Skipped(plugin, cast("SkipReason", reason), said, rank)
     error = ConfigError(detail, system=plugin, hint=fix or upgrade_hint(plugin))
     return Errored(plugin, error, rank, reason)
 

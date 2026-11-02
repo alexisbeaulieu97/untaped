@@ -77,6 +77,11 @@ class Quarantined:
     #: What to do about it; empty: upgrade the plugin, as for any defect in its offer.
     fix: str = ""
 
+    @property
+    def described(self) -> str:
+        """The detail, then its fix when it names one: what a reader is shown."""
+        return f"{self.detail}; {self.fix}" if self.fix else self.detail
+
 
 @dataclass(frozen=True)
 class BoundProvider:
@@ -350,14 +355,15 @@ def _check(
     return BoundProvider(value, binding)
 
 
-def _uses_missing(plugin: ComposedPlugin, owner: str, problems: list[str]) -> tuple[str, str]:
+def _uses_missing(
+    plugin: ComposedPlugin, owner_distribution: str, problems: list[str]
+) -> tuple[str, str]:
     """Why a provider's parameters can't be passed by name, and the fix.
 
     Usually a parameter of a newer owner than the plugin declares, so
-    upgrading the owner fixes it; else the plugin renamed one. ``owner`` is
-    the owner's distribution.
+    upgrading the owner fixes it; else the plugin renamed one.
     """
-    dist = plugin.plugin_ref.distribution
+    dist, owner = plugin.plugin_ref.distribution, owner_distribution
     detail = f"{'; '.join(problems)}: {dist} may need a newer {owner} than it declares"
     return detail, f"upgrade {owner}, or upgrade {dist}"
 

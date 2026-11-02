@@ -28,7 +28,16 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer
 from untaped.sdk import Issued, Record
-from untaped.sdk.contracts import Contract, Errored, Ok, Provider, cached, gather
+from untaped.sdk.contracts import (
+    Contract,
+    Errored,
+    NoProviderReady,
+    Ok,
+    Provider,
+    Skipped,
+    cached,
+    gather,
+)
 from untaped.sdk.contracts._declare import contract_of, parameter_problems
 
 
@@ -186,6 +195,19 @@ def test_a_ranked_provider_set_aside_names_the_fix(monkeypatch: pytest.MonkeyPat
     answer = {each.plugin: each for each in gather(BookSource.books)()}["reader"]
     assert isinstance(answer, Errored) and answer.reason == "uses-missing"
     assert answer.error.hint == "upgrade untaped-shelf, or upgrade untaped-reader"
+
+
+def test_an_unranked_provider_set_aside_names_the_fix() -> None:
+    compose(shelf_plugin(), shop_plugin(), plugin("reader", fills=(Renamed,), module=__name__))
+    answer = {each.plugin: each for each in gather(BookSource.books)()}["reader"]
+    assert isinstance(answer, Skipped) and answer.reason == "uses-missing"
+    assert answer.detail.endswith("; upgrade untaped-shelf, or upgrade untaped-reader")
+
+
+def test_no_provider_ready_names_the_fix() -> None:
+    compose(shelf_plugin(), plugin("reader", fills=(Renamed,), module=__name__))
+    with pytest.raises(NoProviderReady, match="upgrade untaped-shelf, or upgrade untaped-reader"):
+        gather(BookSource.books)()
 
 
 def test_a_provider_taking_only_positional_extras_is_refused() -> None:

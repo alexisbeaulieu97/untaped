@@ -60,11 +60,11 @@ def adapted[F: Callable[..., Any]](provider: F, contract: Callable[..., Any]) ->
         # a contract method has no variadic or positional-only parameter (_declare refuses them)
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        self, *arguments = bound.arguments.items()
+        (_, instance), *arguments = bound.arguments.items()
         passed = dict(arguments)
         if not everything:
             passed = {name: passed[name] for name in names}
-        return provider(self[1], **passed)
+        return provider(instance, **passed)
 
     adapter.__signature__ = signature  # type: ignore[attr-defined]  # read by inspect
     return adapter  # type: ignore[return-value]  # called as contract is
