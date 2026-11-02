@@ -18,6 +18,7 @@ from types import SimpleNamespace
 import pytest
 
 import untaped.runtime.registry as registry
+import untaped.runtime.requirements as requirements
 from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.runtime.registry import (
@@ -31,11 +32,10 @@ from untaped.runtime.registry import (
     ("distribution", "name", "kwargs", "named"),
     [
         ("example-dist", "grouped", {"entry_point_group": "other.group"}, ["other.group"]),
-        ("example-dist", "pinned", {"requires_dist": ("untaped>=99",)}, ["untaped>=99"]),
         ("example-dist", "bad-req", {"requires_dist": ("untaped=>",)}, ["untaped=>"]),
         ("   ", "nameless", {}, ["empty distribution name"]),
     ],
-    ids=["wrong-group", "non-admitting", "malformed-requires", "no-distribution"],
+    ids=["wrong-group", "malformed-requires", "no-distribution"],
 )
 def test_bad_candidate_metadata_quarantines(
     distribution: str, name: str, kwargs: dict[str, object], named: list[str]
@@ -77,7 +77,9 @@ def test_metadata_is_checked_before_import(
     result = compose([candidate])
     assert calls == []
     (record,) = result.quarantine
-    assert record.reason == "bad-metadata"
+    assert record.reason == (
+        "unmet-requirement" if "requires_dist" in candidate_kwargs else "bad-metadata"
+    )
 
 
 def _compose_with_sdk_version(
@@ -242,4 +244,4 @@ def test_compose_resolves_the_running_version_once(monkeypatch: pytest.MonkeyPat
 def test_declared_distributions_are_what_a_default_install_pulls_in(
     requirement: str, declared: set[str]
 ) -> None:
-    assert registry.declared_distributions([requirement]) == declared
+    assert requirements.declared_distributions([requirement]) == declared

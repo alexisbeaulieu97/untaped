@@ -325,13 +325,15 @@ class Quarantined(_Frozen):
 
     ``reason`` is the quarantine reason core reports: every problem of the
     walk is ``bad-plugin-class``; a check after the walk (its settings' key
-    declarations, say) gives its own, with its one problem.
+    declarations, say) gives its own, with its one problem. ``fix`` is what to
+    do about it, when the check says.
     """
 
     name: str
     target: str
     problems: tuple[Problem, ...]
     reason: str = "bad-plugin-class"
+    fix: str = ""
 
     @property
     def detail(self) -> str:

@@ -26,7 +26,6 @@ class Reason(StrEnum):
     """An issued item without its provider's source, or naming another plugin."""
     raised = "raised"
     """The provider raised."""
-    owner_out_of_range = "owner-out-of-range"
     duplicate_kind = "duplicate-kind"
     unresolved_item_type = "unresolved-item-type"
     missing_bridge = "missing-bridge"
@@ -44,7 +43,6 @@ class Reason(StrEnum):
 
 #: Why the registry set a provider's offer aside at composition.
 QuarantineReason = Literal[
-    Reason.owner_out_of_range,
     Reason.duplicate_kind,
     Reason.unresolved_item_type,
     Reason.missing_bridge,

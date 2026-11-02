@@ -459,7 +459,7 @@ def test_quarantined_providers_warn_and_the_root_boots(
     composition = bootstrap.compose_root(candidates=candidates)
     assert [cap.name for cap in composition.plugins] == ["untaped", "good"]
     assert [(r.name, r.distribution, r.reason) for r in composition.quarantine] == [
-        ("awx", "untaped", "malformed-entry-point"),
+        ("awx", "untaped", "import-failed"),
         ("rival", "acme-dist", "duplicate-name"),
         ("rival", "example-dist", "duplicate-name"),
     ]
@@ -469,12 +469,11 @@ def test_quarantined_providers_warn_and_the_root_boots(
 
     root = bootstrap.build_root_app(candidates=candidates)
     assert "good" in root
-    assert "awx" not in root
-    assert "rival" not in root
+    assert not root["awx"].show and not root["rival"].show  # disabled stand-ins
     result = CliInvoker().invoke(root.meta, ["good", "who"])
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "default-token"
-    assert "'awx' from 'untaped' quarantined [malformed-entry-point]" in result.stderr
+    assert "'awx' from 'untaped' quarantined [import-failed]" in result.stderr
     assert (
         "'rival' from 'acme-dist' quarantined [duplicate-name]: duplicate plugin "
         "name: 'rival' (claimed by 'acme-dist', 'example-dist')"

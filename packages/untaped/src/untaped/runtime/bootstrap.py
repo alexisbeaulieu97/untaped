@@ -34,6 +34,7 @@ from untaped.runtime.registry import (
     PluginCandidate,
     QuarantineRecord,
     build_plugin_app,
+    check_plugin_name,
     compose,
     discover_candidates,
     kept_declaration,
@@ -311,6 +312,7 @@ def build_root_app(
             _mount_root(root, result.mount, plugin.name)
         else:
             _mount_plugin(root, plugin)
+    _mount_disabled(root, result)
     docs_footer(root, "untaped docs")
     root.version = _resolve_version
     root.config = (apply_default_format,)
@@ -430,17 +432,33 @@ def _unbuildable_app(failure: QuarantineRecord) -> App:
         f"plugin {failure.name!r} from {failure.distribution!r} "
         f"could not build its commands: {failure.detail}"
     )
-    stub = App(
-        name=failure.name,
-        help="Unavailable: its commands could not be built.",
-        help_flags=(),
-        version_flags=(),
+    return _failing_app(failure.name, "Unavailable: its commands could not be built.", message)
+
+
+def _disabled_app(record: QuarantineRecord) -> App:
+    """Stand-in for a plugin composition quarantined, hidden from help.
+
+    Running one of its commands says why it is disabled and what to do,
+    exit 4 (the install needs fixing), instead of "unknown command".
+    """
+    message = (
+        f"{record.name} is disabled [{record.reason}]; {record.fix}"
+        if record.fix
+        else f"{record.name} is disabled [{record.reason}]: {record.detail}"
     )
+    stub = _failing_app(record.name, "Disabled: see `untaped plugin list`.", message)
+    stub.show = False
+    return stub
+
+
+def _failing_app(name: str, about: str, message: str) -> App:
+    """An app whose every invocation, ``--help`` included, raises ``ConfigError(message)``."""
+    stub = App(name=name, help=about, help_flags=(), version_flags=())
 
     @stub.default
     def _fail(*tokens: Annotated[str, Parameter(allow_leading_hyphen=True)]) -> None:
         note_requested_format(tokens)
-        raise ConfigError(message, system=failure.name)
+        raise ConfigError(message, system=name)
 
     setattr(_fail, _UNBUILDABLE_ATTR, True)
     return stub
@@ -475,6 +493,18 @@ def _mount_plugin(root: App, plugin: ComposedPlugin) -> None:
     if plugin.name in root:
         del root[plugin.name]
     root._commands[plugin.name] = _LazyPluginCommand(plugin, root)
+
+
+def _mount_disabled(root: App, result: CompositionResult) -> None:
+    """Mount a stand-in under each quarantined plugin's name that nothing else holds."""
+    for record in result.quarantine:
+        if record.name in root or record.name in result.taken:
+            continue
+        try:
+            check_plugin_name(record.name)
+        except ConfigError:
+            continue
+        root.command(_disabled_app(record))
 
 
 def _check_skills_after(

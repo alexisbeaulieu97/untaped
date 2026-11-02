@@ -294,7 +294,7 @@ def test_three_claimants_are_all_quarantined() -> None:
     [
         (
             make_candidate(make_plugin("github"), "a-dist", error=ImportError("no")),
-            "malformed-entry-point",
+            "import-failed",
         ),
     ],
     ids=["provider-raises"],

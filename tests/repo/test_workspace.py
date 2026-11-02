@@ -152,14 +152,14 @@ def test_dependent_plugins_pin_their_siblings() -> None:
         assert pinned == [f"{dist}=={version}" for dist in ("untaped", *needs)]
 
 
-def test_the_examples_need_this_major_of_untaped() -> None:
-    """Each example requires ``untaped`` in a range of exactly the core's major, ``>=X,<X+1``.
+def test_the_examples_declare_a_floor_of_this_major_of_untaped() -> None:
+    """Each example requires ``untaped`` by a floor in the core's major, ``>=X.m``, no upper limit.
 
-    The release PR raises the ranges with the version, so a major bump fails here until it does.
+    Plugins declare floors only, so one stale plugin never holds back an install.
+    The release PR raises the floors with a major, so a major bump fails here until it does.
     """
     core = tomllib.loads((PACKAGES / "untaped" / "pyproject.toml").read_text(encoding="utf-8"))
     version = Version(Version(core["project"]["version"]).base_version)
-    outside = (Version(f"{version.major - 1}.999.999"), Version(f"{version.major + 1}.0.0"))
     wrong = []
     for path in sorted((REPO_ROOT / "examples").glob("*/pyproject.toml")):
         project = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -172,10 +172,18 @@ def test_the_examples_need_this_major_of_untaped() -> None:
             *(each for group in groups.values() for each in group if isinstance(each, str)),
         ]
         for line in lines:
-            ranged = (requirement := Requirement(line)).specifier
-            if requirement.name == "untaped" and (
-                not ranged.contains(version) or any(map(ranged.contains, outside))
+            requirement = Requirement(line)
+            if not requirement.name.startswith("untaped"):
+                continue
+            operators = {each.operator for each in requirement.specifier}
+            floors = [
+                Version(each.version) for each in requirement.specifier if each.operator == ">="
+            ]
+            if operators - {">=", "!="} or not floors:
+                wrong.append(f"{path.relative_to(REPO_ROOT)}: {line} is not a floor")
+            elif requirement.name == "untaped" and (
+                floors[0] > version or floors[0].major != version.major
             ):
                 wrong.append(f"{path.relative_to(REPO_ROOT)}: {line}")
-    major = f"untaped>={version.major}...,<{version.major + 1}"
+    major = f"untaped>={version.major}.0 (or a later minor of {version.major})"
     assert not wrong, f"set each to {major}:\n" + "\n".join(wrong)

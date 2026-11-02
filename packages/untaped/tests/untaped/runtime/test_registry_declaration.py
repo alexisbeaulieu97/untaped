@@ -7,6 +7,7 @@ entry point's target, as an installed plugin is, so the test can tell from
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import textwrap
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+import untaped.runtime.registry as registry
 from core_test_support.commands.support import make_plugin
 from untaped.runtime.bootstrap import build_root_app, composed_with
 from untaped.runtime.registry import (
@@ -350,7 +352,7 @@ def test_a_kept_plugin_whose_settings_no_longer_import_is_quarantined_as_afresh(
     again = compose_root(candidates=[toy])
     assert [plugin.name for plugin in again.plugins] == ["untaped"]
     [record] = again.quarantine
-    assert record.reason == "malformed-entry-point" and "a dependency is gone" in record.detail
+    assert record.reason == "import-failed" and "a dependency is gone" in record.detail
 
 
 def test_a_candidate_whose_metadata_changed_is_checked_again(toys: Path) -> None:
@@ -365,7 +367,7 @@ def test_a_candidate_whose_metadata_changed_is_checked_again(toys: Path) -> None
     )
     again = compose_root(candidates=[pinned])
     assert [plugin.name for plugin in again.plugins] == ["untaped"]
-    assert [record.reason for record in again.quarantine] == ["bad-metadata"]
+    assert [record.reason for record in again.quarantine] == ["unmet-requirement"]
     assert len(_declarations()) == 1  # the same key, composed again
 
 
@@ -447,3 +449,35 @@ def test_a_second_start_routes_a_fill_to_its_owner_and_imports_the_owner_class_n
     [titles] = specs["owner"].offers
     assert titles.__module__ == "toyplugowner.api"
     assert "toyplugowner.plugin" not in sys.modules
+
+
+def test_a_requirement_met_since_the_last_start_composes_the_plugin(
+    toys: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A library installed later changes no plugin's code, so the kept verdict is read again."""
+    toy = dataclasses.replace(_package(toys, "toyplug"), requires_dist=("zz-later-lib>=1",))
+    first = compose_root(candidates=[toy])
+    assert [record.reason for record in first.quarantine] == ["unmet-requirement"]
+    _unload("toyplug")
+    still = compose_root(candidates=[toy])
+    assert [record.reason for record in still.quarantine] == ["unmet-requirement"]
+    assert "toyplug" not in sys.modules  # replayed from the declaration, unimported
+    monkeypatch.setattr(registry, "distribution_present", lambda name: True)
+    again = compose_root(candidates=[toy])
+    assert [plugin.name for plugin in again.plugins] == ["untaped", "toy"]
+    assert again.quarantine == ()
+
+
+def test_a_disabled_plugin_s_command_exits_4_on_every_start(
+    toys: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first start composes; the next reads the kept declaration: both say why, exit 4."""
+    from untaped.runtime.bootstrap import run_root
+
+    toy = dataclasses.replace(_package(toys, "toyplug"), requires_dist=("untaped>=999",))
+    for _ in range(2):
+        with pytest.raises(SystemExit) as exit_info:
+            run_root(["toy", "hello"], candidates=[toy])
+        assert exit_info.value.code == 4
+        err = capsys.readouterr().err
+        assert "error: toy is disabled [unmet-requirement]; upgrade untaped, or remove" in err

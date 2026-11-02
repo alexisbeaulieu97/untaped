@@ -6,11 +6,16 @@ under `untaped <plugin>` rather than a console script of its own. At
 startup the root composes the plugins in this order:
 
 1. **Discovery.** Every entry point in the `untaped.plugins` group is a
-   candidate, first-party ones included. Its distribution's `untaped`
-   requirement is checked against the running version.
+   candidate, first-party ones included. What its distribution requires is
+   checked against what is installed, from metadata alone: `untaped` and
+   other plugins by version, any other distribution by presence. One that
+   isn't met quarantines the plugin (`unmet-requirement`), and so does
+   requiring a plugin that is quarantined, however deep.
 2. **Resolution.** The entry point is loaded, never called, and must name a
    plugin class in a leaf module (`untaped_acme.plugin:Acme`); anything
    else, an 11.x `PluginSpec` included, is quarantined (`not-a-plugin-class`).
+   A target that names nothing is `malformed-entry-point`; an exception while
+   importing the plugin's module is `import-failed`.
 3. **Validation.** The declaration is checked: reserved names, duplicate
    names, skills and doctor checks, and the settings model's
    [renamed keys](./reference/conventions.md#renaming-a-setting).
@@ -29,12 +34,15 @@ follows untaped and every installed plugin distribution, by version and by
 the files it installed (an editable install's source files too): installing,
 upgrading or editing one composes again on the next start. A change to
 another library that plugins import does not, so after one that changes what
-a plugin declares, delete the folder; nothing else is lost. A home that can't
-be written composes at every start.
+a plugin declares, delete the folder; nothing else is lost. A plugin disabled
+because a library it requires is missing is checked again at each start, so
+installing that library is enough. A home that can't be written composes at
+every start.
 
 Every violation quarantines that plugin and composition continues: a
 warning names it, `untaped plugin list` lists it as quarantined, and
-`untaped doctor` shows the reason. The root owns configuration, profiles,
+`untaped doctor` shows the reason. Running one of its commands exits 4 with
+the reason and the fix, rather than reporting an unknown command. The root owns configuration, profiles,
 themes and the management commands, and aggregates every plugin's skills
 and doctor checks.
 

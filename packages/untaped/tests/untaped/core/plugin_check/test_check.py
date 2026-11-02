@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from core_test_support.commands.contract_plugins import CORE_RANGE, candidates
+from core_test_support.commands.contract_plugins import CORE_FLOOR, candidates
 from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.check import PluginCheck, check_plugins
 from untaped.runtime import bootstrap
@@ -69,7 +69,7 @@ def test_failures_are_reported(contract_plugins_site: Path) -> None:
 def test_a_fill_whose_owner_is_not_installed_fails_registration(
     contract_plugins_site: Path,
 ) -> None:
-    rows = _rows(_check(rack=False))
+    rows = _rows(_check(rack=False, bin_requires=(CORE_FLOOR,)))
     assert rows[-1] == (
         "registration",
         "ItemSource",
@@ -78,14 +78,17 @@ def test_a_fill_whose_owner_is_not_installed_fails_registration(
     )
 
 
-def test_an_owner_out_of_range_fails_registration(contract_plugins_site: Path) -> None:
-    rows = _rows(_check(bin_requires=(CORE_RANGE, "untaped-rack>=2,<3")))
-    assert (
-        "registration",
-        "rack",
-        "fail",
-        "owner-out-of-range: bin requires untaped-rack>=2,<3 for rack, but 1.4 is installed",
-    ) in rows
+def test_an_owner_below_the_floor_fails_registration(contract_plugins_site: Path) -> None:
+    rows = _rows(_check(bin_requires=(CORE_FLOOR, "untaped-rack>=2")))
+    assert rows == [
+        (
+            "registration",
+            "unmet-requirement",
+            "fail",
+            "untaped-bin 1.0 requires untaped-rack>=2, but untaped-rack 1.4 is installed; "
+            "upgrade untaped-rack, or remove untaped-bin",
+        )
+    ]
 
 
 def test_the_check_is_hermetic_and_keeps_the_composition(contract_plugins_site: Path) -> None:
@@ -148,13 +151,34 @@ def test_a_provider_fails_when_its_owner_is_quarantined(
             distribution_version="1.4",
             requires_dist=("untaped>=99",),
         )
-        for candidate in candidates()
+        for candidate in candidates(bin_requires=(CORE_FLOOR,))
     ]
     result = bootstrap.compose_root(candidates=found)
     [registration] = [row for row in check_plugins(result, found, "bin") if row.title == "rack"]
     assert not [row for row in check_plugins(result, found, "bin") if "offers" in row.detail]
     assert registration.status == "fail"
     assert registration.detail.startswith("rack is quarantined (")
+
+
+def test_a_provider_requiring_a_quarantined_owner_is_quarantined_with_it(
+    contract_plugins_site: Path,
+) -> None:
+    found = [
+        candidate
+        if candidate.name != "rack"
+        else dataclasses.replace(candidate, requires_dist=("untaped>=99",))
+        for candidate in candidates()
+    ]
+    result = bootstrap.compose_root(candidates=found)
+    assert _rows(check_plugins(result, found, "bin")) == [
+        (
+            "registration",
+            "unmet-requirement",
+            "fail",
+            "untaped-bin 1.0 requires untaped-rack, which is disabled [unmet-requirement]; "
+            "fix untaped-rack first (upgrade untaped, or remove untaped-rack)",
+        )
+    ]
 
 
 def test_two_fills_of_a_quarantined_owner_give_one_row(contract_plugins_site: Path) -> None:

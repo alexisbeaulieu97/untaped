@@ -22,7 +22,7 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 from untaped.runtime.folder_layer import project_config_path
-from untaped.runtime.registry import UNEVALUABLE, parse_requirement, requirement_admits
+from untaped.runtime.requirements import UNEVALUABLE, parse_requirement, requirement_admits
 from untaped.sdk.projects import find_root, nearest_pyproject
 from untaped.sdk.words import shown_path
 

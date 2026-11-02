@@ -213,15 +213,15 @@ def _versioned(owner_version: str, *requires: str) -> None:
     )
 
 
-def test_an_owner_outside_the_providers_range_quarantines_its_offer() -> None:
+def test_an_owner_above_the_providers_upper_limit_disables_the_provider() -> None:
     _versioned("2.0.0", "untaped-shelf>=1,<2")
-    [entry] = offers(_info())
-    assert isinstance(entry, Quarantined)
-    assert entry.reason == "owner-out-of-range"
-    assert entry.detail == "shop requires untaped-shelf>=1,<2 for shelf, but 2.0.0 is installed"
-    [row] = [row for row in doctor_rows() if row.plugin == "shop"]
-    assert (row.status, row.title) == ("warn", "owner-out-of-range")
-    assert row.detail.endswith("upgrade untaped-shop")
+    assert offers(_info()) == []
+    [record] = bootstrap.composition().quarantine
+    assert (record.name, record.reason) == ("shop", "unmet-requirement")
+    assert record.detail == (
+        "untaped-shop requires untaped-shelf>=1,<2, but untaped-shelf 2.0.0 is installed; "
+        "upgrade untaped-shop, or remove it"
+    )
 
 
 @pytest.mark.parametrize(

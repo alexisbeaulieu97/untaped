@@ -12,8 +12,8 @@ from importlib.metadata import version
 from pathlib import Path
 from textwrap import dedent
 
-from untaped.core.commands.plugin_new import _range
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.requirements import floor_for
 
 PACKAGES = ("untaped_rack", "untaped_bin")
 
@@ -156,8 +156,8 @@ BIN = {
         ''',
 }
 
-#: The running core's own range, so a fixture plugin is never quarantined after a major bump.
-CORE_RANGE = f"untaped{_range(version('untaped'))}"
+#: The running core's own floor, so a fixture plugin is never quarantined by its requirement.
+CORE_FLOOR = f"untaped{floor_for(version('untaped'))}"
 
 
 def write(site: Path) -> None:
@@ -172,7 +172,7 @@ def candidates(
     *, rack: bool = True, bin_requires: tuple[str, ...] | None = None
 ) -> list[PluginCandidate]:
     """Candidates for ``bin`` and, unless ``rack=False``, ``rack``, as discovery reads them."""
-    requires = bin_requires or (CORE_RANGE, "untaped-rack>=1,<2")
+    requires = bin_requires or (CORE_FLOOR, "untaped-rack>=1.4")
     found = [
         PluginCandidate(
             distribution="untaped-bin",
@@ -189,7 +189,7 @@ def candidates(
                 name="rack",
                 target="untaped_rack.plugin:Rack",
                 distribution_version="1.4",
-                requires_dist=(CORE_RANGE,),
+                requires_dist=(CORE_FLOOR,),
             )
         )
     return found

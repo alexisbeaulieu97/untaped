@@ -13,12 +13,15 @@ its rows through :func:`untaped.sdk.testing.check_plugin`; this module is intern
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
+import tomllib
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from cyclopts import App
+from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
 
 from untaped.core.plugin_check.check import fill_owners
@@ -32,11 +35,16 @@ from untaped.core.plugin_check.stability import (
 from untaped.core.plugin_check.structure import structure_class_violations, unimportable
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.plugin_package import package_of
-from untaped.runtime.registry import (
-    PluginCandidate,
-    discover_candidates,
+from untaped.runtime.registry import PluginCandidate, discover_candidates
+from untaped.runtime.requirements import (
+    floor_for,
+    floor_of,
+    is_exact,
+    is_upper,
+    parse_requirement,
     plain_requirements,
 )
+from untaped.sdk.storage.installed_code import _editable_root
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
@@ -47,7 +55,7 @@ def plugin_violations(
 ) -> list[str]:
     """Every convention violation only the composed root can tell: what ``check_plugin`` reports.
 
-    Plugin and distribution names, provides requirements, the help tree,
+    Plugin and distribution names, requirement floors, the help tree,
     guides and overview lines, stability marks and structure's class checks
     (exceptions, ports, frozen settings, setting names). The rules that read
     the plugin's files, the import boundary among them, are lint's and are
@@ -112,7 +120,7 @@ def _core_lines(checked: _Checked) -> list[str]:
     commands = [name] if plugin.has_commands else []  # its mounted subtree
     return [
         *_name_violations(name, checked.package, checked.own),
-        *_provides_violations(plugin, checked.own, checked.candidates),
+        *_floor_violations(plugin, checked.own, checked.candidates),
         *help_tree_violations(checked.root, commands),
         *guide_violations(checked.root, composition(), plugin),
         *stability_violations(checked.root, composition(), commands, plugin=plugin),
@@ -157,45 +165,114 @@ def _name_violations(name: str, package: str, candidate: PluginCandidate | None)
     return violations
 
 
-def _provides_violations(
-    plugin: ComposedPlugin, candidate: PluginCandidate | None, candidates: Sequence[PluginCandidate]
+def _floor_violations(
+    plugin: ComposedPlugin, candidate: PluginCandidate, candidates: Sequence[PluginCandidate]
 ) -> list[str]:
-    """Where a provider doesn't declare the ranges its fills rely on.
+    """Where a plugin's requirements on untaped or another plugin are not floors.
 
-    A plugin with ``fills`` requires ``untaped`` with a version range, and
-    each owner whose contract a fill subclasses in its plain dependencies,
-    with a range (``untaped-<owner>>=M,<M+1``), since it imports the owner.
-    The registry checks the installed owner against that range
-    (``owner-out-of-range``).
+    A plugin requires ``untaped``, and each owner whose contract a fill
+    subclasses, since it imports them. Every requirement on ``untaped`` or an
+    installed plugin is a floor (``>=``, with ``!=`` beside it if needed), never
+    an upper limit or an exact pin: one stale plugin would otherwise hold back
+    every install that has it. Packages released together keep their pins:
+    an exact pin is fine when both are editable installs from one uv workspace.
+    A plugin class composed without being installed has no requirements to read.
     """
-    owners = fill_owners(plugin.name, composition(), candidates)
-    if not owners:
-        return []
-    requires = () if candidate is None else candidate.requires_dist
-    rule = f"{plugin.name}::provides-requirement::"
+    rule = f"{plugin.name}::requirement-floor::"
+    own = canonicalize_name(candidate.distribution)
+    versions = {
+        canonicalize_name(each.distribution): each.distribution_version for each in candidates
+    }
+    versions["untaped"] = _version("untaped")
     found: list[str] = []
-    if not any(
-        parsed.specifier or parsed.url for parsed in plain_requirements(requires, "untaped")
-    ):
-        found.append(f"{rule}requires no untaped version range (untaped>=M,<M+1)")
-    return found + list(_fill_requirements(rule, requires, owners))
+    described = bool(candidate.requires_dist) or bool(_version(candidate.distribution))
+    if described and not plain_requirements(candidate.requires_dist, "untaped"):
+        found.append(f"{rule}requires no untaped: declare untaped{floor_for(_version('untaped'))}")
+    for line in candidate.requires_dist:
+        parsed = parse_requirement(line)
+        name = canonicalize_name(parsed.name) if parsed is not None else own
+        if parsed is None or parsed.url or name == own or name not in versions:
+            continue
+        problem = _not_a_floor(parsed, candidate.distribution, versions[name])
+        if problem is not None:
+            found.append(f"{rule}{line} {problem}")
+    owners = fill_owners(plugin.name, composition(), candidates)
+    return found + list(_fill_requirements(rule, candidate.requires_dist, owners))
+
+
+def _not_a_floor(requirement: Requirement, requirer: str, installed: str) -> str | None:
+    """What makes ``requirement`` something other than a floor, and the floor to declare.
+
+    The floor offered is the requirement's own lower bound, else ``installed``'s minor.
+    """
+    specifiers = list(requirement.specifier)
+    floors = [each for each in map(floor_of, specifiers) if each is not None]
+    floor = f">={floors[0]}" if floors else floor_for(installed)
+    declare = f"declare {requirement.name}{floor}"
+    if any(map(is_exact, specifiers)):
+        if _one_workspace(requirer, requirement.name):
+            return None
+        return f"is an exact pin to a package not built in this workspace: {declare}"
+    if any(map(is_upper, specifiers)):
+        return (
+            "has an upper limit: one stale plugin would hold back every install "
+            f"that has it; {declare}"
+        )
+    if not any(each.operator in {">=", ">"} for each in specifiers):
+        return f"has no floor: {declare}"
+    return None
+
+
+def _version(distribution: str) -> str:
+    """The installed version of ``distribution``; ``""`` when it isn't installed."""
+    try:
+        return importlib.metadata.version(distribution)
+    except importlib.metadata.PackageNotFoundError:
+        return ""
+
+
+def _one_workspace(*distributions: str) -> bool:
+    """Whether every one of ``distributions`` is an editable install from one uv workspace."""
+    roots = {_workspace_root(each) for each in distributions}
+    return len(roots) == 1 and None not in roots
+
+
+def _workspace_root(distribution: str) -> Path | None:
+    """The uv workspace an editable install of ``distribution`` was made from, if any.
+
+    Read from its install record (``direct_url.json``): the nearest folder
+    above its source that holds a ``pyproject.toml`` declaring
+    ``[tool.uv.workspace]``.
+    """
+    try:
+        source = _editable_root(importlib.metadata.distribution(distribution))
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    if source is None:
+        return None
+    for folder in (source, *source.parents):
+        try:
+            data = tomllib.loads((folder / "pyproject.toml").read_text(encoding="utf-8"))
+        except OSError, UnicodeDecodeError, tomllib.TOMLDecodeError:
+            continue
+        if "workspace" in data.get("tool", {}).get("uv", {}):
+            return folder
+    return None
 
 
 def _fill_requirements(
     rule: str, requires: Sequence[str], owners: Sequence[tuple[str, PluginCandidate | None]]
 ) -> Iterator[str]:
-    """Each owner a plugin class's fills import, required plainly with a range."""
+    """Each owner a plugin class's fills import, required plainly."""
     seen: set[str] = set()
     for _, owner in owners:
         if owner is None or owner.name in seen:
             continue  # no installed owner: the registration row says so
         seen.add(owner.name)
         distribution = str(canonicalize_name(owner.distribution))
-        plain = plain_requirements(requires, distribution)
-        if not plain:
+        if not plain_requirements(requires, distribution):
             yield (
                 f"{rule}fills a contract of {owner.name}, which it does not require "
-                f"(add {distribution}>=M,<M+1 to its dependencies)"
+                f"(add {distribution}{floor_for(owner.distribution_version) or '>=M.m'} "
+                "to its dependencies)"
             )
-        elif not any(parsed.specifier or parsed.url for parsed in plain):
-            yield f"{rule}requires {distribution} with no version range"

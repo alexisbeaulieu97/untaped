@@ -277,7 +277,7 @@ It touches these and nothing else:
 
 - versions: every package version and sibling pin in each
   `packages/*/pyproject.toml`, and on a major each `examples/*` plugin's
-  `untaped` range (`>=X,<X+1`);
+  `untaped` floor (`>=X.0`);
 - `uv.lock` (`uv lock`);
 - `CHANGELOG.md`, `changelog/` and `changelog.d/`: run
   `uv run python scripts/changelog.py build X.Y.Z`, which writes `## X.Y.Z`,
