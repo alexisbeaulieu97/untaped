@@ -11,8 +11,9 @@ from filelock import FileLock
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
-from untaped.sdk import ErrorCategory, Lock, Plugin, UntapedError
+from untaped.sdk import ErrorCategory, Plugin, UntapedError
 from untaped.sdk._run import NoRunError, Run, run_scope
+from untaped.sdk.storage import Lock
 
 
 class Settings(BaseModel):

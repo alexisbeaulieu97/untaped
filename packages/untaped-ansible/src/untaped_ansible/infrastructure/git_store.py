@@ -19,14 +19,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import (
-    GitCommandError,
-    PluginHandle,
-    UntapedError,
-    attribution,
-    git_toplevel,
-    run_git,
-)
+from untaped.sdk import PluginHandle, UntapedError, attribution
+from untaped.sdk.git import GitCommandError, git_toplevel, run_git
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
 from untaped_git.api import (

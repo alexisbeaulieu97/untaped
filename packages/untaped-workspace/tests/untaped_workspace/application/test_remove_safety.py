@@ -17,14 +17,8 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import (
-    HolderView,
-    LetGo,
-    ProjectRemoval,
-    Refused,
-    ReleaseAsk,
-    known_projects,
-)
+from untaped.sdk.projects import ProjectRemoval, known_projects
+from untaped.sdk.storage import HolderView, LetGo, Refused, ReleaseAsk
 from untaped.sdk.testing import install, make_project, plan_release
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.application.remove import RemoveWorkspace
@@ -118,6 +112,18 @@ def test_a_missing_project_lets_go_of_every_worktree_under_its_folder(
     [repo, _project] = json.loads(ran.stdout)
     assert repo["detail"].startswith("removed worktree api; removed the repo from the repo store")
     assert not store_repo(store_root, url).exists()
+
+
+def test_pruning_two_missing_projects_that_share_a_repo_releases_it(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
+) -> None:
+    url = make_upstream("api").url
+    for name in ("J-1", "J-2"):
+        assert run(["create", name, "--repo", url, "--branch", name]).exit == 0
+        shutil.rmtree(workspace_env / name)
+    ran = install(WorkspacePlugin).cli(["project", "prune", "--yes"])
+    assert ran.exit == 0, err(ran)
+    assert not store_repo(store_root, url).exists()  # the second let go, in one prune
 
 
 def test_a_copied_workspace_runs_no_git_and_is_not_listed(

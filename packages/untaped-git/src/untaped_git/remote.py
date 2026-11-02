@@ -10,7 +10,8 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, System, attribution, run_git
+from untaped.sdk import System, attribution
+from untaped.sdk.git import GitCommandError, run_git
 from untaped_git.errors import GitError
 from untaped_git.hosts import HostAuth
 from untaped_git.store import (

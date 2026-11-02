@@ -6229,114 +6229,12 @@ record workspace.workspace.error Failure?  [experimental]
 record workspace.workspace.name string  [experimental]
 record workspace.workspace.repos integer  [experimental]
 record workspace.workspace.target_path string(format=path)  [experimental]
-sdk untaped.sdk.Absent()  [experimental]
 sdk untaped.sdk.AbsolutePath
-sdk untaped.sdk.Activate()  [experimental]
 sdk untaped.sdk.Age
 sdk untaped.sdk.AllowHyphen
-sdk untaped.sdk.Back()  [experimental]
-sdk untaped.sdk.Binding(key, label, message)  [experimental]
-sdk untaped.sdk.Binding(when@4=) default=None callback(1)  [experimental]
-sdk untaped.sdk.Binding.key  [experimental]
-sdk untaped.sdk.Binding.label  [experimental]
-sdk untaped.sdk.Binding.message  [experimental]
-sdk untaped.sdk.Binding.when  [experimental]
-sdk untaped.sdk.BoundSecret(value, *, origin, source) callback(value, 0)
-sdk untaped.sdk.Button(id, label)  [experimental]
-sdk untaped.sdk.Button(kind@3=) default=secondary  [experimental]
-sdk untaped.sdk.Button.id  [experimental]
-sdk untaped.sdk.Button.kind  [experimental]
-sdk untaped.sdk.Button.label  [experimental]
-sdk untaped.sdk.Buttons(error@3=) default=""  [experimental]
-sdk untaped.sdk.Buttons(focus@2=) default=0  [experimental]
-sdk untaped.sdk.Buttons(items)  [experimental]
-sdk untaped.sdk.Buttons.boxed_width  [experimental]
-sdk untaped.sdk.Buttons.error  [experimental]
-sdk untaped.sdk.Buttons.focus  [experimental]
-sdk untaped.sdk.Buttons.items  [experimental]
-sdk untaped.sdk.Buttons.update(message)  [experimental]
-sdk untaped.sdk.Buttons.validate()  [experimental]
-sdk untaped.sdk.Buttons.value  [experimental]
-sdk untaped.sdk.Buttons.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Buttons.view(frame)  [experimental]
-sdk untaped.sdk.Buttons.view(width=) default=None  [experimental]
-sdk untaped.sdk.Buttons.with_error(text)  [experimental]
 sdk untaped.sdk.Bytes
-sdk untaped.sdk.Cache(*, label, max_age)
-sdk untaped.sdk.Cache(follows=) default=None
-sdk untaped.sdk.Cache(model=) default=None callback(0)
-sdk untaped.sdk.Cache(removed_in=) default=None
-sdk untaped.sdk.Cache(renamed_from=) default=[]
-sdk untaped.sdk.Cache(split=) default=settings
-sdk untaped.sdk.Cache(version=) default=None callback(0)
-sdk untaped.sdk.Cache.binding
-sdk untaped.sdk.Cache.bindings
-sdk untaped.sdk.Cache.block_kind class
-sdk untaped.sdk.Cache.cached(key)
-sdk untaped.sdk.Cache.cached(partition=) default=None
-sdk untaped.sdk.Cache.cached(read@2=) default=None callback(0)
-sdk untaped.sdk.Cache.default_max_age
-sdk untaped.sdk.Cache.default_max_age_text
-sdk untaped.sdk.Cache.derived_name(attribute)
-sdk untaped.sdk.Cache.follows
-sdk untaped.sdk.Cache.forget(key)
-sdk untaped.sdk.Cache.forget(partition=) default=None
-sdk untaped.sdk.Cache.freshness(key)
-sdk untaped.sdk.Cache.freshness(partition=) default=None
-sdk untaped.sdk.Cache.label
-sdk untaped.sdk.Cache.max_age()
-sdk untaped.sdk.Cache.model
-sdk untaped.sdk.Cache.module
-sdk untaped.sdk.Cache.name
-sdk untaped.sdk.Cache.name_problem(name)
-sdk untaped.sdk.Cache.name_style class
-sdk untaped.sdk.Cache.plugin
-sdk untaped.sdk.Cache.problems()
-sdk untaped.sdk.Cache.qualified
-sdk untaped.sdk.Cache.removed_in
-sdk untaped.sdk.Cache.renamed_from
-sdk untaped.sdk.Cache.seed(key, *, refreshed_at)
-sdk untaped.sdk.Cache.serve(empty=) default=None callback(1)
-sdk untaped.sdk.Cache.serve(keys, *, refresh, fill) callback(fill, 2)
-sdk untaped.sdk.Cache.serve(partition=) default=None
-sdk untaped.sdk.Cache.serve(progress=) default=NO_PROGRESS
-sdk untaped.sdk.Cache.serve(read=) default=None callback(0)
-sdk untaped.sdk.Cache.setting
-sdk untaped.sdk.Cache.spelled
-sdk untaped.sdk.Cache.split
-sdk untaped.sdk.Cache.version
-sdk untaped.sdk.Cache.version_only
-sdk untaped.sdk.Cache.where
-sdk untaped.sdk.Cancel()  [experimental]
-sdk untaped.sdk.Cancel(interrupted@1=) default=false  [experimental]
-sdk untaped.sdk.Cancel.interrupted  [experimental]
-sdk untaped.sdk.Check(error@4=) default=""  [experimental]
-sdk untaped.sdk.Check(help@3=) default=""  [experimental]
-sdk untaped.sdk.Check(label)  [experimental]
-sdk untaped.sdk.Check(value@2=) default=false  [experimental]
-sdk untaped.sdk.Check.error  [experimental]
-sdk untaped.sdk.Check.help  [experimental]
-sdk untaped.sdk.Check.label  [experimental]
-sdk untaped.sdk.Check.update(message)  [experimental]
-sdk untaped.sdk.Check.validate()  [experimental]
-sdk untaped.sdk.Check.value  [experimental]
-sdk untaped.sdk.Check.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Check.view(frame)  [experimental]
-sdk untaped.sdk.Check.view(width=) default=None  [experimental]
-sdk untaped.sdk.Check.with_error(text)  [experimental]
 sdk untaped.sdk.CheckRecord(*, status)
 sdk untaped.sdk.CheckRecord.status
-sdk untaped.sdk.Cmd(fn) callback(fn, 0)  [experimental]
-sdk untaped.sdk.Cmd(name@4=) default=""  [experimental]
-sdk untaped.sdk.Cmd(suspend@3=) default=false  [experimental]
-sdk untaped.sdk.Cmd(write@2=) default=false  [experimental]
-sdk untaped.sdk.Cmd.fn  [experimental]
-sdk untaped.sdk.Cmd.name  [experimental]
-sdk untaped.sdk.Cmd.send(message)  [experimental]
-sdk untaped.sdk.Cmd.suspend  [experimental]
-sdk untaped.sdk.Cmd.write  [experimental]
-sdk untaped.sdk.CmdError(error)  [experimental]
-sdk untaped.sdk.CmdError.error  [experimental]
 sdk untaped.sdk.Column
 sdk untaped.sdk.Command implement=
 sdk untaped.sdk.Command.aliases class
@@ -6377,76 +6275,6 @@ sdk untaped.sdk.Context.plugin
 sdk untaped.sdk.Context.plugins
 sdk untaped.sdk.Context.project
 sdk untaped.sdk.Context.terminal
-sdk untaped.sdk.Credential(*, key)
-sdk untaped.sdk.Credential(env=) default=[]
-sdk untaped.sdk.Credential(suggest=) default=None
-sdk untaped.sdk.Credential.answer(key)
-sdk untaped.sdk.Credential.binding
-sdk untaped.sdk.Credential.bindings
-sdk untaped.sdk.Credential.block_kind class
-sdk untaped.sdk.Credential.derived_name(attribute)
-sdk untaped.sdk.Credential.env
-sdk untaped.sdk.Credential.find(key)
-sdk untaped.sdk.Credential.forget(key)
-sdk untaped.sdk.Credential.get(key)
-sdk untaped.sdk.Credential.id(key)
-sdk untaped.sdk.Credential.key
-sdk untaped.sdk.Credential.label
-sdk untaped.sdk.Credential.login
-sdk untaped.sdk.Credential.login_args
-sdk untaped.sdk.Credential.module
-sdk untaped.sdk.Credential.name
-sdk untaped.sdk.Credential.name_problem(name)
-sdk untaped.sdk.Credential.name_style class
-sdk untaped.sdk.Credential.plugin
-sdk untaped.sdk.Credential.problems()
-sdk untaped.sdk.Credential.qualified
-sdk untaped.sdk.Credential.refusal(key, what)
-sdk untaped.sdk.Credential.spelled
-sdk untaped.sdk.Credential.store(backend=) default=None
-sdk untaped.sdk.Credential.store(command=) default=None
-sdk untaped.sdk.Credential.store(key)
-sdk untaped.sdk.Credential.store(token=) default=None
-sdk untaped.sdk.Credential.suggest
-sdk untaped.sdk.Credential.where
-sdk untaped.sdk.CredentialKey()
-sdk untaped.sdk.CredentialKey.origin class
-sdk untaped.sdk.Cycle(error@6=) default=""  [experimental]
-sdk untaped.sdk.Cycle(help@5=) default=""  [experimental]
-sdk untaped.sdk.Cycle(inherited@4=) default=false  [experimental]
-sdk untaped.sdk.Cycle(label, choices)  [experimental]
-sdk untaped.sdk.Cycle(labels@7=) default=[]  [experimental]
-sdk untaped.sdk.Cycle(value@3=) default=""  [experimental]
-sdk untaped.sdk.Cycle.choices  [experimental]
-sdk untaped.sdk.Cycle.error  [experimental]
-sdk untaped.sdk.Cycle.help  [experimental]
-sdk untaped.sdk.Cycle.inherited  [experimental]
-sdk untaped.sdk.Cycle.label  [experimental]
-sdk untaped.sdk.Cycle.labels  [experimental]
-sdk untaped.sdk.Cycle.update(message)  [experimental]
-sdk untaped.sdk.Cycle.validate()  [experimental]
-sdk untaped.sdk.Cycle.value  [experimental]
-sdk untaped.sdk.Cycle.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Cycle.view(frame)  [experimental]
-sdk untaped.sdk.Cycle.view(width=) default=None  [experimental]
-sdk untaped.sdk.Cycle.with_error(text)  [experimental]
-sdk untaped.sdk.DataFile(path, model)  [experimental]
-sdk untaped.sdk.DataFile.at(model=) default=None  [experimental]
-sdk untaped.sdk.DataFile.at(path)  [experimental]
-sdk untaped.sdk.DataFile.copy_to(path)  [experimental]
-sdk untaped.sdk.DataFile.model  [experimental]
-sdk untaped.sdk.DataFile.path  [experimental]
-sdk untaped.sdk.DataFile.read()  [experimental]
-sdk untaped.sdk.DataFile.write(exclusive=) default=false  [experimental]
-sdk untaped.sdk.DataFile.write(refreshed_at=) default=None  [experimental]
-sdk untaped.sdk.DataFile.write(value)  [experimental]
-sdk untaped.sdk.DataRead
-sdk untaped.sdk.Debug(*, message, logger)
-sdk untaped.sdk.Debug(hint=) default=None
-sdk untaped.sdk.Debug.hint
-sdk untaped.sdk.Debug.level class
-sdk untaped.sdk.Debug.logger
-sdk untaped.sdk.Debug.message
 sdk untaped.sdk.Deprecated()
 sdk untaped.sdk.Deprecated(removed_in=) default=None
 sdk untaped.sdk.Deprecated(replacement=) default=None callback(*)
@@ -6511,66 +6339,6 @@ sdk untaped.sdk.Diagnostics.relay(text)
 sdk untaped.sdk.Diagnostics.success(text)
 sdk untaped.sdk.Diagnostics.warning(hint=) default=None
 sdk untaped.sdk.Diagnostics.warning(text)
-sdk untaped.sdk.Dir()  [experimental]
-sdk untaped.sdk.Dir(at=) default=None  [experimental]
-sdk untaped.sdk.Dir(file=) default=None  [experimental]
-sdk untaped.sdk.Dir(items=) default=None  [experimental]
-sdk untaped.sdk.Dir(layout=) default=None  [experimental]
-sdk untaped.sdk.Dir(moved=) default=<computed> callback(1)  [experimental]
-sdk untaped.sdk.Dir(release=) default=None callback(1)  [experimental]
-sdk untaped.sdk.Dir(wait=) default=None  [experimental]
-sdk untaped.sdk.Dir.binding  [experimental]
-sdk untaped.sdk.Dir.bindings  [experimental]
-sdk untaped.sdk.Dir.block_kind class  [experimental]
-sdk untaped.sdk.Dir.derived_name(attribute)  [experimental]
-sdk untaped.sdk.Dir.items()  [experimental]
-sdk untaped.sdk.Dir.lock_path()  [experimental]
-sdk untaped.sdk.Dir.lock_path(name@1=) default=None  [experimental]
-sdk untaped.sdk.Dir.locked()  [experimental]
-sdk untaped.sdk.Dir.locked(name@1=) default=None  [experimental]
-sdk untaped.sdk.Dir.module  [experimental]
-sdk untaped.sdk.Dir.name  [experimental]
-sdk untaped.sdk.Dir.name_problem(name)  [experimental]
-sdk untaped.sdk.Dir.name_style class  [experimental]
-sdk untaped.sdk.Dir.open()  [experimental]
-sdk untaped.sdk.Dir.path  [experimental]
-sdk untaped.sdk.Dir.place  [experimental]
-sdk untaped.sdk.Dir.plugin  [experimental]
-sdk untaped.sdk.Dir.problems()  [experimental]
-sdk untaped.sdk.Dir.prune()  [experimental]
-sdk untaped.sdk.Dir.spelled  [experimental]
-sdk untaped.sdk.Dir.try_locked()  [experimental]
-sdk untaped.sdk.Dir.try_locked(name@1=) default=None  [experimental]
-sdk untaped.sdk.Dir.where  [experimental]
-sdk untaped.sdk.DoctorCheck(*, title, run) callback(run, 1)
-sdk untaped.sdk.DoctorCheck(online=) default=false
-sdk untaped.sdk.DoctorCheck.binding
-sdk untaped.sdk.DoctorCheck.bindings
-sdk untaped.sdk.DoctorCheck.block_kind class
-sdk untaped.sdk.DoctorCheck.derived_name(attribute)
-sdk untaped.sdk.DoctorCheck.id
-sdk untaped.sdk.DoctorCheck.module
-sdk untaped.sdk.DoctorCheck.name
-sdk untaped.sdk.DoctorCheck.name_problem(name)
-sdk untaped.sdk.DoctorCheck.name_style class
-sdk untaped.sdk.DoctorCheck.online
-sdk untaped.sdk.DoctorCheck.plugin
-sdk untaped.sdk.DoctorCheck.problems()
-sdk untaped.sdk.DoctorCheck.run
-sdk untaped.sdk.DoctorCheck.spelled
-sdk untaped.sdk.DoctorCheck.title
-sdk untaped.sdk.DoctorCheck.where
-sdk untaped.sdk.DoctorResult(automatic@5=) default=false
-sdk untaped.sdk.DoctorResult(fix@4=) default=None
-sdk untaped.sdk.DoctorResult(id=) default=None
-sdk untaped.sdk.DoctorResult(ok, detail)
-sdk untaped.sdk.DoctorResult(warn@3=) default=false
-sdk untaped.sdk.DoctorResult.automatic
-sdk untaped.sdk.DoctorResult.detail
-sdk untaped.sdk.DoctorResult.fix
-sdk untaped.sdk.DoctorResult.id
-sdk untaped.sdk.DoctorResult.ok
-sdk untaped.sdk.DoctorResult.warn
 sdk untaped.sdk.Document(model)
 sdk untaped.sdk.Document.model
 sdk untaped.sdk.DryRun()
@@ -6592,25 +6360,6 @@ sdk untaped.sdk.ErrorCategory.UNAVAILABLE = unavailable
 sdk untaped.sdk.ErrorCategory.USAGE = usage
 sdk untaped.sdk.ErrorCategory.exit_code
 sdk untaped.sdk.ErrorCategory.retryable
-sdk untaped.sdk.ExecutableCheck(program, *, purpose)
-sdk untaped.sdk.ExecutableCheck.binding
-sdk untaped.sdk.ExecutableCheck.bindings
-sdk untaped.sdk.ExecutableCheck.block_kind class
-sdk untaped.sdk.ExecutableCheck.derived_name(attribute)
-sdk untaped.sdk.ExecutableCheck.id
-sdk untaped.sdk.ExecutableCheck.module
-sdk untaped.sdk.ExecutableCheck.name
-sdk untaped.sdk.ExecutableCheck.name_problem(name)
-sdk untaped.sdk.ExecutableCheck.name_style class
-sdk untaped.sdk.ExecutableCheck.online
-sdk untaped.sdk.ExecutableCheck.plugin
-sdk untaped.sdk.ExecutableCheck.problems()
-sdk untaped.sdk.ExecutableCheck.program
-sdk untaped.sdk.ExecutableCheck.purpose
-sdk untaped.sdk.ExecutableCheck.run
-sdk untaped.sdk.ExecutableCheck.spelled
-sdk untaped.sdk.ExecutableCheck.title
-sdk untaped.sdk.ExecutableCheck.where
 sdk untaped.sdk.ExistingFile
 sdk untaped.sdk.ExitCode.ENVIRONMENT = 4
 sdk untaped.sdk.ExitCode.FAILURE = 1
@@ -6651,15 +6400,6 @@ sdk untaped.sdk.Failure.plain(text)
 sdk untaped.sdk.Failure.retryable
 sdk untaped.sdk.Failure.system
 sdk untaped.sdk.Failure.to_exception()
-sdk untaped.sdk.Field  [experimental]
-sdk untaped.sdk.Field.error  [experimental]
-sdk untaped.sdk.Field.update(message)  [experimental]
-sdk untaped.sdk.Field.validate()  [experimental]
-sdk untaped.sdk.Field.value  [experimental]
-sdk untaped.sdk.Field.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Field.view(frame)  [experimental]
-sdk untaped.sdk.Field.view(width=) default=None  [experimental]
-sdk untaped.sdk.Field.with_error(text)  [experimental]
 sdk untaped.sdk.File(model=) default=None
 sdk untaped.sdk.File(path)
 sdk untaped.sdk.File.load()
@@ -6667,145 +6407,11 @@ sdk untaped.sdk.File.model
 sdk untaped.sdk.File.path
 sdk untaped.sdk.File.save(model)
 sdk untaped.sdk.File.save(replace=) default=false
-sdk untaped.sdk.Filled()
-sdk untaped.sdk.Filled(partial=) default=None
-sdk untaped.sdk.Filled(retry_at=) default=None
-sdk untaped.sdk.Filled(summary=) default=None
-sdk untaped.sdk.Filled(value=) default=None
-sdk untaped.sdk.Filled.partial
-sdk untaped.sdk.Filled.retry_at
-sdk untaped.sdk.Filled.summary
-sdk untaped.sdk.Filled.value
 sdk untaped.sdk.Following
-sdk untaped.sdk.Footer()  [experimental]
-sdk untaped.sdk.Footer(bindings@1=) default=[]  [experimental]
-sdk untaped.sdk.Footer(labels@3=) default=<computed>  [experimental]
-sdk untaped.sdk.Footer(saving@2=) default=false  [experimental]
-sdk untaped.sdk.Footer.bindings  [experimental]
-sdk untaped.sdk.Footer.entries()  [experimental]
-sdk untaped.sdk.Footer.labels  [experimental]
-sdk untaped.sdk.Footer.line(frame)  [experimental]
-sdk untaped.sdk.Footer.overlay(frame)  [experimental]
-sdk untaped.sdk.Footer.saving  [experimental]
-sdk untaped.sdk.Form(error@3=) default=""  [experimental]
-sdk untaped.sdk.Form(fields)  [experimental]
-sdk untaped.sdk.Form(focus@2=) default=0  [experimental]
-sdk untaped.sdk.Form.error  [experimental]
-sdk untaped.sdk.Form.fields  [experimental]
-sdk untaped.sdk.Form.focus  [experimental]
-sdk untaped.sdk.Form.update(message)  [experimental]
-sdk untaped.sdk.Form.validate()  [experimental]
-sdk untaped.sdk.Form.value  [experimental]
-sdk untaped.sdk.Form.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Form.view(frame)  [experimental]
-sdk untaped.sdk.Form.view(width=) default=None  [experimental]
-sdk untaped.sdk.Form.with_error(text)  [experimental]
-sdk untaped.sdk.Found(by@3=) default=None  [experimental]
-sdk untaped.sdk.Found(refreshed_at@2=) default=None  [experimental]
-sdk untaped.sdk.Found(value)  [experimental]
-sdk untaped.sdk.Found.by  [experimental]
-sdk untaped.sdk.Found.refreshed_at  [experimental]
-sdk untaped.sdk.Found.value  [experimental]
-sdk untaped.sdk.Frame(width, height, theme)  [experimental]
-sdk untaped.sdk.Frame.box()  [experimental]
-sdk untaped.sdk.Frame.ellipsis()  [experimental]
-sdk untaped.sdk.Frame.height  [experimental]
-sdk untaped.sdk.Frame.style(role)  [experimental]
-sdk untaped.sdk.Frame.symbol(name)  [experimental]
-sdk untaped.sdk.Frame.theme  [experimental]
-sdk untaped.sdk.Frame.width  [experimental]
-sdk untaped.sdk.Freshness()
-sdk untaped.sdk.Freshness(attempted_at@2=) default=None
-sdk untaped.sdk.Freshness(error@3=) default=None
-sdk untaped.sdk.Freshness(outdated@7=) default=false
-sdk untaped.sdk.Freshness(partial@4=) default=false
-sdk untaped.sdk.Freshness(refreshed_at@1=) default=None
-sdk untaped.sdk.Freshness(retry_at@5=) default=None
-sdk untaped.sdk.Freshness(version@6=) default=None
-sdk untaped.sdk.Freshness.attempted_at
-sdk untaped.sdk.Freshness.due(refresh, *, max_age, now)
-sdk untaped.sdk.Freshness.error
-sdk untaped.sdk.Freshness.outdated
-sdk untaped.sdk.Freshness.partial
-sdk untaped.sdk.Freshness.past_max_age(max_age, *, now)
-sdk untaped.sdk.Freshness.refreshed_at
-sdk untaped.sdk.Freshness.retry_at
-sdk untaped.sdk.Freshness.version
-sdk untaped.sdk.FreshnessRecord(*, refreshed_at, stale, max_age_seconds)
-sdk untaped.sdk.FreshnessRecord(attempted_at=) default=None
-sdk untaped.sdk.FreshnessRecord(outdated=) default=false
-sdk untaped.sdk.FreshnessRecord(partial=) default=false
-sdk untaped.sdk.FreshnessRecord(refresh_error=) default=None
-sdk untaped.sdk.FreshnessRecord(retry_at=) default=None
-sdk untaped.sdk.FreshnessRecord.attempted_at
-sdk untaped.sdk.FreshnessRecord.fields(freshness, *, max_age, now)
-sdk untaped.sdk.FreshnessRecord.max_age_seconds
-sdk untaped.sdk.FreshnessRecord.outdated
-sdk untaped.sdk.FreshnessRecord.partial
-sdk untaped.sdk.FreshnessRecord.refresh_error
-sdk untaped.sdk.FreshnessRecord.refreshed_at
-sdk untaped.sdk.FreshnessRecord.retry_at
-sdk untaped.sdk.FreshnessRecord.stale
-sdk untaped.sdk.GitCommandError(category=) default=None
-sdk untaped.sdk.GitCommandError(hint=) default=None
-sdk untaped.sdk.GitCommandError(message)
-sdk untaped.sdk.GitCommandError(returncode=) default=None
-sdk untaped.sdk.GitCommandError(stderr=) default=""
-sdk untaped.sdk.GitCommandError(system=) default=None
-sdk untaped.sdk.GitCommandError(timed_out=) default=false
-sdk untaped.sdk.GitCommandError.category class
-sdk untaped.sdk.GitCommandError.details class
-sdk untaped.sdk.GitCommandError.exit_code
-sdk untaped.sdk.GitCommandError.fix_by class
-sdk untaped.sdk.GitCommandError.hint class
-sdk untaped.sdk.GitCommandError.retryable
-sdk untaped.sdk.GitCommandError.system class
-sdk untaped.sdk.GitResult(returncode, stdout, stderr)
-sdk untaped.sdk.GitResult.returncode
-sdk untaped.sdk.GitResult.stderr
-sdk untaped.sdk.GitResult.stdout
-sdk untaped.sdk.GitResult.text
 sdk untaped.sdk.Group implement=
 sdk untaped.sdk.Group.commands class
 sdk untaped.sdk.Group.runs class
 sdk untaped.sdk.Group.stability class
-sdk untaped.sdk.Help()  [experimental]
-sdk untaped.sdk.HolderState choice=missing
-sdk untaped.sdk.HolderState choice=present
-sdk untaped.sdk.HolderState choice=unreadable
-sdk untaped.sdk.HolderView(*, holder, label, anchor, state)  [experimental]
-sdk untaped.sdk.HolderView.anchor  [experimental]
-sdk untaped.sdk.HolderView.holder  [experimental]
-sdk untaped.sdk.HolderView.label  [experimental]
-sdk untaped.sdk.HolderView.state  [experimental]
-sdk untaped.sdk.HomeOnly()  [experimental]
-sdk untaped.sdk.HttpClient()
-sdk untaped.sdk.HttpClient(auth=) default=None
-sdk untaped.sdk.HttpClient(base_url@1=) default=""
-sdk untaped.sdk.HttpClient(headers=) default=None
-sdk untaped.sdk.HttpClient(proxy=) default=None
-sdk untaped.sdk.HttpClient(retry=) default=None
-sdk untaped.sdk.HttpClient(system=) default=None
-sdk untaped.sdk.HttpClient(timeout=) default=30.0
-sdk untaped.sdk.HttpClient(verify=) default=true
-sdk untaped.sdk.HttpClient.close()
-sdk untaped.sdk.HttpClient.get(**kwargs)
-sdk untaped.sdk.HttpClient.get(path)
-sdk untaped.sdk.HttpClient.get_json(**kwargs)
-sdk untaped.sdk.HttpClient.get_json(path)
-sdk untaped.sdk.HttpClient.get_json_dict(**kwargs)
-sdk untaped.sdk.HttpClient.get_json_dict(path)
-sdk untaped.sdk.HttpClient.get_json_list(**kwargs)
-sdk untaped.sdk.HttpClient.get_json_list(path)
-sdk untaped.sdk.HttpClient.post(**kwargs)
-sdk untaped.sdk.HttpClient.post(path)
-sdk untaped.sdk.HttpClient.post_json(**kwargs)
-sdk untaped.sdk.HttpClient.post_json(path)
-sdk untaped.sdk.HttpClient.request(**kwargs)
-sdk untaped.sdk.HttpClient.request(method, path)
-sdk untaped.sdk.HttpClient.request(retry=) default=<computed>
-sdk untaped.sdk.HttpClient.request_json(**kwargs)
-sdk untaped.sdk.HttpClient.request_json(method, path)
 sdk untaped.sdk.HttpError(body=) default=None
 sdk untaped.sdk.HttpError(category=) default=None
 sdk untaped.sdk.HttpError(details=) default=None
@@ -6822,21 +6428,6 @@ sdk untaped.sdk.HttpError.fix_by class
 sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
-sdk untaped.sdk.HttpFactory(_owner) callback(_owner, 1)
-sdk untaped.sdk.HttpFactory.client(bearer=) default=None
-sdk untaped.sdk.HttpFactory.client(headers=) default=None
-sdk untaped.sdk.HttpFactory.client(settings, *, base_url)
-sdk untaped.sdk.HttpFactory.client(verify=) default=None
-sdk untaped.sdk.HttpFactory.proxy_for(url)
-sdk untaped.sdk.HttpFactory.proxy_for(verified=) default=true
-sdk untaped.sdk.HttpFactory.trust
-sdk untaped.sdk.HttpSettings()
-sdk untaped.sdk.HttpSettings(ca_bundle_path=) default=None
-sdk untaped.sdk.HttpSettings(proxy=) default=None
-sdk untaped.sdk.HttpSettings(timeout_seconds=) default=30.0
-sdk untaped.sdk.HttpSettings.ca_bundle_path
-sdk untaped.sdk.HttpSettings.proxy
-sdk untaped.sdk.HttpSettings.timeout_seconds
 sdk untaped.sdk.HttpStatusError(body=) default=None
 sdk untaped.sdk.HttpStatusError(category=) default=None
 sdk untaped.sdk.HttpStatusError(details=) default=None
@@ -6869,12 +6460,6 @@ sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
-sdk untaped.sdk.Initialized(picked@4=) default=[]  [experimental]
-sdk untaped.sdk.Initialized(project, action, detail)  [experimental]
-sdk untaped.sdk.Initialized.action  [experimental]
-sdk untaped.sdk.Initialized.detail  [experimental]
-sdk untaped.sdk.Initialized.picked  [experimental]
-sdk untaped.sdk.Initialized.project  [experimental]
 sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
 sdk untaped.sdk.InstalledPlugin(fills=) default=[]
 sdk untaped.sdk.InstalledPlugin(package=) default=None
@@ -6892,30 +6477,14 @@ sdk untaped.sdk.InstalledPlugin.source_dir
 sdk untaped.sdk.InstalledPlugin.status
 sdk untaped.sdk.InstalledPlugin.tests_dir
 sdk untaped.sdk.InstalledPlugin.version
-sdk untaped.sdk.Interrupt()  [experimental]
 sdk untaped.sdk.InvalidValue(*commands)
 sdk untaped.sdk.InvalidValue(text)
 sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
 sdk untaped.sdk.Issued.source
-sdk untaped.sdk.ItemStore(item=) default=<computed>  [experimental]
-sdk untaped.sdk.ItemStore(plugin, name, *, release, moved) callback(release, 1) callback(moved, 1)  [experimental]
-sdk untaped.sdk.ItemStore.holders(item)  [experimental]
-sdk untaped.sdk.ItemStore.item  [experimental]
-sdk untaped.sdk.ItemStore.moved  [experimental]
-sdk untaped.sdk.ItemStore.name  [experimental]
-sdk untaped.sdk.ItemStore.plugin  [experimental]
-sdk untaped.sdk.ItemStore.qualified  [experimental]
-sdk untaped.sdk.ItemStore.release  [experimental]
-sdk untaped.sdk.ItemStore.target(item)  [experimental]
 sdk untaped.sdk.Key
 sdk untaped.sdk.KeyJson
-sdk untaped.sdk.KeyPress(name)  [experimental]
-sdk untaped.sdk.KeyPress.name  [experimental]
 sdk untaped.sdk.KeyValue
-sdk untaped.sdk.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
-sdk untaped.sdk.LetGo.apply  [experimental]
-sdk untaped.sdk.LetGo.preview  [experimental]
 sdk untaped.sdk.Limit()
 sdk untaped.sdk.Limit(cap=) default=None
 sdk untaped.sdk.Limit(default=) default=None
@@ -6927,33 +6496,6 @@ sdk untaped.sdk.Lines()
 sdk untaped.sdk.Lines.field_kind class
 sdk untaped.sdk.Lines.options class
 sdk untaped.sdk.Lines.panel class
-sdk untaped.sdk.ListItem(description@5=) default=""  [experimental]
-sdk untaped.sdk.ListItem(detail@3=) default=""  [experimental]
-sdk untaped.sdk.ListItem(detail_role@4=) default=screen.muted  [experimental]
-sdk untaped.sdk.ListItem(dimmed@6=) default=false  [experimental]
-sdk untaped.sdk.ListItem(id, label)  [experimental]
-sdk untaped.sdk.ListItem.description  [experimental]
-sdk untaped.sdk.ListItem.detail  [experimental]
-sdk untaped.sdk.ListItem.detail_role  [experimental]
-sdk untaped.sdk.ListItem.dimmed  [experimental]
-sdk untaped.sdk.ListItem.id  [experimental]
-sdk untaped.sdk.ListItem.label  [experimental]
-sdk untaped.sdk.Lock(*, wait)  [experimental]
-sdk untaped.sdk.Lock.binding  [experimental]
-sdk untaped.sdk.Lock.bindings  [experimental]
-sdk untaped.sdk.Lock.block_kind class  [experimental]
-sdk untaped.sdk.Lock.derived_name(attribute)  [experimental]
-sdk untaped.sdk.Lock.locked()  [experimental]
-sdk untaped.sdk.Lock.module  [experimental]
-sdk untaped.sdk.Lock.name  [experimental]
-sdk untaped.sdk.Lock.name_problem(name)  [experimental]
-sdk untaped.sdk.Lock.name_style class  [experimental]
-sdk untaped.sdk.Lock.path  [experimental]
-sdk untaped.sdk.Lock.plugin  [experimental]
-sdk untaped.sdk.Lock.problems()  [experimental]
-sdk untaped.sdk.Lock.spelled  [experimental]
-sdk untaped.sdk.Lock.try_locked()  [experimental]
-sdk untaped.sdk.Lock.where  [experimental]
 sdk untaped.sdk.Matched()
 sdk untaped.sdk.Matched(message@1=) default="the check matched"
 sdk untaped.sdk.Matched.category class
@@ -6968,117 +6510,8 @@ sdk untaped.sdk.Message(hint=) default=None
 sdk untaped.sdk.Message.hint
 sdk untaped.sdk.Message.level
 sdk untaped.sdk.Message.message
-sdk untaped.sdk.MoveAsk(*, item, holder, others, moved_from)  [experimental]
-sdk untaped.sdk.MoveAsk.holder  [experimental]
-sdk untaped.sdk.MoveAsk.item  [experimental]
-sdk untaped.sdk.MoveAsk.moved_from  [experimental]
-sdk untaped.sdk.MoveAsk.others  [experimental]
-sdk untaped.sdk.MultiList(cursor@4=) default=None  [experimental]
-sdk untaped.sdk.MultiList(error@6=) default=""  [experimental]
-sdk untaped.sdk.MultiList(help@5=) default=""  [experimental]
-sdk untaped.sdk.MultiList(label, items)  [experimental]
-sdk untaped.sdk.MultiList(selected@3=) default=[]  [experimental]
-sdk untaped.sdk.MultiList(window_rows@7=) default=None  [experimental]
-sdk untaped.sdk.MultiList.cursor  [experimental]
-sdk untaped.sdk.MultiList.error  [experimental]
-sdk untaped.sdk.MultiList.help  [experimental]
-sdk untaped.sdk.MultiList.items  [experimental]
-sdk untaped.sdk.MultiList.label  [experimental]
-sdk untaped.sdk.MultiList.selected  [experimental]
-sdk untaped.sdk.MultiList.update(message)  [experimental]
-sdk untaped.sdk.MultiList.validate()  [experimental]
-sdk untaped.sdk.MultiList.value  [experimental]
-sdk untaped.sdk.MultiList.view(focused=) default=false  [experimental]
-sdk untaped.sdk.MultiList.view(frame)  [experimental]
-sdk untaped.sdk.MultiList.view(width=) default=None  [experimental]
-sdk untaped.sdk.MultiList.window_rows  [experimental]
-sdk untaped.sdk.MultiList.with_error(text)  [experimental]
 sdk untaped.sdk.NOT_COUNTED
-sdk untaped.sdk.NO_PROGRESS
-sdk untaped.sdk.NeedsSetup
-sdk untaped.sdk.NeedsYesError(command=) default="this command"
-sdk untaped.sdk.NeedsYesError(question)
-sdk untaped.sdk.NeedsYesError.category class
-sdk untaped.sdk.NeedsYesError.details class
-sdk untaped.sdk.NeedsYesError.exit_code
-sdk untaped.sdk.NeedsYesError.fix_by class
-sdk untaped.sdk.NeedsYesError.hint class
-sdk untaped.sdk.NeedsYesError.retryable
-sdk untaped.sdk.NeedsYesError.system class
-sdk untaped.sdk.NeverRefreshed(cache, key, label)
-sdk untaped.sdk.NeverRefreshed.category class
-sdk untaped.sdk.NeverRefreshed.details class
-sdk untaped.sdk.NeverRefreshed.exit_code
-sdk untaped.sdk.NeverRefreshed.fix_by class
-sdk untaped.sdk.NeverRefreshed.hint class
-sdk untaped.sdk.NeverRefreshed.retryable
-sdk untaped.sdk.NeverRefreshed.system class
-sdk untaped.sdk.NextField()  [experimental]
-sdk untaped.sdk.NoCredential()
-sdk untaped.sdk.NoCredential(*args)
-sdk untaped.sdk.NoCredential(category=) default=None
-sdk untaped.sdk.NoCredential(details=) default=None
-sdk untaped.sdk.NoCredential(fix_by=) default=None
-sdk untaped.sdk.NoCredential(hint=) default=None
-sdk untaped.sdk.NoCredential(system=) default=None
-sdk untaped.sdk.NoCredential.category class
-sdk untaped.sdk.NoCredential.details class
-sdk untaped.sdk.NoCredential.exit_code
-sdk untaped.sdk.NoCredential.fix_by class
-sdk untaped.sdk.NoCredential.hint class
-sdk untaped.sdk.NoCredential.retryable
-sdk untaped.sdk.NoCredential.system class
-sdk untaped.sdk.NumberInput(above@6=) default=None  [experimental]
-sdk untaped.sdk.NumberInput(below@7=) default=None  [experimental]
-sdk untaped.sdk.NumberInput(cursor@9=) default=None  [experimental]
-sdk untaped.sdk.NumberInput(error@11=) default=""  [experimental]
-sdk untaped.sdk.NumberInput(help@10=) default=""  [experimental]
-sdk untaped.sdk.NumberInput(integer@5=) default=true  [experimental]
-sdk untaped.sdk.NumberInput(label)  [experimental]
-sdk untaped.sdk.NumberInput(maximum@4=) default=None  [experimental]
-sdk untaped.sdk.NumberInput(minimum@3=) default=None  [experimental]
-sdk untaped.sdk.NumberInput(placeholder@12=) default=""  [experimental]
-sdk untaped.sdk.NumberInput(required@8=) default=false  [experimental]
-sdk untaped.sdk.NumberInput(text@2=) default=""  [experimental]
-sdk untaped.sdk.NumberInput.above  [experimental]
-sdk untaped.sdk.NumberInput.below  [experimental]
-sdk untaped.sdk.NumberInput.cursor  [experimental]
-sdk untaped.sdk.NumberInput.error  [experimental]
-sdk untaped.sdk.NumberInput.help  [experimental]
-sdk untaped.sdk.NumberInput.integer  [experimental]
-sdk untaped.sdk.NumberInput.label  [experimental]
-sdk untaped.sdk.NumberInput.maximum  [experimental]
-sdk untaped.sdk.NumberInput.minimum  [experimental]
-sdk untaped.sdk.NumberInput.placeholder  [experimental]
-sdk untaped.sdk.NumberInput.required  [experimental]
-sdk untaped.sdk.NumberInput.text  [experimental]
-sdk untaped.sdk.NumberInput.update(message)  [experimental]
-sdk untaped.sdk.NumberInput.validate()  [experimental]
-sdk untaped.sdk.NumberInput.value  [experimental]
-sdk untaped.sdk.NumberInput.view(focused=) default=false  [experimental]
-sdk untaped.sdk.NumberInput.view(frame)  [experimental]
-sdk untaped.sdk.NumberInput.view(width=) default=None  [experimental]
-sdk untaped.sdk.NumberInput.with_error(text)  [experimental]
 sdk untaped.sdk.ObjectName
-sdk untaped.sdk.OnlineCheck(*, probe) callback(probe, 0)
-sdk untaped.sdk.OnlineCheck(title=) default=None
-sdk untaped.sdk.OnlineCheck.binding
-sdk untaped.sdk.OnlineCheck.bindings
-sdk untaped.sdk.OnlineCheck.block_kind class
-sdk untaped.sdk.OnlineCheck.derived_name(attribute)
-sdk untaped.sdk.OnlineCheck.id
-sdk untaped.sdk.OnlineCheck.module
-sdk untaped.sdk.OnlineCheck.name
-sdk untaped.sdk.OnlineCheck.name_problem(name)
-sdk untaped.sdk.OnlineCheck.name_style class
-sdk untaped.sdk.OnlineCheck.online
-sdk untaped.sdk.OnlineCheck.plugin
-sdk untaped.sdk.OnlineCheck.probe
-sdk untaped.sdk.OnlineCheck.problems()
-sdk untaped.sdk.OnlineCheck.run
-sdk untaped.sdk.OnlineCheck.spelled
-sdk untaped.sdk.OnlineCheck.title
-sdk untaped.sdk.OnlineCheck.where
 sdk untaped.sdk.OperationCancelledError()
 sdk untaped.sdk.OperationCancelledError(message@1=) default="cancelled; no changes made"
 sdk untaped.sdk.OperationCancelledError.category class
@@ -7088,9 +6521,6 @@ sdk untaped.sdk.OperationCancelledError.fix_by class
 sdk untaped.sdk.OperationCancelledError.hint class
 sdk untaped.sdk.OperationCancelledError.retryable
 sdk untaped.sdk.OperationCancelledError.system class
-sdk untaped.sdk.OtherVersion(file, by)  [experimental]
-sdk untaped.sdk.OtherVersion.by  [experimental]
-sdk untaped.sdk.OtherVersion.file  [experimental]
 sdk untaped.sdk.OutcomeRecord(*, action)
 sdk untaped.sdk.OutcomeRecord(error=) default=None
 sdk untaped.sdk.OutcomeRecord.action
@@ -7113,30 +6543,6 @@ sdk untaped.sdk.OutputFormat choice=pipe
 sdk untaped.sdk.OutputFormat choice=raw
 sdk untaped.sdk.OutputFormat choice=table
 sdk untaped.sdk.OutputFormat choice=yaml
-sdk untaped.sdk.Panes(error@9=) default=""  [experimental]
-sdk untaped.sdk.Panes(focus@3=) default=0  [experimental]
-sdk untaped.sdk.Panes(left, right)  [experimental]
-sdk untaped.sdk.Panes(left_bare@7=) default=true  [experimental]
-sdk untaped.sdk.Panes(left_title@4=) default=""  [experimental]
-sdk untaped.sdk.Panes(right_bare@8=) default=false  [experimental]
-sdk untaped.sdk.Panes(right_title@5=) default=""  [experimental]
-sdk untaped.sdk.Panes(split@6=) default=0.35  [experimental]
-sdk untaped.sdk.Panes.error  [experimental]
-sdk untaped.sdk.Panes.focus  [experimental]
-sdk untaped.sdk.Panes.left  [experimental]
-sdk untaped.sdk.Panes.left_bare  [experimental]
-sdk untaped.sdk.Panes.left_title  [experimental]
-sdk untaped.sdk.Panes.right  [experimental]
-sdk untaped.sdk.Panes.right_bare  [experimental]
-sdk untaped.sdk.Panes.right_title  [experimental]
-sdk untaped.sdk.Panes.split  [experimental]
-sdk untaped.sdk.Panes.update(message)  [experimental]
-sdk untaped.sdk.Panes.validate()  [experimental]
-sdk untaped.sdk.Panes.value  [experimental]
-sdk untaped.sdk.Panes.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Panes.view(frame)  [experimental]
-sdk untaped.sdk.Panes.view(width=) default=None  [experimental]
-sdk untaped.sdk.Panes.with_error(text)  [experimental]
 sdk untaped.sdk.Parallel()
 sdk untaped.sdk.Parallel(cap=) default=None
 sdk untaped.sdk.Parallel(default=) default=4
@@ -7149,93 +6555,7 @@ sdk untaped.sdk.Parallel.map(while_running=) default=None callback(0)
 sdk untaped.sdk.Parallel.options class
 sdk untaped.sdk.Parallel.panel class
 sdk untaped.sdk.Parallel.value
-sdk untaped.sdk.Paste(text)  [experimental]
-sdk untaped.sdk.Paste.text  [experimental]
-sdk untaped.sdk.PathInput(choice@11=) default=0  [experimental]
-sdk untaped.sdk.PathInput(complete@8=) default=<computed>  [experimental]
-sdk untaped.sdk.PathInput(cursor@3=) default=None  [experimental]
-sdk untaped.sdk.PathInput(dismissed@12=) default=false  [experimental]
-sdk untaped.sdk.PathInput(error@5=) default=""  [experimental]
-sdk untaped.sdk.PathInput(help@4=) default=""  [experimental]
-sdk untaped.sdk.PathInput(label)  [experimental]
-sdk untaped.sdk.PathInput(matched@10=) default=None  [experimental]
-sdk untaped.sdk.PathInput(matches@9=) default=[]  [experimental]
-sdk untaped.sdk.PathInput(placeholder@6=) default=""  [experimental]
-sdk untaped.sdk.PathInput(validator@7=) default=None callback(1)  [experimental]
-sdk untaped.sdk.PathInput(value@2=) default=""  [experimental]
-sdk untaped.sdk.PathInput.choice  [experimental]
-sdk untaped.sdk.PathInput.complete()  [experimental]
-sdk untaped.sdk.PathInput.completing  [experimental]
-sdk untaped.sdk.PathInput.cursor  [experimental]
-sdk untaped.sdk.PathInput.dismissed  [experimental]
-sdk untaped.sdk.PathInput.error  [experimental]
-sdk untaped.sdk.PathInput.help  [experimental]
-sdk untaped.sdk.PathInput.label  [experimental]
-sdk untaped.sdk.PathInput.matched  [experimental]
-sdk untaped.sdk.PathInput.matches  [experimental]
-sdk untaped.sdk.PathInput.placeholder  [experimental]
-sdk untaped.sdk.PathInput.update(message)  [experimental]
-sdk untaped.sdk.PathInput.validate()  [experimental]
-sdk untaped.sdk.PathInput.validator  [experimental]
-sdk untaped.sdk.PathInput.value  [experimental]
-sdk untaped.sdk.PathInput.view(focused=) default=false  [experimental]
-sdk untaped.sdk.PathInput.view(frame)  [experimental]
-sdk untaped.sdk.PathInput.view(width=) default=None  [experimental]
-sdk untaped.sdk.PathInput.with_error(text)  [experimental]
 sdk untaped.sdk.PathOrStdin
-sdk untaped.sdk.PickCatalog(items)
-sdk untaped.sdk.PickCatalog(note@2=) default=""
-sdk untaped.sdk.PickCatalog.items
-sdk untaped.sdk.PickCatalog.note
-sdk untaped.sdk.PickItem(description@3=) default=""
-sdk untaped.sdk.PickItem(dimmed@4=) default=false
-sdk untaped.sdk.PickItem(id, label)
-sdk untaped.sdk.PickItem.description
-sdk untaped.sdk.PickItem.dimmed
-sdk untaped.sdk.PickItem.id
-sdk untaped.sdk.PickItem.label
-sdk untaped.sdk.PickRequest(adhoc@9=) default=None callback(1)
-sdk untaped.sdk.PickRequest(allow_empty@10=) default=false
-sdk untaped.sdk.PickRequest(alternative@12=) default=""
-sdk untaped.sdk.PickRequest(command@11=) default=""
-sdk untaped.sdk.PickRequest(heading, catalog)
-sdk untaped.sdk.PickRequest(refresh@8=) default=None callback(1)
-sdk untaped.sdk.PickRequest(settings@3=) default=[]
-sdk untaped.sdk.PickRequest(subtitle@7=) default=None callback(2)
-sdk untaped.sdk.PickRequest(title@4=) default=""
-sdk untaped.sdk.PickRequest(title_label@5=) default=""
-sdk untaped.sdk.PickRequest(validate_title@6=) default=None callback(1)
-sdk untaped.sdk.PickRequest.adhoc
-sdk untaped.sdk.PickRequest.allow_empty
-sdk untaped.sdk.PickRequest.alternative
-sdk untaped.sdk.PickRequest.catalog
-sdk untaped.sdk.PickRequest.command
-sdk untaped.sdk.PickRequest.heading
-sdk untaped.sdk.PickRequest.refresh
-sdk untaped.sdk.PickRequest.settings
-sdk untaped.sdk.PickRequest.subtitle
-sdk untaped.sdk.PickRequest.title
-sdk untaped.sdk.PickRequest.title_label
-sdk untaped.sdk.PickRequest.validate_title
-sdk untaped.sdk.PickResult(title, defaults, picks)
-sdk untaped.sdk.PickResult.defaults
-sdk untaped.sdk.PickResult.picks
-sdk untaped.sdk.PickResult.title
-sdk untaped.sdk.PickSetting(choices@4=) default=[]
-sdk untaped.sdk.PickSetting(complete@6=) default=None callback(1)
-sdk untaped.sdk.PickSetting(default@3=) default=""
-sdk untaped.sdk.PickSetting(key, label)
-sdk untaped.sdk.PickSetting(placeholder@5=) default=""
-sdk untaped.sdk.PickSetting.choices
-sdk untaped.sdk.PickSetting.complete
-sdk untaped.sdk.PickSetting.default
-sdk untaped.sdk.PickSetting.key
-sdk untaped.sdk.PickSetting.label
-sdk untaped.sdk.PickSetting.placeholder
-sdk untaped.sdk.Picked(item)
-sdk untaped.sdk.Picked(settings@2=) default={}
-sdk untaped.sdk.Picked.item
-sdk untaped.sdk.Picked.settings
 sdk untaped.sdk.Plugin implement=
 sdk untaped.sdk.Plugin.commands class
 sdk untaped.sdk.Plugin.fills class
@@ -7245,12 +6565,6 @@ sdk untaped.sdk.Plugin.runs class
 sdk untaped.sdk.Plugin.settings
 sdk untaped.sdk.Plugin.skill class
 sdk untaped.sdk.Plugin.stability class
-sdk untaped.sdk.PluginContext(owner@2=) default=None
-sdk untaped.sdk.PluginContext(settings)
-sdk untaped.sdk.PluginContext.diag
-sdk untaped.sdk.PluginContext.owner
-sdk untaped.sdk.PluginContext.plugin
-sdk untaped.sdk.PluginContext.settings
 sdk untaped.sdk.PluginHandle(name, home)
 sdk untaped.sdk.PluginHandle.committed(name)
 sdk untaped.sdk.PluginHandle.committed(root=) default=None
@@ -7258,9 +6572,6 @@ sdk untaped.sdk.PluginHandle.dir
 sdk untaped.sdk.PluginHandle.home
 sdk untaped.sdk.PluginHandle.name
 sdk untaped.sdk.Positional()
-sdk untaped.sdk.Pressed(id)  [experimental]
-sdk untaped.sdk.Pressed.id  [experimental]
-sdk untaped.sdk.PrevField()  [experimental]
 sdk untaped.sdk.PreviewItem
 sdk untaped.sdk.Progress(*, message, label, phase, done, total, elapsed, state)
 sdk untaped.sdk.Progress(hint=) default=None
@@ -7273,253 +6584,24 @@ sdk untaped.sdk.Progress.message
 sdk untaped.sdk.Progress.phase
 sdk untaped.sdk.Progress.state
 sdk untaped.sdk.Progress.total
-sdk untaped.sdk.ProgressHandle
-sdk untaped.sdk.ProgressHandle.update()
-sdk untaped.sdk.ProgressHandle.update(done=) default=None
-sdk untaped.sdk.ProgressHandle.update(message@1=) default=None
-sdk untaped.sdk.ProgressHandle.update(phase=) default=None
-sdk untaped.sdk.ProgressHandle.update(total=) default=None
-sdk untaped.sdk.Project(*, id, root)  [experimental]
-sdk untaped.sdk.Project(copy_of=) default=None  [experimental]
-sdk untaped.sdk.Project.copy_of  [experimental]
-sdk untaped.sdk.Project.hold(store, item)  [experimental]
-sdk untaped.sdk.Project.holds(store)  [experimental]
-sdk untaped.sdk.Project.id  [experimental]
-sdk untaped.sdk.Project.locked()  [experimental]
-sdk untaped.sdk.Project.name  [experimental]
-sdk untaped.sdk.Project.release(dry_run=) default=false  [experimental]
-sdk untaped.sdk.Project.release(force=) default=[]  [experimental]
-sdk untaped.sdk.Project.release(items=) default=None  [experimental]
-sdk untaped.sdk.Project.release(leaving=) default=[]  [experimental]
-sdk untaped.sdk.Project.release(store)  [experimental]
-sdk untaped.sdk.Project.root  [experimental]
-sdk untaped.sdk.ProjectRemoval()  [experimental]
-sdk untaped.sdk.ProjectRemoval(held@1=) default=0  [experimental]
-sdk untaped.sdk.ProjectRemoval(kept@2=) default=[]  [experimental]
-sdk untaped.sdk.ProjectRemoval.held  [experimental]
-sdk untaped.sdk.ProjectRemoval.kept  [experimental]
-sdk untaped.sdk.ProjectStateRows()  [experimental]
-sdk untaped.sdk.ProjectStateRows(model=) default=None  [experimental]
-sdk untaped.sdk.ProjectStateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.ProjectStateRows.binding  [experimental]
-sdk untaped.sdk.ProjectStateRows.bindings  [experimental]
-sdk untaped.sdk.ProjectStateRows.block_kind class  [experimental]
-sdk untaped.sdk.ProjectStateRows.derived_name(attribute)  [experimental]
-sdk untaped.sdk.ProjectStateRows.model  [experimental]
-sdk untaped.sdk.ProjectStateRows.module  [experimental]
-sdk untaped.sdk.ProjectStateRows.name  [experimental]
-sdk untaped.sdk.ProjectStateRows.name_problem(name)  [experimental]
-sdk untaped.sdk.ProjectStateRows.name_style class  [experimental]
-sdk untaped.sdk.ProjectStateRows.of(project)  [experimental]
-sdk untaped.sdk.ProjectStateRows.omit_none  [experimental]
-sdk untaped.sdk.ProjectStateRows.plugin  [experimental]
-sdk untaped.sdk.ProjectStateRows.problems()  [experimental]
-sdk untaped.sdk.ProjectStateRows.qualified  [experimental]
-sdk untaped.sdk.ProjectStateRows.spelled  [experimental]
-sdk untaped.sdk.ProjectStateRows.where  [experimental]
-sdk untaped.sdk.PromptChoice(description@3=) default=None
-sdk untaped.sdk.PromptChoice(value, label)
-sdk untaped.sdk.PromptChoice.description
-sdk untaped.sdk.PromptChoice.label
-sdk untaped.sdk.PromptChoice.value
-sdk untaped.sdk.Quit(result)  [experimental]
-sdk untaped.sdk.Quit.result  [experimental]
 sdk untaped.sdk.Record()
-sdk untaped.sdk.RefHolder(*, kind, name)  [experimental]
-sdk untaped.sdk.RefHolder.describe()  [experimental]
-sdk untaped.sdk.RefHolder.kind  [experimental]
-sdk untaped.sdk.RefHolder.name  [experimental]
-sdk untaped.sdk.RefTarget(*, plugin, store)  [experimental]
-sdk untaped.sdk.RefTarget(item=) default=None  [experimental]
-sdk untaped.sdk.RefTarget(layout=) default=None  [experimental]
-sdk untaped.sdk.RefTarget.describe()  [experimental]
-sdk untaped.sdk.RefTarget.item  [experimental]
-sdk untaped.sdk.RefTarget.layout  [experimental]
-sdk untaped.sdk.RefTarget.plugin  [experimental]
-sdk untaped.sdk.RefTarget.store  [experimental]
 sdk untaped.sdk.Refresh()
 sdk untaped.sdk.Refresh(*caches)
 sdk untaped.sdk.Refresh.directive
 sdk untaped.sdk.Refresh.field_kind class
 sdk untaped.sdk.Refresh.options class
 sdk untaped.sdk.Refresh.panel class
-sdk untaped.sdk.Refused(*, reason)  [experimental]
-sdk untaped.sdk.Refused(hint=) default=None  [experimental]
-sdk untaped.sdk.Refused.hint  [experimental]
-sdk untaped.sdk.Refused.reason  [experimental]
-sdk untaped.sdk.ReleaseAsk(*, item, holder, others, force)  [experimental]
-sdk untaped.sdk.ReleaseAsk.force  [experimental]
-sdk untaped.sdk.ReleaseAsk.holder  [experimental]
-sdk untaped.sdk.ReleaseAsk.item  [experimental]
-sdk untaped.sdk.ReleaseAsk.others  [experimental]
-sdk untaped.sdk.Renamed(to, *, removed_in)
-sdk untaped.sdk.Renamed.removed_in
-sdk untaped.sdk.Renamed.to
-sdk untaped.sdk.Resize(width, height)  [experimental]
-sdk untaped.sdk.Resize.height  [experimental]
-sdk untaped.sdk.Resize.width  [experimental]
-sdk untaped.sdk.Retired(note)
-sdk untaped.sdk.Retired.note
-sdk untaped.sdk.RetryPolicy()
-sdk untaped.sdk.RetryPolicy(backoff_base@2=) default=0.5
-sdk untaped.sdk.RetryPolicy(backoff_max@3=) default=30.0
-sdk untaped.sdk.RetryPolicy(honor_retry_after@6=) default=true
-sdk untaped.sdk.RetryPolicy(idempotent_methods@8=) default=["DELETE","GET","HEAD","OPTIONS","PUT"]
-sdk untaped.sdk.RetryPolicy(max_attempts@1=) default=3
-sdk untaped.sdk.RetryPolicy(retry_after_max@4=) default=60.0
-sdk untaped.sdk.RetryPolicy(retry_on_transport@7=) default=true
-sdk untaped.sdk.RetryPolicy(retry_statuses@5=) default=[429,503]
-sdk untaped.sdk.RetryPolicy.allows_status_retry(method, status_code)
-sdk untaped.sdk.RetryPolicy.allows_transport_retry(method, *, presend)
-sdk untaped.sdk.RetryPolicy.backoff(attempt)
-sdk untaped.sdk.RetryPolicy.backoff_base
-sdk untaped.sdk.RetryPolicy.backoff_max
-sdk untaped.sdk.RetryPolicy.honor_retry_after
-sdk untaped.sdk.RetryPolicy.idempotent_methods
-sdk untaped.sdk.RetryPolicy.max_attempts
-sdk untaped.sdk.RetryPolicy.retry_after_max
-sdk untaped.sdk.RetryPolicy.retry_on_transport
-sdk untaped.sdk.RetryPolicy.retry_statuses
-sdk untaped.sdk.RetryPolicy.status_delay(attempt, retry_after)
-sdk untaped.sdk.RowExists()  [experimental]
-sdk untaped.sdk.RowExists(*args)  [experimental]
-sdk untaped.sdk.RowExists(category=) default=None  [experimental]
-sdk untaped.sdk.RowExists(details=) default=None  [experimental]
-sdk untaped.sdk.RowExists(fix_by=) default=None  [experimental]
-sdk untaped.sdk.RowExists(hint=) default=None  [experimental]
-sdk untaped.sdk.RowExists(system=) default=None  [experimental]
-sdk untaped.sdk.RowExists.category class  [experimental]
-sdk untaped.sdk.RowExists.details class  [experimental]
-sdk untaped.sdk.RowExists.exit_code  [experimental]
-sdk untaped.sdk.RowExists.fix_by class  [experimental]
-sdk untaped.sdk.RowExists.hint class  [experimental]
-sdk untaped.sdk.RowExists.retryable  [experimental]
-sdk untaped.sdk.RowExists.system class  [experimental]
-sdk untaped.sdk.Screen(init, update, view, title, command, alternative) callback(init, 0) callback(update, 2) callback(view, 2)  [experimental]
-sdk untaped.sdk.Screen(keys@7=) default=[]  [experimental]
-sdk untaped.sdk.Screen(layout@9=) default=full  [experimental]
-sdk untaped.sdk.Screen(shared_labels@8=) default=<computed> callback(1)  [experimental]
-sdk untaped.sdk.Screen.alternative  [experimental]
-sdk untaped.sdk.Screen.command  [experimental]
-sdk untaped.sdk.Screen.init  [experimental]
-sdk untaped.sdk.Screen.keys  [experimental]
-sdk untaped.sdk.Screen.layout  [experimental]
-sdk untaped.sdk.Screen.shared_labels  [experimental]
-sdk untaped.sdk.Screen.title  [experimental]
-sdk untaped.sdk.Screen.update  [experimental]
-sdk untaped.sdk.Screen.view  [experimental]
-sdk untaped.sdk.SearchList(caret@11=) default=true  [experimental]
-sdk untaped.sdk.SearchList(cursor@4=) default=0  [experimental]
-sdk untaped.sdk.SearchList(entries@14=) default=None  [experimental]
-sdk untaped.sdk.SearchList(error@10=) default=""  [experimental]
-sdk untaped.sdk.SearchList(help@9=) default=""  [experimental]
-sdk untaped.sdk.SearchList(highlight@12=) default=true  [experimental]
-sdk untaped.sdk.SearchList(label, items)  [experimental]
-sdk untaped.sdk.SearchList(multi@6=) default=false  [experimental]
-sdk untaped.sdk.SearchList(note@7=) default=""  [experimental]
-sdk untaped.sdk.SearchList(placeholder@8=) default="type to filter"  [experimental]
-sdk untaped.sdk.SearchList(query@3=) default=""  [experimental]
-sdk untaped.sdk.SearchList(selected@5=) default=[]  [experimental]
-sdk untaped.sdk.SearchList(window_rows@13=) default=None  [experimental]
-sdk untaped.sdk.SearchList.caret  [experimental]
-sdk untaped.sdk.SearchList.cursor  [experimental]
-sdk untaped.sdk.SearchList.entries  [experimental]
-sdk untaped.sdk.SearchList.error  [experimental]
-sdk untaped.sdk.SearchList.help  [experimental]
-sdk untaped.sdk.SearchList.highlight  [experimental]
-sdk untaped.sdk.SearchList.items  [experimental]
-sdk untaped.sdk.SearchList.label  [experimental]
-sdk untaped.sdk.SearchList.matches  [experimental]
-sdk untaped.sdk.SearchList.multi  [experimental]
-sdk untaped.sdk.SearchList.note  [experimental]
-sdk untaped.sdk.SearchList.placeholder  [experimental]
-sdk untaped.sdk.SearchList.query  [experimental]
-sdk untaped.sdk.SearchList.selected  [experimental]
-sdk untaped.sdk.SearchList.update(message)  [experimental]
-sdk untaped.sdk.SearchList.validate()  [experimental]
-sdk untaped.sdk.SearchList.value  [experimental]
-sdk untaped.sdk.SearchList.view(focused=) default=false  [experimental]
-sdk untaped.sdk.SearchList.view(frame)  [experimental]
-sdk untaped.sdk.SearchList.view(width=) default=None  [experimental]
-sdk untaped.sdk.SearchList.window_rows  [experimental]
-sdk untaped.sdk.SearchList.with_error(text)  [experimental]
-sdk untaped.sdk.SecretInput(cursor@3=) default=None  [experimental]
-sdk untaped.sdk.SecretInput(error@5=) default=""  [experimental]
-sdk untaped.sdk.SecretInput(help@4=) default=""  [experimental]
-sdk untaped.sdk.SecretInput(label)  [experimental]
-sdk untaped.sdk.SecretInput(placeholder@6=) default=""  [experimental]
-sdk untaped.sdk.SecretInput(validator@7=) default=None callback(1)  [experimental]
-sdk untaped.sdk.SecretInput(value@2=) default=<computed>  [experimental]
-sdk untaped.sdk.SecretInput.cursor  [experimental]
-sdk untaped.sdk.SecretInput.error  [experimental]
-sdk untaped.sdk.SecretInput.help  [experimental]
-sdk untaped.sdk.SecretInput.label  [experimental]
-sdk untaped.sdk.SecretInput.placeholder  [experimental]
-sdk untaped.sdk.SecretInput.update(message)  [experimental]
-sdk untaped.sdk.SecretInput.validate()  [experimental]
-sdk untaped.sdk.SecretInput.validator  [experimental]
-sdk untaped.sdk.SecretInput.value  [experimental]
-sdk untaped.sdk.SecretInput.view(focused=) default=false  [experimental]
-sdk untaped.sdk.SecretInput.view(frame)  [experimental]
-sdk untaped.sdk.SecretInput.view(width=) default=None  [experimental]
-sdk untaped.sdk.SecretInput.with_error(text)  [experimental]
-sdk untaped.sdk.Select(cursor@5=) default=None  [experimental]
-sdk untaped.sdk.Select(error@7=) default=""  [experimental]
-sdk untaped.sdk.Select(help@6=) default=""  [experimental]
-sdk untaped.sdk.Select(label, choices)  [experimental]
-sdk untaped.sdk.Select(open@4=) default=false  [experimental]
-sdk untaped.sdk.Select(value@3=) default=""  [experimental]
-sdk untaped.sdk.Select.choices  [experimental]
-sdk untaped.sdk.Select.cursor  [experimental]
-sdk untaped.sdk.Select.error  [experimental]
-sdk untaped.sdk.Select.help  [experimental]
-sdk untaped.sdk.Select.label  [experimental]
-sdk untaped.sdk.Select.open  [experimental]
-sdk untaped.sdk.Select.shown  [experimental]
-sdk untaped.sdk.Select.update(message)  [experimental]
-sdk untaped.sdk.Select.validate()  [experimental]
-sdk untaped.sdk.Select.value  [experimental]
-sdk untaped.sdk.Select.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Select.view(frame)  [experimental]
-sdk untaped.sdk.Select.view(width=) default=None  [experimental]
-sdk untaped.sdk.Select.with_error(text)  [experimental]
-sdk untaped.sdk.Served(filled@3=) default={}
-sdk untaped.sdk.Served(stale@4=) default=false
-sdk untaped.sdk.Served(value, freshness)
-sdk untaped.sdk.Served.filled
-sdk untaped.sdk.Served.freshness
-sdk untaped.sdk.Served.stale
-sdk untaped.sdk.Served.value
 sdk untaped.sdk.Service(model)
+sdk untaped.sdk.Service(part=) default=None
 sdk untaped.sdk.Service.model
 sdk untaped.sdk.Service.name()
+sdk untaped.sdk.Service.part
 sdk untaped.sdk.SettingKey(model)
 sdk untaped.sdk.SettingKey(parts@2=) default=[]
 sdk untaped.sdk.SettingKey.model_of(setting)
 sdk untaped.sdk.SettingKey.path_of(setting)
 sdk untaped.sdk.Short(flag)
 sdk untaped.sdk.Short.flag
-sdk untaped.sdk.SingleList(cursor@4=) default=None  [experimental]
-sdk untaped.sdk.SingleList(error@7=) default=""  [experimental]
-sdk untaped.sdk.SingleList(help@6=) default=""  [experimental]
-sdk untaped.sdk.SingleList(label, items)  [experimental]
-sdk untaped.sdk.SingleList(show_chosen@5=) default=true  [experimental]
-sdk untaped.sdk.SingleList(value@3=) default=""  [experimental]
-sdk untaped.sdk.SingleList(window_rows@8=) default=None  [experimental]
-sdk untaped.sdk.SingleList.cursor  [experimental]
-sdk untaped.sdk.SingleList.error  [experimental]
-sdk untaped.sdk.SingleList.help  [experimental]
-sdk untaped.sdk.SingleList.items  [experimental]
-sdk untaped.sdk.SingleList.label  [experimental]
-sdk untaped.sdk.SingleList.show_chosen  [experimental]
-sdk untaped.sdk.SingleList.update(message)  [experimental]
-sdk untaped.sdk.SingleList.validate()  [experimental]
-sdk untaped.sdk.SingleList.value  [experimental]
-sdk untaped.sdk.SingleList.view(focused=) default=false  [experimental]
-sdk untaped.sdk.SingleList.view(frame)  [experimental]
-sdk untaped.sdk.SingleList.view(width=) default=None  [experimental]
-sdk untaped.sdk.SingleList.window_rows  [experimental]
-sdk untaped.sdk.SingleList.with_error(text)  [experimental]
 sdk untaped.sdk.Source(*, plugin, kind)
 sdk untaped.sdk.Source(record=) default={}
 sdk untaped.sdk.Source.kind
@@ -7555,35 +6637,6 @@ sdk untaped.sdk.Stale.partial
 sdk untaped.sdk.Stale.plugin
 sdk untaped.sdk.Stale.refreshed_at
 sdk untaped.sdk.Stale.retry_at
-sdk untaped.sdk.StateRows()  [experimental]
-sdk untaped.sdk.StateRows(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows.add(value)  [experimental]
-sdk untaped.sdk.StateRows.all()  [experimental]
-sdk untaped.sdk.StateRows.append(value)  [experimental]
-sdk untaped.sdk.StateRows.binding  [experimental]
-sdk untaped.sdk.StateRows.bindings  [experimental]
-sdk untaped.sdk.StateRows.block_kind class  [experimental]
-sdk untaped.sdk.StateRows.delete(key)  [experimental]
-sdk untaped.sdk.StateRows.derived_name(attribute)  [experimental]
-sdk untaped.sdk.StateRows.get(key)  [experimental]
-sdk untaped.sdk.StateRows.keys()  [experimental]
-sdk untaped.sdk.StateRows.model  [experimental]
-sdk untaped.sdk.StateRows.module  [experimental]
-sdk untaped.sdk.StateRows.name  [experimental]
-sdk untaped.sdk.StateRows.name_problem(name)  [experimental]
-sdk untaped.sdk.StateRows.name_style class  [experimental]
-sdk untaped.sdk.StateRows.omit_none  [experimental]
-sdk untaped.sdk.StateRows.path()  [experimental]
-sdk untaped.sdk.StateRows.per_project()  [experimental]
-sdk untaped.sdk.StateRows.per_project(omit_none=) default=false  [experimental]
-sdk untaped.sdk.StateRows.plugin  [experimental]
-sdk untaped.sdk.StateRows.problems()  [experimental]
-sdk untaped.sdk.StateRows.put(value)  [experimental]
-sdk untaped.sdk.StateRows.qualified  [experimental]
-sdk untaped.sdk.StateRows.replace_all(change) callback(change, 1)  [experimental]
-sdk untaped.sdk.StateRows.spelled  [experimental]
-sdk untaped.sdk.StateRows.update(key, change) callback(change, 1)  [experimental]
-sdk untaped.sdk.StateRows.where  [experimental]
 sdk untaped.sdk.Status()
 sdk untaped.sdk.Status(error=) default=[]
 sdk untaped.sdk.Status(success=) default=[]
@@ -7615,73 +6668,10 @@ sdk untaped.sdk.StubSkill.module
 sdk untaped.sdk.StubSkill.name_problem(name)
 sdk untaped.sdk.StubSkill.name_style class
 sdk untaped.sdk.StubSkill.problems()
-sdk untaped.sdk.Submit()  [experimental]
-sdk untaped.sdk.Submitted(values)  [experimental]
-sdk untaped.sdk.Submitted.values  [experimental]
-sdk untaped.sdk.Suggest(argv)
-sdk untaped.sdk.Suggest(note@2=) default=""
-sdk untaped.sdk.Suggest.argv
-sdk untaped.sdk.Suggest.note
 sdk untaped.sdk.System.GIT = git
 sdk untaped.sdk.System.HTTP = http
 sdk untaped.sdk.System.LOCAL = local
 sdk untaped.sdk.System.UNTAPED = untaped
-sdk untaped.sdk.Tab(fields@3=) default=[]  [experimental]
-sdk untaped.sdk.Tab(id, label)  [experimental]
-sdk untaped.sdk.Tab(note@4=) default=""  [experimental]
-sdk untaped.sdk.Tab.fields  [experimental]
-sdk untaped.sdk.Tab.id  [experimental]
-sdk untaped.sdk.Tab.label  [experimental]
-sdk untaped.sdk.Tab.note  [experimental]
-sdk untaped.sdk.TableGlyph()
-sdk untaped.sdk.TableGlyph(false@2=) default=None
-sdk untaped.sdk.TableGlyph(none@3=) default=None
-sdk untaped.sdk.TableGlyph(true@1=) default=None
-sdk untaped.sdk.TableGlyph.false
-sdk untaped.sdk.TableGlyph.none
-sdk untaped.sdk.TableGlyph.show(value)
-sdk untaped.sdk.TableGlyph.true
-sdk untaped.sdk.TableText  [experimental]
-sdk untaped.sdk.TableText.table_text()  [experimental]
-sdk untaped.sdk.Tabs(active@3=) default=""  [experimental]
-sdk untaped.sdk.Tabs(error@6=) default=""  [experimental]
-sdk untaped.sdk.Tabs(focus@4=) default=0  [experimental]
-sdk untaped.sdk.Tabs(help@5=) default=""  [experimental]
-sdk untaped.sdk.Tabs(label, tabs)  [experimental]
-sdk untaped.sdk.Tabs.active  [experimental]
-sdk untaped.sdk.Tabs.current  [experimental]
-sdk untaped.sdk.Tabs.error  [experimental]
-sdk untaped.sdk.Tabs.focus  [experimental]
-sdk untaped.sdk.Tabs.help  [experimental]
-sdk untaped.sdk.Tabs.label  [experimental]
-sdk untaped.sdk.Tabs.tabs  [experimental]
-sdk untaped.sdk.Tabs.update(message)  [experimental]
-sdk untaped.sdk.Tabs.validate()  [experimental]
-sdk untaped.sdk.Tabs.value  [experimental]
-sdk untaped.sdk.Tabs.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Tabs.view(frame)  [experimental]
-sdk untaped.sdk.Tabs.view(width=) default=None  [experimental]
-sdk untaped.sdk.Tabs.with_error(text)  [experimental]
-sdk untaped.sdk.Tags(error@7=) default=""  [experimental]
-sdk untaped.sdk.Tags(help@6=) default=""  [experimental]
-sdk untaped.sdk.Tags(label, items)  [experimental]
-sdk untaped.sdk.Tags(menu@5=) default=None  [experimental]
-sdk untaped.sdk.Tags(menu_open@4=) default=false  [experimental]
-sdk untaped.sdk.Tags(selected@3=) default=[]  [experimental]
-sdk untaped.sdk.Tags.error  [experimental]
-sdk untaped.sdk.Tags.help  [experimental]
-sdk untaped.sdk.Tags.items  [experimental]
-sdk untaped.sdk.Tags.label  [experimental]
-sdk untaped.sdk.Tags.menu  [experimental]
-sdk untaped.sdk.Tags.menu_open  [experimental]
-sdk untaped.sdk.Tags.selected  [experimental]
-sdk untaped.sdk.Tags.update(message)  [experimental]
-sdk untaped.sdk.Tags.validate()  [experimental]
-sdk untaped.sdk.Tags.value  [experimental]
-sdk untaped.sdk.Tags.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Tags.view(frame)  [experimental]
-sdk untaped.sdk.Tags.view(width=) default=None  [experimental]
-sdk untaped.sdk.Tags.with_error(text)  [experimental]
 sdk untaped.sdk.TargetRecord(*, target_path)
 sdk untaped.sdk.TargetRecord(error=) default=None
 sdk untaped.sdk.TargetRecord.error
@@ -7704,60 +6694,7 @@ sdk untaped.sdk.Terminal.terminal(refusal=) default="interactive input requires 
 sdk untaped.sdk.Terminal.text(default=) default=None
 sdk untaped.sdk.Terminal.text(message)
 sdk untaped.sdk.Terminal.text(required=) default=true
-sdk untaped.sdk.TextInput(choice@11=) default=0  [experimental]
-sdk untaped.sdk.TextInput(complete@8=) default=None  [experimental]
-sdk untaped.sdk.TextInput(cursor@3=) default=None  [experimental]
-sdk untaped.sdk.TextInput(dismissed@12=) default=false  [experimental]
-sdk untaped.sdk.TextInput(error@5=) default=""  [experimental]
-sdk untaped.sdk.TextInput(help@4=) default=""  [experimental]
-sdk untaped.sdk.TextInput(label)  [experimental]
-sdk untaped.sdk.TextInput(matched@10=) default=None  [experimental]
-sdk untaped.sdk.TextInput(matches@9=) default=[]  [experimental]
-sdk untaped.sdk.TextInput(placeholder@6=) default=""  [experimental]
-sdk untaped.sdk.TextInput(validator@7=) default=None callback(1)  [experimental]
-sdk untaped.sdk.TextInput(value@2=) default=""  [experimental]
-sdk untaped.sdk.TextInput.choice  [experimental]
-sdk untaped.sdk.TextInput.complete  [experimental]
-sdk untaped.sdk.TextInput.completing  [experimental]
-sdk untaped.sdk.TextInput.cursor  [experimental]
-sdk untaped.sdk.TextInput.dismissed  [experimental]
-sdk untaped.sdk.TextInput.error  [experimental]
-sdk untaped.sdk.TextInput.help  [experimental]
-sdk untaped.sdk.TextInput.label  [experimental]
-sdk untaped.sdk.TextInput.matched  [experimental]
-sdk untaped.sdk.TextInput.matches  [experimental]
-sdk untaped.sdk.TextInput.placeholder  [experimental]
-sdk untaped.sdk.TextInput.update(message)  [experimental]
-sdk untaped.sdk.TextInput.validate()  [experimental]
-sdk untaped.sdk.TextInput.validator  [experimental]
-sdk untaped.sdk.TextInput.value  [experimental]
-sdk untaped.sdk.TextInput.view(focused=) default=false  [experimental]
-sdk untaped.sdk.TextInput.view(frame)  [experimental]
-sdk untaped.sdk.TextInput.view(width=) default=None  [experimental]
-sdk untaped.sdk.TextInput.with_error(text)  [experimental]
 sdk untaped.sdk.TextOrStdin
-sdk untaped.sdk.TlsVerify
-sdk untaped.sdk.TokenUrl
-sdk untaped.sdk.Tree(cursor@4=) default=0  [experimental]
-sdk untaped.sdk.Tree(error@6=) default=""  [experimental]
-sdk untaped.sdk.Tree(expanded@3=) default=[]  [experimental]
-sdk untaped.sdk.Tree(help@5=) default=""  [experimental]
-sdk untaped.sdk.Tree(label, rows)  [experimental]
-sdk untaped.sdk.Tree(window_rows@7=) default=None  [experimental]
-sdk untaped.sdk.Tree.cursor  [experimental]
-sdk untaped.sdk.Tree.error  [experimental]
-sdk untaped.sdk.Tree.expanded  [experimental]
-sdk untaped.sdk.Tree.help  [experimental]
-sdk untaped.sdk.Tree.label  [experimental]
-sdk untaped.sdk.Tree.rows  [experimental]
-sdk untaped.sdk.Tree.update(message)  [experimental]
-sdk untaped.sdk.Tree.validate()  [experimental]
-sdk untaped.sdk.Tree.value  [experimental]
-sdk untaped.sdk.Tree.view(focused=) default=false  [experimental]
-sdk untaped.sdk.Tree.view(frame)  [experimental]
-sdk untaped.sdk.Tree.view(width=) default=None  [experimental]
-sdk untaped.sdk.Tree.window_rows  [experimental]
-sdk untaped.sdk.Tree.with_error(text)  [experimental]
 sdk untaped.sdk.TreeGraph(*, root)  [experimental]
 sdk untaped.sdk.TreeGraph(edges=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraph(nodes=) default=[]  [experimental]
@@ -7787,23 +6724,6 @@ sdk untaped.sdk.TreeGraphNode.label  [experimental]
 sdk untaped.sdk.TreeGraphNode.notes  [experimental]
 sdk untaped.sdk.TreeGraphNode.stopped  [experimental]
 sdk untaped.sdk.TreeGraphNode.tone  [experimental]
-sdk untaped.sdk.TreeOutputFormat choice=json
-sdk untaped.sdk.TreeOutputFormat choice=pipe
-sdk untaped.sdk.TreeOutputFormat choice=raw
-sdk untaped.sdk.TreeOutputFormat choice=table
-sdk untaped.sdk.TreeOutputFormat choice=tree
-sdk untaped.sdk.TreeOutputFormat choice=yaml
-sdk untaped.sdk.TreeRow(children@4=) default=[]  [experimental]
-sdk untaped.sdk.TreeRow(id, label)  [experimental]
-sdk untaped.sdk.TreeRow(summary@3=) default=""  [experimental]
-sdk untaped.sdk.TreeRow.children  [experimental]
-sdk untaped.sdk.TreeRow.id  [experimental]
-sdk untaped.sdk.TreeRow.label  [experimental]
-sdk untaped.sdk.TreeRow.summary  [experimental]
-sdk untaped.sdk.UnknownHolder(*, label)  [experimental]
-sdk untaped.sdk.UnknownHolder.label  [experimental]
-sdk untaped.sdk.Unreadable(reason)  [experimental]
-sdk untaped.sdk.Unreadable.reason  [experimental]
 sdk untaped.sdk.UntapedDeprecationWarning(distribution=) default=None
 sdk untaped.sdk.UntapedDeprecationWarning(message, *, id)
 sdk untaped.sdk.UntapedDeprecationWarning(removed_in=) default=None
@@ -7838,37 +6758,12 @@ sdk untaped.sdk.UsageError.retryable
 sdk untaped.sdk.UsageError.system class
 sdk untaped.sdk.UtcTimestamp
 sdk untaped.sdk.Verbatim(text)
-sdk untaped.sdk.Viewport(content_height)  [experimental]
-sdk untaped.sdk.Viewport(offset@2=) default=0  [experimental]
-sdk untaped.sdk.Viewport.around(first, stop, rows)  [experimental]
-sdk untaped.sdk.Viewport.centred(cursor, rows)  [experimental]
-sdk untaped.sdk.Viewport.content_height  [experimental]
-sdk untaped.sdk.Viewport.offset  [experimental]
-sdk untaped.sdk.Viewport.scrolled(by, rows)  [experimental]
-sdk untaped.sdk.Viewport.shown(rows)  [experimental]
-sdk untaped.sdk.Viewport.start(rows)  [experimental]
-sdk untaped.sdk.Viewport.update(message, rows)  [experimental]
-sdk untaped.sdk.Written
 sdk untaped.sdk.ago_text(at, now)
-sdk untaped.sdk.atomic_write(encoding=) default=utf-8
-sdk untaped.sdk.atomic_write(mode=) default=None
-sdk untaped.sdk.atomic_write(newline=) default=""
-sdk untaped.sdk.atomic_write(path, content)
 sdk untaped.sdk.attribution(error)
 sdk untaped.sdk.bounded_map(fn, items, *, concurrency, on_each) callback(fn, 1) callback(on_each, 2)
 sdk untaped.sdk.bounded_map(on_abort=) default=None callback(0)
 sdk untaped.sdk.bounded_map(while_running=) default=None callback(0)
-sdk untaped.sdk.checkout_root(start)
-sdk untaped.sdk.code_version(distributions=) default=[]
-sdk untaped.sdk.code_version(extra=) default=[]
-sdk untaped.sdk.code_version(module)
 sdk untaped.sdk.command_line(command)
-sdk untaped.sdk.connected_client(bearer=) default=None
-sdk untaped.sdk.connected_client(config, *, section, base_url)
-sdk untaped.sdk.connected_client(headers=) default=None
-sdk untaped.sdk.connected_client(http=) default=None
-sdk untaped.sdk.connected_client(retry=) default=<computed>
-sdk untaped.sdk.connected_client(verify=) default=None
 sdk untaped.sdk.contracts.Ambiguous()
 sdk untaped.sdk.contracts.Ambiguous(*args)
 sdk untaped.sdk.contracts.Ambiguous(category=) default=None
@@ -7902,9 +6797,6 @@ sdk untaped.sdk.contracts.Errored.error
 sdk untaped.sdk.contracts.Errored.plugin
 sdk untaped.sdk.contracts.Errored.rank
 sdk untaped.sdk.contracts.Errored.reason
-sdk untaped.sdk.contracts.Issued()
-sdk untaped.sdk.contracts.Issued(source=) default=None
-sdk untaped.sdk.contracts.Issued.source
 sdk untaped.sdk.contracts.NoProviderReady(message, *, not_ready)
 sdk untaped.sdk.contracts.NoProviderReady(quarantined=) default=None
 sdk untaped.sdk.contracts.NoProviderReady.category class
@@ -7963,18 +6855,12 @@ sdk untaped.sdk.contracts.Reason.unbridged_item = unbridged-item
 sdk untaped.sdk.contracts.Reason.unresolved_item_type = unresolved-item-type
 sdk untaped.sdk.contracts.Reason.unserialisable_signature = unserialisable-signature
 sdk untaped.sdk.contracts.Reason.unused_method = unused-method
-sdk untaped.sdk.contracts.Record()
 sdk untaped.sdk.contracts.Skipped(plugin, reason, detail)
 sdk untaped.sdk.contracts.Skipped(rank@4=) default=None
 sdk untaped.sdk.contracts.Skipped.detail
 sdk untaped.sdk.contracts.Skipped.plugin
 sdk untaped.sdk.contracts.Skipped.rank
 sdk untaped.sdk.contracts.Skipped.reason
-sdk untaped.sdk.contracts.Source(*, plugin, kind)
-sdk untaped.sdk.contracts.Source(record=) default={}
-sdk untaped.sdk.contracts.Source.kind
-sdk untaped.sdk.contracts.Source.plugin
-sdk untaped.sdk.contracts.Source.record
 sdk untaped.sdk.contracts.cached()
 sdk untaped.sdk.contracts.cached(cache@1/=) default=None
 sdk untaped.sdk.contracts.cached(label=) default=None
@@ -7986,7 +6872,6 @@ sdk untaped.sdk.contracts.gather(refresh=) default=None
 sdk untaped.sdk.contracts.providing(candidates=) default=None
 sdk untaped.sdk.contracts.providing(offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
-sdk untaped.sdk.current_project()  [experimental]
 sdk untaped.sdk.deprecated()
 sdk untaped.sdk.deprecated(removed_in=) default=None
 sdk untaped.sdk.deprecated(replacement=) default=None callback(*)
@@ -7994,11 +6879,10 @@ sdk untaped.sdk.deprecated_parameters(function, /)
 sdk untaped.sdk.derive(**fields)
 sdk untaped.sdk.derive(base, name)
 sdk untaped.sdk.derive(doc=) default=None
+sdk untaped.sdk.derive(module=) default=None
 sdk untaped.sdk.derive(omit=) default=[]
-sdk untaped.sdk.dir_bytes(path)
+sdk untaped.sdk.derive(qualname=) default=None
 sdk untaped.sdk.experimental
-sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
-sdk untaped.sdk.find_program(name)
 sdk untaped.sdk.first_validation_error(exc)
 sdk untaped.sdk.git.GitCommandError(category=) default=None
 sdk untaped.sdk.git.GitCommandError(hint=) default=None
@@ -8039,9 +6923,6 @@ sdk untaped.sdk.git.run_git(retry_transient=) default=false
 sdk untaped.sdk.git.run_git(sleep=) default=<computed> callback(1)
 sdk untaped.sdk.git.run_git(stdin=) default=None
 sdk untaped.sdk.git.safe_path_segment(value)
-sdk untaped.sdk.git_toplevel(git=) default=git
-sdk untaped.sdk.git_toplevel(path)
-sdk untaped.sdk.git_toplevel(timeout=) default=30.0
 sdk untaped.sdk.health.DoctorCheck(*, title, run) callback(run, 1)
 sdk untaped.sdk.health.DoctorCheck(online=) default=false
 sdk untaped.sdk.health.DoctorCheck.binding
@@ -8127,19 +7008,14 @@ sdk untaped.sdk.health.Suggest(note@2=) default=""
 sdk untaped.sdk.health.Suggest.argv
 sdk untaped.sdk.health.Suggest.note
 sdk untaped.sdk.hint(command)
-sdk untaped.sdk.holders(target)  [experimental]
 sdk untaped.sdk.home()
 sdk untaped.sdk.http_of(model)
-sdk untaped.sdk.init_project(new_id=) default=false  [experimental]
-sdk untaped.sdk.init_project(path)  [experimental]
 sdk untaped.sdk.installed_code()
 sdk untaped.sdk.installed_code(*modules)
 sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.key(model)
 sdk untaped.sdk.kind_of(model)
-sdk untaped.sdk.known_projects()  [experimental]
 sdk untaped.sdk.most_severe(errors)
-sdk untaped.sdk.nearest_pyproject(start)
 sdk untaped.sdk.network.Credential(*, key)
 sdk untaped.sdk.network.Credential(env=) default=[]
 sdk untaped.sdk.network.Credential(suggest=) default=None
@@ -8231,12 +7107,6 @@ sdk untaped.sdk.network.RetryPolicy.retry_on_transport
 sdk untaped.sdk.network.RetryPolicy.retry_statuses
 sdk untaped.sdk.network.RetryPolicy.status_delay(attempt, retry_after)
 sdk untaped.sdk.network.TlsVerify
-sdk untaped.sdk.network.connected_client(bearer=) default=None
-sdk untaped.sdk.network.connected_client(config, *, section, base_url)
-sdk untaped.sdk.network.connected_client(headers=) default=None
-sdk untaped.sdk.network.connected_client(http=) default=None
-sdk untaped.sdk.network.connected_client(retry=) default=<computed>
-sdk untaped.sdk.network.connected_client(verify=) default=None
 sdk untaped.sdk.network.find_program(name)
 sdk untaped.sdk.network.paginate_link(http, path)
 sdk untaped.sdk.network.paginate_link(item_key=) default=None
@@ -8259,34 +7129,21 @@ sdk untaped.sdk.network.paginate_pages(fetch, *, limit) callback(fetch, 1)
 sdk untaped.sdk.network.paginate_pages(max_pages=) default=100
 sdk untaped.sdk.network.rejected_token_error(cause=) default=None
 sdk untaped.sdk.network.rejected_token_error(field=) default=token
-sdk untaped.sdk.network.rejected_token_error(section, message)
+sdk untaped.sdk.network.rejected_token_error(service, message)
+sdk untaped.sdk.network.same_origin(url, base)
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.now()
-sdk untaped.sdk.paginate_link(http, path)
-sdk untaped.sdk.paginate_link(item_key=) default=None
-sdk untaped.sdk.paginate_link(limit=) default=None
-sdk untaped.sdk.paginate_link(max_pages=) default=100
-sdk untaped.sdk.paginate_link(page_size=) default=100
-sdk untaped.sdk.paginate_link(params=) default=None
-sdk untaped.sdk.paginate_link(size_param=) default=per_page
-sdk untaped.sdk.paginate_offset(body=) default=None
-sdk untaped.sdk.paginate_offset(http, method, path, *, item_key)
-sdk untaped.sdk.paginate_offset(last_flag=) default=None
-sdk untaped.sdk.paginate_offset(limit=) default=None
-sdk untaped.sdk.paginate_offset(max_pages=) default=100
-sdk untaped.sdk.paginate_offset(page_size=) default=50
-sdk untaped.sdk.paginate_offset(params=) default=None
-sdk untaped.sdk.paginate_offset(retry=) default=<computed>
-sdk untaped.sdk.paginate_offset(size_param=) default=limit
-sdk untaped.sdk.paginate_offset(start_param=) default=offset
-sdk untaped.sdk.paginate_pages(fetch, *, limit) callback(fetch, 1)
-sdk untaped.sdk.paginate_pages(max_pages=) default=100
 sdk untaped.sdk.parse_utc(value)
 sdk untaped.sdk.plugin_of(model)
 sdk untaped.sdk.plural(count, singular)
 sdk untaped.sdk.plural(plural_form@3=) default=None
-sdk untaped.sdk.project_at(path)  [experimental]
+sdk untaped.sdk.projects.Initialized(picked@4=) default=[]  [experimental]
+sdk untaped.sdk.projects.Initialized(project, action, detail)  [experimental]
+sdk untaped.sdk.projects.Initialized.action  [experimental]
+sdk untaped.sdk.projects.Initialized.detail  [experimental]
+sdk untaped.sdk.projects.Initialized.picked  [experimental]
+sdk untaped.sdk.projects.Initialized.project  [experimental]
 sdk untaped.sdk.projects.Project(*, id, root)  [experimental]
 sdk untaped.sdk.projects.Project(copy_of=) default=None  [experimental]
 sdk untaped.sdk.projects.Project.copy_of  [experimental]
@@ -8301,9 +7158,72 @@ sdk untaped.sdk.projects.Project.release(items=) default=None  [experimental]
 sdk untaped.sdk.projects.Project.release(leaving=) default=[]  [experimental]
 sdk untaped.sdk.projects.Project.release(store)  [experimental]
 sdk untaped.sdk.projects.Project.root  [experimental]
+sdk untaped.sdk.projects.ProjectRemoval()  [experimental]
+sdk untaped.sdk.projects.ProjectRemoval(held@1=) default=0  [experimental]
+sdk untaped.sdk.projects.ProjectRemoval(kept@2=) default=[]  [experimental]
+sdk untaped.sdk.projects.ProjectRemoval.held  [experimental]
+sdk untaped.sdk.projects.ProjectRemoval.kept  [experimental]
 sdk untaped.sdk.projects.checkout_root(start)
+sdk untaped.sdk.projects.current_project()  [experimental]
+sdk untaped.sdk.projects.init_project(new_id=) default=false  [experimental]
+sdk untaped.sdk.projects.init_project(path)  [experimental]
+sdk untaped.sdk.projects.known_projects()  [experimental]
 sdk untaped.sdk.projects.nearest_pyproject(start)
 sdk untaped.sdk.projects.project_at(path)  [experimental]
+sdk untaped.sdk.projects.remove_project(project)  [experimental]
+sdk untaped.sdk.prompt.PickCatalog(items)
+sdk untaped.sdk.prompt.PickCatalog(note@2=) default=""
+sdk untaped.sdk.prompt.PickCatalog.items
+sdk untaped.sdk.prompt.PickCatalog.note
+sdk untaped.sdk.prompt.PickItem(description@3=) default=""
+sdk untaped.sdk.prompt.PickItem(dimmed@4=) default=false
+sdk untaped.sdk.prompt.PickItem(id, label)
+sdk untaped.sdk.prompt.PickItem.description
+sdk untaped.sdk.prompt.PickItem.dimmed
+sdk untaped.sdk.prompt.PickItem.id
+sdk untaped.sdk.prompt.PickItem.label
+sdk untaped.sdk.prompt.PickRequest(adhoc@9=) default=None callback(1)
+sdk untaped.sdk.prompt.PickRequest(allow_empty@10=) default=false
+sdk untaped.sdk.prompt.PickRequest(alternative@12=) default=""
+sdk untaped.sdk.prompt.PickRequest(command@11=) default=""
+sdk untaped.sdk.prompt.PickRequest(heading, catalog)
+sdk untaped.sdk.prompt.PickRequest(refresh@8=) default=None callback(1)
+sdk untaped.sdk.prompt.PickRequest(settings@3=) default=[]
+sdk untaped.sdk.prompt.PickRequest(subtitle@7=) default=None callback(2)
+sdk untaped.sdk.prompt.PickRequest(title@4=) default=""
+sdk untaped.sdk.prompt.PickRequest(title_label@5=) default=""
+sdk untaped.sdk.prompt.PickRequest(validate_title@6=) default=None callback(1)
+sdk untaped.sdk.prompt.PickRequest.adhoc
+sdk untaped.sdk.prompt.PickRequest.allow_empty
+sdk untaped.sdk.prompt.PickRequest.alternative
+sdk untaped.sdk.prompt.PickRequest.catalog
+sdk untaped.sdk.prompt.PickRequest.command
+sdk untaped.sdk.prompt.PickRequest.heading
+sdk untaped.sdk.prompt.PickRequest.refresh
+sdk untaped.sdk.prompt.PickRequest.settings
+sdk untaped.sdk.prompt.PickRequest.subtitle
+sdk untaped.sdk.prompt.PickRequest.title
+sdk untaped.sdk.prompt.PickRequest.title_label
+sdk untaped.sdk.prompt.PickRequest.validate_title
+sdk untaped.sdk.prompt.PickResult(title, defaults, picks)
+sdk untaped.sdk.prompt.PickResult.defaults
+sdk untaped.sdk.prompt.PickResult.picks
+sdk untaped.sdk.prompt.PickResult.title
+sdk untaped.sdk.prompt.PickSetting(choices@4=) default=[]
+sdk untaped.sdk.prompt.PickSetting(complete@6=) default=None callback(1)
+sdk untaped.sdk.prompt.PickSetting(default@3=) default=""
+sdk untaped.sdk.prompt.PickSetting(key, label)
+sdk untaped.sdk.prompt.PickSetting(placeholder@5=) default=""
+sdk untaped.sdk.prompt.PickSetting.choices
+sdk untaped.sdk.prompt.PickSetting.complete
+sdk untaped.sdk.prompt.PickSetting.default
+sdk untaped.sdk.prompt.PickSetting.key
+sdk untaped.sdk.prompt.PickSetting.label
+sdk untaped.sdk.prompt.PickSetting.placeholder
+sdk untaped.sdk.prompt.Picked(item)
+sdk untaped.sdk.prompt.Picked(settings@2=) default={}
+sdk untaped.sdk.prompt.Picked.item
+sdk untaped.sdk.prompt.Picked.settings
 sdk untaped.sdk.prompt.PromptChoice(description@3=) default=None
 sdk untaped.sdk.prompt.PromptChoice(value, label)
 sdk untaped.sdk.prompt.PromptChoice.description
@@ -8315,42 +7235,10 @@ sdk untaped.sdk.prompt.run_editor(stderr=) default=None
 sdk untaped.sdk.prompt.run_editor(stdin=) default=None
 sdk untaped.sdk.prompt.run_editor(stdout=) default=None
 sdk untaped.sdk.q(value)
-sdk untaped.sdk.raise_usage(message)
-sdk untaped.sdk.read_data_file(path, model)  [experimental]
-sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_text()
-sdk untaped.sdk.read_structured_file(flag=) default=None
-sdk untaped.sdk.read_structured_file(path)
 sdk untaped.sdk.record_model(kind)
-sdk untaped.sdk.rejected_token_error(cause=) default=None
-sdk untaped.sdk.rejected_token_error(field=) default=token
-sdk untaped.sdk.rejected_token_error(section, message)
-sdk untaped.sdk.remove_project(project)  [experimental]
-sdk untaped.sdk.resolve_verify(http)
-sdk untaped.sdk.run_editor(argv=) default=None
-sdk untaped.sdk.run_editor(path)
-sdk untaped.sdk.run_editor(stderr=) default=None
-sdk untaped.sdk.run_editor(stdin=) default=None
-sdk untaped.sdk.run_editor(stdout=) default=None
-sdk untaped.sdk.run_git(args, *, timeout)
-sdk untaped.sdk.run_git(attempts=) default=3
-sdk untaped.sdk.run_git(auth_config=) default=None
-sdk untaped.sdk.run_git(batch_ssh=) default=true
-sdk untaped.sdk.run_git(capture=) default=false
-sdk untaped.sdk.run_git(ceiling=) default=false
-sdk untaped.sdk.run_git(check=) default=true
-sdk untaped.sdk.run_git(config=) default=None
-sdk untaped.sdk.run_git(cwd=) default=None
-sdk untaped.sdk.run_git(env=) default=None
-sdk untaped.sdk.run_git(git=) default=git
-sdk untaped.sdk.run_git(git_dir=) default=None
-sdk untaped.sdk.run_git(locale_c=) default=true
-sdk untaped.sdk.run_git(retry_transient=) default=false
-sdk untaped.sdk.run_git(sleep=) default=<computed> callback(1)
-sdk untaped.sdk.run_git(stdin=) default=None
 sdk untaped.sdk.run_hint(command)
-sdk untaped.sdk.safe_path_segment(value)
-sdk untaped.sdk.same_origin(url, base)
+sdk untaped.sdk.setting_name(setting)
 sdk untaped.sdk.settings_of(model)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
@@ -8410,6 +7298,7 @@ sdk untaped.sdk.storage.DataFile.read()  [experimental]
 sdk untaped.sdk.storage.DataFile.write(exclusive=) default=false  [experimental]
 sdk untaped.sdk.storage.DataFile.write(refreshed_at=) default=None  [experimental]
 sdk untaped.sdk.storage.DataFile.write(value)  [experimental]
+sdk untaped.sdk.storage.DataRead
 sdk untaped.sdk.storage.Dir()  [experimental]
 sdk untaped.sdk.storage.Dir(at=) default=None  [experimental]
 sdk untaped.sdk.storage.Dir(file=) default=None  [experimental]
@@ -8456,6 +7345,46 @@ sdk untaped.sdk.storage.Found(value)  [experimental]
 sdk untaped.sdk.storage.Found.by  [experimental]
 sdk untaped.sdk.storage.Found.refreshed_at  [experimental]
 sdk untaped.sdk.storage.Found.value  [experimental]
+sdk untaped.sdk.storage.Freshness()
+sdk untaped.sdk.storage.Freshness(attempted_at@2=) default=None
+sdk untaped.sdk.storage.Freshness(error@3=) default=None
+sdk untaped.sdk.storage.Freshness(outdated@7=) default=false
+sdk untaped.sdk.storage.Freshness(partial@4=) default=false
+sdk untaped.sdk.storage.Freshness(refreshed_at@1=) default=None
+sdk untaped.sdk.storage.Freshness(retry_at@5=) default=None
+sdk untaped.sdk.storage.Freshness(version@6=) default=None
+sdk untaped.sdk.storage.Freshness.attempted_at
+sdk untaped.sdk.storage.Freshness.due(refresh, *, max_age, now)
+sdk untaped.sdk.storage.Freshness.error
+sdk untaped.sdk.storage.Freshness.outdated
+sdk untaped.sdk.storage.Freshness.partial
+sdk untaped.sdk.storage.Freshness.past_max_age(max_age, *, now)
+sdk untaped.sdk.storage.Freshness.refreshed_at
+sdk untaped.sdk.storage.Freshness.retry_at
+sdk untaped.sdk.storage.Freshness.version
+sdk untaped.sdk.storage.FreshnessRecord(*, refreshed_at, stale, max_age_seconds)
+sdk untaped.sdk.storage.FreshnessRecord(attempted_at=) default=None
+sdk untaped.sdk.storage.FreshnessRecord(outdated=) default=false
+sdk untaped.sdk.storage.FreshnessRecord(partial=) default=false
+sdk untaped.sdk.storage.FreshnessRecord(refresh_error=) default=None
+sdk untaped.sdk.storage.FreshnessRecord(retry_at=) default=None
+sdk untaped.sdk.storage.FreshnessRecord.attempted_at
+sdk untaped.sdk.storage.FreshnessRecord.fields(freshness, *, max_age, now)
+sdk untaped.sdk.storage.FreshnessRecord.max_age_seconds
+sdk untaped.sdk.storage.FreshnessRecord.outdated
+sdk untaped.sdk.storage.FreshnessRecord.partial
+sdk untaped.sdk.storage.FreshnessRecord.refresh_error
+sdk untaped.sdk.storage.FreshnessRecord.refreshed_at
+sdk untaped.sdk.storage.FreshnessRecord.retry_at
+sdk untaped.sdk.storage.FreshnessRecord.stale
+sdk untaped.sdk.storage.HolderView(*, holder, label, anchor, state)  [experimental]
+sdk untaped.sdk.storage.HolderView.anchor  [experimental]
+sdk untaped.sdk.storage.HolderView.holder  [experimental]
+sdk untaped.sdk.storage.HolderView.label  [experimental]
+sdk untaped.sdk.storage.HolderView.state  [experimental]
+sdk untaped.sdk.storage.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
+sdk untaped.sdk.storage.LetGo.apply  [experimental]
+sdk untaped.sdk.storage.LetGo.preview  [experimental]
 sdk untaped.sdk.storage.Lock(*, wait)  [experimental]
 sdk untaped.sdk.storage.Lock.binding  [experimental]
 sdk untaped.sdk.storage.Lock.bindings  [experimental]
@@ -8472,6 +7401,11 @@ sdk untaped.sdk.storage.Lock.problems()  [experimental]
 sdk untaped.sdk.storage.Lock.spelled  [experimental]
 sdk untaped.sdk.storage.Lock.try_locked()  [experimental]
 sdk untaped.sdk.storage.Lock.where  [experimental]
+sdk untaped.sdk.storage.MoveAsk(*, item, holder, others, moved_from)  [experimental]
+sdk untaped.sdk.storage.MoveAsk.holder  [experimental]
+sdk untaped.sdk.storage.MoveAsk.item  [experimental]
+sdk untaped.sdk.storage.MoveAsk.moved_from  [experimental]
+sdk untaped.sdk.storage.MoveAsk.others  [experimental]
 sdk untaped.sdk.storage.NO_PROGRESS
 sdk untaped.sdk.storage.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.storage.NeverRefreshed.category class
@@ -8490,6 +7424,15 @@ sdk untaped.sdk.storage.ProgressHandle.update(done=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(message@1=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(phase=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(total=) default=None
+sdk untaped.sdk.storage.Refused(*, reason)  [experimental]
+sdk untaped.sdk.storage.Refused(hint=) default=None  [experimental]
+sdk untaped.sdk.storage.Refused.hint  [experimental]
+sdk untaped.sdk.storage.Refused.reason  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk(*, item, holder, others, force)  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk.force  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk.holder  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk.item  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk.others  [experimental]
 sdk untaped.sdk.storage.RowExists()  [experimental]
 sdk untaped.sdk.storage.RowExists(*args)  [experimental]
 sdk untaped.sdk.storage.RowExists(category=) default=None  [experimental]
@@ -8540,11 +7483,26 @@ sdk untaped.sdk.storage.StateRows.replace_all(change) callback(change, 1)  [expe
 sdk untaped.sdk.storage.StateRows.spelled  [experimental]
 sdk untaped.sdk.storage.StateRows.update(key, change) callback(change, 1)  [experimental]
 sdk untaped.sdk.storage.StateRows.where  [experimental]
+sdk untaped.sdk.storage.UnknownHolder(*, label)  [experimental]
+sdk untaped.sdk.storage.UnknownHolder.label  [experimental]
 sdk untaped.sdk.storage.Unreadable(reason)  [experimental]
 sdk untaped.sdk.storage.Unreadable.reason  [experimental]
+sdk untaped.sdk.storage.atomic_write(encoding=) default=utf-8
+sdk untaped.sdk.storage.atomic_write(mode=) default=None
+sdk untaped.sdk.storage.atomic_write(newline=) default=""
+sdk untaped.sdk.storage.atomic_write(path, content)
+sdk untaped.sdk.storage.code_version(distributions=) default=[]
+sdk untaped.sdk.storage.code_version(extra=) default=[]
+sdk untaped.sdk.storage.code_version(module)
+sdk untaped.sdk.storage.dir_bytes(path)
+sdk untaped.sdk.storage.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
+sdk untaped.sdk.storage.read_data_file(path, model)  [experimental]
+sdk untaped.sdk.storage.read_structured_file(flag=) default=None
+sdk untaped.sdk.storage.read_structured_file(path)
+sdk untaped.sdk.storage.write_data_file(exclusive=) default=false  [experimental]
+sdk untaped.sdk.storage.write_data_file(path, value)  [experimental]
+sdk untaped.sdk.storage.write_data_file(refreshed_at=) default=None  [experimental]
 sdk untaped.sdk.summary(operation, counts)
-sdk untaped.sdk.table_row(record)
-sdk untaped.sdk.table_row(row@2=) default=None
 sdk untaped.sdk.testing.CacheClock(start)
 sdk untaped.sdk.testing.CacheClock.advance(by)
 sdk untaped.sdk.testing.CacheClock.now
@@ -8765,9 +7723,6 @@ sdk untaped.sdk.testing.write_rows(rows, raw)  [experimental]
 sdk untaped.sdk.tree_text(ascii_guides=) default=false  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
-sdk untaped.sdk.write_data_file(exclusive=) default=false  [experimental]
-sdk untaped.sdk.write_data_file(path, value)  [experimental]
-sdk untaped.sdk.write_data_file(refreshed_at=) default=None  [experimental]
 sdk untaped.sdk.yaml_mapping_indent(text)
 sdk untaped_awx.api.ControllerFacts()  [experimental]
 sdk untaped_awx.api.ControllerFacts(last_job_failed=) default=None  [experimental]

@@ -17,10 +17,10 @@ from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.stores import FakeStores, install_fake_stores
 from core_test_support.commands.support import compose, make_plugin, root_group, write_config
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify, auth
 from untaped.sdk.network import _token_store as token_store
-from untaped.sdk.network import auth
 from untaped.sdk.network._credential_store import entry_for, reset_test_store, set_test_store
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network.auth import clear_token_cache

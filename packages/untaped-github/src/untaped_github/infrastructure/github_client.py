@@ -6,7 +6,7 @@ from collections.abc import Callable, Iterator, Sequence
 from types import TracebackType
 from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import paginate_link
+from untaped.sdk.network import paginate_link
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.infrastructure.graphql import (
     fetch_default_branch_refs,
@@ -16,7 +16,7 @@ from untaped_github.infrastructure.graphql import (
 from untaped_github.settings import TOKEN, GithubSettings
 
 if TYPE_CHECKING:
-    from untaped.sdk import HttpFactory
+    from untaped.sdk.network import HttpFactory
 
 
 class GithubClient:

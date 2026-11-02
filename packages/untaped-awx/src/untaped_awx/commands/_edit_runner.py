@@ -14,9 +14,9 @@ from untaped.sdk import (
     OperationCancelledError,
     UntapedError,
     UsageError,
-    atomic_write,
-    run_editor,
 )
+from untaped.sdk.prompt import run_editor
+from untaped.sdk.storage import atomic_write
 from untaped_awx.application.resources.edit_resources import EditResources
 from untaped_awx.application.resources.save_resource import SaveResource
 from untaped_awx.application.resources.selection import SelectedResource

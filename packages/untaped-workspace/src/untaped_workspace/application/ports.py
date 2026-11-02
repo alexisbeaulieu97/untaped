@@ -5,14 +5,16 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping, Sequence
 from typing import TYPE_CHECKING, Protocol
 
-from untaped.sdk import NO_PROGRESS
+from untaped.sdk.storage import NO_PROGRESS
 
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
     from datetime import datetime
     from pathlib import Path
 
-    from untaped.sdk import OutcomeRecord, ProgressHandle, ProjectRemoval
+    from untaped.sdk import OutcomeRecord
+    from untaped.sdk.projects import ProjectRemoval
+    from untaped.sdk.storage import ProgressHandle
     from untaped_workspace.domain.models import (
         Checkout,
         CommandResult,

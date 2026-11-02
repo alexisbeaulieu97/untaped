@@ -46,6 +46,7 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal
+from untaped.runtime.stability_marks import setting_mark
 from untaped.runtime.yaml_roundtrip import KeyRename
 from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
@@ -56,7 +57,7 @@ from untaped.sdk.health.deprecated_keys import (
     old_spellings,
     profile_sections,
 )
-from untaped.sdk.marks import Stability, setting_mark
+from untaped.sdk.marks import Stability
 from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX
 from untaped.sdk.words import not_found
 

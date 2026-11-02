@@ -28,7 +28,7 @@ from untaped_awx.api import (
     unknown_field,
     unresolved_reference,
 )
-from untaped_awx.domain.lint.fixes import PATCH_GROUPS
+from untaped_awx.domain.lint.fixes import PATCHED_KINDS
 from untaped_awx.domain.lint.rules import RULES
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.testing import resources
@@ -102,12 +102,10 @@ def test_no_rule_fires_on_a_clean_batch(function: RuleFunction) -> None:
     assert _run(function, resources(CLEAN)) == []
 
 
-def test_patch_groups_name_the_catalog_groups_whose_patch_sets_a_field() -> None:
+def test_a_fix_patches_only_kinds_whose_patch_awx_derives_once() -> None:
     catalog = AwxResourceCatalog()
-    for kind, group in PATCH_GROUPS.items():
-        spec = catalog.get(kind)
-        assert spec.cli_name == group
-        assert "apply" in spec.commands  # the commands that come with ``patch``
+    for kind in PATCHED_KINDS:
+        assert "apply" in catalog.get(kind).commands  # the commands that come with ``patch``
 
 
 # --- missing-reference -------------------------------------------------------
@@ -216,6 +214,25 @@ def test_ignored_launch_field_offers_the_patch_on_the_controller() -> None:
         [
             "awx", "job-templates", "patch", "deploy-web", "--organization", "Platform",
             "--set", "ask_limit_on_launch=true",
+        ]
+    ]  # fmt: skip
+
+
+def test_a_workflow_template_s_fix_patches_its_own_group() -> None:
+    workflow = (
+        "kind: WorkflowJobTemplate\nmetadata: {name: release, organization: Platform}\n"
+        "spec: {ask_variables_on_launch: false}\n"
+    )
+    schedule = (
+        "kind: Schedule\nmetadata:\n  name: nightly\n"
+        "  parent: {kind: WorkflowJobTemplate, name: release, organization: Platform}\n"
+        "spec: {extra_data: {debug: true}}\n"
+    )
+    found = _run(ignored_launch_field, _live(resources(workflow, schedule)))
+    assert [each.fix for each in found] == [
+        [
+            "awx", "workflow-templates", "patch", "release", "--organization", "Platform",
+            "--set", "ask_variables_on_launch=true",
         ]
     ]  # fmt: skip
 

@@ -32,16 +32,10 @@ from core_test_support.commands.support import (
     write_config,
 )
 from untaped.runtime import bootstrap
-from untaped.sdk import (
-    Credential,
-    CredentialKey,
-    HttpError,
-    HttpTransportError,
-    NeedsSetup,
-    OnlineCheck,
-    Plugin,
-)
+from untaped.sdk import HttpError, HttpTransportError, Plugin
+from untaped.sdk.health import NeedsSetup, OnlineCheck
 from untaped.sdk.marks import forget_notices
+from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.testing import (
     CliResult,
     invoke_cli,

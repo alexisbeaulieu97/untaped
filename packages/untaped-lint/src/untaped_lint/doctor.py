@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from untaped.sdk import DoctorResult, PluginContext
+from untaped.sdk.health import DoctorResult, PluginContext
 
 
 def ignore_ids_check(ctx: PluginContext) -> DoctorResult:

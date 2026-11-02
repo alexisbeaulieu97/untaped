@@ -25,8 +25,8 @@ from untaped.sdk import (
     Record,
     Stdin,
     UsageError,
-    read_structured_file,
 )
+from untaped.sdk.storage import read_structured_file
 from untaped_awx.application.resources.ports import FkResolver
 from untaped_awx.application.scheduling import MAX_PARALLEL
 from untaped_awx.commands._action_runner import run_action_selection

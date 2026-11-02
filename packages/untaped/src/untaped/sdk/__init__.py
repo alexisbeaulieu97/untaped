@@ -3,9 +3,9 @@
 The public surface is the names ``untaped.sdk`` exports and those of its
 groups (``storage``, ``network``, ``health``, ``git``, ``projects``,
 ``prompt``, ``contracts`` and ``testing``); a ``_``-prefixed module or name
-is never public. Until the 12.0 removals the root also exports most group
-names, as the same objects. Additions are backwards compatible; removals or signature breaks
-are a major release.
+is never public. Each name has one spelling: a group's names are imported
+from the group, and the root exports none of them. Additions are backwards
+compatible; removals or signature breaks are a major release.
 
 Importing the package loads nothing: each name resolves on first use from
 :mod:`untaped.sdk._exports`, so a group's module never pays for the rest.

@@ -8,7 +8,9 @@ from typing import ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-from untaped.sdk import Cache, Credential, CredentialKey, Retired, Suggest, TlsVerify
+from untaped.sdk.health import Retired, Suggest
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify
+from untaped.sdk.storage import Cache
 
 #: The GitHub CLI's token variables, in its order.
 _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")

@@ -166,7 +166,8 @@ files people write, and may commit, through its handle's `committed` in a
 run:
 
 ```python
-from untaped.sdk import checkout_root, plugin_of
+from untaped.sdk import plugin_of
+from untaped.sdk.projects import checkout_root
 
 lint_file = plugin_of(LintSettings).committed("lint.yml", root=checkout_root(start) or start)
 ```
@@ -191,7 +192,8 @@ project lets go of an item and whether a moved project needs repair, and
 `items()` is its item store.
 
 ```python
-from untaped.sdk import Dir, LetGo, Plugin, Refused, ReleaseAsk
+from untaped.sdk import Plugin
+from untaped.sdk.storage import Dir, LetGo, Refused, ReleaseAsk
 
 
 def _release(ask: ReleaseAsk[RepoKey]) -> LetGo[RepoKey] | Refused:

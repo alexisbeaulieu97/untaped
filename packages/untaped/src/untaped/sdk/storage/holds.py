@@ -69,7 +69,10 @@ _STRICT = ConfigDict(frozen=True, extra="forbid", strict=True)
 
 @experimental
 class HolderView(BaseModel):
-    """A holder as the home sees it now: who, how a row names it, its anchor, its state."""
+    """A holder as the home sees it now: who, how a row names it, its anchor, its state.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
+    """
 
     model_config = _STRICT
 
@@ -81,7 +84,10 @@ class HolderView(BaseModel):
 
 @experimental
 class UnknownHolder(BaseModel):
-    """A reference that can't be read: it holds whatever it may hold."""
+    """A reference that can't be read: it holds whatever it may hold.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
+    """
 
     model_config = _STRICT
 
@@ -93,7 +99,10 @@ type Seen = HolderView | UnknownHolder
 
 @experimental
 class Refused(BaseModel):
-    """An owner's "not now": why the hold can't be released, and what would let it go."""
+    """An owner's "not now": why the hold can't be released, and what would let it go.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
+    """
 
     model_config = _STRICT
 
@@ -107,6 +116,8 @@ class ReleaseAsk[T: str | RootModel[str]](BaseModel):
 
     ``others`` is every other holder of the item, read now; ``force`` says
     the user named this item with ``--force``.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
     """
 
     model_config = _STRICT
@@ -127,7 +138,10 @@ class ReleaseAsk[T: str | RootModel[str]](BaseModel):
 
 @experimental
 class MoveAsk[T: str | RootModel[str]](BaseModel):
-    """What an owner is asked when ``holder`` moved from ``moved_from`` to its anchor."""
+    """What an owner is asked when ``holder`` moved from ``moved_from`` to its anchor.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
+    """
 
     model_config = _STRICT
 
@@ -157,6 +171,8 @@ class LetGo[T: str | RootModel[str]](BaseModel):
     when the fresh ask needs more (it is now the last holder), it returns a
     :class:`Refused` and the hold stays. ``apply`` is never dumped, so plans
     compare by ``preview``.
+
+    First consumer: git's repo store, whose repos projects hold through ``Dir(items=)``.
     """
 
     model_config = _STRICT

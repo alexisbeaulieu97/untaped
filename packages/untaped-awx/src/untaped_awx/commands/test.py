@@ -23,7 +23,7 @@ from untaped.sdk import (
     Positional,
     UntapedError,
     UsageError,
-    checkout_root,
+    command_line,
     experimental,
     key,
     plural,
@@ -31,6 +31,7 @@ from untaped.sdk import (
     run_hint,
     summary,
 )
+from untaped.sdk.projects import checkout_root
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.commands._options import OrganizationScope, SourceRef
 from untaped_awx.commands.context import AwxContext
@@ -466,7 +467,7 @@ def _read_baseline(path: Path) -> dict[tuple[str, str], Baseline]:
     except (ValueError, UntapedError) as exc:
         raise ConfigError(
             f"--compare file {path} is not the output of "
-            f"`untaped awx test run --format json`: {exc}",
+            f"`{command_line(Run.spelled('--format', 'json'))}`: {exc}",
             category="invalid",
         ) from exc
 

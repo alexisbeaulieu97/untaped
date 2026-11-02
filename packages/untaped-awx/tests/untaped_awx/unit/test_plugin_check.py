@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
+import pytest
+
 from untaped.runtime.bootstrap import composed_with
 from untaped.runtime.registry import discover_candidates
 from untaped.sdk import kind_of
 from untaped.sdk.testing import check_plugin, compose_with
 from untaped_awx.api import Resources
+
+
+@pytest.fixture(autouse=True)
+def _run() -> Iterator[None]:
+    """These tests compose for themselves, so they run outside the run the others share."""
+    yield
 
 
 def test_awx_passes_its_plugin_check() -> None:

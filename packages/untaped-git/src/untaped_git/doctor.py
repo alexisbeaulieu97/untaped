@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from untaped.sdk import DoctorResult, PluginContext, find_program, plural, size_text
+from untaped.sdk import plural, size_text
+from untaped.sdk.health import DoctorResult, PluginContext
+from untaped.sdk.network import find_program
 from untaped_git.version import below_floor, floor_text, git_version, version_text
 
 

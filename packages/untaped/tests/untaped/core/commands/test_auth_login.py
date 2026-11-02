@@ -10,8 +10,9 @@ import pytest
 from pydantic import BaseModel, HttpUrl
 
 from core_test_support.commands.support import compose, make_plugin, root_group, write_config
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, TlsVerify
 from untaped.sdk.errors import ConfigError
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify
 from untaped.sdk.network._credential_store import INDEX, CredentialRow
 from untaped.sdk.network._credential_store import rows as stored_rows
 from untaped.sdk.network._token_store import TokenStore

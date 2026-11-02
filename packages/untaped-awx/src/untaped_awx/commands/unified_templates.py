@@ -35,6 +35,7 @@ from untaped.sdk import (
     Positional,
     Stdin,
     UsageError,
+    command_line,
     key,
     not_found,
     q,
@@ -108,8 +109,9 @@ class Get(AwxCommand):
                 # Fast-fail before hitting AWX so the error message is
                 # specifically about the id-only contract instead of a
                 # vague 404.
+                command = command_line(self.spelled())
                 raise UsageError(
-                    f"unified-templates get takes numeric ids ({q(raw)} is not a number); "
+                    f"`{command}` takes numeric ids ({q(raw)} is not a number); "
                     "names are not unique across kinds, so use the per-kind group "
                     "for name lookup",
                 )

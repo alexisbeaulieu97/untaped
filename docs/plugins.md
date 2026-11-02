@@ -163,7 +163,7 @@ everything an author needs to know.
 | `str`, `int`, `float`, `bool`, `Path`, `Literal[...]`, an enum, `X \| None`, `list[X]` | An option named after the field. Its `description` is the help, and `Field` constraints validate it. A `bool` defaulting to true, or a `bool \| None`, also gets `--no-`. A list option repeats, one value per flag. |
 | `Positional[X]`, or `Annotated[Positional[X], AllowHyphen]` | An argument, filled in field order. `AllowHyphen` lets a value start with `-`. |
 | `Annotated[X, Short("-x")]` | The option's short flag. |
-| `File[M]`, `ExistingFile`, `TextOrStdin`, `PathOrStdin`, `KeyValue`, `KeyJson` | Core's value types: a file parsed as `M` (with an input page and schema), a path that must exist, a value or `-` for stdin, and a `KEY=VALUE` or `KEY=<json>` pair. `Annotated[File[M], Written]` is a file the command writes. |
+| `File[M]`, `ExistingFile`, `TextOrStdin`, `PathOrStdin`, `KeyValue`, `KeyJson` | Core's value types: a file parsed as `M` (with an input page and schema), a path that must exist, a value or `-` for stdin, and a `KEY=VALUE` or `KEY=<json>` pair. |
 | `Annotated[Ref, Document(M)]` | The value names a document of `M` that the plugin finds and parses itself. The docs show `M`'s input page; core checks no file. |
 | A pydantic model of the plugin's own | A bundle: its fields are flattened into the command, in a help panel named after the class. Its docstring is a guide, linked "Read first" from each command taking it. |
 | An enum of the plugin's own with a docstring | The choices. Its docstring is a guide, as for a bundle. |
@@ -197,7 +197,9 @@ untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
 ```
 
-Config keys are fully qualified (`acme.greeting`). A plugin reads and
+Config keys are fully qualified (`acme.greeting`); a message or record names
+one as `setting_name(key(AcmeSettings).greeting)`, which follows a renamed
+plugin, never as a literal. A plugin reads and
 writes only its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
 `untaped config set` rejects state fields.
 
@@ -205,7 +207,8 @@ The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
 an `UntapedError` from `run` and the root prints its standard diagnostics and
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and a `system` as class defaults, `Service(YourSettings)` for your own
-service or a `System` member otherwise; see
+service (`Service(YourSettings, part="cache")` for a part of it) or a
+`System` member otherwise; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
 and record shapes; interactive screens are in [Screens](./screens.md).

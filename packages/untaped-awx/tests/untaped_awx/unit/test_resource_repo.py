@@ -6,7 +6,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository

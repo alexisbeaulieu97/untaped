@@ -45,19 +45,16 @@ from typing import TYPE_CHECKING, Self
 from pydantic import BaseModel
 
 from untaped.sdk import (
-    NO_PROGRESS,
     Diagnostics,
     ErrorCategory,
-    GitCommandError,
-    GitResult,
-    ProgressHandle,
     System,
     UntapedError,
     attribution,
     experimental,
     http_of,
-    run_git,
 )
+from untaped.sdk.git import GitCommandError, GitResult, run_git
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_git import store_release, worktree_config
 from untaped_git.delta import RefDelta, diff_refs
 from untaped_git.hosts import Credential, HostAuth
@@ -83,7 +80,7 @@ from untaped_git.url import https_origin, url_host
 from untaped_git.version import below_floor, floor_text, git_version, version_text
 
 if TYPE_CHECKING:
-    from untaped.sdk import DataRead
+    from untaped.sdk.storage import DataRead
 
 _diag = Diagnostics()
 
@@ -288,10 +285,11 @@ class RepoStore:
     def read_private[M: BaseModel](self, model: type[M]) -> DataRead[M]:
         """This plugin's private file in the repo, read as ``model``.
 
-        Found, absent, unreadable or a newer untaped's (:data:`~untaped.sdk.DataRead`);
+        Found, absent, unreadable or a newer untaped's (:data:`~untaped.sdk.storage.DataRead`);
         ``Found.refreshed_at`` is the freshness :meth:`write_private` was given.
         """
-        from untaped.sdk import read_data_file  # noqa: PLC0415  # the data file loads on first use
+        # the data file loads on first use
+        from untaped.sdk.storage import read_data_file  # noqa: PLC0415
 
         return read_data_file(private_file(self._path, self._plugin), model)
 
@@ -307,7 +305,8 @@ class RepoStore:
         for data that can go stale. With no ``value`` the file only marks the
         repo as used: one already there is kept as it is. The repo must exist.
         """
-        from untaped.sdk import write_data_file  # noqa: PLC0415  # the data file loads on first use
+        # the data file loads on first use
+        from untaped.sdk.storage import write_data_file  # noqa: PLC0415
 
         path = private_file(self._path, self._plugin)
         if value is None:

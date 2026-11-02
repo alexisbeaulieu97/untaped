@@ -155,7 +155,7 @@ class _Composed:
     def __init__(self, result: CompositionResult, root: App) -> None:
         from untaped.core.surface._records import record_lines  # noqa: PLC0415
         from untaped.core.surface._sdk import collect_exports, line_mark  # noqa: PLC0415
-        from untaped.sdk.marks import listed_behaviours  # noqa: PLC0415
+        from untaped.runtime.stability_marks import listed_behaviours  # noqa: PLC0415
 
         self.result = result
         self.root = root
@@ -181,7 +181,7 @@ class _Composed:
         The whole surface is the union of the plugins' lines, so a line with
         no owner would drop out of it unseen.
         """
-        from untaped.sdk.marks import children  # noqa: PLC0415
+        from untaped.sdk._replacement import children  # noqa: PLC0415
 
         owned: set[str] = set()
         for plugin in self.result.plugins:

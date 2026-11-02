@@ -19,12 +19,16 @@ from pydantic import Field
 
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
 from untaped.core.settings import CoreSettings
+from untaped.sdk._confirm import Confirm
 from untaped.sdk._keys import key
+from untaped.sdk._output import Output
+from untaped.sdk._table import table_row
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional, table_row
+from untaped.sdk.fields import Positional
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (
+    Initialized,
     Project,
     current_project,
     init_project,
@@ -72,7 +76,9 @@ class Init(Command[CoreSettings]):
     output: Output[ProjectOutcome]
 
     def run(self) -> Iterator[ProjectOutcome]:
-        done = init_project(self.path if self.path is not None else Path.cwd(), new_id=self.new_id)
+        done: Initialized = init_project(
+            self.path if self.path is not None else Path.cwd(), new_id=self.new_id
+        )
         if done.action == "unchanged":
             self.ctx.diag.info(done.detail)
         else:
@@ -313,7 +319,8 @@ class Prune(Command[CoreSettings]):
                     continue
                 stack.enter_context(Project(id=ref.holder.name, root=ref.anchor or Path()).locked())
                 try:
-                    removals.append(plan_removal(ref, force=self.force))
+                    earlier = [removal.holder for removal in removals]
+                    removals.append(plan_removal(ref, force=self.force, leaving=earlier))
                 except UntapedError as exc:  # back, or out of reach, since it was listed
                     if self.project is not None:
                         raise

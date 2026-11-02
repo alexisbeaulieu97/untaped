@@ -7,12 +7,13 @@ providers import without them.
 
 from __future__ import annotations
 
-from untaped.sdk import OnlineCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import OnlineCheck
 from untaped_awx.commands.controller import Ping, Schema, probe
 from untaped_awx.commands.documents import Apply, Export
 from untaped_awx.commands.jobs import JobsGroup
 from untaped_awx.commands.lint import Lint
-from untaped_awx.commands.resources import resource_groups
+from untaped_awx.commands.resources import RESOURCE_GROUPS
 from untaped_awx.commands.test import TestGroup
 from untaped_awx.commands.unified_templates import UnifiedTemplatesGroup
 from untaped_awx.domain.lint.resources import Resources
@@ -34,7 +35,7 @@ class Awx(Plugin):
         JobsGroup,
         UnifiedTemplatesGroup,
         TestGroup,
-        *resource_groups(),
+        *RESOURCE_GROUPS,
     )
     fills = (AwxRules, AwxDocuments)
     records = (Resources, *(spec.require_record() for spec in ALL_SPECS))

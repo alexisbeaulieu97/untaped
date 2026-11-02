@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from untaped.sdk import atomic_write
+from untaped.sdk.storage import atomic_write
 from untaped_dotfiles.documents import dump_document, load_document, plain
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash

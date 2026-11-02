@@ -19,6 +19,9 @@ from typing import Literal
 from untaped.sdk import ErrorCategory, Service, System, UntapedError
 from untaped_github.settings import GithubSettings
 
+GITHUB = Service(GithubSettings)
+"""GitHub as an error's ``system``: the name the plugin runs under."""
+
 GithubGraphqlErrorKind = Literal[
     "rate_limited",
     "secondary_rate_limited",
@@ -40,7 +43,7 @@ _KIND_CATEGORIES: Mapping[GithubGraphqlErrorKind, ErrorCategory] = MappingProxyT
 class GithubError(UntapedError):
     """Base for GitHub plugin errors."""
 
-    system = Service(GithubSettings)
+    system = GITHUB
 
 
 class GithubGraphqlError(GithubError):

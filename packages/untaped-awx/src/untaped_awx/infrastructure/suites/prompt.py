@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from untaped.sdk import PromptChoice, Terminal
+from untaped.sdk import Terminal
+from untaped.sdk.prompt import PromptChoice
 from untaped_awx.domain.suites.suite import VariableSpec
 
 

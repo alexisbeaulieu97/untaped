@@ -54,7 +54,8 @@ RACK = {
         from abc import abstractmethod
         from datetime import date
 
-        from untaped.sdk.contracts import Contract, Issued, Record
+        from untaped.sdk import Issued, Record
+        from untaped.sdk.contracts import Contract
 
 
         class Item(Issued):
@@ -121,8 +122,8 @@ BIN = {
 
         from typing import ClassVar
 
-        from untaped.sdk import key
-        from untaped.sdk.contracts import NotReady, Provider, Record
+        from untaped.sdk import Record, key
+        from untaped.sdk.contracts import NotReady, Provider
         from untaped_bin.settings import BinSettings
         from untaped_rack.api import Item, ItemSource
 

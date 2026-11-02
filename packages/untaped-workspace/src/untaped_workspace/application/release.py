@@ -26,16 +26,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import (
-    LetGo,
-    MoveAsk,
-    Project,
-    Refused,
-    ReleaseAsk,
-    UntapedError,
-    project_at,
-    shown_path,
-)
+from untaped.sdk import UntapedError, shown_path
+from untaped.sdk.projects import Project, project_at
+from untaped.sdk.storage import LetGo, MoveAsk, Refused, ReleaseAsk
 from untaped_workspace.domain.models import RepoKey, RepoSpec
 from untaped_workspace.domain.naming import store_ident
 from untaped_workspace.domain.safety import (

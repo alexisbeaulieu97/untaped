@@ -66,7 +66,7 @@ def test_a_waiver_allows_one_import(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "source",
     [
-        "import rich\nfrom untaped.sdk import Screen\n",
+        "import rich\nfrom untaped.screen.core import Screen\n",
         "import prompt_toolkit_extras\nfrom prompt_toolkit_extras import x\n",
         "from . import prompt_toolkit\n",
         "x = 'import prompt_toolkit'  # mentioned, not imported\n",

@@ -8,8 +8,9 @@ import pytest
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
-from untaped.sdk import ExecutableCheck, OnlineCheck, Plugin, PluginContext
+from untaped.sdk import Plugin
 from untaped.sdk._run import run_scope
+from untaped.sdk.health import ExecutableCheck, OnlineCheck, PluginContext
 
 
 class DemoSettings(BaseModel):

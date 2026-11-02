@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import Picked, PickItem, PickResult, UntapedError
+from untaped.sdk import UntapedError
 from untaped.sdk.contracts import Answers, Ok
+from untaped.sdk.prompt import Picked, PickItem, PickResult
 from untaped_workspace.api import Repo
 from untaped_workspace.commands.picker import build_request, name_validator, repo_args
 from untaped_workspace.domain.models import RepoArg, StoredRepo

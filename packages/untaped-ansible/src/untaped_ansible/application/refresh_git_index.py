@@ -12,7 +12,8 @@ from typing import Literal
 
 from pydantic import ConfigDict, Field
 
-from untaped.sdk import NO_PROGRESS, Filled, ProgressHandle, UntapedError, bounded_map
+from untaped.sdk import UntapedError, bounded_map
+from untaped.sdk.storage import NO_PROGRESS, Filled, ProgressHandle
 from untaped_ansible.application.ports import (
     GitCache,
     GitHubDependencyReader,

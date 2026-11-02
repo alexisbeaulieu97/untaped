@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated
 
-from untaped.sdk.marks import deprecated, deprecated_parameters
+from untaped.sdk._parameter_marks import deprecated_parameters
+from untaped.sdk.marks import deprecated
 
 if TYPE_CHECKING:
     from untaped.sdk import Record  # never imported at run time

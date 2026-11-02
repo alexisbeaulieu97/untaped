@@ -7,31 +7,36 @@ entry point's target, as an installed plugin is, so the test can tell from
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 import textwrap
 from collections.abc import Iterator
+from contextlib import redirect_stderr
 from pathlib import Path
 
 import pytest
 
 from core_test_support.commands.support import make_plugin
+from untaped.runtime import bootstrap
 from untaped.runtime.bootstrap import build_root_app, composed_with
 from untaped.runtime.registry import (
+    READING_PLUGINS,
     CompositionResult,
     PluginCandidate,
     named_plugin_dir,
     section_settings,
 )
 from untaped.sdk._home import home
-from untaped.sdk.testing import CliInvoker
+from untaped.sdk.testing import CliInvoker, TtyStringIO
 
 PLUGIN = '''
 from datetime import timedelta
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Cache, Command, Plugin
+from untaped.sdk import Command, Plugin
+from untaped.sdk.storage import Cache
 
 from {package}.settings import ToySettings
 
@@ -155,8 +160,45 @@ def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> 
     assert "toyplug.plugin" in sys.modules
 
 
+def _started(argv: list[str], candidates: list[PluginCandidate], stderr: io.StringIO) -> str:
+    """What one start of ``argv`` writes to ``stderr``."""
+    bootstrap._clear_for_tests()
+    with redirect_stderr(stderr), pytest.raises(SystemExit):
+        bootstrap.run_root(argv, candidates=candidates)
+    return stderr.getvalue()
+
+
+def test_a_first_start_on_a_terminal_says_it_reads_the_plugins_and_a_second_start_does_not(
+    toys: Path,
+) -> None:
+    """Importing every plugin takes seconds on a fresh install: a spinner says why, once."""
+    toy = _package(toys, "toyplug")
+    first = _started(["--version"], [toy], TtyStringIO())
+    assert READING_PLUGINS in first
+    assert first.endswith("\r")  # the spinner is cleared, so no line is left behind
+    _unload("toyplug")
+    assert READING_PLUGINS not in _started(["--version"], [toy], TtyStringIO())
+
+
+@pytest.mark.parametrize(
+    ("argv", "stderr"),
+    [(["-q", "--version"], TtyStringIO), (["-v", "--version"], io.StringIO)],
+    ids=["quiet", "not-a-terminal"],
+)
+def test_a_first_start_says_nothing_when_quiet_or_off_a_terminal(
+    toys: Path, argv: list[str], stderr: type[io.StringIO]
+) -> None:
+    """Off a terminal a -q after the command word isn't read yet, so no line is printed.
+
+    ``-v`` would print the task's opening line at once, so only the rule keeps it out.
+    """
+    toy = _package(toys, "toyplug")
+    assert READING_PLUGINS not in _started(argv, [toy], stderr())
+
+
 KEYED = '''
-from untaped.sdk import Command, Credential, CredentialKey, Plugin
+from untaped.sdk import Command, Plugin
+from untaped.sdk.network import Credential, CredentialKey
 
 from {package}.settings import ToySettings
 

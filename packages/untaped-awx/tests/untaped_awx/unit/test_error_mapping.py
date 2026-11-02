@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from awx_test_support import installed
@@ -52,14 +54,17 @@ def test_http_errors_map_to_awx_errors(
 ) -> None:
     summary = "dns failure" if status is None else f"HTTP {status} for /x"
     raw = HttpError(summary, status_code=status, url="/x", body=body)
-    mapped = to_awx_error(raw)
+    with installed().running():  # a 401's hint names the credential awx declares
+        mapped = to_awx_error(raw)
+        with pytest.raises(error), map_awx_errors():
+            raise raw
     assert type(mapped) is error
     assert message in str(mapped)
     if isinstance(mapped, AwxApiError):
         assert mapped.status_code == status
         assert not hasattr(mapped, "status")
-    with pytest.raises(error), map_awx_errors():
-        raise raw
+    if status == 401:
+        assert mapped.hint == _TOKEN_HINT.removeprefix("hint (your step): ")
 
 
 @pytest.mark.parametrize(
@@ -113,26 +118,35 @@ def test_nested_mapping_keeps_the_typed_error() -> None:
 
 
 @pytest.mark.parametrize(
-    ("error", "category"),
+    ("make", "category"),
     [
-        (AwxError("x"), ErrorCategory.FAILED),
-        (AwxApiError("x"), ErrorCategory.FAILED),
-        (BadRequestError("x"), ErrorCategory.INVALID),
-        (PermissionDeniedError("x"), ErrorCategory.PERMISSION),
-        (ResourceNotFoundError("JobTemplate", {"name": "x"}), ErrorCategory.NOT_FOUND),
-        (ResourceNotFoundError("JobTemplate", {"name": "x"}, status=None), ErrorCategory.NOT_FOUND),
-        (ConflictError("x"), ErrorCategory.CONFLICT),
-        (MutationConflictError("x"), ErrorCategory.INVALID),
-        (AmbiguousIdentityError("Host", {"name": "x"}), ErrorCategory.INVALID),
-        (LaunchPromptError("x"), ErrorCategory.INVALID),
-        (WaitCancelledError("x"), ErrorCategory.INTERRUPTED),
-        (PartialWriteError("x", record_id=1), ErrorCategory.FAILED),
-        (ActionResponseError("x", execution_id=None, execution_kind=None), ErrorCategory.FAILED),
+        (lambda: AwxError("x"), ErrorCategory.FAILED),
+        (lambda: AwxApiError("x"), ErrorCategory.FAILED),
+        (lambda: BadRequestError("x"), ErrorCategory.INVALID),
+        (lambda: PermissionDeniedError("x"), ErrorCategory.PERMISSION),
+        (lambda: ResourceNotFoundError("JobTemplate", {"name": "x"}), ErrorCategory.NOT_FOUND),
+        (
+            lambda: ResourceNotFoundError("JobTemplate", {"name": "x"}, status=None),
+            ErrorCategory.NOT_FOUND,
+        ),
+        (lambda: ConflictError("x"), ErrorCategory.CONFLICT),
+        (lambda: MutationConflictError("x"), ErrorCategory.INVALID),
+        (lambda: AmbiguousIdentityError("Host", {"name": "x"}), ErrorCategory.INVALID),
+        (lambda: LaunchPromptError("x"), ErrorCategory.INVALID),
+        (lambda: WaitCancelledError("x"), ErrorCategory.INTERRUPTED),
+        (lambda: PartialWriteError("x", record_id=1), ErrorCategory.FAILED),
+        (
+            lambda: ActionResponseError("x", execution_id=None, execution_kind=None),
+            ErrorCategory.FAILED,
+        ),
         # an explicit status still selects the category
-        (BadRequestError("x", status=503), ErrorCategory.UNAVAILABLE),
+        (lambda: BadRequestError("x", status=503), ErrorCategory.UNAVAILABLE),
     ],
 )
-def test_awx_errors_declare_a_category_in_awx(error: AwxError, category: ErrorCategory) -> None:
+def test_awx_errors_declare_a_category_in_awx(
+    make: Callable[[], AwxError], category: ErrorCategory
+) -> None:
+    error = make()  # inside the run, so its system reads the plugin's name
     assert error.category is category
     assert error.system == AWX.name()
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from untaped.sdk import LetGo, Refused
+from untaped.sdk.storage import LetGo, Refused
 from untaped.sdk.testing import plan_release, release_ask
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.application.release import plan_release as workspace_release

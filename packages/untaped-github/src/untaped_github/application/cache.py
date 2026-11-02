@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import dir_bytes, not_found
+from untaped.sdk import not_found
+from untaped.sdk.storage import dir_bytes
 from untaped_github.application.inventory import split_full_name
 from untaped_github.application.ports import GitCorpus
 from untaped_github.errors import GitCorpusError

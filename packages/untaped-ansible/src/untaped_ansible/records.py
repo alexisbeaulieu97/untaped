@@ -10,7 +10,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Column, FreshnessRecord, OutcomeRecord, Record, Status, UtcTimestamp
+from untaped.sdk import Column, OutcomeRecord, Record, Status, UtcTimestamp
+from untaped.sdk.storage import FreshnessRecord
 from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
 

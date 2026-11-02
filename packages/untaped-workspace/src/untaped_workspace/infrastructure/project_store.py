@@ -21,27 +21,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import (
-    Dir,
-    HolderView,
-    LetGo,
-    MoveAsk,
+from untaped.sdk import UsageError, key, not_found, q, shown_path
+from untaped.sdk.projects import (
     Project,
     ProjectRemoval,
-    Refused,
-    ReleaseAsk,
-    StateRows,
-    UsageError,
     current_project,
     init_project,
-    key,
     known_projects,
-    not_found,
     project_at,
-    q,
     remove_project,
-    shown_path,
 )
+from untaped.sdk.storage import Dir, HolderView, LetGo, MoveAsk, Refused, ReleaseAsk, StateRows
 from untaped_workspace.domain.models import RepoKey, RepoSpec, WorkspaceMeta, WorkspaceRecord
 from untaped_workspace.domain.naming import store_ident, validate_workspace_name, workspace_key
 from untaped_workspace.errors import WorkspaceError, WorkspaceNotFoundError

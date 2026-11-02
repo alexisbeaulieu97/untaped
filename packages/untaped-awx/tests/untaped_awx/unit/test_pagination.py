@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.pagination import paginate

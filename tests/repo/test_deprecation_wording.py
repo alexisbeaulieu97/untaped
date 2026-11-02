@@ -18,8 +18,16 @@ from untaped_lint.infrastructure.files import source_files
 from untaped_lint.providers.conventions.messages import message_violations
 
 CORE = PACKAGES / "untaped" / "src" / "untaped"
-#: Where core builds the sentences: the message helpers and the marks.
-BUILDERS = frozenset({CORE / "sdk" / "words.py", CORE / "sdk" / "marks.py"})
+#: Where core builds the sentences: the message helpers, the marks and the modules applying them.
+BUILDERS = frozenset(
+    {
+        CORE / "sdk" / "words.py",
+        CORE / "sdk" / "marks.py",
+        CORE / "sdk" / "_parameter_marks.py",
+        CORE / "sdk" / "_behaviours.py",
+        CORE / "runtime" / "stability_marks.py",
+    }
+)
 #: A removal version in prose.
 VERSION_IN_PROSE = re.compile(r"\b(?:removed in|until) \d+\.0\b")
 #: History and generated pages, relative to the repo root.

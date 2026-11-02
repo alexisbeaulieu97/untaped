@@ -5,14 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import (
-    NO_PROGRESS,
-    Failure,
-    ProgressHandle,
-    UntapedError,
-    bounded_map,
-    command_line,
-)
+from untaped.sdk import Failure, UntapedError, bounded_map, command_line
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
 from untaped_workspace.records import RepoStatus
 

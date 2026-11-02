@@ -159,10 +159,14 @@ def membership_groups(
     spec: AwxResourceSpec,
     *,
     scope: type[Scope] | None,
+    within: str,
+    module: str,
 ) -> tuple[type[Group], ...]:
     """``<sub-endpoint> add|remove`` groups, one per multi-valued reference of ``spec``.
 
     ``--stdin`` reads the member kind's records; ``scope`` is ``spec``'s scope bundle.
+    Each group is an attribute of ``spec``'s group, bound at ``within`` in
+    ``module``, and its commands are its attributes, so each has its own target.
     """
     catalog = AwxResourceCatalog()
     groups: list[type[Group]] = []
@@ -172,6 +176,7 @@ def membership_groups(
         parent_noun = _words(spec.kind)
         article = "an" if parent_noun[:1] in "aeiou" else "a"
         members_noun = _plural_words(ref.kind)
+        name = "".join(part.title() for part in ref.sub_endpoint.split("_")) + "Group"
         commands = []
         for base, verb_doc, preposition in (
             (_Add, "Associate", "with"),
@@ -187,27 +192,37 @@ def membership_groups(
             fields: dict[str, Any] = {"stdin": Stdin[member]}  # type: ignore[valid-type]
             if scope is not None:
                 fields["scope"] = scope
+            verb = "Add" if base is _Add else "Remove"
             commands.append(
                 derive(
                     base,
-                    "Add" if base is _Add else "Remove",
+                    verb,
                     doc=doc,
+                    qualname=f"{within}.{name}.{verb}",
+                    module=module,
                     omit=() if scope is not None else ("scope",),
                     spec=spec,
                     ref=ref,
                     **fields,
                 )
             )
-        name = "".join(part.title() for part in ref.sub_endpoint.split("_")) + "Group"
         groups.append(
             derive(
                 Group,
                 name,
                 doc=f"Manage {ref.kind} membership on {spec.kind}.{ref.field}.",
+                qualname=f"{within}.{name}",
+                module=module,
                 commands=tuple(commands),
+                **_attributes(commands),
             )
         )
     return tuple(groups)
+
+
+def _attributes(commands: list[type[_Membership]]) -> dict[str, Any]:
+    """``commands`` as their group's attributes, by class name."""
+    return {each.__name__: each for each in commands}
 
 
 def _member_scope(ctx: AwxContext, parent_rec: dict[str, Any], ref: FkRef) -> dict[str, str]:

@@ -12,7 +12,7 @@ import statistics
 from collections.abc import Callable
 from pathlib import Path
 
-from untaped.sdk import dir_bytes
+from untaped.sdk.storage import dir_bytes
 from untaped_git.records import RepoCount, StoreReport
 from untaped_git.repo_files import (
     config_value,

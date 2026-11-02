@@ -14,8 +14,9 @@ from core_test_support.commands.support import make_plugin
 from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.run import build_run
-from untaped.sdk import Dir, key
+from untaped.sdk import key
 from untaped.sdk._run import run_scope
+from untaped.sdk.storage import Dir
 from untaped.sdk.storage import _refs as refs
 from untaped.sdk.storage._refs import RefHolder, RefTarget
 from untaped.sdk.storage.store import Store

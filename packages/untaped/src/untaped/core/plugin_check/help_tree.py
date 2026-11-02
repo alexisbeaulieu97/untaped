@@ -16,8 +16,10 @@ duplicate flags are composition's), so these are about names and prose:
 - ``unkeyed-panel`` — a shown group of the plugin's own without a sort key
   below 100, which would list after Global options.
 - ``example-command`` — a command line in a command docstring's
-  ``Examples`` section (a ``$ untaped …`` line of a ``console`` fence) that
-  does not parse against the composed root.
+  ``Examples`` section (a ``$ untaped …`` line of a ``console`` fence), or an
+  ``untaped …`` command in inline code in its docstring or an option's help,
+  that does not parse against the composed root (inline, it may leave out
+  required arguments).
 
 Lines are ``<command path>::<rule>::<detail>``; they carry no source line, so
 no inline marker can suppress them.
@@ -25,6 +27,7 @@ no inline marker can suppress them.
 
 from __future__ import annotations
 
+import inspect
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
@@ -32,7 +35,14 @@ from itertools import chain
 
 from cyclopts import App, Group
 
-from untaped.runtime.command_lines import console_lines, examples_of, parse_problem, segments
+from untaped.runtime.command_lines import (
+    FENCE,
+    INLINE,
+    console_lines,
+    examples_of,
+    parse_problem,
+    segments,
+)
 from untaped.runtime.help_panels import PLUGIN_PANEL_KEY_LIMIT, RESERVED_PANELS, is_core_panel
 
 RESERVED_SHORTS = {
@@ -86,6 +96,25 @@ def example_violations(root: App, app: App) -> Iterator[tuple[str, str]]:
             problem = parse_problem(root, command, inline=False)
             if problem is not None:
                 yield "example-command", f"{command}: {problem}"
+    # An option's help may come from the docstring's Parameters: each mention counts once.
+    named = {
+        command: None
+        for text in _prose(app)
+        for span in INLINE.findall(FENCE.sub("", text))
+        for command in segments(span)
+    }
+    for command in named:
+        problem = parse_problem(root, command, inline=True)
+        if problem is not None:
+            yield "example-command", f"{command}: {problem}"
+
+
+def _prose(app: App) -> Iterator[str]:
+    """The help text of ``app``'s command: its docstring, then each shown option's help."""
+    yield inspect.getdoc(app.default_command) or ""
+    for argument in app.assemble_argument_collection(parse_docstring=True):
+        if argument.show and argument.parse and argument.parameter.help:
+            yield argument.parameter.help
 
 
 #: cyclopts' own Commands, Parameters and Arguments panels, by their sort-key markers.

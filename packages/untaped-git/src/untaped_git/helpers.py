@@ -6,7 +6,7 @@ import re
 import shlex
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, run_git
+from untaped.sdk.git import GitCommandError, run_git
 from untaped_git.repo_files import list_repos
 
 _HELPER_KEY = re.compile(r"^credential\.(?:(?P<url>.+)\.)?helper$")

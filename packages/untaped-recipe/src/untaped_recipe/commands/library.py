@@ -7,7 +7,8 @@ from typing import Annotated
 
 from pydantic import Field
 
-from untaped.sdk import Document, Failed, Output, Positional, hint, run_editor
+from untaped.sdk import Document, Failed, Output, Positional, hint
+from untaped.sdk.prompt import run_editor
 from untaped_recipe.application.check_pack import check_library, check_ref
 from untaped_recipe.commands._library import NO_LOCK_NOTE, find_recipe, pack_child
 from untaped_recipe.commands._recipe import RecipeCommand, recipe_errors

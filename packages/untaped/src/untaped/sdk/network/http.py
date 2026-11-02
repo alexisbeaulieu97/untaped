@@ -38,12 +38,13 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.redaction import redact_credentials
 from untaped.runtime.settings import HttpSettings, active_settings_layout, load_core_part
 from untaped.runtime.settings_env import env_sets_key
-from untaped.sdk._run import run_clock
+from untaped.sdk._run import NoRunError, current_run, run_clock
 from untaped.sdk.errors import (
     ConfigError,
     HttpError,
     HttpStatusError,
     HttpTransportError,
+    Service,
     UntapedError,
 )
 from untaped.sdk.health.marks import section_marks
@@ -499,23 +500,30 @@ def _other_profiles_hint(profiles: Sequence[str], *, plural: bool) -> str:
 
 
 def rejected_token_error(
-    section: str,
+    service: Service,
     message: str,
     *,
     cause: BaseException | None = None,
     field: str = "token",
 ) -> ConfigError:
-    """The standard error for a service rejecting the secret ``field`` of ``section`` (HTTP 401).
+    """The standard error for ``service`` rejecting its secret ``field`` (HTTP 401).
 
-    ``auth`` in ``section`` (exit ``4``). For a declared credential the hint
-    is ``auth login <section>`` (``auth login <section> <name>`` for one not
+    ``service`` is the plugin's own :class:`~untaped.sdk.Service`, so the
+    error and its hint name the plugin as it runs, renamed or not. ``auth``
+    in that section (exit ``4``). For a declared credential the hint is
+    ``auth login <section>`` (``auth login <section> <name>`` for one not
     named ``token``), the person's step; for a secret setting, ``config set
-    <section>.<field> --prompt``. The ``cause``'s details (``status``,
-    ``url``) are kept.
+    <section>.<field> --prompt``. Outside a run, or for a model no composed
+    plugin owns, there is no section to name, so the error has no hint. The
+    ``cause``'s details (``status``, ``url``) are kept.
     """
     from untaped.sdk.network.credentials import declared_credentials  # noqa: PLC0415
 
     details = cause.details if isinstance(cause, UntapedError) else None
+    try:
+        section = current_run().composition.owner_of_settings(service.model)
+    except NoRunError, LookupError:
+        return ConfigError(message, category="auth", system=service.name(), details=details)
     declared = {each.name: each for each in declared_credentials(section)}
     credential = declared.get(field)
     command = credential.login if credential else f"config set {section}.{field} --prompt"

@@ -15,7 +15,8 @@ import pytest
 import respx
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, ConfigError, Credential, CredentialKey, Plugin
+from untaped.sdk import Command, ConfigError, Plugin
+from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.network.http import HttpFactory, HttpSettings
 from untaped.sdk.testing import Install
 

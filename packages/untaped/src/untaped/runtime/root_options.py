@@ -28,6 +28,14 @@ from cyclopts.utils import is_option_like
 from untaped.runtime.declaration import CommandDecl
 from untaped.runtime.profile_resolver import check_pick, parse_pick
 from untaped.runtime.run_output import Diagnostics
+from untaped.runtime.stability_help import (
+    command_selection,
+    mark_of,
+    marked_options,
+    option_name,
+    select_command,
+)
+from untaped.runtime.stability_marks import Alias, deprecated_aliases
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.sdk._cli import (
     follows_user_format,
@@ -38,21 +46,10 @@ from untaped.sdk._cli import (
     user_default_format,
     user_theme,
 )
+from untaped.sdk._replacement import replacement_text
 from untaped.sdk._run import Rendering, Run
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.marks import (
-    Alias,
-    Deprecated,
-    command_selection,
-    deprecated_aliases,
-    mark_of,
-    marked_options,
-    notify_deprecation,
-    option_name,
-    path_owner,
-    replacement_text,
-    select_command,
-)
+from untaped.sdk.marks import Deprecated, notify_deprecation, path_owner
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration, GroupDecl, OptionDecl, PluginDecl
@@ -737,7 +734,7 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     keeps the lenient spelling working and gives help the canonical chain.
     Exact names, cyclopts aliases and ambiguous spellings are left for
     cyclopts to handle. Command names registered with
-    :func:`untaped.sdk.marks.deprecated_alias` along the chain are rewritten
+    :func:`untaped.runtime.stability_marks.deprecated_alias` along the chain are rewritten
     too, with a warning.
     """
     rewritten = list(tokens)

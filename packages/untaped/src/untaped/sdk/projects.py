@@ -1008,4 +1008,15 @@ def _forget(root: Path | None = None) -> None:
             _SEEN.pop(str(root), None)
 
 
-__all__ = ["Project", "checkout_root", "nearest_pyproject", "project_at"]
+__all__ = [
+    "Initialized",
+    "Project",
+    "ProjectRemoval",
+    "checkout_root",
+    "current_project",
+    "init_project",
+    "known_projects",
+    "nearest_pyproject",
+    "project_at",
+    "remove_project",
+]

@@ -22,28 +22,33 @@ bug often says something about the design, and so does a change that only fits
 by being bolted on. The task is why we're in the code, not the limit of what
 we notice.
 
-Everything untaped does can run unattended, so scripts and agents can drive
-it: what a command asks at a terminal can come from a flag, an environment
-variable or configuration, or another command does the job without asking.
+Everything untaped does can run unattended, so scripts and agents can drive it:
+what a command asks at a terminal can come from a flag, an environment variable
+or configuration, or another command does the job without asking. untaped
+treats people and agents alike: what it says about a step names facts such as
+that it asks for a secret or needs admin rights, never who should take it.
 
 Core and each plugin care only about what comes in and what goes out, and know
 one another only through public interfaces, never how the other is built. A
 plugin doesn't know other plugins exist unless it depends on one. Whoever owns
 a capability does its wiring and offers it through a small interface; everyone
-else only declares what they need or provide. untaped owns the CLI, so it
-mounts the commands plugins build and wires help and agent support from what
-they declare. When one side has to know something only the other cares about,
-the boundary is in the wrong place. The checks on these boundaries catch honest
-mistakes; they don't wall plugins off. A plugin runs with the user's rights and
-could get around any guard, so we add no guards that only look like protection.
+else only declares what they need or provide, and uses the owner's interface
+rather than doing the job itself, so installing a plugin that provides a
+capability is all it takes for every plugin to use it, with no setup. untaped
+owns the CLI, so it mounts the commands plugins build and wires help and agent
+support from what they declare. When one side has to know something only the
+other cares about, the boundary is in the wrong place. The checks on these
+boundaries catch honest mistakes; they don't wall plugins off. A plugin runs
+with the user's rights and could get around any guard, so we add no guards that
+only look like protection.
 
 untaped is made of building blocks. A mechanic several features need, such as
-caching or state, is solved once by its owner (core unless something narrower
-owns it) behind a typed pydantic interface that is robust and simple to use.
-Any plugin can use it, and its owner does too, never a private copy. For
-example, the SDK provides output formats and commands pick those they support.
-Core provides mechanics, not models of a plugin's domain; each plugin models
-its own.
+caching or state, is solved once by its owner behind a typed pydantic interface
+that is robust and simple to use. Core holds only what every plugin needs; any
+other shared mechanic lives in a plugin that the others depend on. Any plugin
+can use a block, and its owner does too, never a private copy. For example, the
+SDK provides output formats and commands pick those they support. Core provides
+mechanics, not models of a plugin's domain; each plugin models its own.
 
 ## Agent-only notes
 

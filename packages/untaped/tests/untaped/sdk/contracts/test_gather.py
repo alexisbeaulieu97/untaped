@@ -32,6 +32,7 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.run import child_run, invocation
 from untaped.runtime.run_output import exit_on_counted_failure
+from untaped.sdk import Source
 from untaped.sdk._run import recording
 from untaped.sdk.contracts import (
     Contract,
@@ -41,7 +42,6 @@ from untaped.sdk.contracts import (
     Provider,
     Reason,
     Skipped,
-    Source,
     gather,
 )
 from untaped.sdk.diagnostic import Stale

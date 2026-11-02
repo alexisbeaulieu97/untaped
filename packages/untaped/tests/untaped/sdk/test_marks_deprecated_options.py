@@ -12,8 +12,9 @@ from pydantic import Field
 from core_test_support.commands.support import make_plugin
 from untaped.core.surface._cli import subtree_lines
 from untaped.runtime import bootstrap
+from untaped.runtime.stability_help import _SELECTED_COMMAND
 from untaped.sdk import Command, Positional, Short
-from untaped.sdk.marks import _SELECTED_COMMAND, deprecated
+from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

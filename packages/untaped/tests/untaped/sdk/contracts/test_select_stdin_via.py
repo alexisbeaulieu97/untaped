@@ -16,8 +16,19 @@ from pydantic import BaseModel, Field
 
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import target_of
-from untaped.sdk import Command, Key, Output, Plugin, Positional, Stdin, experimental, key
-from untaped.sdk.contracts import Contract, Issued, NotReady, Provider, Record, gather
+from untaped.sdk import (
+    Command,
+    Issued,
+    Key,
+    Output,
+    Plugin,
+    Positional,
+    Record,
+    Stdin,
+    experimental,
+    key,
+)
+from untaped.sdk.contracts import Contract, NotReady, Provider, gather
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -413,8 +424,7 @@ def test_two_providers_of_one_record_give_it_one_kind() -> None:
 _PRINTER = """
 from __future__ import annotations
 from pydantic import BaseModel
-from untaped.sdk import Command, Output, Plugin
-from untaped.sdk.contracts import Issued, Record
+from untaped.sdk import Command, Issued, Output, Plugin, Record
 
 class Plain(BaseModel):
     \"\"\"No settings.\"\"\"
@@ -452,8 +462,8 @@ _OWNER = """
 from __future__ import annotations
 from abc import abstractmethod
 from pydantic import BaseModel
-from untaped.sdk import Plugin, experimental
-from untaped.sdk.contracts import Contract, Issued, Record
+from untaped.sdk import Issued, Plugin, Record, experimental
+from untaped.sdk.contracts import Contract
 from kinds_printer import Tag
 
 class Plain(BaseModel):
@@ -518,15 +528,15 @@ class Lender(Plugin):
 
 #: A package whose plugin is broken on its own: two of its records are both ``broken.twin``.
 _BROKEN = {
-    "a": "from untaped.sdk.contracts import Record\nclass Twin(Record):\n    name: str\n",
-    "b": "from untaped.sdk.contracts import Record\nclass Twin(Record):\n    name: str\n",
+    "a": "from untaped.sdk import Record\nclass Twin(Record):\n    name: str\n",
+    "b": "from untaped.sdk import Record\nclass Twin(Record):\n    name: str\n",
     "plugin": """
 from __future__ import annotations
 from abc import abstractmethod
 from collections.abc import Iterator
 from pydantic import BaseModel
-from untaped.sdk import Command, Output, Plugin, experimental
-from untaped.sdk.contracts import Contract, Record
+from untaped.sdk import Command, Output, Plugin, Record, experimental
+from untaped.sdk.contracts import Contract
 from kinds_broken import a, b
 from kinds_printer import Tag
 

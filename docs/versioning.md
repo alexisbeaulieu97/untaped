@@ -84,11 +84,11 @@ command) is marked with `@experimental` in the code and listed here, not in a
   the rule ids lint declares. See [Lint](./lint.md).
 - `project`: its commands, the `untaped.recorded_project`, `untaped.project_outcome`
   and `untaped.hold_outcome` records, `.untaped/project.json` and project
-  references, and `Project`, `current_project`, `project_at`,
-  `known_projects`, `init_project` (with what it answers, `Initialized`),
-  `remove_project`, `ProjectRemoval`, `ItemStore`, `ReleaseAsk`, `MoveAsk`,
-  `LetGo`, `Refused`, `HolderView`, `UnknownHolder` and `HolderState` in
-  `untaped.sdk`, and `make_project`, `release_ask`, `move_ask` and
+  references, `Project`, `current_project`, `project_at`, `known_projects`,
+  `init_project` (with what it answers, `Initialized`), `remove_project` and
+  `ProjectRemoval` in `untaped.sdk.projects`, `ReleaseAsk`, `MoveAsk`,
+  `LetGo`, `Refused`, `HolderView` and `UnknownHolder` in
+  `untaped.sdk.storage`, and `make_project`, `release_ask`, `move_ask` and
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.

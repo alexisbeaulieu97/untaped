@@ -17,7 +17,7 @@ import pytest
 import respx
 
 from ansible_test_support import Result, running
-from untaped.sdk import Filled, ProgressHandle
+from untaped.sdk.storage import Filled, ProgressHandle
 from untaped.sdk.testing import cache_clock
 from untaped_ansible import refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult

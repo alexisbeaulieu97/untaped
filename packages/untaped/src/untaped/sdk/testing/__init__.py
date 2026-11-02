@@ -58,6 +58,7 @@ from rich.console import Console
 from untaped.core.commands.records import PluginCheck
 from untaped.runtime.progress_stack import cadence_clock, cadence_is_set, frozen_cadence, tick
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.stability_help import apply_marks
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk._run import (
     _RUN,
@@ -68,7 +69,7 @@ from untaped.sdk._run import (
 )
 from untaped.sdk._run import recording as _recording
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.marks import apply_marks, experimental
+from untaped.sdk.marks import experimental
 from untaped.sdk.projects import Project, holder_of, init
 from untaped.sdk.prompt.prompts import (
     PromptBackend,
@@ -583,7 +584,7 @@ def release_ask(
     others: int | Sequence[HolderState] = 0,
     force: bool = False,
 ) -> ReleaseAsk[Any]:
-    """A :class:`~untaped.sdk.ReleaseAsk` for ``item`` with made-up holders, for unit tests.
+    """A :class:`~untaped.sdk.storage.ReleaseAsk` for ``item`` with made-up holders, for unit tests.
 
     ``holder`` is the state of the project letting go; ``others`` the number
     of other present holders, or each other holder's state.
@@ -599,7 +600,7 @@ def release_ask(
 
 @experimental
 def move_ask(store: ItemStore[Any], item: object, *, moved_from: Path) -> MoveAsk[Any]:
-    """A :class:`~untaped.sdk.MoveAsk` for ``item``: a present project moved from ``moved_from``."""
+    """A :class:`~untaped.sdk.storage.MoveAsk` for ``item``: a present project moved from there."""
     holder = _view(0, "present")
     if moved_from == holder.anchor:
         holder = holder.model_copy(update={"anchor": holder.anchor.with_name("moved-here")})

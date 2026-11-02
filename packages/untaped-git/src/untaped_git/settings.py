@@ -7,8 +7,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from untaped.sdk import Dir, key, settings_of
+from untaped.sdk import key, settings_of
 from untaped.sdk.health import HomeOnly
+from untaped.sdk.storage import Dir
 
 
 class GitSettings(BaseModel):

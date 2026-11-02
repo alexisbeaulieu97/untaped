@@ -12,7 +12,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, GitResult, attribution, run_git
+from untaped.sdk import attribution
+from untaped.sdk.git import GitCommandError, GitResult, run_git
 from untaped_dotfiles.errors import GitError
 from untaped_dotfiles.trees import GitRefTree, WorkingTree
 

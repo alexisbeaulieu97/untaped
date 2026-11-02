@@ -214,13 +214,16 @@ def test_stream_stdout_warns_when_events_are_still_being_saved() -> None:
     client = _FakeClient(json_responses=[_events(), unsaved] * 20)
     warnings: list[str] = []
     monitor = PollingJobMonitor(
-        cast(RawHttpResourceClient, client), sleep=lambda _: None, warn=warnings.append
+        cast(RawHttpResourceClient, client),
+        sleep=lambda _: None,
+        warn=warnings.append,
+        log_command=lambda job: f"logs {job.id} {job.kind}",
     )
     finished = Job(id=7, kind="job", status="failed", event_processing_finished=False)
     list(monitor.stream_stdout(finished))
     assert warnings == [
         "job 7: AWX is still saving its events; the log (and its PLAY RECAP) may be cut "
-        "short; see `jobs logs 7 --kind job` later"
+        "short; run `logs 7 job` later"
     ]
 
 

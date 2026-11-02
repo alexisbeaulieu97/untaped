@@ -8,30 +8,22 @@ from dataclasses import dataclass, replace
 from rich.console import Group
 from rich.text import Text
 
-from untaped.screen.core import KeyPress
-from untaped.sdk import (
+from untaped.screen.components.buttons import Button, Buttons, Pressed
+from untaped.screen.components.choices import ListItem
+from untaped.screen.components.form import Form, Submitted
+from untaped.screen.components.inputs import SecretInput, TextInput
+from untaped.screen.components.layout import Panes, Viewport
+from untaped.screen.components.lists import SearchList, Tags, Tree, TreeRow
+from untaped.screen.core import (
     Binding,
-    Button,
-    Buttons,
     Cancel,
     Cmd,
-    Form,
     Frame,
-    ListItem,
+    KeyPress,
     NextField,
-    Panes,
     Paste,
-    Pressed,
     Quit,
     Screen,
-    SearchList,
-    SecretInput,
-    Submitted,
-    Tags,
-    TextInput,
-    Tree,
-    TreeRow,
-    Viewport,
 )
 from untaped.sdk._ui import Ui
 from untaped.sdk.testing import ScreenKeys, ScriptedTerminal, TtyStringIO, drive_screen

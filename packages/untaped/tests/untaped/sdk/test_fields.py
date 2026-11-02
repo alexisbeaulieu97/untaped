@@ -21,7 +21,6 @@ from untaped.sdk import (
     KeyJson,
     KeyValue,
     Limit,
-    NeedsYesError,
     OutcomeRecord,
     Output,
     Parallel,
@@ -36,7 +35,9 @@ from untaped.sdk import (
 )
 from untaped.sdk._block import POSITIONAL, Invocation
 from untaped.sdk._keys import SettingKey
-from untaped.sdk.fields import CORE_SHORTS, column_fields, default_columns, key_field
+from untaped.sdk._run_blocks import CORE_SHORTS
+from untaped.sdk._table import column_fields, default_columns, key_field
+from untaped.sdk.errors import NeedsYesError
 
 
 class Suite(BaseModel):

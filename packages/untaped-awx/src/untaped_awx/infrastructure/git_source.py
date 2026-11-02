@@ -18,15 +18,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import (
-    ConfigError,
-    GitCommandError,
-    GitResult,
-    System,
-    attribution,
-    git_toplevel,
-    run_git,
-)
+from untaped.sdk import ConfigError, System, attribution
+from untaped.sdk.git import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_awx.infrastructure.git_head import pushed_branch
 
 _TIMEOUT = 30.0

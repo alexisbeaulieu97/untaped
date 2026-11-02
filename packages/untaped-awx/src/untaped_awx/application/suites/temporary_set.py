@@ -45,6 +45,7 @@ from untaped.sdk import (
     Failure,
     System,
     UntapedError,
+    command_line,
     q,
 )
 from untaped_awx.application.jobs.prepare_actions import extra_var_names
@@ -178,14 +179,17 @@ class TemporarySets:
         except UntapedError as exc:
             paths = ", ".join(template.path for template in temp.templates)
             raise self._refused(temp, [*problems, (paths, exc)]) from exc
+        # Lazy: the hint spells awx's command, and the commands import this module.
+        from untaped_awx.commands.test import Prune  # noqa: PLC0415
+
+        prune = command_line(Prune.spelled("--run", temp.marker.run_id, "--older-than", "0"))
         overrides: dict[Any, UntapedError | None] = {}
         for operation in plan.operations:
             label = f"{operation.spec.kind} {q(operation.resource.metadata.name)}"
             if not operation.create:
                 taken = ConflictError(
                     "already exists in its organization; run again for another name",
-                    hint=f"`untaped awx test prune --run {temp.marker.run_id} --older-than 0` "
-                    "deletes it if a killed run left it",
+                    hint=f"`{prune}` deletes it if a killed run left it",
                 )
                 problems.append((label, taken))
             elif operation.spec.kind == JOB_TEMPLATE:

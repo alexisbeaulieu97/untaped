@@ -117,10 +117,18 @@ class Removal:
         )
 
 
-def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str]) -> Removal:
+def plan_removal(
+    project_or_ref: Project | Reference,
+    *,
+    force: Collection[str],
+    leaving: Collection[RefHolder] = (),
+) -> Removal:
     """Plan removing a project: present (``Project``) or recorded only (its ``Reference``).
 
-    Call it under the project's lock; it changes nothing.
+    Call it under the project's lock; it changes nothing. ``leaving`` are
+    the projects the same command removes first: no owner counts them as
+    another holder, so a repo two pruned projects share is released by the
+    second (see ``Project.release``).
     """
     if isinstance(project_or_ref, Project):
         project = project_or_ref
@@ -138,7 +146,8 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
         ref = read_reference(file)
         if ref.opaque is not None:
             raise ConfigError(f"cannot read project {project.name}'s record: {ref.opaque}")
-        return Removal(holder, seen, project.root, plan_holds(seen, ref.targets, force=force))
+        plans = plan_holds(seen, ref.targets, force=force, leaving=leaving)
+        return Removal(holder, seen, project.root, plans)
     if project_or_ref.holder is None:
         raise ConfigError(f"cannot read the project record {shown_path(project_or_ref.file)}")
     if not project_or_ref.file.exists():  # removed since it was listed (another prune)
@@ -158,7 +167,8 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
             f"{seen.label} is at {shown_path(seen.anchor)} again, so it isn't removed",
             hint="run the command again",
         )
-    return Removal(ref.holder, seen, None, plan_holds(seen, ref.targets, force=force))
+    plans = plan_holds(seen, ref.targets, force=force, leaving=leaving)
+    return Removal(ref.holder, seen, None, plans)
 
 
 def preview_check(project: Project) -> None:

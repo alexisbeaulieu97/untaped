@@ -13,11 +13,11 @@ if TYPE_CHECKING:
         HttpClient,
         HttpFactory,
         RetryPolicy,
-        connected_client,
         paginate_link,
         paginate_offset,
         paginate_pages,
         rejected_token_error,
+        same_origin,
     )
 
 __all__ = [
@@ -27,12 +27,12 @@ __all__ = [
     "HttpFactory",
     "RetryPolicy",
     "TlsVerify",
-    "connected_client",
     "find_program",
     "paginate_link",
     "paginate_offset",
     "paginate_pages",
     "rejected_token_error",
+    "same_origin",
 ]
 
 if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
@@ -45,11 +45,11 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "HttpClient",
                 "HttpFactory",
                 "RetryPolicy",
-                "connected_client",
                 "paginate_link",
                 "paginate_offset",
                 "paginate_pages",
                 "rejected_token_error",
+                "same_origin",
             ),
         },
     )

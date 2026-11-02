@@ -53,6 +53,8 @@ from untaped.runtime.settings import (
     register_profile_settings,
     reset_config_registry,
 )
+from untaped.runtime.stability_help import apply_marks, docs_footer, mark_app, panel_for
+from untaped.sdk._behaviours import bind_behaviours
 from untaped.sdk._cli import (
     apply_default_format,
     given_tokens,
@@ -60,25 +62,18 @@ from untaped.sdk._cli import (
     report_errors,
     run_cyclopts_app,
 )
+from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
-from untaped.sdk.marks import (
-    apply_marks,
-    bind_behaviours,
-    bind_owners,
-    children,
-    docs_footer,
-    mark_app,
-    panel_for,
-)
+from untaped.sdk.marks import bind_owners
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage._refs import refresh
 from untaped.sdk.storage.cache import current_call
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
-    from untaped.sdk.marks import DeprecatedBehaviour
+    from untaped.sdk._behaviours import DeprecatedBehaviour
     from untaped.sdk.network.credentials import Credential
 
 
@@ -111,7 +106,7 @@ def _register_sections(result: CompositionResult) -> None:
     is bound as the owner its deprecations name (the root's none: its
     removals name untaped's own major), and its listed behaviours as its own
     (read only when one of them first warns). The root's behaviours are the
-    SDK's to list (:func:`untaped.sdk.marks.behaviour_owner` reads one nobody
+    SDK's to list (:func:`untaped.sdk._behaviours.behaviour_owner` reads one nobody
     lists as core's), so asking who lists one never imports core's class.
     """
     bind_owners(

@@ -11,18 +11,16 @@ import pytest
 
 from untaped.core.plugin_check.stability import deprecation_text_violations
 from untaped.runtime.run_output import Diagnostics
-from untaped.sdk.marks import (
-    UntapedDeprecationWarning,
+from untaped.sdk._parameter_marks import (
     callable_owner,
-    deprecated,
     deprecated_parameters,
     deprecation_sentence,
-    function_mark,
     parameter_marks,
     read_parameter_marks,
-    sdk_replacement_text,
     warns_parameters,
 )
+from untaped.sdk._replacement import sdk_replacement_text
+from untaped.sdk.marks import UntapedDeprecationWarning, deprecated, function_mark
 
 if TYPE_CHECKING:
     from untaped.sdk import Record  # never imported at run time

@@ -16,7 +16,7 @@ from pydantic import HttpUrl
 
 from awx_fake_aap import _LAUNCH_PROMPTS, FakeAap
 from awx_test_support import Settings, installed, using
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped.sdk.testing import ManualClock
 from untaped_awx.settings import AwxServer, AwxSettings
 
@@ -34,6 +34,16 @@ def settings() -> Settings:
 def _awx(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("CONTROLLER_OAUTH_TOKEN", TOKEN)
     with using(settings):
+        yield
+
+
+@pytest.fixture(autouse=True)
+def _run(_awx: None) -> Iterator[None]:
+    """A test of the use cases runs inside a run of awx, as a command does.
+
+    So the systems it blames read the plugin's name, and its hints spell its commands.
+    """
+    with installed().running():
         yield
 
 

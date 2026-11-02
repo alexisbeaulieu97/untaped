@@ -9,14 +9,8 @@ from unittest.mock import ANY
 
 import pytest
 
-from untaped.sdk import (
-    NO_PROGRESS,
-    ConfigError,
-    HttpStatusError,
-    ProgressHandle,
-    UntapedError,
-    UsageError,
-)
+from untaped.sdk import ConfigError, HttpStatusError, UntapedError, UsageError
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_github.application import RepositoryInventoryScope, TeamScope
 from untaped_github.application.sweep import Sweep, SweepOptions, SweepReport
 from untaped_github.application.sync_corpus import CorpusSyncOptions, SyncCorpus

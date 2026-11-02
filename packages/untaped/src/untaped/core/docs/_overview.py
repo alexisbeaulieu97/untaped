@@ -18,8 +18,8 @@ from untaped.core.docs._models import address
 from untaped.core.docs._plugin import extends
 from untaped.core.docs._site import CORE, Site
 from untaped.runtime.settings import resolve_config_path
+from untaped.sdk._confirm import Confirm
 from untaped.sdk.errors import EXIT_CODE_PRECEDENCE, ExitCode
-from untaped.sdk.fields import Confirm
 from untaped.sdk.words import shown_path
 
 #: Root options that don't change what a command does: left off the shared section.

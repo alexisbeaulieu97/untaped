@@ -33,21 +33,14 @@ from untaped.runtime.describe import (
 )
 from untaped.runtime.root_options import ROOT_FLAGS
 from untaped.sdk._block import OR_STDIN, POSITIONAL, FieldBlock
+from untaped.sdk._input_blocks import Stdin
 from untaped.sdk._keys import SettingKey
 from untaped.sdk._names import _WORDS
-from untaped.sdk.fields import (
-    CORE_SHORTS,
-    AllowHyphen,
-    Document,
-    File,
-    Output,
-    Parallel,
-    Refresh,
-    Short,
-    Stdin,
-    Written,
-    unprintable_following,
-)
+from untaped.sdk._output import Output
+from untaped.sdk._run_blocks import CORE_SHORTS, Parallel, Refresh
+from untaped.sdk._table import unprintable_following
+from untaped.sdk._value_types import File
+from untaped.sdk.fields import AllowHyphen, Document, Short, Written
 from untaped.sdk.marks import (
     Deprecated,
     Experimental,

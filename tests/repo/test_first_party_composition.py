@@ -16,8 +16,9 @@ from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _root_options
 from untaped.runtime.run import entered, start_run
+from untaped.runtime.stability_help import mark_of, panel_for
 from untaped.sdk import Command
-from untaped.sdk.marks import deprecated, mark_of, panel_for
+from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 from untaped.sdk.words import EXPERIMENTAL_LINE
 

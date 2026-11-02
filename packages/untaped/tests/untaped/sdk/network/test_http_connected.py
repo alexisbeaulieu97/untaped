@@ -17,9 +17,13 @@ import respx
 from pydantic import BaseModel, HttpUrl, SecretStr
 
 from core_test_support.commands.support import compose, make_plugin
+from core_test_support.runtime.run import holding_runs
 from untaped.runtime.settings import HttpSettings
-from untaped.sdk import BoundSecret, Credential, CredentialKey, NeedsSetup
+from untaped.sdk import Service
 from untaped.sdk.errors import ConfigError, HttpError
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.network.credentials import BoundSecret
 from untaped.sdk.network.http import connected_client, rejected_token_error
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -154,12 +158,19 @@ class Duo(BaseModel):
 
 def test_a_rejected_credential_names_its_own_auth_login() -> None:
     token, hook = Credential(key=DuoServer), Credential(key=DuoServer)
-    compose(make_plugin("duo", settings=Duo, token=token, webhook_secret=hook))
     cause = HttpError("HTTP 401", status_code=401, url=f"{_URL}/hooks", system="duo")
-    error = rejected_token_error("duo", "rejected", cause=cause, field="webhook_secret")
-    assert error.hint == "run `untaped auth login duo webhook_secret`"
+    with holding_runs():  # the error names the section the run composed
+        compose(make_plugin("acme", settings=Duo, token=token, webhook_secret=hook))
+        error = rejected_token_error(Service(Duo), "rejected", cause=cause, field="webhook_secret")
+        plain = rejected_token_error(Service(Duo), "rejected")
+    assert error.hint == "run `untaped auth login acme webhook_secret`"
     assert error.fix_by == "user"
-    assert rejected_token_error("duo", "rejected").hint == "run `untaped auth login duo`"
+    assert plain.hint == "run `untaped auth login acme`"
+
+
+def test_a_rejected_token_outside_a_run_names_no_command() -> None:
+    error = rejected_token_error(Service(Duo), "rejected")
+    assert (error.category, error.system, error.hint) == ("auth", "Service(Duo)", None)
 
 
 @pytest.mark.parametrize(

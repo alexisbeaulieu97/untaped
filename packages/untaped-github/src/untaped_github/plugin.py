@@ -7,7 +7,8 @@ and the providers import without them.
 
 from __future__ import annotations
 
-from untaped.sdk import OnlineCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import OnlineCheck
 from untaped_github.commands.cache import CacheGroup
 from untaped_github.commands.repos import ReposGroup
 from untaped_github.commands.search import SearchGroup

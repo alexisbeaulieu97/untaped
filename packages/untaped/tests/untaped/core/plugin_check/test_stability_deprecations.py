@@ -109,8 +109,9 @@ _PLUGIN = {
 
         from pydantic import BaseModel, ConfigDict
 
-        from untaped.sdk import Cache, Command, Plugin, deprecated
+        from untaped.sdk import Command, Plugin, deprecated
         from untaped.sdk.marks import Deprecated
+        from untaped.sdk.storage import Cache
 
 
         class Put(Command):
