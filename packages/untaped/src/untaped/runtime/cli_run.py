@@ -28,6 +28,8 @@ from untaped.runtime.run_output import (
     failure_exit_code,
     raise_usage,
 )
+from untaped.sdk._run import is_verbose
+from untaped.sdk.diagnostic import Debug
 from untaped.sdk.errors import ExitCode, Failed, Matched, OperationCancelledError, UntapedError
 from untaped.sdk.words import not_found, q
 
@@ -218,10 +220,14 @@ def report_errors() -> Iterator[None]:
     said it: ``1`` and ``3``, a counted failure winning over either. Under JSON
     diagnostics the error is one JSON line (``Diagnostics.failure``).
     Non-:class:`UntapedError` exceptions are left to Cyclopts' default
-    handling — those represent bugs we want to see.
+    handling — those represent bugs we want to see — except a name a plugin
+    reached that untaped or another plugin no longer has
+    (:mod:`untaped.runtime.missing_names`): an error, exit ``4``, its
+    traceback under ``--verbose``.
     """
     try:
-        yield
+        with _missing_names():
+            yield
     except Failed as exc:
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc
     except Matched as exc:
@@ -234,3 +240,33 @@ def report_errors() -> Iterator[None]:
     except UntapedError as exc:
         Diagnostics().failure(exc)
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc
+
+
+#: Set on an exception a boundary has explained, so an outer one (the root's, around the
+#: mount's) doesn't say it again.
+_EXPLAINED = "__untaped_explained__"
+
+
+@contextmanager
+def _missing_names() -> Iterator[None]:
+    """Raise a name a plugin missed as the error saying so; any other exception goes on as is."""
+    try:
+        yield
+    except (AttributeError, ImportError, ValueError) as exc:
+        from untaped.runtime.missing_names import explain, traceback_text  # noqa: PLC0415
+
+        if getattr(exc, _EXPLAINED, False):  # an inner boundary said it already
+            raise
+        try:
+            explained = explain(exc)
+        except Exception:  # reading the error never hides it
+            explained = None
+        if explained is None:
+            raise
+        if isinstance(explained, str):  # it can't have gone: the traceback stays, named first
+            Diagnostics().warning(explained)
+            setattr(exc, _EXPLAINED, True)
+            raise
+        if is_verbose():
+            Diagnostics().emit(Debug(logger="untaped", message=traceback_text(exc)))
+        raise explained from exc

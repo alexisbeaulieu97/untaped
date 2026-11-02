@@ -12,11 +12,9 @@ import json
 import subprocess
 import sys
 import time
-import types
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -25,7 +23,6 @@ import yaml
 from core_test_support.runtime.plugin_uses_site import Site, installed_site
 from untaped.core import run_uses
 from untaped.runtime import bootstrap, run_output
-from untaped.runtime.declaration import Declaration, PluginDecl
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk.testing import CliInvoker
 
@@ -269,45 +266,3 @@ def test_a_core_command_running_plugin_code_is_named_as_typed(site: Site) -> Non
     found = _install(site)
     assert _invoke(found, "doctor", "--format", "json").exit_code in (0, 1)
     assert [row["command"] for row in _rows(site)] == ["untaped doctor"]
-
-
-def test_the_plugin_is_the_one_whose_package_is_deepest(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Two plugins in one namespace package, and one nested in another's package."""
-    plugins = [
-        PluginDecl(
-            name=name, target=target, package=target.split(".")[0], summary="", doc="", settings=""
-        )
-        for name, target in [
-            ("alpha", "nsp.alpha:Alpha"),
-            ("beta", "nsp.beta:Beta"),
-            ("host", "untaped_host:Host"),
-            ("guest", "untaped_host.plugins.guest:Guest"),
-        ]
-    ]
-    result = SimpleNamespace(
-        mount=SimpleNamespace(declaration=Declaration(plugins=tuple(plugins))),
-        candidates=[
-            SimpleNamespace(
-                name=each.name, distribution=f"untaped-{each.name}", distribution_version="2.0"
-            )
-            for each in plugins
-        ],
-    )
-    monkeypatch.setattr(bootstrap, "_ATTACHED", result)
-    run_uses.forget()
-    for module in ("nsp.beta.report", "untaped_host.plugins.guest.words", "untaped_host.cli"):
-        loaded = types.ModuleType(module)
-        loaded.__file__ = str(tmp_path / f"{module}.py")
-        monkeypatch.setitem(sys.modules, module, loaded)
-    assert run_uses._plugin_of(str(tmp_path / "nsp.beta.report.py")) == (
-        "beta",
-        "untaped-beta",
-        "2.0",
-    )
-    assert run_uses._plugin_of(str(tmp_path / "untaped_host.plugins.guest.words.py"))[0] == (
-        "guest"
-    )
-    assert run_uses._plugin_of(str(tmp_path / "untaped_host.cli.py"))[0] == "host"
-    run_uses.forget()

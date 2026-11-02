@@ -25,6 +25,7 @@ import importlib
 import importlib.util
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
@@ -34,6 +35,9 @@ from untaped.runtime.plugin_imports import ImportRecord
 from untaped.runtime.requirements import applies, floor_of, is_plain, parse_requirement
 from untaped.sdk._lazy import old_names_of
 from untaped.sdk.marks import Deprecated, class_mark, descriptor_function, function_mark
+
+if TYPE_CHECKING:
+    from untaped.runtime.registry import PluginCandidate
 
 
 @dataclass(frozen=True)
@@ -171,32 +175,76 @@ def missing_words(
 ) -> tuple[str, str]:
     """What a quarantine for ``missing`` says, and its fix, by the plugin's floor on the owner.
 
-    ``installed`` is the owner's installed version (``""`` when unknown).
-
-    Names plugins use go only at a major, so a major between the plugin's
-    floor and the installed owner means the name went and the plugin is out
-    of date; otherwise it is not there yet, and the plugin needs a newer
-    owner than it declares. With no requirement on the owner both fixes are
-    named.
+    ``installed`` is the owner's installed version (``""`` when unknown); the
+    words follow :func:`floor_rule`.
     """
     record, owner = missing.record, missing.owner
     have = f"{owner.distribution} {installed}".strip()
     facts = f"{record.file}:{record.line} imports {record.spelled}, which {have} doesn't have"
-    floor = _floor(requires_dist, owner.distribution)
+    rule = floor_rule(
+        distribution=distribution,
+        requires_dist=requires_dist,
+        owner=owner.distribution,
+        installed=installed,
+    )
+    return f"{facts}{rule.clause}", rule.fix
+
+
+@dataclass(frozen=True)
+class FloorRule:
+    """Why a plugin misses a name of ``owner``, read from its floor on it, and the fix."""
+
+    #: ``"; <plugin> declares no requirement on <owner>"`` or ``": <plugin> is out of date..."``:
+    #: it follows the facts directly.
+    clause: str
+    fix: str
+    #: Whether the name can have gone: a major lies between the floor and the installed owner, or
+    #: there is no floor to tell. ``False``: it is not there yet (a floor set too low, or a typo).
+    removed: bool
+
+
+def floor_rule(
+    *, distribution: str, requires_dist: Sequence[str], owner: str, installed: str
+) -> FloorRule:
+    """Why ``distribution`` misses a name of ``owner`` at ``installed``, by its floor on ``owner``.
+
+    Names plugins use go only at a major, so a major between the plugin's
+    floor and the installed owner means the name went and the plugin is out
+    of date; otherwise it is not there yet, and the plugin may need a newer
+    owner than it declares. With no requirement on the owner both fixes are
+    named.
+    """
+    floor = _floor(requires_dist, owner)
     if floor is None:
-        return (
-            f"{facts}; {distribution} declares no requirement on {owner.distribution}",
-            f"upgrade {owner.distribution}, or upgrade {distribution}",
+        return FloorRule(
+            f"; {distribution} declares no requirement on {owner}",
+            f"upgrade {owner}, or upgrade {distribution}",
+            removed=True,
         )
     if _major(installed) > _major(floor):
-        return (
-            f"{facts}: {distribution} is out of date (built for {owner.distribution} {floor})",
+        return FloorRule(
+            f": {distribution} is out of date (built for {owner} {floor})",
             f"upgrade {distribution}, or remove it",
+            removed=True,
         )
-    return (
-        f"{facts}: {distribution} may need a newer {owner.distribution} than it declares",
-        f"upgrade {owner.distribution}",
+    return FloorRule(
+        f": {distribution} may need a newer {owner} than it declares",
+        f"upgrade {owner}",
+        removed=False,
     )
+
+
+def owners_of(candidates: Iterable[PluginCandidate], core: str = "untaped") -> dict[str, Owner]:
+    """Who each plugin package (its entry point's) belongs to; ``untaped`` is ``core``'s."""
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415 - composing
+
+    owners = {
+        package: Owner(each.distribution, each.name)
+        for each in candidates
+        if each.distribution.strip() and (package := candidate_package(each.target))
+    }
+    owners["untaped"] = Owner(core, "untaped", core=True)
+    return owners
 
 
 def notify_use(plugin: str, distribution: str, version: str, use: UseDecl) -> None:
@@ -327,14 +375,17 @@ def _major(text: str) -> int:
 
 __all__ = [
     "Cascade",
+    "FloorRule",
     "Missing",
     "Owner",
     "Verdict",
     "filled_uses",
+    "floor_rule",
     "look_up",
     "missing_words",
     "notify_use",
     "owner_of",
+    "owners_of",
     "use_line",
     "use_name",
 ]

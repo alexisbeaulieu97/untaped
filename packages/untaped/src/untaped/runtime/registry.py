@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
 from importlib import metadata as importlib_metadata
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import TYPE_CHECKING, TypeGuard
 
 from cyclopts import App
@@ -42,7 +42,13 @@ from untaped.runtime.declaration import (
     UseDecl,
 )
 from untaped.runtime.plugin_imports import ImportRecord, read_imports
-from untaped.runtime.plugin_uses import Owner, filled_uses, look_up, missing_words
+from untaped.runtime.plugin_uses import (
+    Owner,
+    filled_uses,
+    look_up,
+    missing_words,
+    owners_of,
+)
 from untaped.runtime.requirements import (
     UNEVALUABLE,
     Installed,
@@ -518,16 +524,8 @@ class _CompositionState:
 
     @cached_property
     def owners(self) -> dict[str, Owner]:
-        """Who each top-level package a plugin may import from belongs to: untaped, or a plugin."""
-        from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415 - composing
-
-        owners = {
-            package: Owner(each.distribution, each.name)
-            for each in self._candidates
-            if each.distribution.strip() and (package := candidate_package(each.target))
-        }
-        owners["untaped"] = Owner(_CORE_DISTRIBUTION, "untaped", core=True)
-        return owners
+        """Who each package a plugin may import from belongs to: untaped, or a plugin."""
+        return owners_of(self._candidates, _CORE_DISTRIBUTION)
 
 
 def _check_free_name(name: str, state: _CompositionState) -> None:
@@ -1336,6 +1334,9 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
                 f"distribution {candidate.distribution!r}: {exc}",
                 entry_point="",
             ) from None
+        missing = _missed_loading(candidate, exc, state)
+        if missing is not None:
+            raise missing from None
         raise _Quarantine(
             "import-failed",
             f"importing entry point {candidate.target!r} of distribution "
@@ -1356,6 +1357,52 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
         f"names {_describe(found)}, not a plugin class; untaped composes plugin classes: "
         f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
     )
+
+
+def _missed_loading(
+    candidate: PluginCandidate, exc: Exception, state: _CompositionState
+) -> _Quarantine | None:
+    """``uses-missing`` when loading the plugin's code reached a name its owner doesn't have.
+
+    The startup reader finds the names a plugin imports; one looked up while
+    its modules load (``api.Volume`` at module level, an ``import_module``)
+    shows only here. Worded by the floor rule, as the reader's verdict is.
+    """
+    from untaped.runtime.missing_names import missed  # noqa: PLC0415 - on a failed import only
+    from untaped.runtime.plugin_package import candidate_package  # noqa: PLC0415
+    from untaped.runtime.plugin_uses import floor_rule, owner_of  # noqa: PLC0415
+
+    package = candidate_package(candidate.target)
+    if package is None or _lockstep(candidate, state):
+        return None
+    own = {package: candidate}
+    found = missed(exc, state.owners, lambda module: owner_of(module, own) is not None)
+    if found is None or canonicalize_name(found.owner.distribution) == canonicalize_name(
+        candidate.distribution
+    ):
+        return None
+    installed = state.installed.versions.get(str(canonicalize_name(found.owner.distribution)), "")
+    rule = floor_rule(
+        distribution=candidate.distribution,
+        requires_dist=candidate.requires_dist,
+        owner=found.owner.distribution,
+        installed=installed,
+    )
+    have = f"{found.owner.distribution} {installed}".strip()
+    who = f"{candidate.distribution} {candidate.distribution_version}".strip()
+    where = f"{_source_of(found.module, found.file)}:{found.line}"
+    return _Quarantine(
+        "uses-missing",
+        f"{who}: {where} uses {found.spelled}, which {have} doesn't have{rule.clause}; {rule.fix}",
+        entry_point="",
+        fix=rule.fix,
+    )
+
+
+def _source_of(module: str, file: str) -> str:
+    """``module``'s file as the reader's records say it: from the folder holding its package."""
+    tail = "/__init__.py" if PurePath(file).name == "__init__.py" else ".py"
+    return module.replace(".", "/") + tail
 
 
 def _names_nothing(target: object, exc: Exception) -> bool:
