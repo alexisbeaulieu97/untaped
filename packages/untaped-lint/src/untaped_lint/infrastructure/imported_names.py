@@ -33,7 +33,8 @@ from dataclasses import dataclass
 class ImportedName:
     """One import of another package's name, and the line it is on."""
 
-    #: The module imported from (``untaped.sdk``).
+    #: The module imported from (``untaped.sdk``); for an attribute read on a name a
+    #: ``from`` import bound, that name's spelling, which is a module only when it is one.
     module: str
     #: The name imported from it; ``None`` for ``import M`` itself.
     name: str | None

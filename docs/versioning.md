@@ -196,15 +196,16 @@ binds.
 Once such a name is gone, a plugin that looks it up while its modules load
 is disabled alone (`uses-missing`), a command that reaches it while it runs
 stops with an error and exits 4, and a contract provider that reaches it
-answers with that error. Each states the facts: the file and line, the name
-by the module plugins import it from, the owner's installed version, what
-the plugin requires of it, and both fixes ("upgrade untaped-acme or untaped,
-or remove untaped-acme"); `--verbose` adds the traceback. That covers a name
-imported, a member gone from an object, and a module attribute or submodule
-looked up. untaped translates an error only when it shows that a public
-module or class of another distribution lacks the name; anything else, such
-as a name missing from the plugin's own code or from a library, or a field a
-model refuses, keeps its own error and traceback.
+answers with that error. Each states the facts: the name by the module
+plugins import it from, the owner's installed version, what the plugin
+requires of it, and both fixes ("upgrade untaped-acme or untaped, or remove
+untaped-acme"). The quarantine names the file and line; for a running
+command, `--verbose` adds the traceback. That covers a name imported, a
+member gone from an object, and a module attribute or submodule looked up.
+untaped translates an error only when it shows that a public module or class
+of another distribution lacks the name; anything else, such as a name
+missing from the plugin's own code or from a library, or a field a model
+refuses, keeps its own error and traceback.
 
 ## Breaking changes
 
