@@ -21,7 +21,6 @@ from typing import Any
 import pytest
 
 from untaped.sdk import _process_groups
-from untaped.sdk._process_groups import Interrupted
 
 pytestmark = pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
 
@@ -128,10 +127,34 @@ def test_the_handler_raises_interrupted_once_and_ignores_a_repeat(
     state: _process_groups._State, sent: list[tuple[int, int]]
 ) -> None:
     state.installed = True
-    with pytest.raises(Interrupted) as raised:
+    with pytest.raises(KeyboardInterrupt) as raised:
         _process_groups._on_signal(signal.SIGTERM, None)
-    assert raised.value.signum == signal.SIGTERM
+    assert raised.type is KeyboardInterrupt  # exactly: Popen.__exit__ kills its child for it
+    assert _process_groups.closing_signal() == signal.SIGTERM
     _process_groups._on_signal(signal.SIGHUP, None)  # the same event: no second raise
+
+
+def test_every_deferred_signal_is_replayed_and_raises_once(
+    state: _process_groups._State, sent: list[tuple[int, int]]
+) -> None:
+    state.installed = True
+    state.deferred = [signal.SIGTERM, signal.SIGHUP]
+    with pytest.raises(KeyboardInterrupt):
+        _process_groups._replay_deferred()
+    assert not state.deferred  # nothing left to replay at a later spawn
+    assert _process_groups.closing_signal() == signal.SIGTERM
+
+
+def test_a_signal_while_the_exit_net_runs_is_recorded_not_raised(
+    state: _process_groups._State,
+) -> None:
+    state.installed, state.netting = True, True
+    state.closing = (0, time.monotonic())
+    _process_groups._on_signal(signal.SIGINT, None)
+    assert _process_groups.closing_signal() is None
+    _process_groups._on_signal(signal.SIGTERM, None)
+    _process_groups._on_signal(signal.SIGHUP, None)
+    assert _process_groups.closing_signal() == signal.SIGTERM  # the net dies by it
 
 
 def test_the_handler_defers_a_signal_while_the_main_thread_starts_a_child(
@@ -271,7 +294,7 @@ def test_a_signal_deferred_during_a_main_thread_spawn_stops_that_child(
         return process
 
     monkeypatch.setattr(subprocess, "Popen", popen_then_signal)
-    with pytest.raises(Interrupted):
+    with pytest.raises(KeyboardInterrupt):
         _spawn()
     assert started[0].poll() is not None
     assert not state.groups
@@ -311,7 +334,7 @@ class _Leader:
 def test_without_groups_only_a_live_leader_is_signalled(
     monkeypatch: pytest.MonkeyPatch, state: _process_groups._State
 ) -> None:
-    monkeypatch.setattr(_process_groups, "GROUPS", False)
+    monkeypatch.setattr(_process_groups, "HAS_PROCESS_GROUPS", False)
     live, ended = _Leader(None), _Leader(0)
     state.groups.update({1: live, 2: ended})  # type: ignore[dict-item]
     assert _process_groups._signal(1, signal.SIGTERM)
@@ -319,6 +342,21 @@ def test_without_groups_only_a_live_leader_is_signalled(
     assert not _process_groups._signal(2, signal.SIGTERM)
     assert not _process_groups._signal(3, signal.SIGTERM)
     assert (live.calls, ended.calls) == (["terminate", "kill"], [])
+
+
+def test_a_deregistered_group_is_never_probed_or_signalled_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = _spawn([sys.executable, "-c", "pass"])
+    process.wait(timeout=10)
+    _process_groups.forget(process.pid)
+    calls: list[int] = []
+    monkeypatch.setattr(_process_groups, "_signal", lambda pgid, sig: calls.append(sig) or True)
+    monkeypatch.setattr(_process_groups, "_reap_leftovers", lambda pgid: calls.append(-1))
+    assert _process_groups.emptied(process)
+    _process_groups.stop(process)
+    assert not calls  # its id may be another process's group by now
+    _process_groups.close_pipes(process)
 
 
 def test_a_forked_child_starts_with_nothing(state: _process_groups._State) -> None:

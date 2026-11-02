@@ -44,7 +44,7 @@ from prompt_toolkit.output.defaults import create_output
 from untaped.screen.color import ColorMode, detect_color, ptk_depth_name, rich_system
 from untaped.screen.core import Cancel, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.runtime import CmdKind, Runtime, capture_console
-from untaped.sdk._process_groups import Interrupted, ending
+from untaped.sdk._process_groups import ending
 from untaped.sdk._theme import ThemeSpec
 
 __all__ = ["TerminalHost", "build_application", "run_screen_on", "run_terminal_screen"]
@@ -204,8 +204,8 @@ def run_terminal_screen[M, R](
     """Run ``screen`` on ``input`` and ``output`` and return how it ended.
 
     Raises ``KeyboardInterrupt`` for an external SIGINT, SIGTERM or SIGHUP
-    (carrying the signal, as untaped's own handler does), ``EOFError`` when the
-    input closes, and whatever a screen's own code raised. The terminal is
+    (as untaped's own handler does; ``closing_signal`` tells which), ``EOFError``
+    when the input closes, and whatever a screen's own code raised. The terminal is
     restored in every case. An interrupt (the ctrl-c key included) reaches
     every child process as untaped's own signal handling would pass it on.
     """
@@ -222,8 +222,8 @@ def run_terminal_screen[M, R](
 
         try:
             outcome = application.run(pre_run=start)
-        except KeyboardInterrupt as interrupt:
-            ending(getattr(interrupt, "signum", signal.SIGINT))
+        except KeyboardInterrupt:
+            ending(signal.SIGINT)  # a no-op for the groups SIGTERM or SIGHUP reached already
             raise
     if isinstance(outcome, Cancel) and outcome.interrupted:  # the ctrl-c key
         ending(signal.SIGINT)
@@ -303,8 +303,9 @@ def _exit_on_termination() -> Iterator[Callable[[Application[Any]], None]]:
 
 
 def _terminate(application: Application[Any], sig: signal.Signals) -> None:
+    ending(sig)
     if not application.is_done:
-        application.exit(exception=Interrupted(sig))
+        application.exit(exception=KeyboardInterrupt())
 
 
 def _interrupt(application: Application[Any]) -> None:

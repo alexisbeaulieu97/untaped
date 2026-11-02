@@ -6,7 +6,7 @@ untaped's entry point passes on; a group made by hand escapes all of that,
 and a second signal handler replaces the one that stops every child. This test
 applies lint's ``process-group`` and ``signal-handler`` rules (which ``untaped
 lint`` applies to one plugin) to every package's source, core's included, the
-example plugin and ``scripts``, and allows only the block's private module and
+example plugins and ``scripts``, and allows only the block's private module and
 the terminal adapter, whose prompt_toolkit replaces the handlers while a screen
 runs (it hands each interrupt on through ``ending``; the screen tests cover it).
 The rules' inline waiver applies here too.
@@ -27,7 +27,7 @@ ADAPTER = "untaped/screen/terminal.py"
 
 
 def source_dirs() -> list[Path]:
-    """Every shipped package directory, the example plugin's and ``scripts``."""
+    """Every shipped package directory, the example plugins' and ``scripts``."""
     roots = [*PACKAGES.glob("*/src/*"), *(REPO_ROOT / "examples").glob("*/src/*")]
     return [*sorted(root for root in roots if root.is_dir()), REPO_ROOT / "scripts"]
 

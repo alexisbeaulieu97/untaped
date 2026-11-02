@@ -48,7 +48,7 @@ uv lock --check                                 # lock file is current
   experimental `screen/` kit:
   - `sdk/` is what a plugin may import. Its groups are subpackages
     (`storage/`, `contracts/`, `network/`, `health/`, `prompt/`, `testing/`,
-    and the `git` and `projects` modules). A plugin imports `untaped.sdk`, its
+    and the `git`, `process` and `projects` modules). A plugin imports `untaped.sdk`, its
     groups and `untaped.core.api`
     ([SDK stability](docs/reference/conventions.md#sdk-stability)), and a
     `_`-prefixed module or name is never public. `sdk/` is moving off

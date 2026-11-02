@@ -78,14 +78,16 @@ _URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
 
 
 class GitCommandError(UntapedError):
-    """A git subprocess could not run, timed out, or exited non-zero.
+    """A git subprocess could not run, timed out, was stopped, or exited non-zero.
 
     ``returncode`` is ``None`` when git never produced an exit status
-    (binary missing, launch failure, timeout); ``timed_out`` marks the
-    timeout case. ``stderr`` is the full (auth-redacted) stderr text.
-    Its category is ``failed`` in ``git``; a timeout or a transient transport
-    failure is ``unavailable``, and a remote refusing the credentials is
-    ``auth`` (``permission`` for HTTP 403), with a hint.
+    (binary missing, launch failure, timeout, stopped because untaped is
+    stopping); ``timed_out`` marks the timeout case. ``stderr`` is the full
+    (auth-redacted) stderr text. Its category is ``failed`` in ``git``; a
+    timeout or a transient transport failure is ``unavailable``, a run
+    stopped by untaped's own interrupt is ``interrupted``, and a remote
+    refusing the credentials is ``auth`` (``permission`` for HTTP 403), with
+    a hint.
     """
 
     system = System.GIT
@@ -344,7 +346,8 @@ def run_git(
     stdout is captured only with ``capture`` (otherwise discarded so git
     chatter never reaches the CLI's own output); stderr is always captured.
     Raises :class:`GitCommandError` when git is missing, cannot start, times
-    out, or (with ``check``) exits non-zero. ``git_dir`` names the repository
+    out, is stopped because untaped is stopping (category ``interrupted``),
+    or (with ``check``) exits non-zero. ``git_dir`` names the repository
     with ``--git-dir`` (required for a bare one; see the module docstring).
     ``retry_transient`` retries transport failures up to ``attempts`` times
     with 1s, 2s, ... backoff; use it only for idempotent network commands

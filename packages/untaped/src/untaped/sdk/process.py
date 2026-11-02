@@ -4,14 +4,18 @@ Every child runs in its own session: its process group holds it and every
 helper it starts, so untaped can stop them all without stopping itself, and
 nothing the child starts can prompt on the terminal. Stopping is one sequence
 for every reason (a timeout, ``stop``, an exception, untaped's own SIGINT,
-SIGTERM or SIGHUP, ``close()``): the group gets SIGTERM once, then SIGKILL two
-seconds later. A child that exits on its own leaves what it started running,
-as a shell leaves ``cmd &``, unless that still holds its output, which would
-otherwise keep the run waiting: that is stopped two seconds after the child exits.
+SIGTERM or SIGHUP, ``close()``): the group gets one soft signal (that
+interrupt when it is the reason, SIGTERM otherwise), then SIGKILL two seconds
+later. A child that exits on its own leaves what it started running, as a
+shell leaves ``cmd &``, unless that still holds its output, which would
+otherwise keep the run waiting: that is stopped two seconds after the child
+exits.
 
-Start every child in its own group through this module: lint's
-``process-group`` rule flags one made by hand, which would be left running
-when untaped is interrupted.
+Use this module for a child that runs in its own group, must stop as a tree,
+or may run on a worker thread past an interrupt; lint's ``process-group``
+rule flags a group made by hand, which would be left running when untaped is
+interrupted. A short synchronous child in untaped's own group may stay a
+plain ``subprocess`` call: Ctrl-C reaches it directly.
 """
 
 from __future__ import annotations
@@ -50,7 +54,7 @@ class ProcessResult(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    ended: Literal["exited", "timed_out", "stopped"]
+    ended: Ended
     returncode: int | None
     stdout: bytes
     stderr: bytes
@@ -173,9 +177,8 @@ class _Run:
 
     def _drain(self) -> None:
         """What is left to read after the SIGKILL; closes the pipes if an escapee holds them."""
-        with contextlib.suppress(ValueError):  # pipes already closed
-            if not self._pump(None, groups.GRACE_S):
-                groups.close_pipes(self.process)
+        if not self._pump(None, groups.GRACE_S):
+            groups.close_pipes(self.process)
 
 
 def _as_bytes(data: bytes | str | None) -> bytes:
@@ -202,14 +205,23 @@ class RunningProcess:
 
     The owner reads ``stdout`` and ``stderr`` and closes them once it sees end
     of file; :meth:`close` closes only ``stdin``. Safe from any thread.
+    :func:`start_process` makes one; it has no public constructor.
 
     First consumer: untaped-recipe's hook worker (#579).
     """
 
-    def __init__(self, process: subprocess.Popen[bytes]) -> None:
-        self._process = process
-        self._lock = threading.Lock()
-        self._closed = False
+    _process: subprocess.Popen[bytes]
+    _lock: threading.Lock
+    _closed: bool
+
+    def __init__(self) -> None:
+        raise TypeError("start a child with start_process()")
+
+    @classmethod
+    def _of(cls, process: subprocess.Popen[bytes]) -> RunningProcess:
+        running = cls.__new__(cls)
+        running._process, running._lock, running._closed = process, threading.Lock(), False
+        return running
 
     @property
     def stdin(self) -> IO[bytes]:
@@ -244,23 +256,25 @@ class RunningProcess:
             return None
         return self.poll()
 
-    def close(self) -> int:
+    def close(self) -> int | None:
         """Close stdin, give the child one grace to exit, then stop whatever is left of its group.
 
-        Idempotent; returns the child's exit status.
+        Idempotent; returns the child's exit status (``None`` only when even
+        SIGKILL could not end it, as for a process stuck in the kernel). The
+        stop runs even when the grace is interrupted.
         """
         with self._lock:
             if not self._closed:
                 self._closed = True
-                with contextlib.suppress(OSError):
-                    self.stdin.close()
-                with contextlib.suppress(subprocess.TimeoutExpired):
-                    self._process.wait(timeout=groups.GRACE_S)
-                if not groups.emptied(self._process):
-                    groups.stop(self._process)
-        returncode = self._process.returncode
-        assert returncode is not None
-        return returncode
+                try:
+                    with contextlib.suppress(OSError):
+                        self.stdin.close()
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        self._process.wait(timeout=groups.GRACE_S)
+                finally:
+                    if not groups.emptied(self._process):
+                        groups.stop(self._process)
+        return self._process.returncode
 
     def __enter__(self) -> RunningProcess:
         return self
@@ -289,4 +303,4 @@ def start_process(
     process = groups.spawn(argv, cwd=cwd, env=env, stdin=subprocess.PIPE)
     if process is None:
         raise UntapedError("untaped is stopping; not started", category=ErrorCategory.INTERRUPTED)
-    return RunningProcess(process)
+    return RunningProcess._of(process)

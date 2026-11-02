@@ -25,7 +25,6 @@ from prompt_toolkit.output.defaults import create_output  # noqa: E402
 from untaped.runtime.theme import BUILTIN_THEMES  # noqa: E402
 from untaped.screen.core import Cancel, Cmd, Frame, KeyPress, Quit, Screen  # noqa: E402
 from untaped.screen.terminal import run_terminal_screen  # noqa: E402
-from untaped.sdk._process_groups import Interrupted  # noqa: E402
 
 
 def _screen(layout: str) -> Screen[str, str]:
@@ -198,7 +197,7 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
         with open(path, encoding="utf-8") as tty_in, open(path, "w", encoding="utf-8") as tty_out:
             cooked = termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO)
             assert cooked == termios.ICANON | termios.ECHO
-            with pytest.raises(Interrupted) as raised:
+            with pytest.raises(KeyboardInterrupt) as raised:
                 run_terminal_screen(
                     screen,
                     input=create_input(tty_in),
@@ -206,7 +205,7 @@ def test_a_termination_signal_restores_the_terminal_and_exits(
                     theme=BUILTIN_THEMES["default"],
                     environ={"TERM": "xterm-256color"},
                 )
-            assert raised.value.signum == sig  # untaped's interrupt: Ctrl-C's cleanups run
+            assert raised.type is KeyboardInterrupt  # Ctrl-C's: its cleanups run
             assert termios.tcgetattr(tty_in)[3] & (termios.ICANON | termios.ECHO) == cooked
         seen = _drain(master, until=b"\x1b[?1049l")
         assert b"\x1b[?1049h" in seen

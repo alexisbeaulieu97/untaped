@@ -54,6 +54,11 @@ def test_the_messages_say_what_they_protect() -> None:
         "import os as system\nsystem.killpg(4, 15)\n",
         "from os import killpg as stop\nstop(4, 15)\n",
         "import os\nos.kill(-4, 15)\n",
+        "import os\nos.setpgrp()\n",
+        "import os, subprocess\nsubprocess.Popen(['x'], preexec_fn=os.setpgrp)\n",
+        "import os\nos.posix_spawnp('x', ['x'], {}, setpgroup=0)\n",
+        "import pty\npty.fork()\n",
+        "import os\nos.forkpty()\n",
     ],
 )
 def test_a_group_by_hand_is_a_violation(tmp_path: Path, source: str) -> None:
@@ -66,6 +71,7 @@ def test_a_group_by_hand_is_a_violation(tmp_path: Path, source: str) -> None:
         "import signal\nsignal.signal(signal.SIGTERM, print)\n",
         "from signal import signal, SIGINT\nsignal(SIGINT, print)\n",
         "import asyncio, signal\nasyncio.get_running_loop().add_signal_handler(15, print)\n",
+        "import signal\nsignal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})\n",
     ],
 )
 def test_a_signal_handler_is_a_violation(tmp_path: Path, source: str) -> None:
@@ -81,6 +87,7 @@ def test_a_signal_handler_is_a_violation(tmp_path: Path, source: str) -> None:
         "x = 'os.killpg(4, 15)'  # mentioned, not called\n",
         '"""Its background processes are stopped, unless in their own session (`setsid`)."""\n',
         "from untaped.sdk.process import run_process\nrun_process(['x'], timeout=5)\n",
+        "def connect(**kwargs): ...\nconnect(setsid=True, setpgroup=1)\n",
     ],
 )
 def test_clean_files_pass(tmp_path: Path, source: str) -> None:

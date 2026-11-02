@@ -203,9 +203,10 @@ def test_a_leftover_holding_the_output_is_stopped_one_grace_after_the_child_exit
 
 def test_stop_ends_a_run_and_a_set_stop_starts_nothing(tmp_path: Path) -> None:
     stop = threading.Event()
-    threading.Timer(0.3, stop.set).start()
+    pid_file = tmp_path / "child.pid"
+    threading.Thread(target=lambda: (_wait_for(pid_file), stop.set()), daemon=True).start()
 
-    result = run_process(_stubborn(tmp_path / "child.pid", ignore="SIGINT"), timeout=30, stop=stop)
+    result = run_process(_stubborn(pid_file, ignore="SIGINT"), timeout=30, stop=stop)
 
     assert (result.ended, result.returncode) == ("stopped", None)
     assert _wait_gone(_pid(tmp_path / "child.pid"))
@@ -293,6 +294,37 @@ def test_close_stops_a_child_that_ignores_end_of_file_from_two_threads(tmp_path:
     child.stderr.close()
 
 
+def test_close_still_stops_the_group_when_its_grace_is_interrupted(tmp_path: Path) -> None:
+    pid_file = tmp_path / "child.pid"
+    child = start_process(_stubborn(pid_file, ignore="SIGINT"))
+    grandchild = _pid(Path(f"{pid_file}.grandchild"))
+
+    real_wait = child._process.wait
+
+    def interrupted(timeout: float | None = None) -> int:
+        child._process.wait = real_wait  # type: ignore[method-assign]
+        raise KeyboardInterrupt
+
+    child._process.wait = interrupted  # type: ignore[method-assign]  # Ctrl-C mid-grace
+    with pytest.raises(KeyboardInterrupt):
+        child.close()
+    assert not _process_groups._S.groups
+    assert _wait_gone(_pid(pid_file)) and _wait_gone(grandchild)
+    assert child.close() == -signal.SIGTERM  # a second close returns what the first saw
+    child.stdout.close()
+    child.stderr.close()
+
+
+def test_without_process_groups_the_leader_is_stopped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(_process_groups, "HAS_PROCESS_GROUPS", False)  # as on Windows (#1013)
+    pid_file = tmp_path / "child.pid"
+    result = run_process(_py(_record_pid(pid_file) + "import time; time.sleep(30)"), timeout=0.3)
+    assert (result.ended, result.returncode) == ("timed_out", None)
+    assert _wait_gone(_pid(pid_file))
+
+
 def test_a_child_that_exits_on_its_own_is_deregistered_when_seen() -> None:
     child = start_process(_py("pass"))
     assert child.wait(timeout=10) == 0
@@ -354,7 +386,7 @@ worker.start()
 try:
     {main}
 except KeyboardInterrupt as interrupt:
-    print('interrupted', getattr(interrupt, 'signum', None), flush=True)
+    print('interrupted', _process_groups.closing_signal(), flush=True)
     worker.join()
     print('joined', flush=True)
     raise SystemExit(130)
@@ -362,9 +394,9 @@ except KeyboardInterrupt as interrupt:
 
 
 def _untaped(
-    argv: list[str], *, main: str = "worker.join()", before: str = ""
+    argv: list[str], *, main: str = "worker.join()", before: str = "", grace: float = GRACE
 ) -> subprocess.Popen[str]:
-    code = _UNTAPED.format(grace=GRACE, argv=argv, main=main, before=before)
+    code = _UNTAPED.format(grace=grace, argv=argv, main=main, before=before)
     return subprocess.Popen(
         [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
@@ -396,13 +428,13 @@ def test_two_sighups_close_together_are_one_event(tmp_path: Path) -> None:
     marker = tmp_path / "cleaned"
     argv = _py(
         "import signal, sys, time\n"
-        f"def done(*_):\n    time.sleep({GRACE / 2})\n"
+        f"def done(*_):\n    time.sleep({GRACE / 2})\n"  # well inside the 2 s grace below
         f"    open({str(marker)!r}, 'w').close()\n    sys.exit(1)\n"
         "signal.signal(signal.SIGHUP, done)\n"
         + _record_pid(tmp_path / "child.pid")
         + "time.sleep(60)\n"
     )
-    untaped = _untaped(argv)
+    untaped = _untaped(argv, grace=2.0)
     try:
         _pid(tmp_path / "child.pid")
         untaped.send_signal(signal.SIGHUP)
@@ -412,6 +444,83 @@ def test_two_sighups_close_together_are_one_event(tmp_path: Path) -> None:
         untaped.kill()
     assert untaped.returncode == -signal.SIGHUP, err
     assert marker.exists(), "the child got SIGKILL instead of its grace"
+
+
+def test_a_sigint_after_sigterm_still_ends_untaped_by_sigterm(tmp_path: Path) -> None:
+    # The SIGTERM already chose how untaped ends; the child that ignores it is still gone.
+    pid_file = tmp_path / "child.pid"
+    untaped = _untaped(_stubborn(pid_file, ignore="SIGTERM"))
+    try:
+        child = _pid(pid_file)
+        untaped.send_signal(signal.SIGTERM)
+        time.sleep(0.3)
+        untaped.send_signal(signal.SIGINT)
+        _, err = untaped.communicate(timeout=15)
+    finally:
+        untaped.kill()
+    assert untaped.returncode == -signal.SIGTERM, err
+    assert _wait_gone(child) and _wait_gone(_pid(Path(f"{pid_file}.grandchild")))
+
+
+@pytest.mark.parametrize(
+    "cleanup",
+    ["raise SystemExit(1)", "os.close(1)\n    print('cleaning up', flush=True)"],
+    ids=["counted-failure", "cleanup-output-fails"],
+)
+def test_untaped_still_ends_by_sigterm_when_its_cleanup_fails(tmp_path: Path, cleanup: str) -> None:
+    pid_file = tmp_path / "child.pid"
+    code = (
+        "import os\nfrom untaped.sdk import _process_groups\n"
+        "from untaped.sdk.process import run_process\n"
+        f"_process_groups.GRACE_S = {GRACE}\n_process_groups.install()\n"
+        "try:\n"
+        f"    run_process({_stubborn(pid_file, ignore='SIGINT')!r}, timeout=60)\n"
+        f"except KeyboardInterrupt:\n    {cleanup}\n"
+    )
+    untaped = subprocess.Popen(
+        [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    try:
+        _pid(pid_file)
+        untaped.send_signal(signal.SIGTERM)
+        _, err = untaped.communicate(timeout=15)
+    finally:
+        untaped.kill()
+    assert untaped.returncode == -signal.SIGTERM, err
+    assert _wait_gone(_pid(pid_file))
+
+
+def test_no_credential_file_is_left_after_sigterm_in_the_middle_of_git(tmp_path: Path) -> None:
+    pid_file, temp = tmp_path / "git.pid", tmp_path / "tmp"
+    temp.mkdir()
+    fake_git = tmp_path / "git"
+    fake_git.write_text(
+        f"#!{sys.executable}\nimport sys, time\n"
+        "if sys.argv[1] == 'config':\n    sys.exit(1)\n"  # the SSH config probe
+        + _record_pid(pid_file)
+        + "time.sleep(60)\n"
+    )
+    fake_git.chmod(0o755)
+    code = (
+        "from untaped.sdk import _process_groups\nfrom untaped.sdk.git import run_git\n"
+        f"_process_groups.GRACE_S = {GRACE}\n_process_groups.install()\n"
+        f"run_git(['fetch'], timeout=60, git={str(fake_git)!r},\n"
+        "        auth_config={'http.extraHeader': 'Authorization: Bearer secret'})\n"
+    )
+    untaped = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stderr=subprocess.PIPE,
+        env={**os.environ, "TMPDIR": str(temp)},
+    )
+    try:
+        _pid(pid_file)
+        assert [path.name[:17] for path in temp.iterdir()] == ["untaped-git-auth-"]
+        untaped.send_signal(signal.SIGTERM)
+        _, err = untaped.communicate(timeout=15)
+    finally:
+        untaped.kill()
+    assert untaped.returncode == -signal.SIGTERM, err
+    assert list(temp.iterdir()) == []
 
 
 def test_a_later_sigterm_ends_untaped_at_once(tmp_path: Path) -> None:

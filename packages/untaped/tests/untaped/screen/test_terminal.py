@@ -13,6 +13,7 @@ import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -255,25 +256,65 @@ def test_an_unhandled_ctrl_c_key_cancels_as_an_interrupt() -> None:
     assert _run(Typing(), "\x03") == Cancel(interrupted=True)
 
 
+def _a_job_child_that_ignores_sigint(tmp_path: Path) -> list[ProcessResult]:
+    """Start, on a worker thread, a child that ignores SIGINT; return once it does."""
+    ready = tmp_path / "ready"
+    ignores = (
+        "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN)\n"
+        f"open({str(ready)!r}, 'w').close(); time.sleep(60)"
+    )
+    results: list[ProcessResult] = []
+    threading.Thread(
+        target=lambda: results.append(run_process([sys.executable, "-c", ignores], timeout=60)),
+        daemon=True,
+    ).start()
+    deadline = time.monotonic() + 10
+    while not ready.exists():
+        assert time.monotonic() < deadline, "the child never got ready"
+        time.sleep(0.01)
+    return results
+
+
+def _ended(results: list[ProcessResult]) -> list[str]:
+    deadline = time.monotonic() + 10
+    while not results and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return [result.ended for result in results]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
-def test_ctrl_c_at_a_screen_reaches_child_processes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ctrl_c_at_a_screen_reaches_child_processes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # prompt_toolkit replaces untaped's signal handling while a screen runs: the
     # screen hands the interrupt on, so a child that ignores SIGINT is still stopped.
     monkeypatch.setattr(_process_groups, "GRACE_S", 0.3)
-    ignores = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(60)"
-    results: list[ProcessResult] = []
-    worker = threading.Thread(
-        target=lambda: results.append(run_process([sys.executable, "-c", ignores], timeout=60))
-    )
-    worker.start()
-    deadline = time.monotonic() + 10
-    while not _process_groups._S.groups and time.monotonic() < deadline:
-        time.sleep(0.01)
+    results = _a_job_child_that_ignores_sigint(tmp_path)
 
     assert _run(Typing(), "\x03") == Cancel(interrupted=True)
-    worker.join(timeout=10)
 
-    assert [result.ended for result in results] == ["stopped"]
+    assert _ended(results) == ["stopped"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
+@pytest.mark.parametrize("sig", ["SIGINT", "SIGTERM"])
+def test_an_external_signal_at_a_screen_reaches_child_processes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, sig: str
+) -> None:
+    if threading.current_thread() is not threading.main_thread():
+        pytest.skip("only the main thread handles signals")
+    monkeypatch.setattr(_process_groups, "GRACE_S", 0.3)
+    results = _a_job_child_that_ignores_sigint(tmp_path)
+
+    def send(model: Model, message: object) -> tuple[Model, list[Cmd]] | None:
+        if message == KeyPress("x"):
+            return model, [Cmd(lambda: os.kill(os.getpid(), getattr(signal, sig)))]
+        return None
+
+    with pytest.raises(KeyboardInterrupt):
+        _run(Typing(extra=send), "x", close=False)
+
+    assert _ended(results) == ["stopped"]
 
 
 def test_a_named_key_is_not_held_back_waiting_for_a_longer_sequence() -> None:

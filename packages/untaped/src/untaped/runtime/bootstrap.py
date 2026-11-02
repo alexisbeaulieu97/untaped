@@ -62,7 +62,7 @@ from untaped.sdk._behaviours import bind_behaviours
 from untaped.sdk._process_groups import install as install_signal_handlers
 from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
-from untaped.sdk.errors import ConfigError
+from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.marks import bind_owners
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage._refs import refresh
@@ -766,10 +766,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     """Console-script entry point for the ``untaped`` command line.
 
     It installs untaped's SIGINT, SIGTERM and SIGHUP handling first, which
-    passes them on to every child process (:mod:`untaped.sdk.process`).
+    passes them on to every child process (:mod:`untaped.sdk.process`). An
+    interrupt before the run handles them (while plugins load) exits 130
+    without a traceback; after SIGTERM or SIGHUP, untaped still ends by it.
     """
     install_signal_handlers()
-    run_root(argv)
+    try:
+        run_root(argv)
+    except KeyboardInterrupt:
+        raise SystemExit(ExitCode.INTERRUPTED) from None
 
 
 __all__ = [

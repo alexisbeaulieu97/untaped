@@ -781,6 +781,22 @@ def test_the_console_entry_point_installs_signal_handling_before_running(
     assert calls == ["install", ["--version"]]
 
 
+def test_an_interrupt_while_plugins_load_exits_130_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def interrupted(argv: object) -> None:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(bootstrap, "install_signal_handlers", lambda: None)
+    monkeypatch.setattr(bootstrap, "run_root", interrupted)
+
+    with pytest.raises(SystemExit) as exited:
+        bootstrap.main([])
+
+    assert exited.value.code == 130
+    assert exited.value.__suppress_context__
+
+
 # --- help panels --------------------------------------------------------------
 
 

@@ -95,7 +95,9 @@ When a Git command times out, `untaped` stops it and every process it
 started: SIGTERM first, so Git removes its lock files, then SIGKILL two
 seconds later. Ctrl-C, SIGTERM and SIGHUP sent to `untaped` (a closed
 terminal, `timeout`, a cancelled CI job) are passed on to the Git commands it
-is running.
+is running, then SIGKILL follows two seconds later. When Git exits on its own,
+a process it left behind keeps running (a credential cache daemon), unless it
+still holds Git's output open: that one is stopped two seconds after Git exits.
 
 ## Recipe hooks
 

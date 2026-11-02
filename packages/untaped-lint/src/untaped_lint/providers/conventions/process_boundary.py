@@ -8,10 +8,11 @@ Two rules keep a plugin from going around it, read from the syntax tree:
 - ``process-group``: a group or session made or signalled by hand
   (``start_new_session=``, ``process_group=``, ``preexec_fn=os.setsid``,
   ``posix_spawn``'s ``setsid=``/``setpgroup=``, ``os.setsid``, ``os.setpgid``,
-  ``os.setpgrp``, ``os.killpg``, ``os.kill`` with a negative pid), which
-  untaped's interrupt would leave running;
-- ``signal-handler``: ``signal.signal`` or a loop's ``add_signal_handler``,
-  which replaces the handler that stops every plugin's children.
+  ``os.setpgrp``, ``os.killpg``, ``os.kill`` with a negative pid, ``pty.fork``,
+  ``os.forkpty``), which untaped's interrupt would leave running;
+- ``signal-handler``: ``signal.signal``, a loop's ``add_signal_handler`` or
+  ``signal.pthread_sigmask``, which replaces or blocks the handler that stops
+  every plugin's children.
 
 ``# untaped: allow process-group`` (or ``signal-handler``) on the line waives one.
 """
@@ -33,11 +34,17 @@ GROUP_MESSAGE = (
     "running when untaped is interrupted)"
 )
 SIGNAL_MESSAGE = (
-    "installs a signal handler; untaped's entry point owns SIGINT, SIGTERM and SIGHUP, and a "
-    "plugin's handler replaces the one that stops every plugin's child processes"
+    "installs a signal handler or blocks signals; untaped's entry point owns SIGINT, SIGTERM "
+    "and SIGHUP, and a plugin's handler replaces the one that stops every plugin's child "
+    "processes"
 )
-_GROUP_KEYWORDS = frozenset({"start_new_session", "process_group", "setsid", "setpgroup"})
-_GROUP_CALLS = frozenset({"os.setsid", "os.setpgid", "os.setpgrp", "os.killpg"})
+_GROUP_KEYWORDS = frozenset({"start_new_session", "process_group"})
+_SPAWN_KEYWORDS = frozenset({"setsid", "setpgroup"})  # os.posix_spawn's
+_SPAWN_CALLS = frozenset({"os.posix_spawn", "os.posix_spawnp"})
+_GROUP_CALLS = frozenset(
+    {"os.setsid", "os.setpgid", "os.setpgrp", "os.killpg", "os.forkpty", "pty.fork"}
+)
+_MODULES = frozenset({"os", "pty", "signal"})
 
 
 def process_boundary_violations(source_dir: Path, files: Sequence[SourceFile]) -> list[str]:
@@ -60,26 +67,26 @@ def process_boundary_violations(source_dir: Path, files: Sequence[SourceFile]) -
 
 
 def _handles_signal(node: ast.Call, called: str | None) -> bool:
-    if called == "signal.signal":
+    if called in {"signal.signal", "signal.pthread_sigmask"}:
         return True
     return isinstance(node.func, ast.Attribute) and node.func.attr == "add_signal_handler"
 
 
 def _makes_group(node: ast.Call, called: str | None, names: dict[str, str]) -> bool:
-    if called in _GROUP_CALLS or _group_keyword(node, names):
+    if called in _GROUP_CALLS or _group_keyword(node, called, names):
         return True
     return called == "os.kill" and bool(node.args) and _negative(node.args[0])
 
 
 def _imported(tree: ast.Module) -> dict[str, str]:
-    """Local names bound to ``os``/``signal`` or their members: ``{"killpg": "os.killpg"}``."""
-    names = {"os": "os", "signal": "signal"}
+    """Local names bound to ``os``, ``pty``, ``signal`` or a member: ``{"killpg": "os.killpg"}``."""
+    names = {module: module for module in _MODULES}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in {"os", "signal"}:
+                if alias.name in _MODULES:
                     names[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.ImportFrom) and node.module in {"os", "signal"}:
+        elif isinstance(node, ast.ImportFrom) and node.module in _MODULES:
             for alias in node.names:
                 names[alias.asname or alias.name] = f"{node.module}.{alias.name}"
     return names
@@ -95,9 +102,10 @@ def _called(func: ast.expr, names: dict[str, str]) -> str | None:
     return None
 
 
-def _group_keyword(node: ast.Call, names: dict[str, str]) -> bool:
+def _group_keyword(node: ast.Call, called: str | None, names: dict[str, str]) -> bool:
+    keywords = _GROUP_KEYWORDS | _SPAWN_KEYWORDS if called in _SPAWN_CALLS else _GROUP_KEYWORDS
     for keyword in node.keywords:
-        if keyword.arg in _GROUP_KEYWORDS and not _false(keyword.value):
+        if keyword.arg in keywords and not _false(keyword.value):
             return True
         if keyword.arg == "preexec_fn" and _called(keyword.value, names) in {
             "os.setsid",

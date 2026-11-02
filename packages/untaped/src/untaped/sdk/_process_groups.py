@@ -5,8 +5,10 @@ holds it and every helper it starts, and nothing it starts can prompt on the
 terminal. A signal sent to untaped's group (Ctrl-C, a closed terminal,
 ``timeout``, a cancelled CI job) then no longer reaches the child: the handler
 :func:`install` puts in place passes SIGINT, SIGTERM and SIGHUP on to every
-registered group and raises one :class:`Interrupted` on the main thread, so
-every ``except KeyboardInterrupt`` cleanup runs for all three.
+registered group and raises one plain ``KeyboardInterrupt`` on the main
+thread, so every ``except KeyboardInterrupt`` cleanup runs for all three (and
+``Popen.__exit__``, which knows only that exact type, kills its child at once).
+:func:`closing_signal` tells which signal it was.
 
 A group gets one soft signal, ever, and SIGKILL one grace after it (many
 tools read a second interrupt as "force quit now"). Each group's clock is
@@ -44,20 +46,12 @@ GRACE_S = 2.0
 #: How often a waiting run looks at its clock, its ``stop`` and its deadline.
 POLL_S = 0.1
 #: Process groups exist (POSIX); without them only the leader is stopped (#1013).
-GROUPS = hasattr(os, "killpg")
+HAS_PROCESS_GROUPS = hasattr(os, "killpg")
 _ENDING: tuple[int, ...] = tuple(
     sig for sig in (getattr(signal, "SIGTERM", None), getattr(signal, "SIGHUP", None)) if sig
 )
 _HANDLED: tuple[int, ...] = (signal.SIGINT, *_ENDING)
 _KILL: int = getattr(signal, "SIGKILL", signal.SIGTERM)
-
-
-class Interrupted(KeyboardInterrupt):
-    """Raised on the main thread for SIGINT, SIGTERM and SIGHUP: Ctrl-C's cleanups run for all."""
-
-    def __init__(self, signum: int) -> None:
-        super().__init__()
-        self.signum = signum
 
 
 class _Clock:
@@ -82,6 +76,7 @@ class _State:
         self.installed = False
         self.previous: dict[int, Any] = {}
         self.net = False
+        self.netting = False  # the exit net runs: a signal is recorded, not raised
 
 
 _S = _State()
@@ -90,7 +85,7 @@ _S = _State()
 def _after_fork_in_child() -> None:
     """A forked child starts with no groups, marks or closing: its exit net spares the parent's."""
     _S.groups, _S.clocks, _S.spawning, _S.deferred = {}, {}, {}, []
-    _S.closing, _S.main_spawning = None, False
+    _S.closing, _S.main_spawning, _S.netting = None, False, False
 
 
 if hasattr(os, "register_at_fork"):
@@ -102,7 +97,7 @@ if hasattr(os, "register_at_fork"):
 
 def _signal(pgid: int, sig: int) -> bool:
     """Send ``sig`` to group ``pgid``; ``False`` when no process is left in it."""
-    if not GROUPS:
+    if not HAS_PROCESS_GROUPS:
         leader = _S.groups.get(pgid)
         if leader is None or leader.poll() is not None:
             return False
@@ -134,6 +129,11 @@ def clock_age(pgid: int) -> float | None:
     return None if clock is None else time.monotonic() - clock.started
 
 
+def registered(pgid: int) -> bool:
+    """Whether group ``pgid`` is still untaped's to signal."""
+    return pgid in _S.groups
+
+
 def forget(pgid: int) -> None:
     """Deregister group ``pgid``: nothing signals it from now on."""
     _S.groups.pop(pgid, None)
@@ -151,11 +151,14 @@ def emptied(process: subprocess.Popen[bytes]) -> bool:
     """Whether ``process`` exited and nothing is left in its group (reaps the leader).
 
     An emptied group is deregistered in the same step, so its id is never
-    signalled after another process could have taken it.
+    signalled after another process could have taken it; a deregistered
+    group's id is never probed or reaped again.
     """
     if process.poll() is None:
         return False
-    if GROUPS:
+    if not registered(process.pid):
+        return True
+    if HAS_PROCESS_GROUPS:
         _reap_leftovers(process.pid)
         if _signal(process.pid, 0):
             return False
@@ -167,9 +170,12 @@ def stop(process: subprocess.Popen[bytes]) -> None:
     """Stop ``process``'s group: SIGTERM unless it had its soft signal, SIGKILL one grace on.
 
     The SIGKILL is in a ``finally``, so a second Ctrl-C during the grace
-    still reaches it. Reaps the leader and deregisters the group.
+    still reaches it. Reaps the leader and deregisters the group. A group no
+    longer registered is left alone: its id may be another process's by now.
     """
     pgid = process.pid
+    if not registered(pgid):
+        return
     soft_signal(pgid)
     clock = _S.clocks.get(pgid)
     deadline = (clock.started if clock is not None else time.monotonic()) + GRACE_S
@@ -179,12 +185,14 @@ def stop(process: subprocess.Popen[bytes]) -> None:
             time.sleep(min(0.02, left))
     finally:
         if not gone:
-            _signal(pgid, _KILL)
-            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
-                process.wait(timeout=GRACE_S)
-            if GROUPS:
-                _reap_leftovers(pgid)
-            forget(pgid)
+            try:
+                _signal(pgid, _KILL)
+                with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                    process.wait(timeout=GRACE_S)
+                if HAS_PROCESS_GROUPS:
+                    _reap_leftovers(pgid)
+            finally:
+                forget(pgid)
 
 
 # ── starting a child ────────────────────────────────────────────────────────
@@ -224,14 +232,13 @@ def spawn(
                 stdin=stdin,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                start_new_session=GROUPS,
+                start_new_session=HAS_PROCESS_GROUPS,
             )
             _S.groups[process.pid] = process
         finally:
             if main:
                 _S.main_spawning = False
-                while _S.deferred:
-                    _on_signal(_S.deferred.pop(0), None)  # may raise: the except below stops it
+                _replay_deferred()  # may raise: the except below stops it
             else:
                 _S.spawning.pop(me, None)
         closing = _S.closing
@@ -281,18 +288,44 @@ def ending(signum: int, *, closing: bool = True) -> bool:
     return True
 
 
+def closing_signal() -> int | None:
+    """The signal that started closing, ``None`` before one did (or when exit started it)."""
+    closing = _S.closing
+    return closing[0] if closing is not None and closing[0] else None
+
+
+def _replay_deferred() -> None:
+    """Replay every signal deferred during a main-thread spawn; raise once if any ends untaped."""
+    deferred, _S.deferred = _S.deferred, []
+    raised = False
+    for signum in deferred:
+        raised = _handle(signum, None) or raised
+    if raised:
+        raise KeyboardInterrupt
+
+
 def _on_signal(signum: int, frame: FrameType | None) -> None:
     if _S.main_spawning:
         _S.deferred.append(signum)  # replayed once the main thread's child is registered
         return
+    if _handle(signum, frame):
+        raise KeyboardInterrupt
+
+
+def _handle(signum: int, frame: FrameType | None) -> bool:
+    """The handler short of raising: ``True`` when it should raise the interrupt."""
+    if _S.netting:  # exiting already: the net ends untaped by an ending signal
+        current = _S.closing
+        if signum in _ENDING and (current is None or current[0] not in _ENDING):
+            _S.closing = (signum, time.monotonic())
+        return False
     previous = _S.previous.get(signum)
     if callable(previous) and previous is not signal.default_int_handler:
         # Installed before untaped: it decides whether untaped ends, as before.
         ending(signum, closing=False)
         previous(signum, frame)
-        return
-    if ending(signum):
-        raise Interrupted(signum)
+        return False
+    return ending(signum)
 
 
 def _end_now(signum: int) -> None:
@@ -317,7 +350,7 @@ def install() -> None:
     A signal untaped ignores (``nohup``, a background job) stays ignored. Off
     the main thread, or without process groups (Windows, #1013), this does nothing.
     """
-    if not GROUPS or threading.current_thread() is not threading.main_thread():
+    if not HAS_PROCESS_GROUPS or threading.current_thread() is not threading.main_thread():
         return
     for sig in _HANDLED:
         previous = signal.getsignal(sig)
@@ -345,6 +378,7 @@ def _exit_net() -> None:
     every later hook. Python joined the worker threads already; what is left
     is what nobody closed and the children of daemon threads.
     """
+    _S.netting = True
     if _S.installed and _S.closing is None:
         _S.closing = (0, time.monotonic())
     deadline = time.monotonic() + GRACE_S
