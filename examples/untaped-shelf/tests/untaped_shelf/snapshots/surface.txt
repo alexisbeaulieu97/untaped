@@ -55,6 +55,7 @@ record shelf.book.source default=None
 record shelf.book.title string
 sdk untaped_shelf.api.Book base=untaped.sdk.Issued
 sdk untaped_shelf.api.Book base=untaped.sdk.Record
+sdk untaped_shelf.api.Book extra=forbid
 sdk untaped_shelf.api.Book(*, title)
 sdk untaped_shelf.api.Book(pages=) default=0
 sdk untaped_shelf.api.Book(source=) default=None

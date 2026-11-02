@@ -13,7 +13,9 @@ being released.
 3. **Kept as promised.** Against the newest final release's file, a date it
    showed never falls, and a line it dated never loses its mark while it
    stays. While a major is being released, something deprecated since that
-   release (no release warned about it) may not be dated for it.
+   release (no release warned about it) may not be dated for it: the next
+   major, or the one after for a name plugins use (``test_surface.py``'s
+   two-major window).
 
 Rules 1 and 2 need no tags; rule 3 skips without one locally and fails in CI.
 Removing a deprecated line at its major is ``test_surface.py``'s
@@ -108,7 +110,8 @@ def broken_promises(
         unwarned = unwarned_identities(baseline, current)
         found.extend(
             f"{line}: deprecated since {tag}, the last release, so no release has warned about "
-            f"it; a deprecation ships in a minor first; set removed_in={limit + 1}"
+            f"it; a deprecation ships in a minor first; set removed_in="
+            f"{limit + (2 if line.plugin_facing else 1)}"
             for line in overdue(current, limit)
             if line.identity in unwarned
         )
@@ -272,6 +275,12 @@ def test_a_major_release_keeps_what_no_release_warned_about() -> None:
     )
     # Rule 1 leaves that line to rule 3, so one message speaks.
     assert overdue([line], 12, unwarned=unwarned_identities(baseline, [line])) == []
+
+
+def test_a_name_plugins_use_is_dated_two_majors_on() -> None:
+    line = Line("sdk untaped.sdk.old(x)", DeprecatedMark(12))
+    (message,) = _promises([Line("sdk untaped.sdk.old(x)")], [line], version="12.0.0rc1")
+    assert message.endswith("set removed_in=14")
 
 
 def test_the_rc_prep_final_sequence() -> None:

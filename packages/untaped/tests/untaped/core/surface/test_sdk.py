@@ -34,7 +34,9 @@ def _sample(names: Callable[[list[str]], list[str]]) -> Iterator[None]:
 
 @pytest.fixture(scope="module")
 def lines() -> Iterator[set[str]]:
-    with _sample(lambda names: [name for name in names if not name.startswith("watch")]):
+    with _sample(
+        lambda names: [name for name in names if not name.startswith("watch") and name != "Loose"]
+    ):
         exports = collect_exports({_NAME: None})
         yield {str(line) for line in module_lines(_NAME, None, exports)}
 
@@ -237,6 +239,25 @@ def test_a_marked_parameter_is_dated_on_its_own_line(lines: set[str]) -> None:
     assert f"sdk {_NAME}.Boxed(old@1=) default=false  [deprecated, removed in 12.0]" in _of(
         lines, "Boxed"
     )
+
+
+def test_a_model_says_whether_its_fields_may_go_and_dates_a_field(lines: set[str]) -> None:
+    assert _of(lines, "Strict") == [
+        f"sdk {_NAME}.Strict extra=forbid",
+        f"sdk {_NAME}.Strict(*, name)",
+        f"sdk {_NAME}.Strict(old=) default=0  [deprecated, removed in 14.0; use name]",
+        f"sdk {_NAME}.Strict.name",
+        f"sdk {_NAME}.Strict.old  [deprecated, removed in 14.0; use name]",
+    ]
+    assert not [line for line in _of(lines, "Record") if " extra=" in line]  # ignore: no line
+
+
+def test_a_deprecated_field_on_a_model_that_ignores_unknown_fields_stops_generation() -> None:
+    with (
+        _sample(lambda _: ["Loose"]),
+        pytest.raises(SurfaceError, match=r"Loose\.old carries a deprecation mark.*extra='forbid'"),
+    ):
+        module_lines(_NAME, None, collect_exports({_NAME: None}))
 
 
 def test_a_declared_contract_s_methods_are_its_contract_lines_alone(

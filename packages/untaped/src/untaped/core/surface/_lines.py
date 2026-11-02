@@ -29,6 +29,13 @@ FORMAT = 3
 HEADER = "# untaped surface"
 
 _SEPARATOR = "  ["
+_PLUGIN_FACING = frozenset({"sdk", "contract", "convention"})
+_SUBJECT = re.compile(r"^(?:sdk|contract) [\w.]+")
+_SHAPE_WORD = re.compile(r"^ (base=|implement=|abstract=|extra=|choice=|=)")
+_PARAMETER = re.compile(
+    r"^(?:sdk|contract) (?P<callable>[\w.]+)\("
+    r"(?:(?P<name>\w+)(?:@\d+/?)?=|(?P<variadic>\*{1,2}\w+))\)"
+)
 _USE = "; use "
 _DATED = re.compile(r"^deprecated, removed in (?P<major>[1-9][0-9]*)\.0$")
 
@@ -87,6 +94,51 @@ class Line:
     def area(self) -> str:
         """The first word: ``cli``, ``cfg``, ``state``, ``sdk``, ``contract``, ``behaviour``…"""
         return self.text.partition(" ")[0]
+
+    @property
+    def plugin_facing(self) -> bool:
+        """Whether plugins build on this line, so it lasts two majors after deprecation.
+
+        The ``sdk`` (the SDK and each plugin's ``api`` and ``testing`` modules),
+        ``contract`` and ``convention`` areas, and a record kind's own name
+        (``record <plugin>.<Kind>``), which users write into their files. The
+        only list of these areas; every other line keeps the one-major rule.
+        """
+        if self.area in _PLUGIN_FACING:
+            return True
+        return self.area == "record" and " " not in self.text.removeprefix("record ")
+
+    @property
+    def key(self) -> str:
+        """The line's name without its shape: what a respelling in place keeps.
+
+        An owner line keeps ``<area> <subject>()``, a parameter line
+        ``<area> <subject>(<name>=)``, a ``base=``, ``implement=``, ``extra=``,
+        ``choice=`` or ``=`` line its subject and that word; any other line is
+        its whole text but the shape after the subject.
+        """
+        parameter = self.parameter
+        if parameter is not None:
+            variadic = parameter[1].startswith("*")
+            return self.text if variadic else f"{self.area} {parameter[0]}({parameter[1]}=)"
+        found = _SUBJECT.match(self.text)
+        if found is None:
+            return self.text
+        rest = self.text[found.end() :]
+        if rest.startswith("("):
+            return f"{found[0]}()"
+        word = _SHAPE_WORD.match(rest)
+        return f"{found[0]} {word[1]}" if word else found[0]
+
+    @property
+    def parameter(self) -> tuple[str, str] | None:
+        """``(callable, name)`` for a line that names one parameter; ``None`` otherwise.
+
+        An optional parameter's line (``sdk X.f(name=)``, ``name@2=``, ``name@2/=``,
+        ``contract o.c.m(name@1=)``) and a variadic one's (``sdk X.f(*args)``).
+        """
+        found = _PARAMETER.match(self.text)
+        return None if found is None else (found["callable"], found["name"] or found["variadic"])
 
     @property
     def deprecation(self) -> DeprecatedMark | None:

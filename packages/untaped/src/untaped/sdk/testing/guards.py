@@ -60,17 +60,34 @@ def assert_surface(
     ``"3.0.0rc1"`` or ``"2.3.1.dev5+g1234"``), every deprecation must name its
     removal version (``removed_in=``), and nothing may still be marked removed
     in that version's major or earlier: a pre-release of ``3.0.0`` already
-    fails a ``removed_in=3`` that is still there.
+    fails a ``removed_in=3`` that is still there. Against the file, a shown
+    removal version never falls, and the names plugins use (your ``api`` and
+    ``testing`` modules, your contracts) keep two majors: a new deprecation
+    names ``removed_in`` at least two past ``version``'s major, such a name
+    goes only when the file marks it due, an experimental one changes only by
+    a new name, and a parameter goes only with its function (a field of a
+    model with ``extra="forbid"`` or ``"allow"`` may go when due). A line the
+    file marks due at ``version``'s major may go, and the file is rewritten
+    without it.
 
     Experimental, like the line format it writes (#830).
     """
-    from untaped.core.surface import due, parse, plugin_lines, removed, render  # noqa: PLC0415
+    from untaped.core.surface import (  # noqa: PLC0415
+        broken,
+        due,
+        parse,
+        plugin_lines,
+        postponements,
+        removed,
+        render,
+    )
 
     if path is None:
         path = _calling_test().parent / "snapshots" / "surface.txt"
     target = _candidate(plugin)
     name = target.name
     current = plugin_lines(target)
+    major: int | None = None
     if version is not None:
         from packaging.version import Version  # noqa: PLC0415
 
@@ -96,7 +113,18 @@ def assert_surface(
     except FileNotFoundError:
         recorded = None
     if recorded is not None:
-        gone = removed(parse(recorded), current)
+        before = parse(recorded)
+        gone = removed(before, current)
+        if major is not None:
+            found = [
+                f"{moved.line}: {path.name} promised {moved.was}.0; a shown promise never shortens"
+                for moved in postponements(before, current)
+                if moved.now < moved.was
+            ]
+            found.extend(broken(before, current, major=major))
+            assert not found, f"{name} {version}:\n" + "\n".join(f"  {each}" for each in found)
+            # a name plugins use was judged above, and what is due may go
+            gone = [line for line in gone if not line.plugin_facing and not due([line], major)]
         assert not gone, (
             f"{name} no longer keeps these lines of {path.name} (delete the file and run "
             "again to accept these in a major release):\n" + "\n".join(f"  {line}" for line in gone)

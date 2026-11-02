@@ -25,6 +25,9 @@ The rules every contributor keeps:
   snapshot tool of its own.
 - **Respelling existing lines bumps** :data:`FORMAT` and teaches
   :func:`upgrade` the old spelling, so a baseline file still compares.
+- **Names plugins use last two majors.** :attr:`Line.plugin_facing` says
+  which lines plugins build on; :func:`broken` is the one rule the release
+  check and ``assert_surface(version=)`` hold them to.
 - **A deprecated line names its removal version.** Its mark carries the
   major that removes it (``[deprecated, removed in <major>.0]``);
   :func:`postponements` and :func:`due` are the two questions the release
@@ -49,6 +52,7 @@ from untaped.core.surface._lines import (
     upgrade,
 )
 from untaped.core.surface._sdk import SurfaceError
+from untaped.core.surface._window import broken
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -67,6 +71,7 @@ __all__ = [
     "LineMark",
     "Postponement",
     "SurfaceError",
+    "broken",
     "due",
     "generate",
     "parse",
@@ -234,12 +239,13 @@ class _Composed:
     def _modules_of(self, plugin: ComposedPlugin) -> dict[str, LineMark | None]:
         """The plugin's Python API, with its mark.
 
-        The SDK for the root, else the ``api`` and ``testing`` of the package
-        its declaration names.
+        The SDK and ``untaped.core.api`` for the root, else the ``api`` and
+        ``testing`` of the package its declaration names.
         """
         mark = self.marks[plugin.name]
         if plugin.root:
-            return dict.fromkeys(SDK_MODULES, mark)
+            # core's ``api`` (commands a plugin names in a hint) is plugin-facing too
+            return dict.fromkeys((*SDK_MODULES, "untaped.core.api"), mark)
         return dict.fromkeys(plugin_sdk_modules(plugin.decl.package), mark)
 
 

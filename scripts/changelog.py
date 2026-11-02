@@ -45,7 +45,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 REPO_URL = "https://github.com/alexisbeaulieu97/untaped"
 FRAGMENT_DIR = "changelog.d"
 #: Fragment types in the order their sections render.
-TYPES = ("upgrading", "added", "changed", "deprecated", "removed", "fixed")
+TYPES = ("upgrading", "added", "changed", "deprecated", "removed", "fixed", "security")
 WIDTH = 80
 #: A fragment line's limit: the rendered bullet or indent adds two columns.
 FRAGMENT_WIDTH = WIDTH - 2

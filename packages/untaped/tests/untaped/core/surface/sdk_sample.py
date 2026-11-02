@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import UntapedError
 from untaped.sdk._parameter_marks import deprecated_parameters
@@ -24,12 +24,14 @@ __all__ = [
     "Color",
     "Fill",
     "Format",
+    "Loose",
     "Name",
     "Point",
     "Record",
     "Refused",
     "Settings",
     "Shout",
+    "Strict",
     "Teller",
     "Widget",
     "fill",
@@ -204,3 +206,18 @@ class Boxed:
     @deprecated_parameters
     def __init__(self, old: Annotated[bool, deprecated(removed_in=12)] = False) -> None:
         self.old = old
+
+
+class Strict(BaseModel):
+    """A model that refuses unknown fields: a deprecated field may go when due."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    old: Annotated[int, deprecated(removed_in=14, replacement="name")] = 0
+
+
+class Loose(BaseModel):
+    """A model that ignores unknown fields: a deprecated field would vanish silently."""
+
+    old: Annotated[int, deprecated(removed_in=14)] = 0
