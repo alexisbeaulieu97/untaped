@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from untaped.sdk import ConfigError
 from untaped_recipe.application.apply_recipe import ApplyRecipe
 from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.plan import FileChange
@@ -24,6 +25,8 @@ from untaped_recipe.infrastructure.backup import (
 from untaped_recipe.infrastructure.file_writer import flush_changes
 from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.pack_store import PackLibrary, pack_content_hash
+
+pytestmark = pytest.mark.usefixtures("recipe_run")
 
 
 def test_hook_resolver_uses_recipe_local_then_installed_pack(tmp_path: Path) -> None:
@@ -447,7 +450,7 @@ def test_backup_metadata_write_is_atomic(tmp_path: Path, monkeypatch: pytest.Mon
         raise OSError("disk full")
 
     monkeypatch.setattr("untaped.sdk.storage._fs.os.replace", failing_replace)
-    with pytest.raises(OSError, match="disk full"):
+    with pytest.raises(ConfigError, match="disk full"):
         draft.commit(
             draft.stage(
                 [FileChange(target=target, relative_path=Path("a.txt"), before=None, after="a\n")]
