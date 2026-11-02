@@ -182,13 +182,16 @@ def test_a_first_start_on_a_terminal_says_it_reads_the_plugins_and_a_second_star
 
 @pytest.mark.parametrize(
     ("argv", "stderr"),
-    [(["-q", "--version"], TtyStringIO), (["--version"], io.StringIO)],
+    [(["-q", "--version"], TtyStringIO), (["-v", "--version"], io.StringIO)],
     ids=["quiet", "not-a-terminal"],
 )
 def test_a_first_start_says_nothing_when_quiet_or_off_a_terminal(
     toys: Path, argv: list[str], stderr: type[io.StringIO]
 ) -> None:
-    """Off a terminal the line's --format isn't read yet, so no progress line can break JSON."""
+    """Off a terminal a -q after the command word isn't read yet, so no line is printed.
+
+    ``-v`` would print the task's opening line at once, so only the rule keeps it out.
+    """
     toy = _package(toys, "toyplug")
     assert READING_PLUGINS not in _started(argv, [toy], stderr())
 

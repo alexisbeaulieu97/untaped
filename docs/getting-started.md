@@ -12,20 +12,20 @@ untaped --help
 ```
 
 Extras combine (`'untaped[awx,github]'`). Add a third-party plugin with
-`uv tool install 'untaped[all]' --with <plugin>`. Re-running `uv tool install`
-restates the whole set and replaces the old one, so list every extra and
-`--with` you want, for example
-`uv tool install 'untaped[github,awx]' --with acme-untaped`. Only the
-`untaped` package ships the command, so `uv tool install untaped-<name>` does
-not work: uv finds no executable in a plugin package. In an environment
-you manage, `pip install 'untaped[<name>]'` or `pip install <plugin>` adds to
-the same environment.
+`uv tool install --compile-bytecode 'untaped[all]' --with <plugin>`.
+Re-running `uv tool install` restates the whole set and replaces the old one,
+so list every extra, `--with` and `--compile-bytecode` you want, for example
+`uv tool install --compile-bytecode 'untaped[github,awx]' --with acme-untaped`.
+Only the `untaped` package ships the command, so
+`uv tool install untaped-<name>` does not work: uv finds no executable in a
+plugin package. In an environment you manage, `pip install 'untaped[<name>]'`
+or `pip install <plugin>` adds to the same environment.
 
 `--compile-bytecode` compiles untaped's Python code while it installs;
 without it, the first command compiles it instead and takes several seconds
-longer. Give it to every `uv tool install` and `uv tool upgrade`, or set
+longer. `uv tool upgrade` keeps it; give it to every `uv tool install`, or set
 `UV_COMPILE_BYTECODE=1`. The first command after an install or an upgrade
-still reads every installed plugin once, which a terminal shows as
+still reads every installed plugin, which a terminal shows as
 `Reading the installed plugins`.
 
 `untaped --install-completion` adds shell completion.
@@ -107,9 +107,9 @@ command for each step, and marks every step that asks for or reveals a token
 as yours to run, so a token never passes through the agent. Paste this into your agent:
 
 ```text
-Install untaped with `uv tool install --compile-bytecode 'untaped[all]'`, then install its
-agent skills with `untaped skills install --all --target codex` (or
-`claude`). Read `untaped docs`, then `untaped docs untaped commands setup plan`,
+Install untaped with `uv tool install --compile-bytecode 'untaped[all]'`,
+then install its agent skills with
+`untaped skills install --all --target codex` (or `claude`). Read `untaped docs`, then `untaped docs untaped commands setup plan`,
 and set up a profile with me: run the steps that are yours and hand me the
 ones that ask for a token.
 ```
