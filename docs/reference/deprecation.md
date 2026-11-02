@@ -20,6 +20,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 | A function or method of your Python API | `@deprecated(removed_in=3, replacement=new_api)` over `@warnings.deprecated("<its sentence>")`, under any `@classmethod`, `@staticmethod` or `@property` |
 | A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="records on the plugin class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
+| A field of a model in your Python API | `old: Annotated[int, deprecated(removed_in=4, replacement="name")] = 0` on a model with `extra="forbid"` or `"allow"` |
 | A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="records on the plugin class")` on the plugin class |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
@@ -28,6 +29,13 @@ lockstep. A mark without `removed_in` still works and warns "a future major
 release", but nothing can hold it to a date: `untaped lint` reports it
 (`lint.undated-deprecation`) and `untaped.sdk.testing.assert_surface` refuses it
 when you pass your `version=`.
+
+A name plugins use (your `api` and `testing` modules, your contracts) lasts
+two majors after its deprecation, so a plugin built on one major keeps
+working on the next: deprecated in `untaped-acme 2.x`, it names
+`removed_in=4` at the earliest. It goes only at that major, a parameter only
+with its function, and a changed signature, default or return type is a new
+name beside the old one ([Versioning](../versioning.md#names-plugins-use)).
 
 A behaviour has no object to mark, so the attribute holding it names it:
 `row_kind` on `class Acme(Plugin)` is the surface line `behaviour
@@ -104,9 +112,12 @@ cli untaped acme sync  [deprecated, removed in 12.0; use untaped acme pull]
   never goes while the thing stays.
 
 `tests/repo/test_surface.py` lets a deprecated line go only at its major,
-while that major's prep (an `upgrading` fragment) is open. A plugin in its
-own repository gets the first two checks from
-`assert_surface(Acme, path, version=__version__)`.
+while that major's prep (an `upgrading` fragment) is open, and holds the
+names plugins use to their two majors. Only a security fix removes one
+early: an `EARLY_REMOVALS` entry with its reason and a
+`changelog.d/<slug>.security.md` fragment. A plugin in its own repository
+gets the same checks from `assert_surface(Acme, path, version=__version__)`,
+which also drops a line from the file once it is due.
 
 ## Postponing
 

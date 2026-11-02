@@ -268,9 +268,10 @@ def test_shelf_keeps_its_surface() -> None:
   group) or is an installed plugin's name is refused before anything is
   composed, and one the composition quarantines raises `ConfigError`.
 - `assert_surface(Shelf)` (experimental, with the file's line format)
-  writes `snapshots/surface.txt` beside the test the first time: one line per promise of the plugin,
-  its commands, flags and settings, each contract with its methods'
-  parameter and return types, and every model they reach with its fields.
+  writes `snapshots/surface.txt` beside the test the first time: one line
+  per promise of the plugin, its commands, flags and settings, each
+  contract with its methods' parameter and return types, and every model
+  they reach with its fields.
   It fails on an incompatible change, listing the lines that went: a
   removed or retyped field, a new required field, flag or parameter, a
   changed constraint, a dropped Literal value, a changed default, a
@@ -279,13 +280,17 @@ def test_shelf_keeps_its_surface() -> None:
   A new optional method, optional method parameter (a provider may take
   fewer), optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
-  and rewrite the file, as does a file an older untaped wrote. To accept a
-  breaking change in a major release, delete the file. Commit it. With `version=` (your distribution's
-  version) it also fails an undated deprecation and anything still marked
-  removed in that version's major or earlier
-  ([Deprecating something](./reference/deprecation.md#the-checks)). A stable contract method that reaches a model
-  marked `@experimental` fails here, so a contract is never stabilised with
-  a model nobody meant to promise.
+  and rewrite the file, as does a file an older untaped wrote. Commit it.
+  Pass `version=` (your distribution's version) to hold your names to
+  their dates: it fails an undated deprecation, anything still marked
+  removed in that version's major or earlier, and a lowered date; the
+  names plugins use (your contracts, `api` and `testing` modules) keep
+  two majors after their deprecation, change only by a new name even
+  while experimental, and leave the file once due
+  ([Names plugins use](./versioning.md#names-plugins-use)). Other lines
+  may go when due or at your major's first release. A stable contract
+  method that reaches a model marked `@experimental` fails here, so a
+  contract is never stabilised with a model nobody meant to promise.
 - An owner may ship checks every provider must pass as a
   `conformance(provider)` function in its `testing` module
   (`untaped_shelf.testing`); `untaped lint` runs it on each ready

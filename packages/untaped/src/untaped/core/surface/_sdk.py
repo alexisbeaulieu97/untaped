@@ -233,6 +233,7 @@ class _Walker:
 
     def cls(self, subject: str, cls: type, mark: LineMark | None) -> list[Line]:
         lines = self.bases(subject, cls, mark)
+        lines.extend(_extra_lines(subject, cls, mark))
         if implementer_shaped(cls, self.exports):
             return [*lines, *self.implementer(subject, cls, mark)]
         if _is_protocol(cls):
@@ -349,7 +350,9 @@ class _Walker:
                 isinstance(hint, annotationlib.ForwardRef)
                 and hint.__forward_arg__.startswith("ClassVar")
             )
-            return [Line(f"sdk {where} class" if is_class else f"sdk {where}", mark)]
+            if is_class:
+                return [Line(f"sdk {where} class", mark)]
+            return [Line(f"sdk {where}", sdk_line_mark(field_marks(klass).get(name)) or mark)]
         value = vars(klass)[name]
         member_mark = own_mark(value) or mark
         if isinstance(value, property | functools.cached_property):
@@ -407,6 +410,7 @@ class _Walker:
         factories = _factories(function)
         # A parameter marked deprecated in its annotation carries that mark on its own line.
         own = parameter_marks(function.__init__ if isinstance(function, type) else function)  # type: ignore[misc]
+        own.update(field_marks(function))
         parameters = list(signature.parameters.values())
         if skip_first:
             parameters = parameters[1:]
@@ -597,6 +601,48 @@ def _contract_methods(cls: type) -> frozenset[str]:
 
 def _is_protocol(cls: type) -> bool:
     return bool(getattr(cls, "_is_protocol", False))
+
+
+def field_marks(cls: object) -> dict[str, Deprecated]:
+    """Each field of pydantic model ``cls`` marked ``Annotated[..., deprecated(...)]``.
+
+    Keyed by the field's name and by its alias, which the model's signature
+    (its constructor's parameter line) uses.
+    """
+    if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
+        return {}
+    marks: dict[str, Deprecated] = {}
+    for name, info in cls.model_fields.items():
+        mark = next((each for each in info.metadata if isinstance(each, Deprecated)), None)
+        if mark is None:
+            continue
+        aliases = (info.alias, info.validation_alias)
+        marks.update(dict.fromkeys([name, *(a for a in aliases if isinstance(a, str))], mark))
+    return marks
+
+
+def _extra_lines(subject: str, cls: type, mark: LineMark | None) -> list[Line]:
+    """``extra=forbid`` or ``extra=allow`` for a pydantic model: whether a field may go.
+
+    A field such a model drops at its major fails loudly (``extra_forbidden``)
+    or stays readable as an extra, so it may go when due; a model that ignores
+    unknown fields would drop a caller's value silently, so it can't carry a
+    deprecated field at all.
+    """
+    if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
+        return []
+    extra = cls.model_config.get("extra") or "ignore"
+    if extra == "ignore":
+        marked = sorted(set(field_marks(cls)) & set(cls.model_fields))
+        if marked:
+            raise SurfaceError(
+                f"{subject}.{marked[0]} carries a deprecation mark, but {subject} ignores "
+                "unknown fields (extra='ignore'), so a plugin still passing it would lose its "
+                "value silently once it goes; set extra='forbid' or 'allow' on the model "
+                "first, or deprecate the model for a new one"
+            )
+        return []
+    return [Line(f"sdk {subject} extra={extra}", mark)]
 
 
 def _field_names(cls: type) -> set[str]:

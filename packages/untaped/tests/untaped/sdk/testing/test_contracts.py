@@ -259,7 +259,7 @@ def test_a_removed_line_fails_until_the_file_is_deleted(tmp_path: Path) -> None:
     with pytest.raises(AssertionError) as failed:
         assert_surface(_owner(_contract("breaking")), path)
     message = str(failed.value)
-    assert "delete the file and run again to accept these in a major release" in message
+    assert "pass version= to accept a due line or a major's removals" in message
     assert "  contract items.item_source.items() -> Item[]" in message
     path.unlink()
     assert_surface(_owner(_contract("breaking")), path)

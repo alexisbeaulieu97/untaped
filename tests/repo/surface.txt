@@ -6229,13 +6229,76 @@ record workspace.workspace.error Failure?  [experimental]
 record workspace.workspace.name string  [experimental]
 record workspace.workspace.repos integer  [experimental]
 record workspace.workspace.target_path string(format=path)  [experimental]
+sdk untaped.core.api.Login extra=forbid
+sdk untaped.core.api.Login(*, output)
+sdk untaped.core.api.Login(key=) default=[]
+sdk untaped.core.api.Login(name=) default=None
+sdk untaped.core.api.Login(plugin=) default=None
+sdk untaped.core.api.Login(store=) default=None
+sdk untaped.core.api.Login(token_command=) default=None
+sdk untaped.core.api.Login.aliases class
+sdk untaped.core.api.Login.ctx
+sdk untaped.core.api.Login.key
+sdk untaped.core.api.Login.name
+sdk untaped.core.api.Login.output
+sdk untaped.core.api.Login.plugin
+sdk untaped.core.api.Login.removes class
+sdk untaped.core.api.Login.repairs class
+sdk untaped.core.api.Login.run()
+sdk untaped.core.api.Login.settings
+sdk untaped.core.api.Login.spelled()
+sdk untaped.core.api.Login.spelled(*args)
+sdk untaped.core.api.Login.stability class
+sdk untaped.core.api.Login.store
+sdk untaped.core.api.Login.token_command
+sdk untaped.core.api.Rank extra=forbid
+sdk untaped.core.api.Rank(*, contract, method, dry_run, output)
+sdk untaped.core.api.Rank(plugins=) default=[]
+sdk untaped.core.api.Rank.aliases class
+sdk untaped.core.api.Rank.contract
+sdk untaped.core.api.Rank.ctx
+sdk untaped.core.api.Rank.dry_run
+sdk untaped.core.api.Rank.method
+sdk untaped.core.api.Rank.output
+sdk untaped.core.api.Rank.plugins
+sdk untaped.core.api.Rank.removes class
+sdk untaped.core.api.Rank.repairs class
+sdk untaped.core.api.Rank.run()
+sdk untaped.core.api.Rank.settings
+sdk untaped.core.api.Rank.spelled()
+sdk untaped.core.api.Rank.spelled(*args)
+sdk untaped.core.api.Rank.stability class
+sdk untaped.core.api.Set extra=forbid
+sdk untaped.core.api.Set(*, key, dry_run, output)
+sdk untaped.core.api.Set(project=) default=false
+sdk untaped.core.api.Set(prompt=) default=false
+sdk untaped.core.api.Set(stdin=) default=false
+sdk untaped.core.api.Set(value=) default=None
+sdk untaped.core.api.Set.aliases class
+sdk untaped.core.api.Set.ctx
+sdk untaped.core.api.Set.dry_run
+sdk untaped.core.api.Set.key
+sdk untaped.core.api.Set.output
+sdk untaped.core.api.Set.project
+sdk untaped.core.api.Set.prompt
+sdk untaped.core.api.Set.removes class
+sdk untaped.core.api.Set.repairs class
+sdk untaped.core.api.Set.run()
+sdk untaped.core.api.Set.settings
+sdk untaped.core.api.Set.spelled()
+sdk untaped.core.api.Set.spelled(*args)
+sdk untaped.core.api.Set.stability class
+sdk untaped.core.api.Set.stdin
+sdk untaped.core.api.Set.value
 sdk untaped.sdk.AbsolutePath
 sdk untaped.sdk.Age
 sdk untaped.sdk.AllowHyphen
 sdk untaped.sdk.Bytes
+sdk untaped.sdk.CheckRecord extra=forbid
 sdk untaped.sdk.CheckRecord(*, status)
 sdk untaped.sdk.CheckRecord.status
 sdk untaped.sdk.Column
+sdk untaped.sdk.Command extra=forbid
 sdk untaped.sdk.Command implement=
 sdk untaped.sdk.Command.aliases class
 sdk untaped.sdk.Command.ctx
@@ -6321,6 +6384,7 @@ sdk untaped.sdk.Diag.relay(text)
 sdk untaped.sdk.Diag.success(text)
 sdk untaped.sdk.Diag.warning(hint=) default=None
 sdk untaped.sdk.Diag.warning(text)
+sdk untaped.sdk.Diagnostic extra=forbid
 sdk untaped.sdk.Diagnostic(*, message)
 sdk untaped.sdk.Diagnostic(hint=) default=None
 sdk untaped.sdk.Diagnostic.hint
@@ -6378,6 +6442,7 @@ sdk untaped.sdk.Failed.fix_by class
 sdk untaped.sdk.Failed.hint class
 sdk untaped.sdk.Failed.retryable
 sdk untaped.sdk.Failed.system class
+sdk untaped.sdk.Failure extra=forbid
 sdk untaped.sdk.Failure(*, message, category, system)
 sdk untaped.sdk.Failure(details=) default={}
 sdk untaped.sdk.Failure(exit_code=) default=1
@@ -6460,6 +6525,7 @@ sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
+sdk untaped.sdk.InstalledPlugin extra=forbid
 sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
 sdk untaped.sdk.InstalledPlugin(fills=) default=[]
 sdk untaped.sdk.InstalledPlugin(package=) default=None
@@ -6479,6 +6545,7 @@ sdk untaped.sdk.InstalledPlugin.tests_dir
 sdk untaped.sdk.InstalledPlugin.version
 sdk untaped.sdk.InvalidValue(*commands)
 sdk untaped.sdk.InvalidValue(text)
+sdk untaped.sdk.Issued extra=forbid
 sdk untaped.sdk.Issued()
 sdk untaped.sdk.Issued(source=) default=None
 sdk untaped.sdk.Issued.source
@@ -6505,6 +6572,7 @@ sdk untaped.sdk.Matched.fix_by class
 sdk untaped.sdk.Matched.hint class
 sdk untaped.sdk.Matched.retryable
 sdk untaped.sdk.Matched.system class
+sdk untaped.sdk.Message extra=forbid
 sdk untaped.sdk.Message(*, level, message)
 sdk untaped.sdk.Message(hint=) default=None
 sdk untaped.sdk.Message.hint
@@ -6521,6 +6589,7 @@ sdk untaped.sdk.OperationCancelledError.fix_by class
 sdk untaped.sdk.OperationCancelledError.hint class
 sdk untaped.sdk.OperationCancelledError.retryable
 sdk untaped.sdk.OperationCancelledError.system class
+sdk untaped.sdk.OutcomeRecord extra=forbid
 sdk untaped.sdk.OutcomeRecord(*, action)
 sdk untaped.sdk.OutcomeRecord(error=) default=None
 sdk untaped.sdk.OutcomeRecord.action
@@ -6573,6 +6642,7 @@ sdk untaped.sdk.PluginHandle.home
 sdk untaped.sdk.PluginHandle.name
 sdk untaped.sdk.Positional()
 sdk untaped.sdk.PreviewItem
+sdk untaped.sdk.Progress extra=forbid
 sdk untaped.sdk.Progress(*, message, label, phase, done, total, elapsed, state)
 sdk untaped.sdk.Progress(hint=) default=None
 sdk untaped.sdk.Progress.done
@@ -6584,6 +6654,7 @@ sdk untaped.sdk.Progress.message
 sdk untaped.sdk.Progress.phase
 sdk untaped.sdk.Progress.state
 sdk untaped.sdk.Progress.total
+sdk untaped.sdk.Record extra=forbid
 sdk untaped.sdk.Record()
 sdk untaped.sdk.Refresh()
 sdk untaped.sdk.Refresh(*caches)
@@ -6602,12 +6673,14 @@ sdk untaped.sdk.SettingKey.model_of(setting)
 sdk untaped.sdk.SettingKey.path_of(setting)
 sdk untaped.sdk.Short(flag)
 sdk untaped.sdk.Short.flag
+sdk untaped.sdk.Source extra=forbid
 sdk untaped.sdk.Source(*, plugin, kind)
 sdk untaped.sdk.Source(record=) default={}
 sdk untaped.sdk.Source.kind
 sdk untaped.sdk.Source.plugin
 sdk untaped.sdk.Source.record
 sdk untaped.sdk.Spread
+sdk untaped.sdk.Stale extra=forbid
 sdk untaped.sdk.Stale(*, message, plugin, cache, key, refreshed_at, age_seconds, max_age_seconds)
 sdk untaped.sdk.Stale(attempted_at=) default=None
 sdk untaped.sdk.Stale(error=) default=None
@@ -6672,6 +6745,7 @@ sdk untaped.sdk.System.GIT = git
 sdk untaped.sdk.System.HTTP = http
 sdk untaped.sdk.System.LOCAL = local
 sdk untaped.sdk.System.UNTAPED = untaped
+sdk untaped.sdk.TargetRecord extra=forbid
 sdk untaped.sdk.TargetRecord(*, target_path)
 sdk untaped.sdk.TargetRecord(error=) default=None
 sdk untaped.sdk.TargetRecord.error
@@ -6695,6 +6769,7 @@ sdk untaped.sdk.Terminal.text(default=) default=None
 sdk untaped.sdk.Terminal.text(message)
 sdk untaped.sdk.Terminal.text(required=) default=true
 sdk untaped.sdk.TextOrStdin
+sdk untaped.sdk.TreeGraph extra=forbid  [experimental]
 sdk untaped.sdk.TreeGraph(*, root)  [experimental]
 sdk untaped.sdk.TreeGraph(edges=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraph(nodes=) default=[]  [experimental]
@@ -6706,6 +6781,7 @@ sdk untaped.sdk.TreeGraph.nodes  [experimental]
 sdk untaped.sdk.TreeGraph.notes  [experimental]
 sdk untaped.sdk.TreeGraph.root  [experimental]
 sdk untaped.sdk.TreeGraph.summary  [experimental]
+sdk untaped.sdk.TreeGraphEdge extra=forbid  [experimental]
 sdk untaped.sdk.TreeGraphEdge(*, parent, child)  [experimental]
 sdk untaped.sdk.TreeGraphEdge(notes=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraphEdge(section=) default=None  [experimental]
@@ -6715,6 +6791,7 @@ sdk untaped.sdk.TreeGraphEdge.notes  [experimental]
 sdk untaped.sdk.TreeGraphEdge.parent  [experimental]
 sdk untaped.sdk.TreeGraphEdge.section  [experimental]
 sdk untaped.sdk.TreeGraphEdge.suffix  [experimental]
+sdk untaped.sdk.TreeGraphNode extra=forbid  [experimental]
 sdk untaped.sdk.TreeGraphNode(*, key, label)  [experimental]
 sdk untaped.sdk.TreeGraphNode(notes=) default=[]  [experimental]
 sdk untaped.sdk.TreeGraphNode(stopped=) default=false  [experimental]
@@ -7048,6 +7125,7 @@ sdk untaped.sdk.network.Credential.store(key)
 sdk untaped.sdk.network.Credential.store(token=) default=None
 sdk untaped.sdk.network.Credential.suggest
 sdk untaped.sdk.network.Credential.where
+sdk untaped.sdk.network.CredentialKey extra=forbid
 sdk untaped.sdk.network.CredentialKey()
 sdk untaped.sdk.network.CredentialKey.origin class
 sdk untaped.sdk.network.HttpClient()
@@ -7144,6 +7222,7 @@ sdk untaped.sdk.projects.Initialized.action  [experimental]
 sdk untaped.sdk.projects.Initialized.detail  [experimental]
 sdk untaped.sdk.projects.Initialized.picked  [experimental]
 sdk untaped.sdk.projects.Initialized.project  [experimental]
+sdk untaped.sdk.projects.Project extra=forbid  [experimental]
 sdk untaped.sdk.projects.Project(*, id, root)  [experimental]
 sdk untaped.sdk.projects.Project(copy_of=) default=None  [experimental]
 sdk untaped.sdk.projects.Project.copy_of  [experimental]
@@ -7362,6 +7441,7 @@ sdk untaped.sdk.storage.Freshness.past_max_age(max_age, *, now)
 sdk untaped.sdk.storage.Freshness.refreshed_at
 sdk untaped.sdk.storage.Freshness.retry_at
 sdk untaped.sdk.storage.Freshness.version
+sdk untaped.sdk.storage.FreshnessRecord extra=forbid
 sdk untaped.sdk.storage.FreshnessRecord(*, refreshed_at, stale, max_age_seconds)
 sdk untaped.sdk.storage.FreshnessRecord(attempted_at=) default=None
 sdk untaped.sdk.storage.FreshnessRecord(outdated=) default=false
@@ -7377,11 +7457,13 @@ sdk untaped.sdk.storage.FreshnessRecord.refresh_error
 sdk untaped.sdk.storage.FreshnessRecord.refreshed_at
 sdk untaped.sdk.storage.FreshnessRecord.retry_at
 sdk untaped.sdk.storage.FreshnessRecord.stale
+sdk untaped.sdk.storage.HolderView extra=forbid  [experimental]
 sdk untaped.sdk.storage.HolderView(*, holder, label, anchor, state)  [experimental]
 sdk untaped.sdk.storage.HolderView.anchor  [experimental]
 sdk untaped.sdk.storage.HolderView.holder  [experimental]
 sdk untaped.sdk.storage.HolderView.label  [experimental]
 sdk untaped.sdk.storage.HolderView.state  [experimental]
+sdk untaped.sdk.storage.LetGo extra=forbid  [experimental]
 sdk untaped.sdk.storage.LetGo(*, preview, apply) callback(apply, 1)  [experimental]
 sdk untaped.sdk.storage.LetGo.apply  [experimental]
 sdk untaped.sdk.storage.LetGo.preview  [experimental]
@@ -7401,6 +7483,7 @@ sdk untaped.sdk.storage.Lock.problems()  [experimental]
 sdk untaped.sdk.storage.Lock.spelled  [experimental]
 sdk untaped.sdk.storage.Lock.try_locked()  [experimental]
 sdk untaped.sdk.storage.Lock.where  [experimental]
+sdk untaped.sdk.storage.MoveAsk extra=forbid  [experimental]
 sdk untaped.sdk.storage.MoveAsk(*, item, holder, others, moved_from)  [experimental]
 sdk untaped.sdk.storage.MoveAsk.holder  [experimental]
 sdk untaped.sdk.storage.MoveAsk.item  [experimental]
@@ -7424,10 +7507,12 @@ sdk untaped.sdk.storage.ProgressHandle.update(done=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(message@1=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(phase=) default=None
 sdk untaped.sdk.storage.ProgressHandle.update(total=) default=None
+sdk untaped.sdk.storage.Refused extra=forbid  [experimental]
 sdk untaped.sdk.storage.Refused(*, reason)  [experimental]
 sdk untaped.sdk.storage.Refused(hint=) default=None  [experimental]
 sdk untaped.sdk.storage.Refused.hint  [experimental]
 sdk untaped.sdk.storage.Refused.reason  [experimental]
+sdk untaped.sdk.storage.ReleaseAsk extra=forbid  [experimental]
 sdk untaped.sdk.storage.ReleaseAsk(*, item, holder, others, force)  [experimental]
 sdk untaped.sdk.storage.ReleaseAsk.force  [experimental]
 sdk untaped.sdk.storage.ReleaseAsk.holder  [experimental]
@@ -7483,6 +7568,7 @@ sdk untaped.sdk.storage.StateRows.replace_all(change) callback(change, 1)  [expe
 sdk untaped.sdk.storage.StateRows.spelled  [experimental]
 sdk untaped.sdk.storage.StateRows.update(key, change) callback(change, 1)  [experimental]
 sdk untaped.sdk.storage.StateRows.where  [experimental]
+sdk untaped.sdk.storage.UnknownHolder extra=forbid  [experimental]
 sdk untaped.sdk.storage.UnknownHolder(*, label)  [experimental]
 sdk untaped.sdk.storage.UnknownHolder.label  [experimental]
 sdk untaped.sdk.storage.Unreadable(reason)  [experimental]
@@ -7558,6 +7644,7 @@ sdk untaped.sdk.testing.PluginCandidate.entry_point_group
 sdk untaped.sdk.testing.PluginCandidate.name
 sdk untaped.sdk.testing.PluginCandidate.requires_dist
 sdk untaped.sdk.testing.PluginCandidate.target
+sdk untaped.sdk.testing.PluginCheck extra=forbid
 sdk untaped.sdk.testing.PluginCheck(*, status, plugin, check, title)
 sdk untaped.sdk.testing.PluginCheck(detail=) default=""
 sdk untaped.sdk.testing.PluginCheck.check
@@ -7720,6 +7807,7 @@ sdk untaped.sdk.tree_text(ascii_guides=) default=false  [experimental]
 sdk untaped.sdk.tree_text(graphs)  [experimental]
 sdk untaped.sdk.unified_diff_text(before, after, *, path)
 sdk untaped.sdk.yaml_mapping_indent(text)
+sdk untaped_awx.api.ControllerFacts extra=forbid  [experimental]
 sdk untaped_awx.api.ControllerFacts()  [experimental]
 sdk untaped_awx.api.ControllerFacts(last_job_failed=) default=None  [experimental]
 sdk untaped_awx.api.ControllerFacts(playbooks=) default=None  [experimental]
@@ -7729,6 +7817,7 @@ sdk untaped_awx.api.ControllerFacts.last_job_failed  [experimental]
 sdk untaped_awx.api.ControllerFacts.playbooks  [experimental]
 sdk untaped_awx.api.ControllerFacts.status  [experimental]
 sdk untaped_awx.api.ControllerFacts.total_hosts  [experimental]
+sdk untaped_awx.api.JobTemplateDoc extra=allow  [experimental]
 sdk untaped_awx.api.JobTemplateDoc()  [experimental]
 sdk untaped_awx.api.JobTemplateDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.JobTemplateDoc(ask_credential_on_launch=) default=None  [experimental]
@@ -7783,11 +7872,13 @@ sdk untaped_awx.api.JobTemplateDoc.survey_enabled  [experimental]
 sdk untaped_awx.api.JobTemplateDoc.survey_questions()  [experimental]
 sdk untaped_awx.api.JobTemplateDoc.survey_spec  [experimental]
 sdk untaped_awx.api.JobTemplateDoc.variables()  [experimental]
+sdk untaped_awx.api.KindFacts extra=forbid  [experimental]
 sdk untaped_awx.api.KindFacts(*, known_fields, secret_paths)  [experimental]
 sdk untaped_awx.api.KindFacts(read_only=) default=false  [experimental]
 sdk untaped_awx.api.KindFacts.known_fields  [experimental]
 sdk untaped_awx.api.KindFacts.read_only  [experimental]
 sdk untaped_awx.api.KindFacts.secret_paths  [experimental]
+sdk untaped_awx.api.Linted extra=forbid  [experimental]
 sdk untaped_awx.api.Linted(*, origin, location, resource)  [experimental]
 sdk untaped_awx.api.Linted(controller=) default=None  [experimental]
 sdk untaped_awx.api.Linted(references=) default=[]  [experimental]
@@ -7796,12 +7887,14 @@ sdk untaped_awx.api.Linted.location  [experimental]
 sdk untaped_awx.api.Linted.origin  [experimental]
 sdk untaped_awx.api.Linted.references  [experimental]
 sdk untaped_awx.api.Linted.resource  [experimental]
+sdk untaped_awx.api.Metadata extra=forbid
 sdk untaped_awx.api.Metadata(*, name)
 sdk untaped_awx.api.Metadata(organization=) default=None
 sdk untaped_awx.api.Metadata(parent=) default=None
 sdk untaped_awx.api.Metadata.name
 sdk untaped_awx.api.Metadata.organization
 sdk untaped_awx.api.Metadata.parent
+sdk untaped_awx.api.ProjectDoc extra=allow  [experimental]
 sdk untaped_awx.api.ProjectDoc()  [experimental]
 sdk untaped_awx.api.ProjectDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.ProjectDoc(allow_override=) default=None  [experimental]
@@ -7812,12 +7905,14 @@ sdk untaped_awx.api.ProjectDoc.allow_override  [experimental]
 sdk untaped_awx.api.ProjectDoc.scm_branch  [experimental]
 sdk untaped_awx.api.ProjectDoc.scm_type  [experimental]
 sdk untaped_awx.api.ProjectDoc.scm_url  [experimental]
+sdk untaped_awx.api.Reference extra=forbid  [experimental]
 sdk untaped_awx.api.Reference(*, field, target, resolution)  [experimental]
 sdk untaped_awx.api.Reference(location=) default=None  [experimental]
 sdk untaped_awx.api.Reference.field  [experimental]
 sdk untaped_awx.api.Reference.location  [experimental]
 sdk untaped_awx.api.Reference.resolution  [experimental]
 sdk untaped_awx.api.Reference.target  [experimental]
+sdk untaped_awx.api.Resource extra=forbid
 sdk untaped_awx.api.Resource(*, kind, metadata)
 sdk untaped_awx.api.Resource(apiVersion=) default=untaped.dev/awx/v1
 sdk untaped_awx.api.Resource(spec=) default={}
@@ -7826,6 +7921,7 @@ sdk untaped_awx.api.Resource.kind
 sdk untaped_awx.api.Resource.metadata
 sdk untaped_awx.api.Resource.spec
 sdk untaped_awx.api.Resources base=untaped.sdk.Record  [experimental]
+sdk untaped_awx.api.Resources extra=forbid  [experimental]
 sdk untaped_awx.api.Resources()  [experimental]
 sdk untaped_awx.api.Resources(items=) default=[]  [experimental]
 sdk untaped_awx.api.Resources(kinds=) default={}  [experimental]
@@ -7839,6 +7935,7 @@ sdk untaped_awx.api.Resources.loaded  [experimental]
 sdk untaped_awx.api.Resources.of(kind)  [experimental]
 sdk untaped_awx.api.Resources.online  [experimental]
 sdk untaped_awx.api.Resources.unreadable  [experimental]
+sdk untaped_awx.api.ScheduleDoc extra=allow  [experimental]
 sdk untaped_awx.api.ScheduleDoc()  [experimental]
 sdk untaped_awx.api.ScheduleDoc(**extra_data_)  [experimental]
 sdk untaped_awx.api.ScheduleDoc(diff_mode=) default=None  [experimental]
@@ -7872,6 +7969,7 @@ sdk untaped_awx.api.ScheduleDoc.skip_tags  [experimental]
 sdk untaped_awx.api.ScheduleDoc.timeout  [experimental]
 sdk untaped_awx.api.ScheduleDoc.variables()  [experimental]
 sdk untaped_awx.api.ScheduleDoc.verbosity  [experimental]
+sdk untaped_awx.api.SurveyQuestionDoc extra=allow  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc()  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc(default=) default=None  [experimental]
@@ -7884,10 +7982,12 @@ sdk untaped_awx.api.SurveyQuestionDoc.question_name  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc.required  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc.type  [experimental]
 sdk untaped_awx.api.SurveyQuestionDoc.variable  [experimental]
+sdk untaped_awx.api.Unreadable extra=forbid  [experimental]
 sdk untaped_awx.api.Unreadable(*, path, index, error)  [experimental]
 sdk untaped_awx.api.Unreadable.error  [experimental]
 sdk untaped_awx.api.Unreadable.index  [experimental]
 sdk untaped_awx.api.Unreadable.path  [experimental]
+sdk untaped_awx.api.WorkflowJobTemplateDoc extra=allow  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc()  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc(ask_inventory_on_launch=) default=None  [experimental]
@@ -7921,6 +8021,7 @@ sdk untaped_awx.api.WorkflowJobTemplateDoc.survey_questions()  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc.survey_spec  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc.variables()  [experimental]
 sdk untaped_awx.api.WorkflowJobTemplateDoc.workflow_nodes()  [experimental]
+sdk untaped_awx.api.WorkflowNodeDoc extra=allow  [experimental]
 sdk untaped_awx.api.WorkflowNodeDoc()  [experimental]
 sdk untaped_awx.api.WorkflowNodeDoc(**extra_data)  [experimental]
 sdk untaped_awx.api.WorkflowNodeDoc(approval=) default=None  [experimental]
@@ -8044,6 +8145,7 @@ sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experi
 sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree)
 sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
+sdk untaped_git.api.TreeEntry extra=forbid
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
 sdk untaped_git.api.TreeEntry.mode
 sdk untaped_git.api.TreeEntry.oid
@@ -8164,6 +8266,7 @@ sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
 sdk untaped_github.api.split_repo_id(value)
+sdk untaped_lint.api.DocumentLocation extra=forbid  [experimental]
 sdk untaped_lint.api.DocumentLocation(*, path, index)  [experimental]
 sdk untaped_lint.api.DocumentLocation.index  [experimental]
 sdk untaped_lint.api.DocumentLocation.path  [experimental]
@@ -8175,6 +8278,7 @@ sdk untaped_lint.api.File.path  [experimental]
 sdk untaped_lint.api.File.python()  [experimental]
 sdk untaped_lint.api.File.text  [experimental]
 sdk untaped_lint.api.File.yaml()  [experimental]
+sdk untaped_lint.api.FileLocation extra=forbid  [experimental]
 sdk untaped_lint.api.FileLocation(*, path)  [experimental]
 sdk untaped_lint.api.FileLocation(column=) default=None  [experimental]
 sdk untaped_lint.api.FileLocation(line=) default=None  [experimental]
@@ -8184,6 +8288,7 @@ sdk untaped_lint.api.FileLocation.path  [experimental]
 sdk untaped_lint.api.FileLocation.table_text()  [experimental]
 sdk untaped_lint.api.Finding base=untaped.sdk.Issued  [experimental]
 sdk untaped_lint.api.Finding base=untaped.sdk.Record  [experimental]
+sdk untaped_lint.api.Finding extra=forbid  [experimental]
 sdk untaped_lint.api.Finding(*, rule, severity, target, message)  [experimental]
 sdk untaped_lint.api.Finding(error=) default=None  [experimental]
 sdk untaped_lint.api.Finding(fix=) default=None  [experimental]
@@ -8207,6 +8312,7 @@ sdk untaped_lint.api.Findings.ignore  [experimental]
 sdk untaped_lint.api.Findings.select  [experimental]
 sdk untaped_lint.api.Findings.strict  [experimental]
 sdk untaped_lint.api.InstalledPlugin base=untaped.sdk.Record  [experimental]
+sdk untaped_lint.api.InstalledPlugin extra=forbid  [experimental]
 sdk untaped_lint.api.InstalledPlugin(*, name, status, distribution, version)  [experimental]
 sdk untaped_lint.api.InstalledPlugin(fills=) default=[]  [experimental]
 sdk untaped_lint.api.InstalledPlugin(package=) default=None  [experimental]
@@ -8244,6 +8350,7 @@ sdk untaped_lint.api.Report.findings  [experimental]
 sdk untaped_lint.api.Report.predicate_hit(*, strict)  [experimental]
 sdk untaped_lint.api.Report.summary()  [experimental]
 sdk untaped_lint.api.Report.warnings  [experimental]
+sdk untaped_lint.api.ResourceLocation extra=forbid  [experimental]
 sdk untaped_lint.api.ResourceLocation(*, id)  [experimental]
 sdk untaped_lint.api.ResourceLocation(url=) default=None  [experimental]
 sdk untaped_lint.api.ResourceLocation.id  [experimental]
@@ -8251,6 +8358,7 @@ sdk untaped_lint.api.ResourceLocation.table_text()  [experimental]
 sdk untaped_lint.api.ResourceLocation.url  [experimental]
 sdk untaped_lint.api.Rule base=untaped.sdk.Issued  [experimental]
 sdk untaped_lint.api.Rule base=untaped.sdk.Record  [experimental]
+sdk untaped_lint.api.Rule extra=forbid  [experimental]
 sdk untaped_lint.api.Rule(*, id, reads, severity, summary)  [experimental]
 sdk untaped_lint.api.Rule(source=) default=None  [experimental]
 sdk untaped_lint.api.Rule.id  [experimental]
@@ -8274,6 +8382,7 @@ sdk untaped_lint.api.Rules.rules()  [experimental]
 sdk untaped_lint.api.Severity choice=error  [experimental]
 sdk untaped_lint.api.Severity choice=warning  [experimental]
 sdk untaped_lint.api.Tree base=untaped.sdk.Record  [experimental]
+sdk untaped_lint.api.Tree extra=forbid  [experimental]
 sdk untaped_lint.api.Tree(*, root, paths)  [experimental]
 sdk untaped_lint.api.Tree.files()  [experimental]
 sdk untaped_lint.api.Tree.files(*globs)  [experimental]
@@ -8319,6 +8428,7 @@ sdk untaped_lint.testing.tree(files)  [experimental]
 sdk untaped_lint.testing.tree(root=) default=None  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.sdk.Issued  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.sdk.Record  [experimental]
+sdk untaped_workspace.api.Repo extra=forbid  [experimental]
 sdk untaped_workspace.api.Repo(*, name, url)  [experimental]
 sdk untaped_workspace.api.Repo(archived=) default=false  [experimental]
 sdk untaped_workspace.api.Repo(default_branch=) default=None  [experimental]

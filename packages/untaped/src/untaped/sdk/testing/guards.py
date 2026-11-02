@@ -53,28 +53,43 @@ def assert_surface(
     A missing file is written and the test passes. An addition, a mark
     change or a format upgrade rewrites it and passes. A removed stable line
     (a dropped option or choice, a changed default, a new required
-    parameter) fails, listing each line; to accept the removals in your own
-    major release, delete the file and run again.
+    parameter) fails, listing each line; pass ``version`` to accept what your
+    release may remove (without it, deleting the file accepts everything and
+    forgets every date).
 
     With ``version`` (your distribution's, such as ``"2.3.0"``,
     ``"3.0.0rc1"`` or ``"2.3.1.dev5+g1234"``), every deprecation must name its
     removal version (``removed_in=``), and nothing may still be marked removed
     in that version's major or earlier: a pre-release of ``3.0.0`` already
-    fails a ``removed_in=3`` that is still there.
+    fails a ``removed_in=3`` that is still there. Against the file, a shown
+    removal version never falls, and the names plugins use (your ``api`` and
+    ``testing`` modules, your contracts) keep two majors: a new deprecation
+    names ``removed_in`` at least two past ``version``'s major, such a name
+    goes only when the file marks it due, an experimental one changes only by
+    a new name, and a parameter goes only with its function (a field of a
+    model with ``extra="forbid"`` or ``"allow"`` may go when due). Any other
+    line may go when the file marks it due, or at a major's first release
+    (``3.0.0``, ``3.0.0rc1``); the file is then rewritten without it.
 
     Experimental, like the line format it writes (#830).
     """
-    from untaped.core.surface import due, parse, plugin_lines, removed, render  # noqa: PLC0415
+    from untaped.core.surface import (  # noqa: PLC0415
+        broken,
+        due,
+        parse,
+        plugin_lines,
+        postponements,
+        removed,
+        render,
+    )
 
     if path is None:
         path = _calling_test().parent / "snapshots" / "surface.txt"
     target = _candidate(plugin)
     name = target.name
     current = plugin_lines(target)
-    if version is not None:
-        from packaging.version import Version  # noqa: PLC0415
-
-        major = Version(version).major
+    major = None if version is None else _major(version)
+    if major is not None:
         undated = sorted(
             line
             for line in current
@@ -84,9 +99,9 @@ def assert_surface(
             f"{name}: every deprecation is a promise with a date; pass removed_in=<major> "
             "to these marks:\n" + "\n".join(f"  {line}" for line in undated)
         )
-        overdue = due(current, major)
+        overdue = due(current, major[0])
         assert not overdue, (
-            f"{name} {version} removes what is marked for {major}.0 or earlier; these are "
+            f"{name} {version} removes what is marked for {major[0]}.0 or earlier; these are "
             "still here (remove them, or raise removed_in on purpose):\n"
             + "\n".join(f"  {line}" for line in overdue)
         )
@@ -95,16 +110,48 @@ def assert_surface(
         recorded = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         recorded = None
-    if recorded is not None:
-        gone = removed(parse(recorded), current)
+    if recorded is None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return
+    before = parse(recorded)
+    gone = removed(before, current)
+    if major is None:
         assert not gone, (
-            f"{name} no longer keeps these lines of {path.name} (delete the file and run "
-            "again to accept these in a major release):\n" + "\n".join(f"  {line}" for line in gone)
+            f"{name} no longer keeps these lines of {path.name} (pass version= to accept a "
+            "due line or a major's removals, or delete the file and run again):\n"
+            + "\n".join(f"  {line}" for line in gone)
         )
-        if recorded == text:
-            return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+    else:
+        number, at_major = major
+        found = [
+            f"{moved.line}: {path.name} promised {moved.was}.0; a shown promise never shortens"
+            for moved in postponements(before, current)
+            if moved.now < moved.was
+        ]
+        found.extend(broken(before, current, major=number))
+        # a name plugins use was judged above; anything else goes when due, or at a major
+        found.extend(
+            f"{line}: a minor keeps it; "
+            + (
+                f"it goes at {mark.removed_in}.0"
+                if (mark := line.deprecation) is not None and mark.removed_in is not None
+                else f"deprecate it with removed_in={number + 1} and remove it then"
+            )
+            for line in gone
+            if not line.plugin_facing and not at_major and not due([line], number)
+        )
+        assert not found, f"{name} {version}:\n" + "\n".join(f"  {each}" for each in found)
+    if recorded != text:
+        path.write_text(text, encoding="utf-8")
+
+
+def _major(version: str) -> tuple[int, bool]:
+    """``version``'s major, and whether it is that major's first release (``3.0.0rc1`` too)."""
+    from packaging.version import Version  # noqa: PLC0415
+
+    parsed = Version(version)
+    return parsed.major, all(part == 0 for part in parsed.release[1:])
 
 
 def _calling_test() -> Path:

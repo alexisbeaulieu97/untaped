@@ -134,6 +134,33 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - Table cells: `TableText` in `untaped.sdk`, a nested model's `table_text()`
   as its cell (lint's locations are its one consumer).
 
+## Names plugins use
+
+A plugin built on one major keeps working on the next. The names plugins
+import or implement (the modules
+[SDK stability](./reference/conventions.md#sdk-stability) lists, each
+plugin's `api` and `testing` modules, contracts and their methods, and the
+conventions core reads) and a record kind's own name, which users write into
+their files, last two majors after their deprecation:
+
+- A deprecation names a removal at least two majors past the release that
+  ships it: one deprecated in 12.x goes in 14.0 at the earliest.
+- Such a name goes only at the major its deprecation names. A changed meaning
+  gets a new name: a changed signature, default or return type is a removal,
+  so the old spelling stays, deprecated, beside the new name.
+- A parameter goes only with its function. A field of a pydantic model that
+  refuses or keeps unknown fields (`extra="forbid"` or `"allow"`) may go when
+  due; a model that ignores them can't carry a deprecated field.
+- An experimental name may still go in a minor, but never changes shape
+  under the same name.
+- Only a security fix removes one early, with a Security changelog entry.
+
+A record kind's fields, and everything else on this page, keep the one-major
+rule; a model that is both (a record or settings model a plugin's `api`
+exports) keeps the longer window. `assert_surface(Plugin, version=...)` checks the same rules for a
+plugin's own names, so a plugin that runs it promises plugins built on it
+the same.
+
 ## Breaking changes
 
 - A command that goes away with no successor is marked deprecated: it is

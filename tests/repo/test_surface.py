@@ -32,7 +32,7 @@ from repo.support import (
     release_baseline,
 )
 from untaped.core.plugin_check import check as plugin_check
-from untaped.core.surface import DeprecatedMark, Line, LineMark, parse, removed
+from untaped.core.surface import DeprecatedMark, Line, LineMark, broken, parse, removed
 from untaped.core.surface._lists import CONVENTIONS
 from untaped.runtime.registry import PLUGINS_ENTRY_POINT_GROUP
 from untaped.sdk.git import GitCommandError
@@ -70,8 +70,24 @@ def removal_target(version: str, baseline: str, fragments: list[str]) -> int:
     return Version(version).major
 
 
+#: The first baseline major whose plugin-facing lines keep the two-major window:
+#: 12.0 is a clean slate, so it still drops 11.x names without deprecating them.
+TWO_MAJORS_FROM = 12
+
+
+def two_majors(baseline: str) -> bool:
+    """Whether ``baseline``'s plugin-facing lines go only when due (:func:`broken`)."""
+    return Version(baseline.removeprefix("v")).major >= TWO_MAJORS_FROM
+
+
 def removal_exempt(line: Line, target: int, baseline: str) -> bool:
-    """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep."""
+    """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep.
+
+    A plugin-facing line under the two-major window is left to :func:`broken`,
+    which decides when it may go (``test_names_plugins_use_last_two_majors``).
+    """
+    if line.plugin_facing and two_majors(baseline):
+        return True
     mark = line.deprecation
     if mark is not None and mark.removed_in is not None:
         return mark.removed_in <= target
@@ -84,6 +100,11 @@ def removal_exempt(line: Line, target: int, baseline: str) -> bool:
 #: Name the exact line; an entry stops matching once its baseline is not the
 #: newest release, and the next pre-release cleanup removes it.
 MINOR_WAIVERS: dict[str, frozenset[str]] = {}
+
+#: Plugin-facing lines that go before their two majors, by the baseline release
+#: they left, each with its reason: only for a security fix, reviewed, with a
+#: ``changelog.d/<slug>.security.md`` fragment. Nothing else lets one go early.
+EARLY_REMOVALS: dict[str, dict[str, str]] = {}
 
 
 def removal_message(tag: str, gone: list[Line]) -> str:
@@ -115,6 +136,47 @@ def test_no_stable_surface_removed(generated: str) -> None:
         and line.text not in MINOR_WAIVERS.get(tag, frozenset())
     ]
     assert not gone, removal_message(tag, gone)
+
+
+def test_names_plugins_use_last_two_majors(generated: str) -> None:
+    """A plugin built on one major keeps working on the next (:func:`broken`)."""
+    tag = release_baseline()
+    try:
+        recorded = git("show", f"{tag}:{SURFACE_FILE}")
+    except GitCommandError:
+        pytest.skip(f"the baseline {tag} predates {SURFACE_FILE}")
+    fragments = [path.name for path in (REPO_ROOT / "changelog.d").glob("*.md")]
+    target = removal_target(release.release_version(REPO_ROOT), tag, fragments)
+    found = broken(
+        parse(recorded),
+        parse(generated),
+        major=target,
+        removals=two_majors(tag),
+        waived=EARLY_REMOVALS.get(tag, {}).keys(),
+    )
+    assert not found, "\n".join(found)
+
+
+def test_an_early_removal_ships_a_security_note() -> None:
+    notes = [
+        path.read_text(encoding="utf-8")
+        for path in (REPO_ROOT / "changelog.d").glob("*.security.md")
+    ]
+    for tag, lines in EARLY_REMOVALS.items():
+        for text, reason in lines.items():
+            assert reason.strip(), f"{tag}: {text} needs its reason"
+            subject = Line(text).key.partition(" ")[2].partition("(")[0]
+            assert any(subject in note for note in notes), (
+                f"{tag}: {text} goes early, so a changelog.d/<slug>.security.md names {subject}"
+            )
+
+
+def test_one_rule_for_names_plugins_use() -> None:
+    """The release check and ``assert_surface`` read one rule, so one list of those areas."""
+    from untaped.sdk.testing import guards
+
+    assert "broken(" in inspect.getsource(guards.assert_surface)
+    assert "broken(" in inspect.getsource(test_names_plugins_use_last_two_majors)
 
 
 # --- a field added to a stable only-copy row ---------------------------------------
@@ -226,6 +288,42 @@ def test_a_major_in_preparation_removes_what_is_due(
     mark: LineMark | None, target: int, exempt: bool
 ) -> None:
     assert removal_exempt(Line("cli untaped awx put", mark), target, "v11.1.0") is exempt
+
+
+@pytest.mark.parametrize(
+    ("baseline", "target", "mark", "fails"),
+    [
+        ("v11.1.0", 12, None, False),  # 12.0 is a clean slate: 11.x names go undeprecated
+        ("v12.1.0", 13, None, True),  # from 12.x on, an undeprecated one stays
+        ("v12.1.0", 13, DeprecatedMark(14), True),  # and a dated one waits for its major
+        ("v13.2.0", 14, DeprecatedMark(14), False),  # then goes
+    ],
+)
+def test_names_plugins_use_keep_two_majors_from_12(
+    baseline: str, target: int, mark: LineMark | None, fails: bool
+) -> None:
+    """Both release checks over one removal: ``removal_exempt`` leaves it to ``broken``."""
+    line = Line("sdk untaped.sdk.bounded_map(func, items)", mark)
+    assert removal_exempt(line, target, baseline)
+    found = broken([line], [], major=target, removals=two_majors(baseline))
+    assert bool(found) is fails
+
+
+@pytest.mark.parametrize(
+    ("version", "fragments"),
+    [("12.2.0", []), ("11.1.0", ["x.upgrading.md"]), ("12.0.0rc1", [])],
+    ids=["12.2-minor", "12.0-prep", "12.0-rc"],
+)
+def test_a_new_deprecation_of_a_name_plugins_use_needs_14(
+    version: str, fragments: list[str]
+) -> None:
+    target = removal_target(version, "v11.1.0" if fragments else f"v{version}", fragments)
+    line = Line("sdk untaped.sdk.old(x)")
+    assert broken([line], [Line(line.text, DeprecatedMark(13))], major=target)
+    assert not broken([line], [Line(line.text, DeprecatedMark(14))], major=target)
+    assert not broken(
+        [Line("cli untaped x")], [Line("cli untaped x", DeprecatedMark(13))], major=12
+    )
 
 
 def test_a_clone_without_tags_fails_under_ci_and_skips_locally(

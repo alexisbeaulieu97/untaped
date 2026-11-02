@@ -394,7 +394,7 @@ A plugin imports from `untaped` only `untaped.sdk`, its groups
 `untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.projects`,
 `untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`,
 `untaped.sdk.testing.git`) and `untaped.core.api`, core's commands for a hint
-(`Login.spelled()`); `import-boundary` flags any other. The SDK modules are
-stable within a major (a minor adds, never breaks); `untaped.core.api`'s classes
-last as long as their commands; a `_` name is never public. A deprecated SDK name
-goes at the major its warning names ([Deprecating something](deprecation.md), [Versioning](../versioning.md)).
+(`Login.spelled()`); `import-boundary` flags any other. A `_` name is never
+public; any other name of these modules, or of a plugin's `api` and
+`testing`, goes only two majors after its deprecation
+([Names plugins use](../versioning.md#names-plugins-use)).
