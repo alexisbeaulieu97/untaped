@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
+import subprocess
+import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -336,3 +341,61 @@ def test_unknown_user_tilde_is_a_command_string() -> None:
     command = "~no_such_user_untaped/x"
     with run_argv(command) as argv:
         assert argv == ["sh", "-c", "--", command]
+
+
+def _gone(pid: int) -> bool:
+    """Gone, or a zombie waiting for a reaper (it no longer runs)."""
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    except OSError:
+        return False
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM], ids=["sigint", "sigterm"])
+def test_a_signal_to_untaped_reaches_each_command_once_and_starts_no_more(
+    ws: Path, tmp_path: Path, sig: signal.Signals
+) -> None:
+    if sig == signal.SIGINT and signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
+        pytest.skip("SIGINT is ignored here (a background job), so untaped inherits that")
+    marks = tmp_path / "marks"
+    marks.mkdir()
+    mark = f"{marks}/$UNTAPED_READ_ONLY"
+    script = (  # records each soft signal and runs on, so only SIGKILL ends it
+        f"trap 'echo INT >> {mark}.sig' INT; trap 'echo TERM >> {mark}.sig' TERM; "
+        f"echo $$ > {mark}.tmp && mv {mark}.tmp {mark}.pid; while :; do sleep 0.05; done"
+    )
+    untaped = subprocess.Popen(
+        [
+            *(sys.executable, "-m", "untaped", "workspace", "run", "J-1", script),
+            *("--include-read-only", "--parallel", "1", "--format", "json"),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 15
+        while not list(marks.glob("*.pid")):
+            assert untaped.poll() is None, untaped.communicate()[1]
+            assert time.monotonic() < deadline, "the command did not start"
+            time.sleep(0.02)
+        untaped.send_signal(sig)
+        _, stderr = untaped.communicate(timeout=15)
+    finally:
+        untaped.kill()
+    [pid_file] = marks.glob("*.pid")  # the second repo never started
+    pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 5
+    while not _gone(pid):
+        if time.monotonic() > deadline:
+            os.kill(pid, signal.SIGKILL)
+            pytest.fail("the command survived untaped")
+        time.sleep(0.05)
+    assert pid_file.with_suffix(".sig").read_text() == f"{sig.name[3:]}\n"
+    exit_status = 130 if sig == signal.SIGINT else -sig  # Ctrl-C's status; else dies of it
+    assert (untaped.returncode, "Traceback" in stderr) == (exit_status, False), stderr

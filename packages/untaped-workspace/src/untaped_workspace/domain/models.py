@@ -199,9 +199,10 @@ class RepoRelease:
 
 @dataclass(frozen=True)
 class CommandResult:
-    """What one command run produced; ``returncode`` is ``None`` when it timed out or was cancelled.
+    """What one command run produced; ``returncode`` is ``None`` when it timed out or was stopped.
 
-    ``cancelled`` means the runner was cancelled before the command started.
+    ``cancelled`` means the runner was cancelled before the command started;
+    ``stopped`` that untaped stopped it (an interrupt, or a cancel while it ran).
     """
 
     returncode: int | None
@@ -210,3 +211,4 @@ class CommandResult:
     duration_s: float
     timed_out: bool
     cancelled: bool = False
+    stopped: bool = False
