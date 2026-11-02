@@ -21,7 +21,14 @@ from untaped.runtime.settings import get_settings_model
 from untaped.sdk._schema import walk_settings
 
 SRC = PACKAGES / "untaped" / "src" / "untaped"
-SCREEN = ("core/commands/setup_screen.py", "core/commands/setup_sections.py")
+#: The screen's modules: ``setup_screen*.py`` (the prefix keeps ``setup_plan.py`` and
+#: ``setup_write.py``, which may write, out) and its section rows.
+SCREEN = (
+    *sorted(
+        path.relative_to(SRC).as_posix() for path in SRC.glob("core/commands/setup_screen*.py")
+    ),
+    "core/commands/setup_sections.py",
+)
 #: The setup form, and the state behind it.
 CONNECTION = "core/commands/setup_connection.py"
 CONNECTION_KEYS = "core/commands/setup_state.py"
@@ -107,6 +114,11 @@ def _setting_names() -> set[str]:
 
 def _tree(name: str) -> ast.Module:
     return ast.parse((SRC / name).read_text(encoding="utf-8"))
+
+
+def test_the_screen_s_modules_are_found() -> None:
+    assert "core/commands/setup_screen.py" in SCREEN
+    assert len(SCREEN) > 2, f"{SCREEN}: the glob found only setup_screen.py"
 
 
 def test_the_screen_reads_and_writes_through_the_config_use_cases() -> None:

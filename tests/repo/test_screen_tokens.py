@@ -37,7 +37,7 @@ SCREEN_MODULES = (
     "packages/untaped/src/untaped/screen/components/*.py",
     "packages/untaped/src/untaped/screen/prompts.py",
     "packages/untaped/src/untaped/screen/picker/screen.py",
-    "packages/untaped/src/untaped/core/commands/setup_screen.py",
+    "packages/untaped/src/untaped/core/commands/setup_screen*.py",
 )
 EXEMPT_HOMES = (
     "packages/untaped/src/untaped/screen/core.py",
