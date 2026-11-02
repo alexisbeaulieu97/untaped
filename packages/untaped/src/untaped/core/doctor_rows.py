@@ -31,6 +31,7 @@ from untaped.core.doctor_stores import caches_row, plugin_folders_row, reference
 from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict
+from untaped.runtime.plugin_uses import use_line
 from untaped.runtime.profile_resolver import current_pick, fix_target
 from untaped.runtime.registry import (
     CompositionResult,
@@ -149,6 +150,7 @@ def _collect_rows(
             rows.append(_state_row(scope))
     rows.extend(_check_rows(contexts, online=online, plugins=plugins, profile=profile))
     rows.extend(_contract_rows(result, profile, plugins))
+    rows.extend(_uses_rows(result, plugins))
     rows.append(_skills_row(result))
     if plugins is None:
         rows.append(references_row(result))
@@ -572,6 +574,34 @@ def _contract_rows(
         )
         for row in doctor_rows(plugins)
     ]
+
+
+def _uses_rows(
+    result: CompositionResult, plugins: frozenset[str] | None
+) -> list[dict[str, object]]:
+    """``plugin-uses``: one row per plugin and owning distribution, each deprecated name it uses.
+
+    Read from the declaration, which kept what composition found the plugin
+    imports and fills.
+    """
+    found = {candidate.name: candidate for candidate in result.candidates}
+    rows: list[dict[str, object]] = []
+    for plugin in result.mount.declaration.plugins:
+        if not plugin.uses or (plugins is not None and plugin.name not in plugins):
+            continue
+        candidate = found.get(plugin.name)
+        distribution = plugin.name if candidate is None else candidate.distribution
+        version = "" if candidate is None else candidate.distribution_version
+        owners: dict[str, list[str]] = {}
+        for use in plugin.uses:
+            owners.setdefault(use.distribution, []).append(
+                use_line(plugin.name, distribution, version, use)
+            )
+        rows.extend(
+            doctor_row("plugin-uses", plugin.name, WARN, "deprecated", "; ".join(lines))
+            for lines in owners.values()
+        )
+    return rows
 
 
 def _quarantine_row(record: QuarantineRecord) -> dict[str, object]:

@@ -749,8 +749,9 @@ class Deprecation(Diagnostic):
     allow-list exactly what it has reviewed. ``removed_in`` is the major that
     removes it (``None`` when its mark names none); ``distribution`` whose
     major that is (``None`` for core's own, the plugin's distribution
-    otherwise); ``replacement`` what to use instead. Built by
-    :func:`untaped.sdk.marks.notify_deprecation`.
+    otherwise); ``replacement`` what to use instead; ``plugin`` the plugin
+    that uses it, when one does (``None`` for a user's own command line or
+    config). Built by :func:`untaped.sdk.marks.notify_deprecation`.
     """
 
     level: ClassVar[Level] = "warning"
@@ -760,6 +761,7 @@ class Deprecation(Diagnostic):
     distribution: str | None
     replacement: str | None
     hint: str | None = None
+    plugin: str | None = None
     message: str
 
 

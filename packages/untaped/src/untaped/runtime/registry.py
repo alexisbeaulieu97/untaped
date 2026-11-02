@@ -39,13 +39,17 @@ from untaped.runtime.declaration import (
     PluginDecl,
     Problem,
     Quarantined,
+    UseDecl,
 )
+from untaped.runtime.plugin_imports import ImportRecord, read_imports
+from untaped.runtime.plugin_uses import Owner, filled_uses, look_up, missing_words
 from untaped.runtime.requirements import (
     UNEVALUABLE,
     Installed,
     Malformed,
     applies,
     distribution_present,
+    is_exact,
     is_plain,
     parse_requirement,
     plain_requirements,
@@ -63,6 +67,7 @@ from untaped.sdk.network.credentials import (
     key_fields,
 )
 from untaped.sdk.storage.cache import Filled
+from untaped.sdk.storage.installed_code import distribution_code
 
 if TYPE_CHECKING:
     from packaging.requirements import Requirement
@@ -70,6 +75,7 @@ if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.composition import PluginEntry
     from untaped.runtime.mount import Mount
+    from untaped.runtime.plugin_imports import PluginImports
     from untaped.sdk.plugin import Plugin
     from untaped.sdk.progress import ProgressHandle
 
@@ -156,6 +162,7 @@ VALID_REASONS = frozenset(
         "malformed-entry-point",
         "import-failed",
         "unmet-requirement",
+        "uses-missing",
         "not-a-plugin-class",
         "bad-commands",
         "bad-metadata",
@@ -231,6 +238,9 @@ class CompositionResult:
     taken: Mapping[str, str] = field(default_factory=dict, compare=False)
     #: The plugin classes composed, core's included, mounted.
     mount: Mount = field(kw_only=True, compare=False)
+    #: Each deprecated name a plugin uses, by plugin name, found by this composition: empty
+    #: when it was read from core's declaration cache, so only the run composing warns.
+    found_uses: tuple[tuple[str, UseDecl], ...] = field(default=(), compare=False)
 
 
 def candidate_distribution(candidate: PluginCandidate) -> str:
@@ -505,6 +515,17 @@ class _CompositionState:
         }
         versions[_CORE_DISTRIBUTION] = self.sdk_version or ""
         return Installed(versions=versions, present=functools.cache(distribution_present))
+
+    @cached_property
+    def owners(self) -> dict[str, Owner]:
+        """Who each top-level package a plugin may import from belongs to: untaped, or a plugin."""
+        owners = {
+            package: Owner(each.distribution, each.name)
+            for each in self._candidates
+            if each.distribution.strip() and (package := _target_package(each))
+        }
+        owners["untaped"] = Owner(_CORE_DISTRIBUTION, "untaped", core=True)
+        return owners
 
 
 def _check_free_name(name: str, state: _CompositionState) -> None:
@@ -805,15 +826,9 @@ def _compose(
         except _Quarantine as failed:
             quarantined[index] = failed.to_record(ordered[index])
     _spread(ordered, quarantined, waiting)
-    for index in waiting:
-        if index in quarantined:
-            continue
-        try:
-            provided[index] = _provide(ordered[index], state)
-        except _Quarantine as failed:
-            quarantined[index] = failed.to_record(ordered[index])
-            if failed.plugin_class:
-                classes.add(index)
+    uses = _provided(
+        ordered, waiting, state, quarantined, provided, classes, fresh=declared is None
+    )
     for index in _spread(ordered, quarantined, provided):
         del provided[index]
     if declared is not None and (classes or provided):
@@ -829,10 +844,18 @@ def _compose(
     else:
         claims, mount = _replayed(ordered, replayed, declared)
     plugins = list(claims.values())
+    found: tuple[tuple[str, UseDecl], ...] = ()
     if declared is None:
         # Only a class the mount composed leaves it; one refused before it never got there.
         dropped = {ordered[index].name for index in classes & quarantined.keys() & provided.keys()}
         mount = mount.kept(_refused(ordered, classes, quarantined, mount), dropped=dropped)
+        kept = {
+            ordered[index].name: tuple(found_here)
+            for index, found_here in sorted(uses.items())
+            if found_here and index in claims
+        }
+        mount = mount.with_uses(kept)
+        found = tuple((name, use) for name, found_here in kept.items() for use in found_here)
     plugins.insert(0, _root_plugin(mount, core))
     return CompositionResult(
         plugins=tuple(plugins),
@@ -840,7 +863,170 @@ def _compose(
         candidates=tuple(ordered),
         mount=mount,
         taken={**state.taken, **state.core},
+        found_uses=found,
     )
+
+
+def _provided(
+    ordered: Sequence[PluginCandidate],
+    waiting: Sequence[int],
+    state: _CompositionState,
+    quarantined: dict[int, QuarantineRecord],
+    provided: dict[int, type[Plugin]],
+    classes: set[int],
+    *,
+    fresh: bool,
+) -> dict[int, list[UseDecl]]:
+    """Import each waiting candidate's plugin class into ``provided``; the deprecated names used.
+
+    A ``fresh`` composition first looks up what the candidate imports (a kept
+    declaration already holds every verdict). A refused plugin class goes
+    into ``classes``, which the declaration remembers.
+    """
+    uses: dict[int, list[UseDecl]] = {}
+    for index in waiting:
+        if index in quarantined:
+            continue
+        try:
+            if fresh:
+                uses[index] = _imported_uses(ordered, index, state, quarantined)
+            provided[index] = _provide(ordered[index], state)
+        except _Quarantine as failed:
+            quarantined[index] = failed.to_record(ordered[index])
+            if failed.plugin_class:
+                classes.add(index)
+            continue
+        if index in uses:
+            uses[index].extend(_filled_uses(ordered[index], provided[index], state))
+    return uses
+
+
+def _imported_uses(
+    ordered: Sequence[PluginCandidate],
+    index: int,
+    state: _CompositionState,
+    quarantined: Mapping[int, QuarantineRecord],
+) -> list[UseDecl]:
+    """The deprecated names candidate ``index`` imports; quarantines it when one is missing.
+
+    Read from its source before it is imported (core's ``imports`` cache keeps
+    what it read), and looked up in untaped and the plugins composed so far.
+    A missing name is ``uses-missing``, naming the file and line; a name of a
+    disabled plugin disables it too. The declaration remembers either verdict,
+    so a start reading it never looks again.
+    """
+    candidate = ordered[index]
+    if _lockstep(candidate, state):
+        return []
+    disabled = _disabled(ordered, quarantined)
+    verdict = look_up(_imports_of(candidate), state.owners, disabled)
+    who = f"{candidate.distribution} {candidate.distribution_version}".strip()
+    failed: _Quarantine | None = None
+    if verdict.cascade is not None:
+        record, owner = verdict.cascade.record, verdict.cascade.owner
+        where = f"{record.file}:{record.line} imports {record.spelled}"
+        disabled_record = disabled.get(str(canonicalize_name(owner.distribution)))
+        if disabled_record is not None:
+            fix = _first(disabled_record)
+            failed = _Quarantine(
+                "unmet-requirement",
+                f"{who}: {where} from {owner.distribution}, which is disabled "
+                f"[{disabled_record.reason}]; {fix}",
+                fix=fix,
+            )
+        else:
+            fix = f"fix {owner.distribution} first"
+            failed = _Quarantine(
+                "import-failed",
+                f"{who}: {where}, and importing it raised {verdict.cascade.error}; {fix}",
+                fix=fix,
+            )
+    elif verdict.missing:
+        first = verdict.missing[0]
+        detail, fix = missing_words(
+            first,
+            distribution=candidate.distribution,
+            requires_dist=candidate.requires_dist,
+            installed=state.installed.versions.get(
+                str(canonicalize_name(first.owner.distribution)), ""
+            ),
+        )
+        more = len(verdict.missing) - 1
+        if more:
+            detail = f"{detail} (and {more} more missing)"
+        failed = _Quarantine("uses-missing", f"{who}: {detail}; {fix}", fix=fix)
+    if failed is not None:
+        failed.plugin_class = True  # the declaration remembers it, as a refused class
+        raise failed
+    return verdict.uses
+
+
+def _filled_uses(
+    candidate: PluginCandidate, cls: type[Plugin], state: _CompositionState
+) -> list[UseDecl]:
+    """The deprecated contract methods ``cls``'s providers fill."""
+    providers = tuple(getattr(cls, "fills", ()) or ())
+    if not providers or _lockstep(candidate, state):
+        return []
+    return filled_uses(providers, state.owners)
+
+
+def _lockstep(candidate: PluginCandidate, state: _CompositionState) -> bool:
+    """Whether ``candidate`` was released and tested with what it imports, so reading finds nothing.
+
+    That is untaped's own distribution, and one that pins every requirement it
+    has on untaped or a plugin to its own version. A candidate given as an
+    object has no source to read either.
+    """
+    if not isinstance(candidate.target, str):
+        return True
+    if canonicalize_name(candidate.distribution) == canonicalize_name(_CORE_DISTRIBUTION):
+        return True
+    pinned = False
+    for line in candidate.requires_dist:
+        parsed = parse_requirement(line)
+        if parsed is None or not is_plain(parsed) or not _applies(parsed):
+            continue
+        if str(canonicalize_name(parsed.name)) not in state.installed.versions:
+            continue
+        specifiers = list(parsed.specifier)
+        if not (
+            len(specifiers) == 1
+            and is_exact(specifiers[0])
+            and specifiers[0].version == candidate.distribution_version
+        ):
+            return False
+        pinned = True
+    return pinned
+
+
+def _imports_of(candidate: PluginCandidate) -> tuple[ImportRecord, ...]:
+    """What ``candidate``'s code imports, from core's ``imports`` cache or read now.
+
+    Keyed by the candidate's own code, so an edit to it (or a reinstall)
+    reads it again and installing another plugin doesn't.
+    """
+    module = str(candidate.target).partition(":")[0]
+
+    def fill(_key: str, _progress: ProgressHandle) -> Filled[PluginImports]:
+        return Filled(value=read_imports(module))
+
+    try:
+        from untaped.core.settings import IMPORTS  # noqa: PLC0415 - core imports the runtime
+
+        code = distribution_code(importlib_metadata.distribution(candidate.distribution))
+        key = f"{_key_word(candidate.distribution)}.h{code[:24]}"
+        served = IMPORTS.serve({key: f"{candidate.distribution} imports"}, refresh=None, fill=fill)
+        return served.value[key].records
+    except Exception:  # no metadata to key by, or the cache failed: read, as before it existed
+        _LOG.debug("reading %s's imports without the cache", candidate.distribution, exc_info=True)
+        return read_imports(module).records
+
+
+def _key_word(distribution: str) -> str:
+    """A distribution's name as a cache key word: ``untaped_acme``."""
+    word = re.sub(r"[^a-z0-9_]", "_", str(canonicalize_name(distribution)))
+    return word if word[:1].isalpha() else f"d{word}"
 
 
 def _replay(
@@ -1101,6 +1287,14 @@ def _package_of(candidate: PluginCandidate) -> str:
     if isinstance(target, str) and ":" in target:
         return target.partition(":")[0].partition(".")[0]
     return "untaped_" + candidate.name.replace("-", "_")
+
+
+def _target_package(candidate: PluginCandidate) -> str:
+    """The top-level package ``candidate``'s plugin class lives in; ``""`` when unknown."""
+    target = candidate.target
+    if isinstance(target, str):
+        return target.partition(":")[0].partition(".")[0]
+    return str(getattr(target, "__module__", None) or "").partition(".")[0]
 
 
 def _class_name(candidate: PluginCandidate) -> str:

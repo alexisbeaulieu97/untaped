@@ -197,6 +197,7 @@ ignore_names = [
     "concat",
     "renamed_keys",  # settings ClassVars read by untaped.sdk.health.deprecated_keys
     "retired_keys",
+    "visit_TryStar",  # ast.NodeVisitor dispatches by node class; vulture knows the older ones
 ]
 
 [tool.coverage.run]

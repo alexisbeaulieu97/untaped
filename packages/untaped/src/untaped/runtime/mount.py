@@ -41,6 +41,7 @@ from untaped.runtime.declaration import (
     Problem,
     Quarantined,
     StabilityDecl,
+    UseDecl,
     target_of,
 )
 from untaped.runtime.registry import resolve_target
@@ -123,6 +124,16 @@ class Mount:
             }
         )
         return replace(self, declaration=declaration)
+
+    def with_uses(self, uses: Mapping[str, tuple[UseDecl, ...]]) -> Mount:
+        """This mount with each named plugin's deprecated uses on its declaration entry."""
+        if not uses:
+            return self
+        plugins = tuple(
+            plugin.model_copy(update={"uses": uses[plugin.name]}) if plugin.name in uses else plugin
+            for plugin in self.declaration.plugins
+        )
+        return replace(self, declaration=self.declaration.model_copy(update={"plugins": plugins}))
 
     def command(self, decl: CommandDecl) -> type[Command[Any]]:
         """The class ``decl`` was read from, importing its plugin's class.

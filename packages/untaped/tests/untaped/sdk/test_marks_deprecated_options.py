@@ -68,6 +68,7 @@ DRY_RUN = {
     "distribution": "untaped-svc",
     "replacement": "--limit 1",
     "hint": None,
+    "plugin": None,
     "message": "`untaped svc run --dry-run` is deprecated and will be removed in "
     "untaped-svc 3.0; use `--limit 1`",
 }

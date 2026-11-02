@@ -190,6 +190,24 @@ def test_each_row_status_maps_to_a_severity(monkeypatch: pytest.MonkeyPatch) -> 
     ]
 
 
+def test_a_deprecated_use_is_a_warning_at_its_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    detail = (
+        "demo_plugin/report.py:3: `untaped.sdk.human_size`, which it imports, is deprecated "
+        "and will be removed in 14.0; use `size_text`"
+    )
+    rows = [_row("conventions", "uses-deprecated", "warn", detail)]
+    monkeypatch.setattr(conventions, "check_plugin", lambda name, candidates=None: rows)
+    plugin = InstalledPlugin(
+        name="demo", status="ready", distribution="demo-plugin", version="0.1.0"
+    )
+    [found] = Conventions().findings(plugin)
+    assert (found.rule, found.severity, found.location) == (
+        "uses-deprecated",
+        "warning",
+        FileLocation(path="demo_plugin/report.py", line=3),
+    )
+
+
 def test_a_narrowed_run_still_reports_an_unreadable_file(site: Site) -> None:
     site = site(_PLUGIN)
     (site / "demo_plugin" / "broken.py").write_bytes(b"\xff\xfe not utf-8")

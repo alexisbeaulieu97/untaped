@@ -289,6 +289,7 @@ def notify_deprecation(
     kept: str | None = None,
     key: str | None = None,
     hint: str | None = None,
+    plugin: str | None = None,
 ) -> None:
     """Warn once that ``subject`` is deprecated, as an ``untaped.deprecation`` record.
 
@@ -298,7 +299,8 @@ def notify_deprecation(
     included). ``kept`` says the old spelling was ignored because ``kept``
     is also set. Once per process per ``key`` (else per ``id``), so callers
     warning about one thing in different words share it. ``hint`` is the
-    follow-up, its own line and its own field under JSON.
+    follow-up, its own line and its own field under JSON. ``plugin`` names
+    the plugin that uses the deprecated thing, when one does.
     """
     if not first_notice(id if key is None else key):
         return
@@ -318,5 +320,6 @@ def notify_deprecation(
             removed_in=removed_in,
             distribution=owner,
             replacement=None if replacement is None else replacement.replace("`", ""),
+            plugin=plugin,
         )
     )
