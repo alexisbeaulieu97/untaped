@@ -151,6 +151,7 @@ class Project(BaseModel):
         items: Collection[object] | None = None,
         force: Collection[object] = (),
         dry_run: bool = False,
+        leaving: Collection[Project] = (),
     ) -> list[OutcomeRecord]:
         """Let go of this project's holds of ``store`` (or only ``items``) through its owner.
 
@@ -160,10 +161,20 @@ class Project(BaseModel):
         the user overrides; ``dry_run`` returns the preview and repairs
         nothing. Each row is an ``untaped.hold_outcome`` to emit; a refused
         row's hint is the owner's, and the command adds how to force.
+        ``leaving`` are projects the same confirmed command lets go of first
+        (``workspace remove`` of several): the preview counts none of them
+        as another holder, so it shows what this project's turn will do.
         """
         with self.locked():
             here = self if dry_run else writing(self)[0]
-            return release_rows(holder_of(here), store, items=items, force=force, dry_run=dry_run)
+            return release_rows(
+                holder_of(here),
+                store,
+                items=items,
+                force=force,
+                dry_run=dry_run,
+                leaving={holder_of(project) for project in leaving},
+            )
 
 
 def plugin_committed_path(plugin: str, name: str, *, root: Path) -> Path:

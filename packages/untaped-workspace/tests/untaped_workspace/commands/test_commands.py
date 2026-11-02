@@ -282,7 +282,7 @@ def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
     assert (failure.item, failure.message, failure.hint) == (
         "J-1/acme/api",
         f"{repo}: uncommitted changes; nothing removed",
-        "the repo changed since the check; run status and archive again",
+        "the repo changed since the check; run status, then the command again",
     )
 
 

@@ -625,8 +625,13 @@ def plan_holds(
     *,
     force: Collection[str] = (),
     owners: Owners | None = None,
+    leaving: Collection[RefHolder] = (),
 ) -> list[Plan]:
-    """Ask each hold's owner how ``holder`` lets go of it; never changes anything."""
+    """Ask each hold's owner how ``holder`` lets go of it; never changes anything.
+
+    ``leaving`` are holders letting go before this one in the same
+    confirmed batch: no ask counts them as other holders.
+    """
     owners = Owners.current() if owners is None else owners
     plans: list[Plan] = []
     for target in targets:
@@ -643,7 +648,7 @@ def plan_holds(
             refusal = Refused(reason=reason, hint=hint if forgettable else None)
             plans.append(Plan(target, holder, answer=refusal, forceable=forgettable))
             continue
-        plans.append(_plan_one(store, target, holder, force=named))
+        plans.append(_plan_one(store, target, holder, force=named, leaving=leaving))
     return plans
 
 
@@ -668,9 +673,16 @@ def unnamed(force: Collection[str], plans: Sequence[Plan]) -> list[str]:
     ]
 
 
-def _plan_one(store: ItemStore[Any], target: RefTarget, holder: HolderView, *, force: bool) -> Plan:
+def _plan_one(
+    store: ItemStore[Any],
+    target: RefTarget,
+    holder: HolderView,
+    *,
+    force: bool,
+    leaving: Collection[RefHolder] = (),
+) -> Plan:
     try:
-        ask = release_ask(store, target.item or "", holder, force=force)
+        ask = release_ask(store, target.item or "", holder, force=force, leaving=leaving)
     except (ValueError, UntapedError) as exc:
         return Plan(target, holder, store, failure=_raised(exc, f"cannot read the hold: {exc}"))
     answer, failure = _ask(store, ask)
@@ -684,12 +696,20 @@ def _plan_one(store: ItemStore[Any], target: RefTarget, holder: HolderView, *, f
 
 
 def release_ask(
-    store: ItemStore[Any], item: object, holder: HolderView, *, force: bool
+    store: ItemStore[Any],
+    item: object,
+    holder: HolderView,
+    *,
+    force: bool,
+    leaving: Collection[RefHolder] = (),
 ) -> ReleaseAsk[Any]:
-    """A :class:`ReleaseAsk` for ``item``, with every other holder read now."""
+    """A :class:`ReleaseAsk` for ``item``, with every other holder read now (``leaving`` aside)."""
     parsed = store._parse(item)
     others = tuple(
-        other for other in holder_views(store.target(parsed)) if not _same_holder(other, holder)
+        other
+        for other in holder_views(store.target(parsed))
+        if not _same_holder(other, holder)
+        and not (isinstance(other, HolderView) and other.holder in leaving)
     )
     return ReleaseAsk(item=parsed, holder=holder, others=others, force=force)
 
@@ -825,6 +845,7 @@ def release_rows(
     force: Collection[object],
     dry_run: bool,
     owners: Owners | None = None,
+    leaving: Collection[RefHolder] = (),
 ) -> list[OutcomeRecord]:
     """The service for one owner's holds, without a prompt: ``Project.release`` and its kin.
 
@@ -842,7 +863,7 @@ def release_rows(
     targets = [t for t in _held(holder, store) if wanted is None or t.item in wanted]
     named = {store._text(item) for item in force}
     owners = owners if owners is not None else Owners.current()
-    plans = plan_holds(seen, targets, force=named, owners=owners)
+    plans = plan_holds(seen, targets, force=named, owners=owners, leaving=leaving)
     if dry_run or any(plan.blocked for plan in plans):
         return list(preview_rows(plans, force_hint=False))
     return list(apply_plans(holder, plans, now=lambda: holder_view(holder)))

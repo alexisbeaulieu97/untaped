@@ -77,15 +77,16 @@ def copy_refusal(record: WorkspaceRecord) -> WorkspaceError | None:
     """Why workspace runs no git in ``record``'s folder: it is a copy (design §1.6.7).
 
     Before its first writing use a copy still has the original's id
-    (``copy_of`` is set); after it, its rows name repos it holds nothing of.
+    (``copy_of`` is set); after it, its meta row names the original's id.
     Even ``git status`` in a copied worktree refreshes the original's index.
+    A row whose repo the project no longer holds (a removal that let go of
+    some repos and not others) is no copy: ``remove`` drops it.
     """
     project = record.project
-    held = {key.root for key in project.holds(HELD_REPOS.items())}
-    orphans = [spec.dir for spec in record.repos if store_ident(spec.url) not in held]
-    if project.copy_of is None and not orphans:
+    moved_in = record.meta is not None and record.meta.project != project.id
+    if project.copy_of is None and not moved_in:
         return None
-    dirs = orphans or [spec.dir for spec in record.repos]
+    dirs = [spec.dir for spec in record.repos]
     original = shown_path(project.copy_of) if project.copy_of is not None else "another project"
     here = " and ".join(f"{name}/" for name in dirs) or "its worktrees"
     return WorkspaceError(
@@ -196,7 +197,10 @@ class ProjectWorkspaceStore:
                     category="conflict",
                     hint=Add.spelled(str(record.root), "--repo", "REPO"),
                 )
-            META.of(project).add(WorkspaceMeta(name=name, created_by="workspace", created_at=at))
+            meta = WorkspaceMeta(
+                name=name, project=project.id, created_by="workspace", created_at=at
+            )
+            META.of(project).add(meta)
             return record_of(project)
 
     def adopt(self, record: WorkspaceRecord, *, at: datetime) -> WorkspaceRecord:
@@ -204,7 +208,7 @@ class ProjectWorkspaceStore:
         if record.meta is not None:
             return record
         name = validate_workspace_name(record.project.name)  # the folder's name names it
-        meta = WorkspaceMeta(name=name, created_by="user", created_at=at)
+        meta = WorkspaceMeta(name=name, project=record.project.id, created_by="user", created_at=at)
         META.of(record.project).add(meta)
         return record.model_copy(update={"meta": meta})
 
@@ -231,12 +235,25 @@ class ProjectWorkspaceStore:
             META.of(record.project).delete(record.meta.name)
 
     def release(
-        self, record: WorkspaceRecord, *, force: bool, dry_run: bool
+        self,
+        record: WorkspaceRecord,
+        *,
+        force: bool,
+        dry_run: bool,
+        leaving: Sequence[WorkspaceRecord] = (),
     ) -> list[OutcomeRecord]:
-        """Let go of every repo the project holds through workspace, through the holds service."""
+        """Let go of every repo the project holds through workspace, through the holds service.
+
+        ``leaving``: workspaces the same removal lets go of first, no other holder to this one.
+        """
         store = HELD_REPOS.items()
         forced: tuple[Any, ...] = record.project.holds(store) if force else ()
-        return record.project.release(store, force=forced, dry_run=dry_run)
+        return record.project.release(
+            store,
+            force=forced,
+            dry_run=dry_run,
+            leaving=[other.project for other in leaving],
+        )
 
     def remove_project(self, record: WorkspaceRecord) -> ProjectRemoval:
         """Remove the project as ``untaped project remove`` does, unless it still holds items."""

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, OutcomeRecord, UntapedError, plural, shown_path
 from untaped_workspace.domain.naming import store_ident
+from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.records import RemoveOutcome
 
 if TYPE_CHECKING:
@@ -65,8 +66,10 @@ class RemoveWorkspace:
             rows: list[RemoveOutcome] = []
             hints: list[str] = []
             previews: list[tuple[RemoveOutcome, ...]] = []
-            for record in records:
-                held = self._store.release(record, force=force, dry_run=True)
+            for index, record in enumerate(records):  # each as its turn will find it
+                held = self._store.release(
+                    record, force=force, dry_run=True, leaving=records[:index]
+                )
                 previews.append(tuple(_row(record, outcome) for outcome in held))
                 rows += previews[-1]
                 hints += [hint for outcome in held if (hint := getattr(outcome, "hint", None))]
@@ -89,13 +92,19 @@ class RemoveWorkspace:
         """
         rows: list[RemoveOutcome] = []
         for index, record in enumerate(plan.records):
-            if index < len(plan.previews) and self._changed(record, plan.previews[index], force):
+            earlier = plan.records[:index]
+            if index < len(plan.previews) and self._changed(
+                record, plan.previews[index], force, earlier
+            ):
                 why = "kept the workspace: its repos changed since the preview; run remove again"
-                rows.append(_own(record, "refused", why, Failure.plain(why)))
+                changed = WorkspaceError(why, category="conflict")
+                rows.append(_own(record, "refused", why, Failure.from_exception(changed)))
                 continue
             done = [
                 _row(record, outcome)
-                for outcome in self._store.release(record, force=force, dry_run=False)
+                for outcome in self._store.release(
+                    record, force=force, dry_run=False, leaving=earlier
+                )
             ]
             rows += done
             if any(row.action in {"refused", "failed", "planned"} for row in done):
@@ -105,10 +114,15 @@ class RemoveWorkspace:
         return rows
 
     def _changed(
-        self, record: WorkspaceRecord, shown: Sequence[RemoveOutcome], force: bool
+        self,
+        record: WorkspaceRecord,
+        shown: Sequence[RemoveOutcome],
+        force: bool,
+        earlier: Sequence[WorkspaceRecord],
     ) -> bool:
         """Whether ``record``'s release would now do other than the rows ``shown``."""
-        now = [_row(record, row) for row in self._store.release(record, force=force, dry_run=True)]
+        held = self._store.release(record, force=force, dry_run=True, leaving=earlier)
+        now = [_row(record, row) for row in held]
         return [_seen(row) for row in now] != [_seen(row) for row in shown]
 
     def _drop(self, record: WorkspaceRecord) -> RemoveOutcome:

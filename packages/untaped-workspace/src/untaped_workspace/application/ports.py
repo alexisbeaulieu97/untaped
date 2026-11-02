@@ -133,9 +133,14 @@ class WorkspaceStore(Protocol):
         ...
 
     def release(
-        self, record: WorkspaceRecord, *, force: bool, dry_run: bool
+        self,
+        record: WorkspaceRecord,
+        *,
+        force: bool,
+        dry_run: bool,
+        leaving: Sequence[WorkspaceRecord] = (),
     ) -> list[OutcomeRecord]:
-        """Let go of the project's repos through the holds service."""
+        """Let go of the project's repos through the holds service (``leaving`` let go first)."""
         ...
 
     def remove_project(self, record: WorkspaceRecord) -> ProjectRemoval:

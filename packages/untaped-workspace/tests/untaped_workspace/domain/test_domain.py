@@ -162,7 +162,7 @@ def test_hints_combine_once_per_kind() -> None:
 
 def test_records_round_trip() -> None:
     meta = WorkspaceMeta(
-        name="w", created_by="workspace", created_at=datetime(2026, 10, 1, tzinfo=UTC)
+        name="w", project="p1", created_by="workspace", created_at=datetime(2026, 10, 1, tzinfo=UTC)
     )
     assert WorkspaceMeta.model_validate(meta.model_dump(mode="json")) == meta
     spec = _spec("acme/api", "api")

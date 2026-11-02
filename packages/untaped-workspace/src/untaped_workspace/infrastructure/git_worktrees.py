@@ -307,8 +307,8 @@ class LocalGitWorktrees:
             found = [worktree for worktree in found if worktree.absolute() in bases]
         removed: list[Path] = []
         for worktree in found:
-            if not worktree.exists():
-                self._forget_gone(store, worktree)
+            if not worktree.exists():  # its release was asked for: even a deleted project's goes
+                store.run(["worktree", "unlock", str(worktree)], check=False)
                 removed.append(worktree)
                 continue
             if not force and bases is not None:
@@ -359,7 +359,7 @@ class LocalGitWorktrees:
             raise GitError(
                 f"{dest}: {', '.join(blockers)}; nothing removed",
                 category="conflict",
-                hint="the repo changed since the check; run status and archive again",
+                hint="the repo changed since the check; run status, then the command again",
             )
 
     def _remove_worktree(self, store: RepoStore, dest: Path, *, force: bool) -> None:
@@ -382,13 +382,15 @@ class LocalGitWorktrees:
                     store.lock_worktree(dest.absolute(), reason=reason)
                 raise
             _delete_tree(dest)
+            store.run(["worktree", "unlock", str(dest.absolute())], check=False)  # prune drops it
 
     def _forget_gone(self, store: RepoStore, worktree: Path) -> None:
         """Unlock workspace's entry for a worktree whose folder is gone, so prune drops it.
 
-        Only when the folder is truly absent: a locked entry for a folder on
-        a drive that is away is kept by never reaching here (its folder's
-        parent is gone too, and the caller skips it).
+        For a resume or a ``remove`` of one worktree, only when the folder is
+        truly absent: a folder whose parent is gone too may be on a drive
+        that is away, and its entry stays. A release unlocks without asking
+        (:meth:`drop_worktrees`).
         """
         if worktree.exists() or not worktree.parent.exists():
             return

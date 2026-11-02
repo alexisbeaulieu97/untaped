@@ -24,6 +24,7 @@ def test_a_repo_key_is_one_hold_for_every_spelling() -> None:
     assert https.root == "github.com/acme/api"
     assert RepoKey.model_validate("git@github.com:acme/api.git") == https
     assert RepoKey.model_validate("github.com/acme/api.git") == https
+    assert RepoKey.model_validate("GitHub.com/acme/api") == https  # a bare key folds as its URL
 
 
 def test_create_makes_a_project_holding_its_repos(

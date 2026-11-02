@@ -15,6 +15,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from untaped.sdk import HolderView, LetGo, ProjectRemoval, Refused, ReleaseAsk, known_projects
 from untaped.sdk.testing import install, make_project, plan_release
 from untaped.sdk.testing.git import GitRemote
@@ -107,14 +109,8 @@ def test_a_missing_project_lets_go_of_every_worktree_under_its_folder(
     )
     assert ran.exit == 0, err(ran)
     [repo, _project] = json.loads(ran.stdout)
-    # its rows are gone, so its branch can't be told apart from work: the store keeps it
-    assert (
-        repo["detail"]
-        == "removed worktree api; released the repo; the store keeps it for branch J-1"
-    )
-    assert (
-        git(store_repo(store_root, url), "worktree", "list", "--porcelain").count("worktree ") == 1
-    )
+    assert repo["detail"].startswith("removed worktree api; removed the repo from the repo store")
+    assert not store_repo(store_root, url).exists()
 
 
 def test_a_copied_workspace_runs_no_git_and_is_not_listed(
@@ -143,6 +139,107 @@ def test_remove_previews_every_workspace_of_the_name(
     assert folders == {str(workspace_env / "J-1"), str(other)}
 
 
+def test_a_copy_with_its_own_id_still_runs_no_git(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, tmp_path: Path
+) -> None:
+    assert run(["create", "J-1", "--repo", make_upstream("api").url]).exit == 0
+    copy = shutil.copytree(workspace_env / "J-1", tmp_path / "copy", symlinks=True)
+    ran = install(WorkspacePlugin).cli(["project", "init", str(copy), "--new-id"])
+    assert ran.exit == 0, err(ran)
+    status = run(["status", str(copy)])
+    assert "repos in this copy belong to another project" in err(status)
+
+
+def test_a_half_finished_removal_leaves_a_workspace_remove_can_finish(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    api, web = make_upstream("api").url, make_upstream("web").url
+    assert run(["create", "J-1", "--repo", api, "--repo", web]).exit == 0
+    project = ProjectWorkspaceStore().find("J-1").project
+    project.release(HELD_REPOS.items(), items=[KEY])  # web's release failed, say
+    listed = json.loads(run(["list", "--format", "json"]).stdout)
+    assert [row["name"] for row in listed] == ["J-1"]
+    removed = run(["remove", "J-1", "--yes"])
+    assert removed.exit == 0, err(removed)
+    assert stored("J-1") is None
+
+
+def test_removing_every_workspace_of_a_name_that_shares_a_repo(
+    make_upstream: Callable[..., GitRemote], store_root: Path, tmp_path: Path
+) -> None:
+    url = make_upstream("api").url
+    assert run(["create", "J-1", "--repo", url, "--branch", "old"]).exit == 0
+    assert run(["archive", "J-1"]).exit == 0
+    other = make_project(tmp_path / "elsewhere" / "J-1").root
+    assert run(["add", str(other), "--repo", url, "--branch", "new"]).exit == 0
+    preview = json.loads(run(["remove", "J-1", "--dry-run", "--format", "json"]).stdout)
+    details = [row["detail"] for row in preview if row["repo"]]
+    assert "keeps the repo" in details[0] and "releases the repo" in details[1]  # in turn
+    removed = run(["remove", "J-1", "--yes"])
+    assert removed.exit == 0, err(removed)
+    assert not store_repo(store_root, url).exists()
+
+
+def test_a_deleted_project_loses_its_locked_entry_while_another_keeps_the_repo(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
+) -> None:
+    url = make_upstream("api").url
+    for name in ("J-1", "J-2"):
+        assert run(["create", name, "--repo", url, "--branch", name]).exit == 0
+    shutil.rmtree(workspace_env / "J-1")
+    ran = install(WorkspacePlugin).cli(["project", "remove", str(workspace_env / "J-1"), "--yes"])
+    assert ran.exit == 0, err(ran)
+    entries = git(store_repo(store_root, url), "worktree", "list", "--porcelain")
+    assert str(workspace_env / "J-1") not in entries
+    assert str(workspace_env / "J-2" / "api") in entries
+
+
+def test_a_forced_preview_names_the_work_it_discards(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    assert run(["create", "J-1", "--repo", make_upstream("api").url]).exit == 0
+    (workspace_env / "J-1" / "api" / "scratch.txt").write_text("precious")
+    preview = run(["remove", "J-1", "--force", "--dry-run", "--format", "json"])
+    [repo] = [row for row in json.loads(preview.stdout) if row["repo"]]
+    assert repo["detail"].startswith("removes api, discarding uncommitted changes")
+
+
+def test_a_hand_deleted_worktree_is_checked_out_again(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path
+) -> None:
+    url = make_upstream("api").url
+    assert run(["create", "J-1", "--repo", url]).exit == 0
+    shutil.rmtree(workspace_env / "J-1" / "api")  # its entry is still locked
+    again = run(["add", "J-1", "--repo", url])
+    assert again.exit == 0, err(again)
+    assert (workspace_env / "J-1" / "api" / "README.md").is_file()
+
+
+def test_a_refused_remove_keeps_the_worktree_locked(
+    make_upstream: Callable[..., GitRemote], workspace_env: Path, store_root: Path
+) -> None:
+    from untaped_workspace.errors import GitError
+    from untaped_workspace.infrastructure.git_worktrees import LocalGitWorktrees
+
+    url = make_upstream("api").url
+    assert run(["create", "J-1", "--repo", url]).exit == 0
+    dest = workspace_env / "J-1" / "api"
+    (dest / "scratch.txt").write_text("precious")  # git's own remove refuses an untracked file
+    worktrees = LocalGitWorktrees(plugin="workspace")
+    with pytest.raises(GitError):
+        worktrees._remove_worktree(worktrees._store(url), dest, force=False)
+    assert "locked untaped project" in git(dest, "worktree", "list", "--porcelain")
+
+
+def test_adding_to_a_project_whose_folder_name_is_no_workspace_name(
+    make_upstream: Callable[..., GitRemote], tmp_path: Path
+) -> None:
+    project = make_project(tmp_path / ".hidden")
+    added = run(["add", str(project.root), "--repo", make_upstream("api").url])
+    assert added.exit == 2
+    assert "invalid workspace name" in err(added)
+
+
 # ---- the order of RemoveWorkspace's steps ----------------------------------------------
 
 
@@ -160,7 +257,14 @@ class _Store:
     def locked(self, record: WorkspaceRecord) -> Iterator[WorkspaceRecord]:
         yield record
 
-    def release(self, record: WorkspaceRecord, *, force: bool, dry_run: bool) -> list[Any]:
+    def release(
+        self,
+        record: WorkspaceRecord,
+        *,
+        force: bool,
+        dry_run: bool,
+        leaving: Sequence[WorkspaceRecord] = (),
+    ) -> list[Any]:
         self.calls.append("preview" if dry_run else "apply")
         return self.releases.pop(0)
 
@@ -179,9 +283,10 @@ def _row(action: str, detail: str = "removes api") -> SimpleNamespace:
 
 
 def _remove(tmp_path: Path, store: _Store) -> list[Any]:
+    project = make_project(tmp_path / "J-1")
     record = WorkspaceRecord(
-        project=make_project(tmp_path / "J-1"),
-        meta=WorkspaceMeta(name="J-1", created_by="workspace", created_at=T0),
+        project=project,
+        meta=WorkspaceMeta(name="J-1", project=project.id, created_by="workspace", created_at=T0),
     )
     remove = RemoveWorkspace(store)  # type: ignore[arg-type]
     with remove.hold("J-1", [record], force=False) as plan:

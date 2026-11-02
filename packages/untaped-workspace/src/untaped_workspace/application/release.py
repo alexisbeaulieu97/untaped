@@ -66,14 +66,17 @@ def plan_release(ask: ReleaseAsk[RepoKey]) -> LetGo[RepoKey] | Refused:
     git = LocalGitWorktrees(plugin=PLUGIN)
     held = _held(ask, git)
     where = shown_path(ask.holder.anchor)
-    if held.row is not None and held.project is not None and not ask.force:
+    work: tuple[str, ...] = ()
+    if held.row is not None and held.project is not None:
         work = _worktree_work(git, held.project.root / held.row.dir, held.row)
-        if work:
+        if work and not ask.force:
             return Refused(
                 reason=f"worktree {held.row.dir}: {', '.join(work)}",
                 hint=f"commit and push it from {shown_path(held.project.root / held.row.dir)}",
             )
     folder = held.row.dir if held.row is not None else "its worktree"
+    if work:  # forced: named, so new work while the question waits changes the preview
+        folder += f", discarding {', '.join(work)}"
     if held.url is None:
         return LetGo(preview="not in the repo store; forgets the hold", apply=_nothing)
     if ask.others:

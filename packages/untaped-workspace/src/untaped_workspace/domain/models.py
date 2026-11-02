@@ -37,12 +37,15 @@ class WorkspaceMeta(BaseModel):
 
     ``created_by`` says who made the project: ``workspace`` (``create``, so
     ``remove`` may remove the project too once nothing else is held) or
-    ``user`` (an existing project ``add`` was run in).
+    ``user`` (an existing project ``add`` was run in). ``project`` is the
+    id of the project that wrote it: a copied folder, which gets its own id,
+    still carries the original's.
     """
 
     model_config = ConfigDict(frozen=True)
 
     name: Annotated[str, Key]
+    project: str
     created_by: Literal["workspace", "user"]
     created_at: UtcTimestamp
     archived_at: UtcTimestamp | None = None
