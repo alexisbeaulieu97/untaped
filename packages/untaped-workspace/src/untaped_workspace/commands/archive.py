@@ -1,4 +1,4 @@
-"""``untaped workspace archive|remove``: take a workspace's worktrees away, then its records."""
+"""``untaped workspace archive|remove``: take a workspace's worktrees away, then its repos."""
 
 from __future__ import annotations
 
@@ -6,23 +6,22 @@ from collections.abc import Iterator, Sequence
 
 from pydantic import Field
 
-from untaped.sdk import Confirm, Output, Positional, now, plural, q
+from untaped.sdk import Confirm, Output, Positional, now, plural, q, shown_path
 from untaped_workspace.application.archive import ArchiveWorkspace
-from untaped_workspace.application.remove import RemovalPlan, RemoveWorkspace, refusal_hint
+from untaped_workspace.application.remove import RemovalPlan, RemoveWorkspace
 from untaped_workspace.commands._workspace import NAME_HELP, WorkspaceCommand
 from untaped_workspace.domain.safety import archive_hint
 from untaped_workspace.errors import WorkspaceError
-from untaped_workspace.infrastructure import StateWorkspaceStore
 from untaped_workspace.records import ArchiveOutcome, RemoveOutcome, RepoStatus
 
 
 class Archive(WorkspaceCommand):
-    """Remove the workspace's worktrees and directory, and record it as archived.
+    """Remove the workspace's worktrees; keep its folder, and the repos it holds.
 
     Refuses (exit 1, nothing removed) while any repo has uncommitted,
-    stashed or unpushed work, unless --force. Local branches stay in the
-    repo store, so a later `create` with the same branch resumes the work;
-    `remove` gives the space back. --dry-run previews with `planned` and
+    stashed or unpushed work, unless --force. The project keeps its repos
+    and their branches, so `create NAME` (or `add` in another project)
+    resumes the work; `remove` gives the space back. --dry-run previews with `planned` and
     `skipped` rows and exits 0, even when repos would block. --force on a
     blocked workspace confirms first, and without a terminal needs --yes
     (else exit 2). What blocks, and what --force discards: `untaped workspace --help`.
@@ -46,10 +45,8 @@ class Archive(WorkspaceCommand):
     def run(self) -> Iterator[ArchiveOutcome]:
         located = self.locate(self.name)
         git = self.git_worktrees()
-        archive = ArchiveWorkspace(
-            StateWorkspaceStore(), git, workspaces_dir=self.workspaces_dir, now=now
-        )
-        with archive.hold(located.name) as record:  # from the check through the removal
+        archive = ArchiveWorkspace(self.store(), git, now=now)
+        with archive.hold(located) as record:  # from the check through the removal
             rows = self.status_reader(git)(record)
             blocked = [row for row in rows if row.blockers]
             if self.confirm.dry_run or (blocked and not self.force):
@@ -70,17 +67,20 @@ class Archive(WorkspaceCommand):
 
 
 class Remove(WorkspaceCommand):
-    """Drop a workspace's records and release its repos from the repo store.
+    """Let go of a workspace's repos, drop its rows, and the project it made.
 
-    An active workspace is archived first, with archive's checks. Each repo
-    no other workspace (active or archived) uses is released: workspace's
-    refs and the local branches whose commits are all pushed go, and the
-    repo itself when nothing else uses it. Refuses (exit 1, nothing changed)
-    while work would be lost, unless --force; a stash is never deleted.
+    Every workspace of NAME, active and archived. Each repo's worktree goes;
+    the repo is released from the repo store, or kept when another project
+    holds it. Refuses (exit 1, nothing changed) while a worktree has
+    uncommitted, stashed or unpushed work, or the workspace's branch has
+    commits no remote has, unless --force; a stash is never deleted. Then
+    the workspace's rows go, and the project itself when `create` made it
+    and it holds nothing else: config.yml and your own files stay, as with
+    `untaped project remove`.
 
-    Always confirms; without a terminal it needs --yes (else exit 2).
-    --dry-run previews with `planned` and `skipped` rows and exits 0. What
-    stays and what --force deletes: `untaped workspace --help`.
+    Always confirms; without a terminal it needs --yes (else exit 2). A
+    workspace whose repos change while the question waits is kept (exit 1).
+    --dry-run previews with `planned` and `refused` rows and exits 0.
 
     Examples
     --------
@@ -89,7 +89,9 @@ class Remove(WorkspaceCommand):
     ```
     """
 
-    name: Positional[str] = Field(description="Workspace to remove, active or archived.")
+    name: Positional[str] = Field(
+        description="Workspace to remove, active or archived: its name, or its folder."
+    )
     force: bool = Field(
         False,
         description=(
@@ -101,28 +103,25 @@ class Remove(WorkspaceCommand):
     output: Output[RemoveOutcome]
 
     def run(self) -> Iterator[RemoveOutcome]:
-        git = self.git_worktrees()
-        remove = RemoveWorkspace(
-            StateWorkspaceStore(),
-            git,
-            status=self.status_reader(git),
-            workspaces_dir=self.workspaces_dir,
-            now=now,
-        )
-        with remove.hold(self.name) as plan:  # from the check through the removal
-            if self.confirm.dry_run or (plan.blocked and not self.force):
-                yield from remove.preview(plan, force=self.force)
+        store = self.store()
+        remove = RemoveWorkspace(store)
+        located = store.named(self.name)
+        with remove.hold(self.name, located, force=self.force) as plan:
+            if self.confirm.dry_run or plan.blocked:
+                yield from plan.rows
                 if self.confirm.dry_run:
                     return
                 raise WorkspaceError(
                     f"{plural(len(plan.blocked), 'repo')} would lose work; nothing removed",
-                    hint=refusal_hint(plan),
+                    hint="; ".join([*dict.fromkeys(plan.hints), "or pass --force to remove anyway"])
+                    if plan.hints
+                    else "pass --force to remove anyway",
                 )
-            self.confirm(_question(plan, force=self.force))
+            self.confirm(_question(plan), preview=lambda: _preview(plan))
             outcomes = remove(plan, force=self.force)
         self.report(outcomes, lambda row: f"{row.workspace}/{row.repo}")
-        if not any(row.failed for row in outcomes):
-            self.ctx.diag.success(f"removed workspace {q(plan.name)}")
+        if not any(row.failed or row.action in {"kept", "refused"} for row in outcomes):
+            self.ctx.diag.success(f"removed workspace {q(located[0].name)}")
         yield from outcomes
 
 
@@ -138,12 +137,18 @@ def _plan(rows: Sequence[RepoStatus], *, force: bool) -> Iterator[ArchiveOutcome
         )
 
 
-def _question(plan: RemovalPlan, *, force: bool) -> str:
-    """The removal's question, naming the work ``--force`` would discard."""
-    lost = [
-        (repo.spec.dir, [*repo.blockers, *(repo.discards if force else ())]) for repo in plan.repos
+def _question(plan: RemovalPlan) -> str:
+    """The removal's question, naming how many projects it removes."""
+    count = len(plan.records)
+    which = f"{count} workspaces named {plan.name}" if count > 1 else f"workspace {plan.name}"
+    return f"Remove {which} and release its repos?"
+
+
+def _preview(plan: RemovalPlan) -> list[str]:
+    """What the question shows first: each repo's planned row."""
+    return [
+        f"{shown_path(row.target_path)} {row.repo or '(workspace)'}: {row.detail}"
+        if row.target_path is not None
+        else f"{row.workspace} {row.repo or '(workspace)'}: {row.detail}"
+        for row in plan.rows
     ]
-    discard = "; ".join(f"{d} ({', '.join(work)})" for d, work in lost if work)
-    return f"Remove workspace {plan.name} and release its repos" + (
-        f", discarding: {discard}?" if discard else "?"
-    )

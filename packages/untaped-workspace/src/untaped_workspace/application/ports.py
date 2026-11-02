@@ -12,9 +12,10 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
+    from untaped.sdk import OutcomeRecord
+    from untaped.sdk.projects import ProjectRemoval
     from untaped.sdk.storage import ProgressHandle
     from untaped_workspace.domain.models import (
-        ArchivedRecord,
         Checkout,
         CommandResult,
         RepoRelease,
@@ -30,8 +31,10 @@ if TYPE_CHECKING:
 class GitWorktrees(Protocol):
     """Worktrees checked out from the repo store, one store repo per repo URL."""
 
-    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
-        """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``."""
+    def checkout(
+        self, url: str, dest: Path, *, branch: str | None, base: str | None, lock: str
+    ) -> Checkout:
+        """Add a worktree at ``dest``, locked for ``lock``: on ``branch``, or detached at base."""
         ...
 
     def status(self, dest: Path, *, branch: str | None, base: str) -> WorktreeStatus | None:
@@ -83,33 +86,67 @@ class GitWorktrees(Protocol):
         """Release ``url``'s store repo for workspace, deleting the local ``branches`` named."""
         ...
 
+    def drop_worktrees(
+        self, url: str, under: Path, *, checked: Mapping[Path, str] | None, force: bool
+    ) -> list[Path]:
+        """Remove the worktrees ``checked`` names (or all) under ``under``; unforced, rechecked."""
+        ...
+
+    def repair(self, url: str, worktree: Path) -> bool:
+        """Reconnect a moved worktree at ``worktree``; ``False`` when there is none."""
+        ...
+
+    def stored_url(self, ident: str) -> str | None:
+        """The URL of the store repo keyed ``ident``; ``None`` when the store has none."""
+        ...
+
 
 class WorkspaceStore(Protocol):
-    """Active and archived workspace records."""
+    """Workspaces kept in projects: their meta rows, repo rows and holds."""
 
-    def active(self) -> list[WorkspaceRecord]: ...
-    def names(self) -> list[str]:
-        """The active workspaces' names; never stops on a damaged record."""
+    def locked(self, record: WorkspaceRecord) -> AbstractContextManager[WorkspaceRecord]:
+        """Hold the workspace's project lock; yield its record as stored now."""
         ...
 
-    def archived(self) -> list[ArchivedRecord]: ...
-    def get(self, name: str) -> WorkspaceRecord | None: ...
-    def create(self, record: WorkspaceRecord) -> None:
-        """Store a new active workspace; conflict if the name is active."""
+    def all(self) -> list[WorkspaceRecord]: ...
+    def at(self, root: Path) -> WorkspaceRecord | None:
+        """The workspace of the project at ``root`` exactly, or ``None``."""
         ...
 
-    def add_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord: ...
-    def update_repos(self, name: str, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
-        """Replace the active workspace's repos that share a ``dir`` with one of ``repos``."""
+    def start(self, root: Path, name: str, *, at: datetime) -> WorkspaceRecord:
+        """Make ``root`` a project and a new workspace; conflict when it is one already."""
         ...
 
-    def archive(self, name: str, *, at: datetime) -> ArchivedRecord: ...
-    def remove(self, name: str) -> None:
-        """Drop every record named ``name``, active and archived."""
+    def adopt(self, record: WorkspaceRecord, *, at: datetime) -> WorkspaceRecord:
+        """Make the project a workspace if it isn't one yet."""
         ...
 
-    def locked(self, name: str) -> AbstractContextManager[None]:
-        """Serialise ``create``/``add``/``archive``/``remove`` of workspace ``name``."""
+    def hold(self, record: WorkspaceRecord, url: str) -> None:
+        """Hold ``url``'s repo for the project."""
+        ...
+
+    def put_repos(self, record: WorkspaceRecord, repos: Sequence[RepoSpec]) -> WorkspaceRecord:
+        """Write ``repos``' rows, replacing a row for the same folder."""
+        ...
+
+    def set_archived(self, record: WorkspaceRecord, at: datetime | None) -> WorkspaceRecord: ...
+    def forget(self, record: WorkspaceRecord) -> None:
+        """Drop workspace's rows from the project."""
+        ...
+
+    def release(
+        self,
+        record: WorkspaceRecord,
+        *,
+        force: bool,
+        dry_run: bool,
+        leaving: Sequence[WorkspaceRecord] = (),
+    ) -> list[OutcomeRecord]:
+        """Let go of the project's repos through the holds service (``leaving`` let go first)."""
+        ...
+
+    def remove_project(self, record: WorkspaceRecord) -> ProjectRemoval:
+        """Remove the project unless it still holds items (then nothing is removed)."""
         ...
 
 

@@ -14,31 +14,37 @@ from untaped_workspace.commands.create import Add, Create
 from untaped_workspace.commands.repos import ReposGroup
 from untaped_workspace.commands.run import Run
 from untaped_workspace.commands.status import List, Path, Status
-from untaped_workspace.infrastructure.state_store import ARCHIVED, CHECKOUTS, WORKSPACES
+from untaped_workspace.infrastructure.project_store import CHECKOUTS, HELD_REPOS, META, WORKTREES
 from untaped_workspace.settings import WorkspaceSettings
 
 
 class WorkspacePlugin(Plugin):
     """Create, archive and remove task workspaces (git worktrees of several repos).
 
-    A workspace is one directory per task, `workspace.workspaces_dir/NAME`. Each
-    repo in it is a git worktree of that repo's copy in the git plugin's repo
-    store (`git.store_dir`), on the task branch, or read-only at a base branch or
-    tag. Its life: `create`, work and push, `archive` (the worktrees go, the
-    branches stay), then `remove` (the records go and the repo store releases
-    the repos).
+    A workspace is a project (`untaped project --help`): a folder whose
+    `.untaped/` keeps workspace's rows, one per repo. Each repo in it is a git
+    worktree of that repo's copy in the git plugin's repo store
+    (`git.store_dir`), on the task branch, or read-only at a base branch or
+    tag, and the project holds the repo, so the store keeps it while any
+    project uses it. Its life: `create` (the project
+    `workspace.workspaces_dir/NAME`) or `add` in any project, work and push,
+    `archive` (the worktrees go; the folder, the branches and the holds stay),
+    then `remove` (the repos are released, and the project `create` made).
 
-    One `workspaces_dir` belongs to one untaped home: the home holds the
-    workspaces' locks, so two homes sharing the folder would not wait for each
-    other.
+    Every command run inside the project reads its settings
+    (`.untaped/config.yml`), the credential helper git runs in a worktree
+    included: `untaped --profile staging workspace create NAME` records the
+    pick there, so the folder keeps the environment it was made in.
 
     ## Names
 
     - A workspace name is one path segment: letters, digits, `.`, `_` and `-`,
-      not starting with `.`. Anything else exits 2. A name is never a path.
-    - Inside a workspace directory, every command that takes NAME, except
-      `create` and `remove`, takes the workspace from the current directory when
-      NAME is left out; outside one, leaving it out exits 2.
+      not starting with `.`. Anything else exits 2.
+    - Every command that takes NAME takes a workspace's name or a project's
+      folder (`./PROJ-1`, `~/work/PROJ-1`), and, except `create` and `remove`,
+      the project containing the current directory when NAME is left out;
+      outside one, leaving it out exits 2. Two active workspaces with one
+      name exit 2 listing both folders; an archived name names the newest.
     - Each repo directory is the repo name. When two repos in one workspace
       share a name, the later ones use `OWNER-NAME`.
 
@@ -127,52 +133,62 @@ class WorkspacePlugin(Plugin):
     `conflict`. If removing a repo fails, the workspace stays active so archive
     can run again.
 
-    Archiving removes the worktrees and the workspace directory and records the
-    workspace under `untaped workspace list --archived`. Other files left in the
-    directory stay, with a `skipped` workspace row, and `create` refuses that
-    name until the directory is moved aside. The branches stay in the repo store
-    and on the remote, so
-    `untaped workspace create NAME --repo OWNER/NAME --branch BRANCH` later
-    resumes the work.
+    Archiving removes the worktrees; the folder, its other files and
+    `.untaped/` stay, and `untaped workspace list --archived` lists it. The
+    project keeps holding its repos, and the branches stay in the repo store
+    and on the remote, so `untaped workspace create NAME` (or `add` with the
+    project's folder, for a project `create` didn't make) resumes it: each repo
+    is checked out again on its branch.
 
     ## Removing
 
-    `remove` takes an active workspace (archived first, with archive's checks
-    and `--force`) or an archived one, and drops every record of NAME. For each
-    of its repos that no other workspace, active or archived, names, it releases
-    the repo from the repo store: workspace's refs, and the local branches that
-    no worktree has checked out and whose commits are all on the remote, go; the
-    repo itself goes when no other plugin uses it.
+    `remove NAME` takes every workspace of that name, active and archived, and
+    lets go of the repos each project holds; `untaped project remove` lets go
+    of them the same way. For each repo:
 
-    - The workspace's own branch with commits no remote branch has refuses the
-      removal (exit 1, "branch BRANCH: N commits not pushed"); `--force` deletes
-      it, and also a worktree git refuses to remove.
-    - Other branches with unpushed commits or a stash made on them stay and keep
-      the repo (`held by branches` in `untaped git store`); `--force` deletes
-      them too, and the preview and the confirmation name them. A stash itself
-      is never deleted, even when its branch is.
+    - Uncommitted, stashed or unpushed work in its worktree, as archive checks
+      it, refuses the removal (exit 1, nothing changed); `--force` discards it.
+    - When another project holds the repo, only this project's worktree goes;
+      the repo and its branches stay.
+    - Otherwise the worktree goes and the repo is released from the repo store:
+      workspace's refs, and the local branches that no worktree has checked out
+      and whose commits are all on the remote, go; the repo itself goes when no
+      other plugin uses it. The workspace's own branch with commits no remote
+      branch has refuses the removal ("branch BRANCH: N commits not pushed");
+      `--force` deletes it. Other branches with unpushed commits or a stash made
+      on them stay and keep the repo (`held by branches` in
+      `untaped git store`); `--force` deletes them too, and the preview names
+      them. A stash itself is never deleted, even when its branch is.
+
+    Then workspace's rows go, and the project itself when `create` made it and
+    it holds nothing else: `config.yml` and your own files stay, and the folder
+    goes when nothing else is in it.
 
     ## Shared by every workspace of a repo
 
     - Stashes: `git stash list` in one workspace shows the stashes made in the
       others too.
     - The repo store: worktrees point into it, so deleting a store repo by hand
-      breaks every workspace using it; `remove` releases what workspace no longer
-      needs. The store locks each repo for every write, so concurrent runs wait.
-      `create`, `add`, `archive` and `remove` of one workspace also wait for each
-      other (`archive` and `remove` hold it from their check to the removal): an
-      `add` queued behind an `archive` then fails as not found.
+      breaks every workspace using it; `remove` releases what no project holds
+      any more. The store locks each repo for every write, so concurrent runs
+      wait. `create`, `add`, `archive` and `remove` of one workspace also wait
+      for each other (they hold the project's lock from their check to the
+      change): an `add` queued behind an `archive` then resumes the workspace.
+    - Worktrees are locked (`git worktree lock`), so a moved project, or one on
+      a drive that is away, keeps its entries; `untaped project move OLD NEW`
+      reconnects them.
     """
 
     settings = WorkspaceSettings
     stability = experimental
     commands = (Create, Add, List, Status, Path, Archive, Remove, Run, ReposGroup)
     offers = (RepoSource,)
-    workspaces = WORKSPACES
-    archived = ARCHIVED
     checkouts = CHECKOUTS
+    repos = HELD_REPOS
+    worktrees = WORKTREES
+    meta = META
     skill = StubSkill(
-        "untaped workspaces: one directory per task holding git worktrees of several "
+        "untaped workspaces: one project folder per task holding git worktrees of several "
         "repos on a shared branch. Use when the work concerns an untaped workspace: "
         "making one for a task or ticket, adding repos to one, finding, checking or "
         "cleaning one up. A repo outside a workspace needs only plain git."

@@ -14,7 +14,7 @@ from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.commands._workspace import NAME_HELP, WORKERS, WorkspaceCommand
 from untaped_workspace.commands.picker import Picker, choose_repos
 from untaped_workspace.domain.models import RepoArg
-from untaped_workspace.infrastructure import StateWorkspaceStore
+from untaped_workspace.infrastructure import ProjectWorkspaceStore
 from untaped_workspace.records import RepoOutcome
 
 _EMPTY_HINT = "drop --empty, or --repo, --read-only, --stdin, --branch and --base"
@@ -64,7 +64,7 @@ class Provisions(WorkspaceCommand):
         args += [RepoArg(ident=ident, read_only=True, base=self.base) for ident in self.read_only]
         return args
 
-    def picker(self, store: StateWorkspaceStore) -> Picker:
+    def picker(self, store: ProjectWorkspaceStore) -> Picker:
         return Picker(
             store=store,
             root=self.workspaces_dir,
@@ -77,7 +77,7 @@ class Provisions(WorkspaceCommand):
         from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415
 
         return ProvisionRepos(
-            StateWorkspaceStore(),
+            self.store(),
             self.git_worktrees(),
             RepoSources(),
             workspaces_dir=self.workspaces_dir,
@@ -149,7 +149,7 @@ class Create(Provisions):
         repo_flags = (self.repo, self.read_only, self.stdin.requested, self.branch, self.base)
         if self.empty and any(repo_flags):  # before --stdin is read
             raise UsageError("--empty takes no repos", hint=_EMPTY_HINT)
-        store = StateWorkspaceStore()
+        store = self.store()
         name, args = choose_repos(
             self.ctx.terminal,
             self.flagged(),
@@ -192,7 +192,7 @@ class Add(Provisions):
             record=record,
             branch=self.branch,
             base=self.base,
-            picker=self.picker(StateWorkspaceStore()),
+            picker=self.picker(self.store()),
         )
         warnings: list[str] = []
         provision = self.provisioner(warnings.append)

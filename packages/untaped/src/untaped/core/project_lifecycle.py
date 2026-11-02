@@ -19,7 +19,6 @@ into the folder. Core never copies a project across filesystems.
 from __future__ import annotations
 
 import os
-import shutil
 from collections.abc import Collection, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -28,13 +27,10 @@ from pathlib import Path
 from untaped.core.commands.project import Init
 from untaped.core.commands.project import List as ListProjects
 from untaped.core.commands.project import Move as MoveProject
-from untaped.sdk._home import PLUGINS_FOLDER
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, UntapedError, UsageError
 from untaped.sdk.projects import (
-    CORE_LOCKS,
     DIRECTORY,
-    GITIGNORE_TEXT,
     MARKER,
     Project,
     _discover,
@@ -48,9 +44,13 @@ from untaped.sdk.projects import (
     _write_gitignore,
     _write_marker,
     anchor_state,
+    core_entries,
+    core_files,
+    delete_core_files,
     find_root,
     follow_move,
     holder_of,
+    holds_left,
     project_at,
     project_references,
     writing,
@@ -77,9 +77,6 @@ from untaped.sdk.storage.holds import (
 )
 from untaped.sdk.words import command_line, not_found, run_hint, shown_path
 
-#: Core's own files in ``.untaped/`` that ``remove`` deletes (``.gitignore`` only when untouched).
-_CORE_FILES = (MARKER,)
-
 
 @dataclass(frozen=True)
 class Removal:
@@ -101,7 +98,7 @@ class Removal:
             detail = f"deletes {', '.join(deletes) or 'nothing of core'}"
             if keeps:
                 detail += f"; keeps {', '.join(keeps)} (yours)"
-            elif any(name != DIRECTORY for name in _entries(self.root)):
+            elif any(name != DIRECTORY for name in core_entries(self.root)):
                 detail += "; keeps the folder (it holds your files)"
             else:
                 detail += "; then the folder, which holds nothing else"
@@ -120,10 +117,18 @@ class Removal:
         )
 
 
-def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str]) -> Removal:
+def plan_removal(
+    project_or_ref: Project | Reference,
+    *,
+    force: Collection[str],
+    leaving: Collection[RefHolder] = (),
+) -> Removal:
     """Plan removing a project: present (``Project``) or recorded only (its ``Reference``).
 
-    Call it under the project's lock; it changes nothing.
+    Call it under the project's lock; it changes nothing. ``leaving`` are
+    the projects the same command removes first: no owner counts them as
+    another holder, so a repo two pruned projects share is released by the
+    second (see ``Project.release``).
     """
     if isinstance(project_or_ref, Project):
         project = project_or_ref
@@ -141,7 +146,8 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
         ref = read_reference(file)
         if ref.opaque is not None:
             raise ConfigError(f"cannot read project {project.name}'s record: {ref.opaque}")
-        return Removal(holder, seen, project.root, plan_holds(seen, ref.targets, force=force))
+        plans = plan_holds(seen, ref.targets, force=force, leaving=leaving)
+        return Removal(holder, seen, project.root, plans)
     if project_or_ref.holder is None:
         raise ConfigError(f"cannot read the project record {shown_path(project_or_ref.file)}")
     if not project_or_ref.file.exists():  # removed since it was listed (another prune)
@@ -161,7 +167,8 @@ def plan_removal(project_or_ref: Project | Reference, *, force: Collection[str])
             f"{seen.label} is at {shown_path(seen.anchor)} again, so it isn't removed",
             hint="run the command again",
         )
-    return Removal(ref.holder, seen, None, plan_holds(seen, ref.targets, force=force))
+    plans = plan_holds(seen, ref.targets, force=force, leaving=leaving)
+    return Removal(ref.holder, seen, None, plans)
 
 
 def preview_check(project: Project) -> None:
@@ -182,12 +189,12 @@ def preview_check(project: Project) -> None:
 def apply_removal(removal: Removal) -> list[HoldOutcome]:
     """Apply every plan, then, when no hold is left, delete core's files and the record."""
     rows = apply_plans(removal.holder, removal.plans, now=lambda: holder_view(removal.holder))
-    left = _holds_left(removal.holder)
+    left = holds_left(removal.holder)
     if any(row.action in {"failed", "refused"} for row in rows) or left:
         detail = f"the project stays: it still holds {left} item{'s' if left != 1 else ''}"
         return [*rows, removal._row("skipped", detail)]
     try:
-        kept = _delete_core_files(removal.root) if removal.root is not None else []
+        kept = delete_core_files(removal.root) if removal.root is not None else []
         with locked(), suppress(FileNotFoundError):
             reference_file(removal.holder).unlink()
     except OSError as exc:
@@ -211,74 +218,6 @@ def unlink_lock(holder: RefHolder) -> None:
     if not reference_file(holder).exists():
         with suppress(OSError):
             holder_lock_file(holder).unlink()
-
-
-def core_files(root: Path) -> tuple[list[str], list[str]]:
-    """What ``remove`` would delete in ``root``'s ``.untaped/``, and what it keeps there."""
-    folder = root / DIRECTORY
-    try:
-        names = sorted(entry.name for entry in folder.iterdir())
-    except OSError:
-        return [], []
-    deletes, keeps = [], []
-    for name in names:
-        path = folder / name
-        core_file = name in _CORE_FILES or name in CORE_LOCKS or name == ".gitignore"
-        if name == PLUGINS_FOLDER and path.is_dir() and not path.is_symlink():
-            deletes.append(f"{name}/")
-        elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):
-            deletes.append(name)
-        else:
-            keeps.append(name)
-    return deletes, keeps
-
-
-def _delete_core_files(root: Path) -> list[str]:
-    """Delete core's files in ``root/.untaped``, then empty folders; what stays, by name."""
-    folder = root / DIRECTORY
-    deletes, _ = core_files(root)
-    marker = folder / MARKER
-    for name in deletes:
-        path = folder / name.rstrip("/")
-        if path == marker:
-            continue
-        if name.endswith("/"):  # core's plugins/ folder, checked a real folder above
-            shutil.rmtree(path)
-        else:
-            with suppress(FileNotFoundError):
-                path.unlink()
-    with suppress(FileNotFoundError):
-        marker.unlink()  # last: until here, the folder is still the project
-    with suppress(OSError):
-        folder.rmdir()  # only when empty
-    with suppress(OSError):
-        root.rmdir()
-    if not root.exists():
-        return []
-    return [*_entries(folder), *(name for name in _entries(root) if name != DIRECTORY)]
-
-
-def _entries(folder: Path) -> list[str]:
-    try:
-        return sorted(entry.name for entry in folder.iterdir())
-    except OSError:
-        return []
-
-
-def _untouched(folder: Path) -> bool:
-    try:
-        text = (folder / ".gitignore").read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return text == GITIGNORE_TEXT
-
-
-def _holds_left(holder: RefHolder) -> int:
-    file = reference_file(holder)
-    if not file.exists():
-        return 0
-    ref = read_reference(file)
-    return sum(1 for target in ref.targets if target.item is not None)
 
 
 # --- finding a project by name or path ----------------------------------------------------

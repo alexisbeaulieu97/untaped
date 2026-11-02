@@ -641,8 +641,13 @@ def plan_holds(
     *,
     force: Collection[str] = (),
     owners: Owners | None = None,
+    leaving: Collection[RefHolder] = (),
 ) -> list[Plan]:
-    """Ask each hold's owner how ``holder`` lets go of it; never changes anything."""
+    """Ask each hold's owner how ``holder`` lets go of it; never changes anything.
+
+    ``leaving`` are holders letting go before this one in the same
+    confirmed batch: no ask counts them as other holders.
+    """
     owners = Owners.current() if owners is None else owners
     plans: list[Plan] = []
     for target in targets:
@@ -659,7 +664,7 @@ def plan_holds(
             refusal = Refused(reason=reason, hint=hint if forgettable else None)
             plans.append(Plan(target, holder, answer=refusal, forceable=forgettable))
             continue
-        plans.append(_plan_one(store, target, holder, force=named))
+        plans.append(_plan_one(store, target, holder, force=named, leaving=leaving))
     return plans
 
 
@@ -684,9 +689,16 @@ def unnamed(force: Collection[str], plans: Sequence[Plan]) -> list[str]:
     ]
 
 
-def _plan_one(store: ItemStore[Any], target: RefTarget, holder: HolderView, *, force: bool) -> Plan:
+def _plan_one(
+    store: ItemStore[Any],
+    target: RefTarget,
+    holder: HolderView,
+    *,
+    force: bool,
+    leaving: Collection[RefHolder] = (),
+) -> Plan:
     try:
-        ask = release_ask(store, target.item or "", holder, force=force)
+        ask = release_ask(store, target.item or "", holder, force=force, leaving=leaving)
     except (ValueError, UntapedError) as exc:
         return Plan(target, holder, store, failure=_raised(exc, f"cannot read the hold: {exc}"))
     answer, failure = _ask(store, ask)
@@ -700,12 +712,20 @@ def _plan_one(store: ItemStore[Any], target: RefTarget, holder: HolderView, *, f
 
 
 def release_ask(
-    store: ItemStore[Any], item: object, holder: HolderView, *, force: bool
+    store: ItemStore[Any],
+    item: object,
+    holder: HolderView,
+    *,
+    force: bool,
+    leaving: Collection[RefHolder] = (),
 ) -> ReleaseAsk[Any]:
-    """A :class:`ReleaseAsk` for ``item``, with every other holder read now."""
+    """A :class:`ReleaseAsk` for ``item``, with every other holder read now (``leaving`` aside)."""
     parsed = store._parse(item)
     others = tuple(
-        other for other in holder_views(store.target(parsed)) if not _same_holder(other, holder)
+        other
+        for other in holder_views(store.target(parsed))
+        if not _same_holder(other, holder)
+        and not (isinstance(other, HolderView) and other.holder in leaving)
     )
     return ReleaseAsk(item=parsed, holder=holder, others=others, force=force)
 
@@ -724,8 +744,12 @@ def _ask(
     return answer, None
 
 
-def preview_rows(plans: Sequence[Plan]) -> list[HoldOutcome]:
-    """The plans as rows, before anything is applied."""
+def preview_rows(plans: Sequence[Plan], *, force_hint: bool = True) -> list[HoldOutcome]:
+    """The plans as rows, before anything is applied.
+
+    ``force_hint`` adds core's ``--force ITEM`` to a refusal naming the item
+    would turn into a plan.
+    """
     rows = []
     for plan in plans:
         row = _row(plan, "planned", "")
@@ -750,7 +774,7 @@ def preview_rows(plans: Sequence[Plan]) -> list[HoldOutcome]:
             )
         elif isinstance(plan.answer, Refused):
             hint = plan.answer.hint
-            if plan.forceable and plan.owner is not None:
+            if force_hint and plan.forceable and plan.owner is not None:
                 hint = f"{hint}, or --force {plan.item}" if hint else f"--force {plan.item}"
             rows.append(
                 row.model_copy(
@@ -837,11 +861,14 @@ def release_rows(
     force: Collection[object],
     dry_run: bool,
     owners: Owners | None = None,
+    leaving: Collection[RefHolder] = (),
 ) -> list[OutcomeRecord]:
     """The service for one owner's holds, without a prompt: ``Project.release`` and its kin.
 
     Refused or failed plans apply nothing and come back as their rows; a
-    dry run returns the preview.
+    dry run returns the preview. A refused row's hint is the owner's alone:
+    the caller's command says how its user overrides it (core's ``project
+    remove`` adds its own ``--force ITEM``).
     """
     seen = holder_view(holder)
     if not isinstance(seen, HolderView):
@@ -852,9 +879,9 @@ def release_rows(
     targets = [t for t in _held(holder, store) if wanted is None or t.item in wanted]
     named = {store._text(item) for item in force}
     owners = owners if owners is not None else Owners.current()
-    plans = plan_holds(seen, targets, force=named, owners=owners)
+    plans = plan_holds(seen, targets, force=named, owners=owners, leaving=leaving)
     if dry_run or any(plan.blocked for plan in plans):
-        return list(preview_rows(plans))
+        return list(preview_rows(plans, force_hint=False))
     return list(apply_plans(holder, plans, now=lambda: holder_view(holder)))
 
 

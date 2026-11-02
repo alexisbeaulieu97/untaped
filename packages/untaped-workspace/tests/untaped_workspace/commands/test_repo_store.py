@@ -234,11 +234,11 @@ def test_remove_releases_the_last_workspace_of_a_url(
     assert run(["archive", "J-1"]).exit == 0
     assert "refs/heads/b1" in _refs(repo)
 
-    # Removed while another workspace uses the repo: nothing released.
+    # Removed while another workspace uses the repo: the project lets go, the repo stays.
     rows = _outcomes("remove", "J-1", "--yes")
     assert [(r["repo"], r["action"], r["detail"]) for r in rows] == [
-        ("app", "kept", "used by workspace J-2"),
-        ("", "removed", "workspace record"),
+        ("app", "released", "kept the repo for project J-2"),
+        ("", "removed", f"removed the project and {workspace_env / 'J-1'}"),
     ]
     assert "refs/heads/b1" in _refs(repo)
     assert _outcomes("list", "--archived") == []
@@ -248,9 +248,9 @@ def test_remove_releases_the_last_workspace_of_a_url(
     commit_in(wt)
     git(wt, "push", "-q", "origin", "b2")
     rows = _outcomes("remove", "J-2", "--yes")
-    assert [(r["repo"], r["action"]) for r in rows] == [("app", "removed"), ("", "removed")]
-    assert rows[0]["freed_bytes"] > 0  # type: ignore[operator]
-    assert rows[1]["detail"] == "workspace record and directory"
+    assert [(r["repo"], r["action"]) for r in rows] == [("app", "released"), ("", "removed")]
+    assert "removed the repo from the repo store" in str(rows[0]["detail"])
+    assert rows[1]["detail"] == f"removed the project and {workspace_env / 'J-2'}"
     assert not repo.exists()
     assert not (workspace_env / "J-2").exists()
 
@@ -271,7 +271,10 @@ def test_remove_releases_around_another_plugins_namespace(
 
     rows = _outcomes("remove", "J-1", "--yes")
 
-    assert (rows[0]["action"], rows[0]["detail"]) == ("released", "kept: github")
+    assert (rows[0]["action"], rows[0]["detail"]) == (
+        "released",
+        "removed worktree app; released the repo; the store keeps it for github",
+    )
     assert _refs(repo) == ["refs/untaped/github/heads/main"]
     assert (repo / "untaped-github.json").is_file()
     assert not (repo / "untaped-workspace.json").exists()
@@ -291,15 +294,15 @@ def test_remove_refuses_to_lose_an_unpushed_branch_unless_forced(
 
     assert refused.exit == 1
     assert [(row["action"], row["detail"]) for row in json.loads(refused.stdout)] == [
-        ("skipped", "branch b1: 1 commit not pushed; release from the repo store"),
-        ("planned", "drop the workspace record"),
+        ("refused", "branch b1: 1 commit not pushed"),
+        ("planned", "drops the workspace's rows, then the project when it holds nothing else"),
     ]
     assert "nothing removed" in err(refused)
     assert _refs(repo) == before
     assert [r["name"] for r in _outcomes("list", "--archived")] == ["J-1"]
 
     rows = _outcomes("remove", "J-1", "--force", "--yes")
-    assert rows[0]["action"] == "removed"
+    assert rows[0]["action"] == "released"
     assert not repo.exists()
 
 
@@ -315,7 +318,10 @@ def test_a_stash_keeps_its_branch_and_the_repo(
 
     rows = _outcomes("remove", "J-1", "--yes")
 
-    assert (rows[0]["action"], rows[0]["detail"]) == ("released", "kept: branch b1, a stash")
+    assert (rows[0]["action"], rows[0]["detail"]) == (
+        "released",
+        "released the repo; the store keeps it for branch b1, a stash",
+    )
     assert _refs(repo) == ["refs/heads/b1", "refs/stash"]
     assert not (repo / "untaped-workspace.json").exists()
     store = json.loads(install(WorkspacePlugin).cli(["git", "store", "--format", "json"]).stdout)

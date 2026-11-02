@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError, bounded_map, command_line
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
-from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.domain.safety import NOT_STORED, UNREADABLE, archive_blockers
 from untaped_workspace.records import RepoStatus
 
@@ -28,9 +27,8 @@ class WorkspaceStatus:
     A worktree git cannot read gets an ``error`` row that blocks archiving.
     """
 
-    def __init__(self, git: GitWorktrees, *, workspaces_dir: Path, parallel: int) -> None:
+    def __init__(self, git: GitWorktrees, *, parallel: int) -> None:
         self._git = git
-        self._workspaces_dir = workspaces_dir
         self._parallel = max(1, parallel)
 
     def __call__(
@@ -45,7 +43,7 @@ class WorkspaceStatus:
         A workspace of one repo passes ``progress`` on to its fetch, whose
         phases are then the line; with more, the count of repos is.
         """
-        root = workspace_root(self._workspaces_dir, record.name)
+        root = record.root
         rows: dict[int, RepoStatus] = {}
         inner = progress if len(record.repos) == 1 else NO_PROGRESS
 

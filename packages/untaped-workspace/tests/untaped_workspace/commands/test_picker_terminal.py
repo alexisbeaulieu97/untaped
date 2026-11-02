@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -15,9 +14,9 @@ from untaped.sdk.prompt import Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.testing import ScriptedTerminal
 from untaped.sdk.testing.git import GitRemote, global_config
 from untaped_workspace.api import Repo, RepoSource
-from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
-from workspace_test_support import composed, err, git, listing, run
+from untaped_workspace.domain.models import RepoSpec
+from untaped_workspace.infrastructure import LocalGitWorktrees
+from workspace_test_support import composed, err, git, listing, new_workspace, run, stored
 
 
 @dataclass
@@ -69,9 +68,7 @@ def test_the_picker_names_its_command_and_flags_for_the_no_terminal_refusal(
     command: str,
     picker: Picker,
 ) -> None:
-    StateWorkspaceStore().create(
-        WorkspaceRecord(name="J-1", created_at=datetime(2026, 10, 1, tzinfo=UTC))
-    )
+    new_workspace("J-1")
     picker.terminal.picks(None)
     run([command, *(["J-1"] if command == "add" else [])])
     (request,) = picker.requests
@@ -85,7 +82,7 @@ def test_cancelled_picker_creates_nothing(workspace_env: Path, picker: Picker) -
     assert result.exit == 1
     assert "cancelled" in err(result)
     assert not (workspace_env / "J-1").exists()
-    assert StateWorkspaceStore().get("J-1") is None
+    assert stored("J-1") is None
 
 
 def test_picker_confirmed_with_no_repos_creates_an_empty_workspace(
@@ -107,9 +104,7 @@ def test_no_terminal_and_no_name_is_a_usage_error() -> None:
 
 @pytest.mark.parametrize("name", ["a/b", "taken"])
 def test_bad_name_is_refused_before_the_picker(name: str, picker: Picker) -> None:
-    StateWorkspaceStore().create(
-        WorkspaceRecord(name="taken", created_at=datetime(2026, 10, 1, tzinfo=UTC))
-    )
+    new_workspace("taken")
     result = run(["create", name])
     assert result.exit == 2
     assert picker.terminal.asked == []
@@ -173,7 +168,7 @@ def test_empty_flag_skips_the_picker(workspace_env: Path, picker: Picker) -> Non
     assert result.exit == 0, err(result)
     assert picker.terminal.asked == []
     assert (workspace_env / "J-1").is_dir()
-    assert StateWorkspaceStore().get("J-1") is not None
+    assert stored("J-1") is not None
 
 
 def test_empty_flag_needs_a_name(picker: Picker) -> None:
@@ -198,7 +193,7 @@ def test_empty_flag_refuses_repo_flags(flag: list[str]) -> None:
     result = run(["create", "J-1", "--empty", *flag])
     assert result.exit == 2
     assert "--empty takes no repos" in err(result)
-    assert StateWorkspaceStore().get("J-1") is None
+    assert stored("J-1") is None
 
 
 def _plant(store_root: Path, ident: str, origin: str) -> None:
@@ -215,12 +210,10 @@ def test_add_does_not_offer_repos_already_in_the_workspace(
 ) -> None:
     for name in ("api", "web"):
         _plant(store_root, f"github.com/acme/{name}", f"https://github.com/acme/{name}.git")
-    store = StateWorkspaceStore()
-    store.create(WorkspaceRecord(name="J-1", created_at=datetime(2026, 10, 1, tzinfo=UTC)))
     spec = RepoSpec(
         url="git@github.com:acme/api.git", name="acme/api", dir="api", branch="J-1", base="main"
     )
-    store.add_repos("J-1", [spec])
+    new_workspace("J-1", spec)
     picker.terminal.picks(None)
     result = run(["add", "J-1"])
     assert result.exit == 1
@@ -260,7 +253,7 @@ def test_read_only_pick_is_a_detached_checkout(
     picker.terminal.picks(pick)
     result = run(["create"])
     assert result.exit == 0, err(result)
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].read_only
     assert git(workspace_env / "J-1" / "api", "rev-parse", "--abbrev-ref", "HEAD") == "HEAD"
 
@@ -285,7 +278,7 @@ def test_a_stored_only_pick_uses_its_stored_url(
     result = run(["create"])
     assert result.exit == 0, err(result)
     assert [i.id for i in picker.requests[0].catalog.items] == ["gitlab.example/acme/api"]
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and record.repos[0].url == origin
     assert (workspace_env / "J-1" / "api" / "README.md").exists()
 
@@ -304,7 +297,7 @@ def test_a_pick_dropped_by_a_refresh_uses_its_remembered_repo(
     assert result.exit == 0, err(result)
     assert [i.id for i in picker.requests[0].catalog.items] == ["acme/api"]
     assert github.calls == 2
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [spec] = record.repos
     assert (spec.url, spec.source) == (url, Source(plugin="github", kind="workspace.repo"))

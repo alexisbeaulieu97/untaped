@@ -30,8 +30,13 @@ if TYPE_CHECKING:
 
 
 @experimental
+@experimental
 class RowExists(ConfigError):
-    """:meth:`StateRows.add` found a row with the same key (exits ``1``)."""
+    """:meth:`StateRows.add` found a row with the same key (exits ``1``).
+
+    First consumer: a plugin that adds a row another run may add first;
+    workspace caught it until its rows moved into projects, which a lock serialises.
+    """
 
     category = ErrorCategory.CONFLICT
 
