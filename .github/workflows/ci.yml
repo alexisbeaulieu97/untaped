@@ -28,27 +28,27 @@ jobs:
         env:
           UNTAPED_HOME: ${{ runner.temp }}/home
         run: |
-          set -x
-          uv run untaped --help || true
-          uv run untaped doctor || true
-          uv run untaped config list || true
-          uv run untaped workspace --help || true
-          uv run untaped lint || true
-      - name: Pytest (collect)
-        continue-on-error: true
-        run: uv run pytest --collect-only -q -o addopts="--import-mode=importlib" 2>&1 | tail -40
+          {
+          for c in "--help" "doctor" "config list" "workspace --help" "lint" "dotfiles --help" "awx --help" "workspace create demo" "workspace list"; do
+            echo "### untaped $c"; uv run untaped $c 2>&1 | head -25; echo "exit=${PIPESTATUS[0]}"
+          done
+          } > smoke.txt 2>&1
       - name: Pytest
         continue-on-error: true
         run: |
-          uv run pytest -n auto -q --no-cov -o addopts="--import-mode=importlib" -rfE 2>&1 | tee pytest.log | tail -400
+          mkdir -p "$RUNNER_TEMP/fakehome"
+          export HOME="$RUNNER_TEMP/fakehome" USERPROFILE="$(cygpath -w "$RUNNER_TEMP/fakehome")"
+          uv run pytest -n auto -q --no-cov -o addopts="--import-mode=importlib" -rfE 2>&1 > pytest.log 2>&1; tail -3 pytest.log
       - name: Failure summary
         if: always()
         run: |
           grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/::.*? - /  /' | cut -c1-220 > failures.txt || true
           wc -l failures.txt
-          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/^(FAILED|ERROR) ([^:]+)::.*/\2/' | sort | uniq -c | sort -rn | head -80
+          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/^(FAILED|ERROR) ([^:]+)::.*/\2/' | sort | uniq -c | sort -rn | head -40
           echo "== top error reasons"
-          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/.* - //' | cut -c1-120 | sort | uniq -c | sort -rn | head -60
+          grep -E "^(FAILED|ERROR) " pytest.log | sed -E 's/.* - //' | cut -c1-140 | sort | uniq -c | sort -rn | head -90
+          echo "== smoke"; cat smoke.txt
+          tail -2 pytest.log
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         if: always()
         with:
