@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterator
@@ -84,8 +86,13 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
         requires_dist=tuple(project["dependencies"]),
     )
     assert pyproject["dependency-groups"] == {
-        "dev": ["pytest>=9", f"untaped[lint]{CORE_FLOOR[7:]}"]
+        "dev": ["mypy>=1.14", "pytest>=9", f"untaped[lint]{CORE_FLOOR[7:]}"]
     }
+    assert pyproject["tool"]["mypy"]["enable_error_code"] == ["deprecated"]
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    lowest = "uv sync --resolution lowest-direct && uv run --no-sync pytest \\\n"
+    assert f"{lowest}  && uv run --no-sync untaped lint" in readme
+    assert "uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy" in readme
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
     # Its own tests import untaped[lint]; core's own run (no plugin installed) stops here.
     lint = pytest.importorskip("untaped_lint.testing")
@@ -365,3 +372,23 @@ def test_a_docstring_word_imports_nothing(tmp_path: Path, monkeypatch: pytest.Mo
 
 def test_a_local_version_is_left_out_of_the_floor() -> None:
     assert floor_for("11.0.0a1+g12ab") == ">=11.0.0a1"
+
+
+def test_the_scaffold_passes_its_own_mypy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contract_plugins_site: Path
+) -> None:
+    pytest.importorskip("mypy")  # a tool install of core has no mypy
+    pytest.importorskip("untaped_lint.testing")  # its tests' dev group has it; core's run doesn't
+    _new(tmp_path)
+    root = tmp_path / "untaped-gitlab"
+    paths = os.pathsep.join([str(root / "src"), str(contract_plugins_site)])
+    # Its own process: mypy raises the interpreter's recursion limit for good.
+    done = subprocess.run(
+        [sys.executable, "-m", "mypy", "--no-incremental"],
+        cwd=root,  # its own pyproject.toml and its files = ["src", "tests"]
+        env={**os.environ, "MYPYPATH": paths},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr

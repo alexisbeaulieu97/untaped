@@ -12,7 +12,9 @@ The package it writes composes and passes ``untaped lint`` as written:
   commented out, since a stub would count as filling them;
 - ``tests/untaped_<name>/``, mirroring the package: lint's ``assert_clean``
   and ``assert_surface`` beside the plugin, ``assert_fills`` with a list of
-  samples to fill in beside the provider (``untaped[lint]`` in the ``dev`` group).
+  samples to fill in beside the provider (``untaped[lint]`` in the ``dev`` group);
+- mypy in the ``dev`` group, set to report deprecated calls, and a README
+  giving the two test runs: the lowest versions declared, and the newest.
 
 The provider's own record type ``T`` starts as the owner's model, so no
 bridge is needed until the plugin issues records of its own.
@@ -185,7 +187,12 @@ class _Scaffold:
                 {_toml_key(self.name)} = "{self.package}.plugin:{self.camel}"
 
                 [dependency-groups]
-                dev = ["pytest>=9", "untaped[lint]{core.untaped}"]
+                dev = ["mypy>=1.14", "pytest>=9", "untaped[lint]{core.untaped}"]
+
+                [tool.mypy]
+                files = ["src", "tests"]
+                # Report calls of what untaped and other plugins mark deprecated.
+                enable_error_code = ["deprecated"]
 
                 [build-system]
                 """
@@ -213,9 +220,16 @@ class _Scaffold:
             uv pip install -e .
             ```
 
-            Fill the methods in `src/{self.package}/providers/{self.owner_module}.py`, add
-            samples to `tests/{self.package}/providers/test_{self.owner_module}.py`, then run
-            `pytest` and `untaped lint`.
+            Fill the methods in `src/{self.package}/providers/{self.owner_module}.py` and add
+            samples to `tests/{self.package}/providers/test_{self.owner_module}.py`. Then test
+            on the lowest versions this package declares, and on the newest untaped and
+            `{self.owner.distribution}`, whose deprecations `untaped lint` and mypy report:
+
+            ```sh
+            uv sync --resolution lowest-direct && uv run --no-sync pytest \\
+              && uv run --no-sync untaped lint
+            uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy
+            ```
             """
         )
 
