@@ -5,8 +5,8 @@ row is ``untaped.<attribute>`` in kebab case (``untaped.config-permissions``),
 run like any plugin's check, whose result names no id. Each reads
 the config file itself when it runs; when the file doesn't load, the ``load
 config file`` row fails and these report ``not checked``. Rows doctor derives
-for every plugin (settings, state, setup, contracts, caches, skills) stay in
-:mod:`untaped.core.commands.doctor`.
+for every plugin (settings, state, setup, contracts, caches, skills) live in
+:mod:`untaped.core.doctor_rows` and :mod:`untaped.core.doctor_stores`.
 """
 
 from __future__ import annotations

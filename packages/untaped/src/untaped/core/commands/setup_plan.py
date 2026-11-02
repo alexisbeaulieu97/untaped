@@ -18,7 +18,7 @@ from __future__ import annotations
 import shlex
 from typing import TYPE_CHECKING
 
-from untaped.core.commands.doctor import run_line, selected_check_rows
+from untaped.core.commands.doctor import run_line
 from untaped.core.commands.records import SetupActor, SetupState, SetupStep
 from untaped.core.commands.register import Register
 from untaped.core.commands.setup_state import (
@@ -27,6 +27,7 @@ from untaped.core.commands.setup_state import (
     service_marks,
     service_states,
 )
+from untaped.core.doctor_rows import selected_check_rows
 from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE

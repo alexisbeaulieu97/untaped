@@ -33,7 +33,7 @@ from core_test_support.commands.support import (
     write_config,
 )
 from core_test_support.runtime.plugin_harness import make_candidate
-from untaped.core.commands.doctor import collect_doctor_rows
+from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime import bootstrap, mount
 from untaped.runtime.config_read import FORMAT_VERSION
 from untaped.runtime.registry import (

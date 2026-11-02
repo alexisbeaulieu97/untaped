@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, RootModel
 
-from untaped.core.commands.doctor import collect_doctor_rows
+from untaped.core.doctor_rows import collect_doctor_rows
 from untaped.runtime import bootstrap
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.run import invocation
