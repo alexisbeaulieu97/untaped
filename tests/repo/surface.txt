@@ -4224,8 +4224,6 @@ contract lint.Failure.category choice=usage
 contract lint.Failure.category string
 contract lint.Failure.details object default={}
 contract lint.Failure.exit_code integer default=1
-contract lint.Failure.fix_by choice=user
-contract lint.Failure.fix_by string? default=None
 contract lint.Failure.hint string? default=None
 contract lint.Failure.item string? default=None
 contract lint.Failure.message string
@@ -4450,8 +4448,6 @@ record awx.CaseFailure.category string  [experimental]
 record awx.CaseFailure.details object  [experimental]
 record awx.CaseFailure.evidence FailureEvidence  [experimental]
 record awx.CaseFailure.exit_code integer  [experimental]
-record awx.CaseFailure.fix_by choice=user  [experimental]
-record awx.CaseFailure.fix_by string?  [experimental]
 record awx.CaseFailure.hint string?  [experimental]
 record awx.CaseFailure.item string?  [experimental]
 record awx.CaseFailure.level choice=error  [experimental]
@@ -5876,9 +5872,6 @@ record untaped.failure.details default={}
 record untaped.failure.details object
 record untaped.failure.exit_code default=1
 record untaped.failure.exit_code integer
-record untaped.failure.fix_by choice=user
-record untaped.failure.fix_by default=None
-record untaped.failure.fix_by string?
 record untaped.failure.hint default=None
 record untaped.failure.hint string?
 record untaped.failure.item default=None
@@ -6042,12 +6035,10 @@ record untaped.setting_outcome.error Failure?
 record untaped.setting_outcome.key string
 record untaped.setting_outcome.profile string
 record untaped.setup_step
-record untaped.setup_step.by choice=agent
-record untaped.setup_step.by choice=user
-record untaped.setup_step.by string
 record untaped.setup_step.detail string
 record untaped.setup_step.plugin string
 record untaped.setup_step.run string[]
+record untaped.setup_step.secret boolean
 record untaped.setup_step.state choice=done
 record untaped.setup_step.state choice=failed
 record untaped.setup_step.state choice=skipped
@@ -6314,13 +6305,11 @@ sdk untaped.sdk.ConfigError()
 sdk untaped.sdk.ConfigError(*args)
 sdk untaped.sdk.ConfigError(category=) default=None
 sdk untaped.sdk.ConfigError(details=) default=None
-sdk untaped.sdk.ConfigError(fix_by=) default=None
 sdk untaped.sdk.ConfigError(hint=) default=None
 sdk untaped.sdk.ConfigError(system=) default=None
 sdk untaped.sdk.ConfigError.category class
 sdk untaped.sdk.ConfigError.details class
 sdk untaped.sdk.ConfigError.exit_code
-sdk untaped.sdk.ConfigError.fix_by class
 sdk untaped.sdk.ConfigError.hint class
 sdk untaped.sdk.ConfigError.retryable
 sdk untaped.sdk.ConfigError.system class
@@ -6439,7 +6428,6 @@ sdk untaped.sdk.Failed(message@1=) default="the command failed"
 sdk untaped.sdk.Failed.category class
 sdk untaped.sdk.Failed.details class
 sdk untaped.sdk.Failed.exit_code
-sdk untaped.sdk.Failed.fix_by class
 sdk untaped.sdk.Failed.hint class
 sdk untaped.sdk.Failed.retryable
 sdk untaped.sdk.Failed.system class
@@ -6447,14 +6435,12 @@ sdk untaped.sdk.Failure extra=forbid
 sdk untaped.sdk.Failure(*, message, category, system)
 sdk untaped.sdk.Failure(details=) default={}
 sdk untaped.sdk.Failure(exit_code=) default=1
-sdk untaped.sdk.Failure(fix_by=) default=None
 sdk untaped.sdk.Failure(hint=) default=None
 sdk untaped.sdk.Failure(item=) default=None
 sdk untaped.sdk.Failure(retryable=) default=false
 sdk untaped.sdk.Failure.category
 sdk untaped.sdk.Failure.details
 sdk untaped.sdk.Failure.exit_code
-sdk untaped.sdk.Failure.fix_by
 sdk untaped.sdk.Failure.from_exception(error)
 sdk untaped.sdk.Failure.from_exception(message=) default=None
 sdk untaped.sdk.Failure.hint
@@ -6490,7 +6476,6 @@ sdk untaped.sdk.HttpError.category class
 sdk untaped.sdk.HttpError.describes_body class
 sdk untaped.sdk.HttpError.details class
 sdk untaped.sdk.HttpError.exit_code
-sdk untaped.sdk.HttpError.fix_by class
 sdk untaped.sdk.HttpError.hint class
 sdk untaped.sdk.HttpError.retryable
 sdk untaped.sdk.HttpError.system class
@@ -6506,7 +6491,6 @@ sdk untaped.sdk.HttpStatusError.category class
 sdk untaped.sdk.HttpStatusError.describes_body class
 sdk untaped.sdk.HttpStatusError.details class
 sdk untaped.sdk.HttpStatusError.exit_code
-sdk untaped.sdk.HttpStatusError.fix_by class
 sdk untaped.sdk.HttpStatusError.hint class
 sdk untaped.sdk.HttpStatusError.retryable
 sdk untaped.sdk.HttpStatusError.system class
@@ -6522,7 +6506,6 @@ sdk untaped.sdk.HttpTransportError.category class
 sdk untaped.sdk.HttpTransportError.describes_body class
 sdk untaped.sdk.HttpTransportError.details class
 sdk untaped.sdk.HttpTransportError.exit_code
-sdk untaped.sdk.HttpTransportError.fix_by class
 sdk untaped.sdk.HttpTransportError.hint class
 sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
@@ -6569,7 +6552,6 @@ sdk untaped.sdk.Matched(message@1=) default="the check matched"
 sdk untaped.sdk.Matched.category class
 sdk untaped.sdk.Matched.details class
 sdk untaped.sdk.Matched.exit_code
-sdk untaped.sdk.Matched.fix_by class
 sdk untaped.sdk.Matched.hint class
 sdk untaped.sdk.Matched.retryable
 sdk untaped.sdk.Matched.system class
@@ -6586,7 +6568,6 @@ sdk untaped.sdk.OperationCancelledError(message@1=) default="cancelled; no chang
 sdk untaped.sdk.OperationCancelledError.category class
 sdk untaped.sdk.OperationCancelledError.details class
 sdk untaped.sdk.OperationCancelledError.exit_code
-sdk untaped.sdk.OperationCancelledError.fix_by class
 sdk untaped.sdk.OperationCancelledError.hint class
 sdk untaped.sdk.OperationCancelledError.retryable
 sdk untaped.sdk.OperationCancelledError.system class
@@ -6811,13 +6792,11 @@ sdk untaped.sdk.UntapedError()
 sdk untaped.sdk.UntapedError(*args)
 sdk untaped.sdk.UntapedError(category=) default=None
 sdk untaped.sdk.UntapedError(details=) default=None
-sdk untaped.sdk.UntapedError(fix_by=) default=None
 sdk untaped.sdk.UntapedError(hint=) default=None
 sdk untaped.sdk.UntapedError(system=) default=None
 sdk untaped.sdk.UntapedError.category class
 sdk untaped.sdk.UntapedError.details class
 sdk untaped.sdk.UntapedError.exit_code
-sdk untaped.sdk.UntapedError.fix_by class
 sdk untaped.sdk.UntapedError.hint class
 sdk untaped.sdk.UntapedError.retryable
 sdk untaped.sdk.UntapedError.system class
@@ -6825,13 +6804,11 @@ sdk untaped.sdk.UsageError()
 sdk untaped.sdk.UsageError(*args)
 sdk untaped.sdk.UsageError(category=) default=None
 sdk untaped.sdk.UsageError(details=) default=None
-sdk untaped.sdk.UsageError(fix_by=) default=None
 sdk untaped.sdk.UsageError(hint=) default=None
 sdk untaped.sdk.UsageError(system=) default=None
 sdk untaped.sdk.UsageError.category class
 sdk untaped.sdk.UsageError.details class
 sdk untaped.sdk.UsageError.exit_code
-sdk untaped.sdk.UsageError.fix_by class
 sdk untaped.sdk.UsageError.hint class
 sdk untaped.sdk.UsageError.retryable
 sdk untaped.sdk.UsageError.system class
@@ -6847,13 +6824,11 @@ sdk untaped.sdk.contracts.Ambiguous()
 sdk untaped.sdk.contracts.Ambiguous(*args)
 sdk untaped.sdk.contracts.Ambiguous(category=) default=None
 sdk untaped.sdk.contracts.Ambiguous(details=) default=None
-sdk untaped.sdk.contracts.Ambiguous(fix_by=) default=None
 sdk untaped.sdk.contracts.Ambiguous(hint=) default=None
 sdk untaped.sdk.contracts.Ambiguous(system=) default=None
 sdk untaped.sdk.contracts.Ambiguous.category class
 sdk untaped.sdk.contracts.Ambiguous.details class
 sdk untaped.sdk.contracts.Ambiguous.exit_code
-sdk untaped.sdk.contracts.Ambiguous.fix_by class
 sdk untaped.sdk.contracts.Ambiguous.hint class
 sdk untaped.sdk.contracts.Ambiguous.retryable
 sdk untaped.sdk.contracts.Ambiguous.system class
@@ -6881,7 +6856,6 @@ sdk untaped.sdk.contracts.NoProviderReady(quarantined=) default=None
 sdk untaped.sdk.contracts.NoProviderReady.category class
 sdk untaped.sdk.contracts.NoProviderReady.details class
 sdk untaped.sdk.contracts.NoProviderReady.exit_code
-sdk untaped.sdk.contracts.NoProviderReady.fix_by class
 sdk untaped.sdk.contracts.NoProviderReady.hint class
 sdk untaped.sdk.contracts.NoProviderReady.retryable
 sdk untaped.sdk.contracts.NoProviderReady.system class
@@ -6889,13 +6863,11 @@ sdk untaped.sdk.contracts.NotFound()
 sdk untaped.sdk.contracts.NotFound(*args)
 sdk untaped.sdk.contracts.NotFound(category=) default=None
 sdk untaped.sdk.contracts.NotFound(details=) default=None
-sdk untaped.sdk.contracts.NotFound(fix_by=) default=None
 sdk untaped.sdk.contracts.NotFound(hint=) default=None
 sdk untaped.sdk.contracts.NotFound(system=) default=None
 sdk untaped.sdk.contracts.NotFound.category class
 sdk untaped.sdk.contracts.NotFound.details class
 sdk untaped.sdk.contracts.NotFound.exit_code
-sdk untaped.sdk.contracts.NotFound.fix_by class
 sdk untaped.sdk.contracts.NotFound.hint class
 sdk untaped.sdk.contracts.NotFound.retryable
 sdk untaped.sdk.contracts.NotFound.system class
@@ -6973,7 +6945,6 @@ sdk untaped.sdk.git.GitCommandError(timed_out=) default=false
 sdk untaped.sdk.git.GitCommandError.category class
 sdk untaped.sdk.git.GitCommandError.details class
 sdk untaped.sdk.git.GitCommandError.exit_code
-sdk untaped.sdk.git.GitCommandError.fix_by class
 sdk untaped.sdk.git.GitCommandError.hint class
 sdk untaped.sdk.git.GitCommandError.retryable
 sdk untaped.sdk.git.GitCommandError.system class
@@ -7496,7 +7467,6 @@ sdk untaped.sdk.storage.NeverRefreshed(cache, key, label)
 sdk untaped.sdk.storage.NeverRefreshed.category class
 sdk untaped.sdk.storage.NeverRefreshed.details class
 sdk untaped.sdk.storage.NeverRefreshed.exit_code
-sdk untaped.sdk.storage.NeverRefreshed.fix_by class
 sdk untaped.sdk.storage.NeverRefreshed.hint class
 sdk untaped.sdk.storage.NeverRefreshed.retryable
 sdk untaped.sdk.storage.NeverRefreshed.system class
@@ -7524,13 +7494,11 @@ sdk untaped.sdk.storage.RowExists()  [experimental]
 sdk untaped.sdk.storage.RowExists(*args)  [experimental]
 sdk untaped.sdk.storage.RowExists(category=) default=None  [experimental]
 sdk untaped.sdk.storage.RowExists(details=) default=None  [experimental]
-sdk untaped.sdk.storage.RowExists(fix_by=) default=None  [experimental]
 sdk untaped.sdk.storage.RowExists(hint=) default=None  [experimental]
 sdk untaped.sdk.storage.RowExists(system=) default=None  [experimental]
 sdk untaped.sdk.storage.RowExists.category class  [experimental]
 sdk untaped.sdk.storage.RowExists.details class  [experimental]
 sdk untaped.sdk.storage.RowExists.exit_code  [experimental]
-sdk untaped.sdk.storage.RowExists.fix_by class  [experimental]
 sdk untaped.sdk.storage.RowExists.hint class  [experimental]
 sdk untaped.sdk.storage.RowExists.retryable  [experimental]
 sdk untaped.sdk.storage.RowExists.system class  [experimental]

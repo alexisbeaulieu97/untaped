@@ -210,10 +210,7 @@ def _login(credential: Credential[Any], candidate: Candidate, secret: SecretChoi
         settings = load_settings_section(section)
     key = credential_key(credential, settings)
     if key is None:
-        raise ConfigError(
-            f"{section} has no settings to file the {credential.label} under",
-            fix_by="user",
-        )
+        raise ConfigError(f"{section} has no settings to file the {credential.label} under")
     notes: list[Note] = []
     variables = _key_variables(credential, section, type(settings))
     if variables and how != "env":

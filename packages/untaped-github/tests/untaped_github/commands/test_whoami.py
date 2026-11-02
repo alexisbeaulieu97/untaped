@@ -69,7 +69,7 @@ def test_whoami_rejected_token_hints_at_setting_a_new_one(monkeypatch: pytest.Mo
     assert result.exit_code == 4
     assert result.stderr.endswith(
         "error: GitHub rejected the configured token (HTTP 401)\n"
-        "hint (your step): run `untaped auth login github`\n"
+        "hint: run `untaped auth login github`\n"
     )
 
 

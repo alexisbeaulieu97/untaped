@@ -151,8 +151,8 @@ def test_manual_fixes_are_skipped_with_what_they_need(monkeypatch: pytest.Monkey
     result = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert result.exit_code == 0, result.output
     assert [(row["action"], row["detail"]) for row in _rows(result)] == [
-        ("skipped", "needs <URL>; run it yourself"),
-        ("skipped", "asks for input; run it yourself"),
+        ("skipped", "needs <URL>"),
+        ("skipped", "asks for input"),
     ]
     assert RAN == []
 
@@ -318,7 +318,7 @@ def test_dry_run_plans_automatic_fixes_and_runs_nothing(monkeypatch: pytest.Monk
     assert result.exit_code == 0, result.output
     assert [(row["action"], row["detail"]) for row in _rows(result)] == [
         ("planned", "would fix svc.a"),
-        ("skipped", "needs <URL>; run it yourself"),
+        ("skipped", "needs <URL>"),
     ]
     assert RAN == []
 
@@ -350,7 +350,7 @@ def test_a_declined_prompt_runs_nothing(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.exit_code == 1
     assert result.stderr.endswith("cancelled; no changes made\n")
     assert "Fixes to run (1):\n  → untaped config migrate  svc.a\n" in result.stderr
-    assert "Needs you (1):\n  → untaped auth login svc  svc.token\n" in result.stderr
+    assert "Skipped (1):\n  → untaped auth login svc  svc.token\n" in result.stderr
     assert backend.asked == [("confirm", "Run 1 automatic fix?")]
     assert RAN == []
 
@@ -456,7 +456,7 @@ def test_the_result_is_one_line_per_fix(monkeypatch: pytest.MonkeyPatch) -> None
     assert result.stdout.splitlines() == [
         "  ✓ untaped config migrate  fixed    2 moved",
         "  ◐ untaped skills update   partial  2 moved; still warns: svc.b is off",
-        "  ○ untaped auth login svc  skipped  asks for input; run it yourself",
+        "  ○ untaped auth login svc  skipped  asks for input",
     ]
     assert "doctor fix: 1 fixed, 1 partial, 1 skipped" in result.stderr
 

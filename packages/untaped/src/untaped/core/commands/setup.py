@@ -147,9 +147,9 @@ class Plan(Command[CoreSettings]):
     Each row's `run` is the complete argv to pass after `untaped`; every
     one but `profile create` starts with `--profile NAME`, so it acts on
     that profile. A `<NAME>` token in it (`<BASE_URL>`, `<COMMAND>`) is a
-    value to ask the user for. A row `by: user` asks for or reveals a token, so
-    it is the user's to run in their own terminal; `untaped setup --only
-    SECTIONS` runs all of them on one screen.
+    value to supply. A row with `secret: true` takes a secret: its `run`
+    asks for a token or password at a terminal, or its `<NAME>` value is
+    one; `untaped setup --only SECTIONS` runs all of them on one screen.
 
     Examples:
         $ untaped setup plan --format json

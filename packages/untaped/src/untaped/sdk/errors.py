@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from enum import IntEnum, StrEnum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from untaped.runtime.redaction import redact_url_password
 from untaped.sdk._run import NoRunError, current_run
@@ -96,10 +96,6 @@ def most_severe[E: BaseException](errors: Iterable[E]) -> E:
         for error in candidates
     ]
     return candidates[codes.index(combine_exit_codes(*codes))]
-
-
-FixBy = Literal["user"]
-"""Who must take an error's hint step when an agent may not: only ``"user"`` exists."""
 
 
 class ErrorCategory(StrEnum):
@@ -227,9 +223,6 @@ class UntapedError(Exception):
     reads ``run `untaped config set …``` as this run spells it."""
     details: Mapping[str, object] = _NO_DETAILS
     """Machine-readable context: ``status``, ``url``, related ids."""
-    fix_by: FixBy | None = None
-    """``"user"`` when only the person can take the hint's step (a login, a secret
-    variable): an agent reports it and does not run it."""
 
     def __init__(
         self,
@@ -238,7 +231,6 @@ class UntapedError(Exception):
         system: str | Service | None = None,
         hint: str | SpelledCommand | None = None,
         details: Mapping[str, object] | None = None,
-        fix_by: FixBy | None = None,
     ) -> None:
         super().__init__(*args)
         if category is not None:
@@ -249,8 +241,6 @@ class UntapedError(Exception):
             self.hint = hint if isinstance(hint, str) else _run_hint(hint)
         if details:
             self.details = dict(details)
-        if fix_by is not None:
-            self.fix_by = fix_by
 
     @property
     def exit_code(self) -> int:
@@ -279,26 +269,6 @@ def attribution(error: BaseException) -> dict[str, Any]:
     if error.details:
         fields["details"] = dict(error.details)
     return fields
-
-
-def fix_by(error: BaseException) -> FixBy | None:
-    """Who must take ``error``'s hint step: its own ``fix_by``, else its cause's.
-
-    A replacement made with :func:`attribution` and ``raise … from exc``
-    keeps the caught error's hint, so it keeps whose step that hint is
-    without its constructor taking ``fix_by``.
-    """
-    seen: set[int] = set()
-    current: BaseException | None = error
-    while isinstance(current, UntapedError) and id(current) not in seen:
-        if current.fix_by is not None:
-            return current.fix_by
-        seen.add(id(current))
-        cause = current.__cause__
-        if not isinstance(cause, UntapedError) or cause.hint != current.hint:
-            return None
-        current = cause
-    return None
 
 
 class ConfigError(UntapedError):

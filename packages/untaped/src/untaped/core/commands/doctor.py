@@ -89,11 +89,10 @@ class Fix(Command[CoreSettings]):
     """Run every automatic fix doctor found, after one confirmation.
 
     No automatic fix asks for or prints a token, so `--yes` passes none.
-    A keychain may show an unlock prompt on the user's screen; a locked
+    A keychain may show an unlock prompt on the screen; a locked
     `pass` store exits 5 with a hint naming the unlock command. A `skipped`
     row's `fix` is the argv to run after `untaped`: a `<NAME>` token in it
-    is a value to ask for, and a fix that asks for or reveals a token
-    (`auth login`) is the user's to run.
+    is a value to supply, and `auth login` asks for a token.
 
     Examples:
         $ untaped doctor fix --dry-run
