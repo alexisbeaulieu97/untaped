@@ -43,21 +43,22 @@ fixes stay `skipped` and its refused ones `failed`.
 
 A `fix_outcome` row has `fix` (the argv run after `untaped`), `checks` (the
 doctor checks it covers), `action` (`fixed`, `partial` when a check still
-warns or fails afterwards, `failed`, `skipped` for a fix that needs you,
+warns or fails afterwards, `failed`, `skipped` for a fix that is not automatic,
 `planned`), `detail`, and `error` on a failed row.
 
 A `doctor_check` row's `fix`, and a `setup_step` row's `run`, is the argv to
 run after `untaped`, `--profile NAME` first; a `<NAME>` token is a value to
 supply, and `fix` is null on a passing row. A `doctor_check` row's
 `automatic` is true when its fix is safe to run unattended (no value, no
-input, and nothing a person should decide, such as registering an install). A
+input, and nothing to decide, such as registering an install). A
 `setup_step` row also has `step` (`install` for this install's registration,
 `profile`, `<service>.<setting>` for each setting the plugin needs, such as
 `awx.server` and `awx.token`, `<service>.settings` when the service's
 settings are invalid, and `<service>.online.<check>` for each online check,
 such as `awx.online.api`),
-`state` (`done`, `todo`, `failed`, `skipped`), `detail` and `by`: `user` for
-a step that asks for or reveals a secret, else `agent`.
+`state` (`done`, `todo`, `failed`, `skipped`), `detail` and `secret`: true
+for a step that takes a secret (its `run` asks for a token or password, or
+its `<NAME>` value is one).
 
 ## workspace
 

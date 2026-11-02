@@ -76,7 +76,7 @@ def command_line(command: str | SpelledCommand) -> str:
 
 
 def command_argv(command: str | SpelledCommand | Sequence[str], *, profile: str) -> list[str]:
-    """``command`` as the argv an agent runs after ``untaped``.
+    """``command`` as the argv to pass after ``untaped``.
 
     A string, or a command named by its class, is split like a shell would;
     a leading ``untaped`` is dropped. ``--profile <profile>`` leads the argv

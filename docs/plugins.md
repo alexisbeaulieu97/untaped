@@ -235,7 +235,7 @@ warned row, without the program name: a command named by its class
 follows the command when it is renamed, a string split like a shell would, or
 an argv list. Write a value the user supplies as a `<NAME>` placeholder.
 `doctor` emits it as the row's `fix` argv, prefixed with `--profile NAME`
-unless it names one, so an agent can run it as is. Set `automatic=True` only on a fix that meets the rule in the
+unless it names one, so it runs as is. Set `automatic=True` only on a fix that meets the rule in the
 `DoctorResult` docstring.
 
 ## Keeping what users create

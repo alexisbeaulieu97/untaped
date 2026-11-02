@@ -269,7 +269,7 @@ def ready_store(credential: Credential[Any], backend: str | None = None) -> Secr
     store: SecretStore | None = _TEST_STORE.get() or pick_store(_store_name(backend))
     if store is None:
         message, hint = no_backend_message(credential.login)
-        raise ConfigError(message, hint=hint, fix_by="user")
+        raise ConfigError(message, hint=hint)
     store.preflight()
     return store
 
