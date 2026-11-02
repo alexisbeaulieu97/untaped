@@ -701,7 +701,8 @@ def _awx_samples() -> list[WireModel]:
     from untaped_awx.domain.outcomes import CopyOutcome, RenameOutcome
     from untaped_awx.domain.ping import PingStatus
     from untaped_awx.domain.suites.case_failure import failure
-    from untaped_awx.domain.suites.suite import CaseResult, ExpectationResult
+    from untaped_awx.domain.suites.expectations import ExpectationResult
+    from untaped_awx.domain.suites.results import CaseResult
     from untaped_awx.domain.workflow_node import WorkflowNode
     from untaped_awx.domain.workflow_usage import WorkflowUsage
     from untaped_awx.infrastructure.resources.specs import ALL_SPECS

@@ -9,7 +9,7 @@ import pytest
 
 from untaped.sdk import ErrorCategory
 from untaped_awx.domain.suites.case_failure import CaseFailure, failure, in_node
-from untaped_awx.domain.suites.suite import Baseline, CaseResult, SuiteRunOutcome
+from untaped_awx.domain.suites.results import Baseline, CaseResult, SuiteRunOutcome
 from untaped_awx.domain.suites.suite_baseline import saved_baselines
 
 _SYSTEMS = {
