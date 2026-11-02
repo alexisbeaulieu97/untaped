@@ -476,7 +476,7 @@ class RunTestSuite:
         rerun, rerun_job, rerun_read = self._run_case(item, _RERUN)
         check = idempotence(rerun)
         failure = rerun.failure
-        if failure is not None and failure.system == EXPECTATION:
+        if failure is not None and failure.system == EXPECTATION.name():
             # A rerun that succeeded fails only its ``changed`` check.
             changed = None
             if self._evidence and rerun_job is not None:

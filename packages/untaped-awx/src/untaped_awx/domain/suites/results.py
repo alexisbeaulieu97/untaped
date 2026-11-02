@@ -156,8 +156,9 @@ class CaseResult(Record):
         return True
 
 
-_NOTHING_RAN = failure(SUITE, ErrorCategory.NOT_FOUND, "no case ran")
-"""A run that launched nothing tested nothing: a typo in ``--case`` or an empty suite."""
+def _nothing_ran() -> CaseFailure:
+    """A run that launched nothing tested nothing: a typo in ``--case`` or an empty suite."""
+    return failure(SUITE, ErrorCategory.NOT_FOUND, "no case ran")
 
 
 class SuiteRunOutcome(BaseModel):
@@ -186,7 +187,7 @@ class SuiteRunOutcome(BaseModel):
             if row.fails_run and row.failure
         ]
         if all(row.result is None for row in self.results):
-            deciding.append((None, _NOTHING_RAN))
+            deciding.append((None, _nothing_ran()))
         return [*deciding, *self.carried]
 
     def compared(

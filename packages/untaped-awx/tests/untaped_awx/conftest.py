@@ -37,6 +37,16 @@ def _awx(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def _run(_awx: None) -> Iterator[None]:
+    """A test of the use cases runs inside a run of awx, as a command does.
+
+    So the systems it blames read the plugin's name, and its hints spell its commands.
+    """
+    with installed().running():
+        yield
+
+
 @pytest.fixture
 def fake_aap(monkeypatch: pytest.MonkeyPatch, clock: ManualClock) -> Iterator[FakeAap]:
     """Fake Controller responses with immediate polls and HTTP retries.

@@ -12,11 +12,11 @@ AWX = Service(AwxSettings)
 """AWX itself: the system an :class:`~untaped_awx.errors.AwxError` names until one of
 the parts below is blamed."""
 
-SUITE = "awx.suite"
-CREDENTIALS = "awx.credentials"
-CONTROLLER = "awx.controller"
-SCM = "awx.scm"
-INVENTORIES = "awx.inventories"
-HOSTS = "awx.hosts"
-PLAYBOOK = "awx.playbook"
-EXPECTATION = "awx.expectation"
+SUITE = Service(AwxSettings, part="suite")
+CREDENTIALS = Service(AwxSettings, part="credentials")
+CONTROLLER = Service(AwxSettings, part="controller")
+SCM = Service(AwxSettings, part="scm")
+INVENTORIES = Service(AwxSettings, part="inventories")
+HOSTS = Service(AwxSettings, part="hosts")
+PLAYBOOK = Service(AwxSettings, part="playbook")
+EXPECTATION = Service(AwxSettings, part="expectation")

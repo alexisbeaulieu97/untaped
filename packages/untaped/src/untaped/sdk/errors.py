@@ -173,30 +173,37 @@ class Service:
     """A plugin's own service as an error's ``system``: ``system = Service(AwxSettings)``.
 
     It names the plugin through its settings model, so the error follows a
-    renamed plugin. An error resolves it when it is raised, inside the run,
-    and keeps the name, so it still reads after the run ends; read on the
-    class, it is the plugin's name in the current run. With no run, or no
-    composed plugin owning the model, it reads as its repr, never raising:
-    an error's attribution must not fail.
+    renamed plugin. ``part`` names one part of the service the plugin blames
+    on its own: ``Service(AwxSettings, part="suite")`` reads ``awx.suite``.
+    An error resolves it when it is raised, inside the run, and keeps the
+    name, so it still reads after the run ends; read on the class, it is the
+    plugin's name in the current run. With no run, or no composed plugin
+    owning the model, it reads as its repr, never raising: an error's
+    attribution must not fail.
     """
 
-    __slots__ = ("model",)
+    __slots__ = ("model", "part")
 
-    def __init__(self, model: type[BaseModel]) -> None:
+    def __init__(self, model: type[BaseModel], *, part: str | None = None) -> None:
+        if part is not None and (not part or "." in part):
+            raise ValueError(f"a service's part is one word, not {part!r}")
         self.model = model
+        self.part = part
 
     def __get__(self, instance: object, owner: type | None = None) -> str:
         return self.name()
 
     def name(self) -> str:
-        """The plugin's name in the current run, else ``Service(Model)``."""
+        """The plugin's name in the current run, then ``.part`` if given; else the repr."""
         try:
-            return current_run().composition.owner_of_settings(self.model)
+            plugin = current_run().composition.owner_of_settings(self.model)
         except NoRunError, LookupError:
             return repr(self)
+        return plugin if self.part is None else f"{plugin}.{self.part}"
 
     def __repr__(self) -> str:
-        return f"Service({self.model.__qualname__})"
+        part = "" if self.part is None else f", part={self.part!r}"
+        return f"Service({self.model.__qualname__}{part})"
 
 
 class UntapedError(Exception):
