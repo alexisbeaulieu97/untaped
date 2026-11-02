@@ -10,11 +10,11 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import pytest
 import yaml
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, SecretStr
 
 from core_test_support.commands.stores import install_fake_stores
 from core_test_support.commands.support import (
@@ -27,10 +27,9 @@ from core_test_support.commands.support import (
     wiz_api,
     write_config,
 )
-from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
 from untaped.sdk import Plugin
-from untaped.sdk.health import Suggest
+from untaped.sdk.health import NeedsSetup, Suggest
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.testing import (
@@ -367,7 +366,7 @@ def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(
-    ("run", "secret"),
+    ("fix", "secret"),
     [
         (["--profile", "auth", "config", "set", "wiz.server.url", "<URL>"], False),
         (["--profile", "work", "auth", "login", "wiz"], True),
@@ -375,9 +374,37 @@ def test_an_env_configured_service_completes_the_plan(monkeypatch: pytest.Monkey
     ],
 )
 def test_whether_a_manual_fix_takes_a_secret_depends_on_its_command(
-    run: list[str], secret: bool
+    _isolated_config: Path, fix: list[str], secret: bool
 ) -> None:
-    assert setup_plan._takes_secret(run, automatic=False) is secret
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(id="wiz.api", ok=False, detail="no", fix=fix)
+
+    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    wiz = make_plugin("wiz", settings=WizProfile, api=check)
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
+    online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
+    assert (online["state"], online["secret"]) == ("failed", secret)
+
+
+class PinProfile(BaseModel):
+    """A plugin needing a ``SecretStr`` it does not mark ``Secret`` (section ``pin``)."""
+
+    pin: Annotated[SecretStr | None, NeedsSetup] = None
+
+
+def test_a_failed_check_whose_fix_sets_a_masked_value_takes_a_secret(
+    _isolated_config: Path,
+) -> None:
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(
+            id="pin.api", ok=False, detail="rejected", fix="config set pin.pin <PIN>"
+        )
+
+    check = DoctorCheck(title="pin API reachable", run=run, online=True)
+    pin = make_plugin("pin", settings=PinProfile, api=check)
+    write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
+    online = _step(_plan("--online", specs=(pin,)), "pin.online.api")
+    assert (online["state"], online["secret"]) == ("failed", True)
 
 
 @pytest.mark.parametrize(("automatic", "secret"), [(True, False), (False, True)])

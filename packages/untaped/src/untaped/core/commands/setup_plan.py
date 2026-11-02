@@ -154,8 +154,7 @@ def _service_rows(plugin: ComposedPlugin, state: ServiceState, profile: str) -> 
         else:
             run = command_argv(set_command(field, marks, section=section), profile=profile)
             detail = f"{section}.{field.key} is not set"
-            secret = field.is_secret or field.masked
-            rows.append(_row(step, name, "todo", detail, run, secret=secret))
+            rows.append(_row(step, name, "todo", detail, run, secret=field.masked))
     return rows
 
 
@@ -215,16 +214,25 @@ def _failed_check(plugin: ComposedPlugin, step: str, row: Row) -> Row:
     detail = str(row["detail"])
     fix = row.get("fix")
     run = fix if isinstance(fix, list) else None
-    secret = _takes_secret(run, automatic=row.get("automatic") is True)
+    secret = _takes_secret(plugin, run, automatic=row.get("automatic") is True)
     return _row(step, name, "failed", detail, run, secret=secret)
 
 
-def _takes_secret(run: list[str] | None, *, automatic: bool) -> bool:
-    """Whether a fix takes a secret: ``auth …`` does, unless it is automatic.
+def _takes_secret(plugin: ComposedPlugin, run: list[str] | None, *, automatic: bool) -> bool:
+    """Whether a fix takes a secret: ``auth …``, or the command that sets a masked field.
 
-    Only ``auth`` writes a secret, and it asks for it; no automatic fix asks.
+    No automatic fix asks for or prints a secret.
     """
-    return not automatic and split_profile(run or [])[1][:1] == ["auth"]
+    if automatic:
+        return False
+    command = split_profile(run or [])[1]
+    if command[:1] == ["auth"]:
+        return True
+    marks = service_marks(plugin)
+    return any(
+        field.masked and set_command(field, marks, section=plugin.name) == command
+        for field in marks.required
+    )
 
 
 __all__ = ["emit_plan", "pending", "plan_rows"]
