@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from untaped.sdk import ErrorCategory, UntapedError, UsageError, checkout_root
+from untaped.sdk import ErrorCategory, System, UntapedError, UsageError, checkout_root
 from untaped_lint.application import repo_file
 from untaped_lint.application.hints import lint_line
 from untaped_lint.records import RULE_ID, ScaffoldOutcome
@@ -90,7 +90,7 @@ def scaffold(
         raise UntapedError(
             f"{taken[0]} already exists; pick another rule id",
             category=ErrorCategory.CONFLICT,
-            system="local",
+            system=System.LOCAL,
         )
     entry = _linters_entry(lint_file, current, key, rules_dir, root)
     action = "planned" if dry_run else "created"
@@ -166,7 +166,7 @@ def _linters_entry(
             f"{lint_file}: can't add linters.{key} to this layout; add it yourself: "
             f"linters: {{{key}: {{rules: {relative}}}}}",
             category=ErrorCategory.CONFLICT,
-            system="local",
+            system=System.LOCAL,
         )
     return updated, False
 

@@ -21,6 +21,7 @@ from untaped.sdk import (
     Output,
     Positional,
     Stdin,
+    System,
     TextOrStdin,
     UntapedError,
     UsageError,
@@ -246,7 +247,7 @@ class Comment(SendsDirectly):
         else:
             raise UsageError("a comment needs --body (- reads stdin) or --body-file")
         if not body.strip():
-            raise JiraError("the comment's body is empty", category="invalid", system="local")
+            raise JiraError("the comment's body is empty", category="invalid", system=System.LOCAL)
 
         def send(client: JiraClient) -> IssueOutcome:
             result = client.add_comment(key, body)

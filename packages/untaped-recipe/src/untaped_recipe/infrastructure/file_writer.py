@@ -8,7 +8,7 @@ import uuid
 from collections.abc import Iterable
 from pathlib import Path
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, System, UntapedError
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange
 
@@ -17,7 +17,7 @@ class ApplyWriteError(UntapedError):
     """A planned target could not be written safely (a failed local write)."""
 
     category = ErrorCategory.FAILED
-    system = "local"
+    system = System.LOCAL
 
     def __init__(self, message: str, *, rollback_incomplete: bool = False) -> None:
         super().__init__(message)

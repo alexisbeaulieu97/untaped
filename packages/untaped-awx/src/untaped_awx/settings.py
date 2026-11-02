@@ -43,7 +43,6 @@ class AwxSettings(BaseModel):
 
     retired_keys: ClassVar[Mapping[str, str]] = {
         "base_url": "server.url",
-        "test_timeout": "test_timeout_seconds",
     }
 
     model_config = ConfigDict(frozen=True)

@@ -22,6 +22,7 @@ from untaped.sdk import (
     ConfigError,
     GitCommandError,
     GitResult,
+    System,
     attribution,
     git_toplevel,
     run_git,
@@ -53,11 +54,13 @@ class GitSource:
         except GitCommandError as exc:
             raise ConfigError(f"--source-ref: {exc}", **attribution(exc)) from exc
         if root is None:
-            raise ConfigError(f"--source-ref: {cwd} is not inside a git repository", system="git")
+            raise ConfigError(
+                f"--source-ref: {cwd} is not inside a git repository", system=System.GIT
+            )
         if ref == "HEAD":
             pushed_branch(cwd, flag="--source-ref")
         unknown = ConfigError(
-            f"--source-ref {ref}: not a commit in {root}", category="not_found", system="git"
+            f"--source-ref {ref}: not a commit in {root}", category="not_found", system=System.GIT
         )
         if ref.startswith("-"):
             raise unknown
@@ -77,7 +80,7 @@ class GitSource:
         remotes = self._git("remote").text.split()
         if not remotes:
             raise ConfigError(
-                f"--source-ref {self.ref}: the repository has no remote", system="git"
+                f"--source-ref {self.ref}: the repository has no remote", system=System.GIT
             )
         for remote in remotes:
             listed = run_git(
@@ -94,7 +97,7 @@ class GitSource:
             return
         raise ConfigError(
             f"--source-ref {self.ref}: commit {self.sha[:12]} is not on any remote; push it first",
-            system="git",
+            system=System.GIT,
         )
 
     def files(self, path: Path, *, suffixes: tuple[str, ...] = DOCUMENT_SUFFIXES) -> list[str]:
@@ -110,7 +113,7 @@ class GitSource:
                 entries.append((mode, name))
         if not entries:
             raise ConfigError(
-                f"{shown} does not exist at {self.ref}", category="not_found", system="git"
+                f"{shown} does not exist at {self.ref}", category="not_found", system=System.GIT
             )
         if entries[0][1] == rel:
             found = [entries[0]]
@@ -120,14 +123,14 @@ class GitSource:
                 raise ConfigError(
                     f"no {'/'.join(suffixes)} files under {shown} at {self.ref}",
                     category="not_found",
-                    system="git",
+                    system=System.GIT,
                 )
         for mode, name in found:
             if mode == _SYMLINK_MODE:
                 raise ConfigError(
                     f"{self.label(name)} is a symbolic link; --source-ref reads regular files only",
                     category="invalid",
-                    system="git",
+                    system=System.GIT,
                 )
         return [name for _mode, name in found]
 
@@ -141,7 +144,7 @@ class GitSource:
                 raise ConfigError(
                     f"cannot read {self.label(rel)}: not UTF-8 text",
                     category="invalid",
-                    system="git",
+                    system=System.GIT,
                 ) from exc
         return self._texts[rel]
 
@@ -157,7 +160,7 @@ class GitSource:
                 rel = candidate.relative_to(self.root).as_posix()
                 return "" if rel == "." else rel
         raise ConfigError(
-            f"{path} is outside the repository {self.root}", category="invalid", system="git"
+            f"{path} is outside the repository {self.root}", category="invalid", system=System.GIT
         )
 
     def _git(self, *args: str, check: bool = True) -> GitResult:

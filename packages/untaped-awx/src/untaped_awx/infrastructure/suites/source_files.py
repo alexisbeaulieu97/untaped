@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
-from untaped.sdk import ConfigError, ErrorCategory
+from untaped.sdk import ConfigError, ErrorCategory, System
 from untaped_awx.domain import Resource
 from untaped_awx.domain.suites.temporary_set import TEMPLATE_KINDS
 from untaped_awx.infrastructure.git_source import GitSource
@@ -55,7 +55,7 @@ class GitSuiteFiles:
                     raise ConfigError(
                         f"no test suites under {named or '.'} at {self._source.ref}",
                         category="not_found",
-                        system="git",
+                        system=System.GIT,
                     )
             found.extend(self._label(rel) for rel in listed)
         return list(dict.fromkeys(found))

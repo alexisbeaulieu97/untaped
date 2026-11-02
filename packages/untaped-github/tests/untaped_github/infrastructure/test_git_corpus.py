@@ -97,46 +97,6 @@ def _branch(git: Git, commit: Commit, source: Path, name: str, rel: str) -> None
     git(source, "checkout", "-q", "main")
 
 
-def test_an_11_0_metadata_file_lists_offline_and_refetches_once(
-    corpus: Callable[..., _Corpus],
-) -> None:
-    env = corpus({"README.md": "hello\n"})
-    env.store.fetch(branches=["main"])
-    env.store.private_file.write_text(  # 11.0's: no stamp, its freshness a field
-        json.dumps(
-            {
-                "repo": "acme/api",
-                "ref": "main",
-                "clone_url": env.source.as_uri(),
-                "fetched_at": "2026-07-06T12:00:00+00:00",
-                "profile": "tags",
-                "ref_globs": ["release/*"],
-                "archived": True,
-                "pushed_at": "2026-07-01T00:00:00Z",
-            }
-        )
-    )
-
-    (row,) = env.cache.list_repos()
-    assert (row.full_name, row.ref, row.profile, row.ref_globs, row.archived, row.fetched_at) == (
-        "acme/api",
-        "main",
-        "tags",
-        ("release/*",),
-        True,
-        None,
-    )
-    found = env.cache.get_repo("acme/api")
-    assert found is not None and found.archived is True
-    assert env.cache.repo_freshness(env.repo) is None  # the sweep refetches it once
-
-    synced = env.sync()
-
-    assert (synced.profile, synced.ref_globs) == ("tags", ("release/*",))  # widened, not lost
-    written = json.loads(env.store.private_file.read_text())
-    assert "fetched_at" not in written and written["pushed_at"] == "2026-07-01T00:00:00Z"
-
-
 @pytest.mark.parametrize(
     "text",
     [

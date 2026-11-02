@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, System, UntapedError
 
 
 class WorkspaceError(UntapedError):
     """Base for workspace errors (local filesystem and state by default)."""
 
-    system = "local"
+    system = System.LOCAL
 
 
 class GitError(WorkspaceError):
     """A git operation on a store repo or worktree failed."""
 
-    system = "git"
+    system = System.GIT
 
 
 class WorkspaceNotFoundError(WorkspaceError):

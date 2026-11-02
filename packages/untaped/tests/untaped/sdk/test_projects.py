@@ -150,14 +150,6 @@ def test_an_unreadable_or_newer_marker_stops_every_use(
         assert caught.value.exit_code == 4
 
 
-def test_a_marker_from_before_the_data_file_still_reads(tmp_path: Path) -> None:
-    project = make_project(tmp_path / "PROJ")
-    marker = project.root / ".untaped" / "project.json"
-    marker.write_text(json.dumps({"untaped": "1", "id": project.id}), encoding="utf-8")
-    projects._forget()
-    assert project_at(project.root) == project
-
-
 # --- init ------------------------------------------------------------------------------
 
 

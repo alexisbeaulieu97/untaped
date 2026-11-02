@@ -724,8 +724,7 @@ def _marker_id(root: Path) -> str | None:
     )
 
     marker = root / DIRECTORY / MARKER
-    # "1": the string stamp project.json had before core's data file (development builds only)
-    match read_data_file(marker, ProjectMarker, legacy_stamps=("1",)):
+    match read_data_file(marker, ProjectMarker):
         case Found(value=found):
             return found.id
         case Absent():

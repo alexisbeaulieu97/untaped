@@ -8,14 +8,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, System, UntapedError
 
 
 class LintError(UntapedError):
     """Base for lint plugin errors: invalid local input unless a subclass says otherwise."""
 
     category = ErrorCategory.INVALID
-    system = "lint"
+    system = System.LOCAL
 
 
 class UnreadableSourceError(LintError):

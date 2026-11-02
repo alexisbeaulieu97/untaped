@@ -23,6 +23,7 @@ from untaped.sdk import (
     NeverRefreshed,
     Parallel,
     Refresh,
+    System,
     UsageError,
     command_line,
     key,
@@ -464,7 +465,7 @@ def _graph_source(data: SourceData, *, default_source: str | None) -> GraphSourc
                     # The user's own setting names a missing source: fix the config.
                     message = f"{message} (set by ansible.default_source)"
                 raise AnsibleError(
-                    message, category="config" if from_default else "not_found", system="local"
+                    message, category="config" if from_default else "not_found", system=System.LOCAL
                 )
             selections.append(
                 SelectedSource(

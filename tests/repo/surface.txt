@@ -8294,9 +8294,7 @@ sdk untaped.sdk.prompt.run_editor(stdin=) default=None
 sdk untaped.sdk.prompt.run_editor(stdout=) default=None
 sdk untaped.sdk.q(value)
 sdk untaped.sdk.raise_usage(message)
-sdk untaped.sdk.read_data_file(legacy_stamps=) default=[]  [experimental]
 sdk untaped.sdk.read_data_file(path, model)  [experimental]
-sdk untaped.sdk.read_data_file(unstamped=) default=refuse  [experimental]
 sdk untaped.sdk.read_stdin()
 sdk untaped.sdk.read_stdin_text()
 sdk untaped.sdk.read_structured_file(flag=) default=None

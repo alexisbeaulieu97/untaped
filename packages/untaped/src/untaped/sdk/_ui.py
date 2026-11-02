@@ -25,6 +25,7 @@ from untaped.sdk.errors import (
     ConfigError,
     OperationCancelledError,
     PromptInterruptedError,
+    System,
     UsageError,
 )
 from untaped.sdk.marks import experimental
@@ -252,7 +253,7 @@ class Ui:
                     f"prompt backend {type(backend).__name__} cannot run screens: "
                     "it has no run_screen method",
                     category="failed",
-                    system="untaped",
+                    system=System.UNTAPED,
                 )
             try:
                 with current_sink().hold():  # a line from a refresh never paints over it
@@ -323,7 +324,7 @@ class Ui:
         ids = [item.id for item in request.catalog.items]
         if len(set(ids)) != len(ids):
             raise ConfigError(
-                "picker items must have unique ids", category="failed", system="untaped"
+                "picker items must have unique ids", category="failed", system=System.UNTAPED
             )
         with self._screen_terminal(command=request.command, alternative=request.alternative):
             try:
@@ -349,12 +350,12 @@ class Ui:
     def _validate_choices[T](choices: Sequence[PromptChoice[T]]) -> None:
         if not choices:
             raise ConfigError(
-                "prompt requires at least one choice", category="failed", system="untaped"
+                "prompt requires at least one choice", category="failed", system=System.UNTAPED
             )
         labels = [choice.label for choice in choices]
         if len(set(labels)) != len(labels):
             raise ConfigError(
-                "prompt choices must have unique labels", category="failed", system="untaped"
+                "prompt choices must have unique labels", category="failed", system=System.UNTAPED
             )
 
 

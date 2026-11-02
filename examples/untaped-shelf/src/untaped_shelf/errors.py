@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from untaped.sdk import UntapedError
+from untaped.sdk import System, UntapedError
 
 
 class ShelfError(UntapedError):
-    """Base for shelf plugin failures."""
+    """Base for shelf plugin failures: shelf has no service, so its files are to blame."""
 
-    system = "shelf"
+    system = System.LOCAL

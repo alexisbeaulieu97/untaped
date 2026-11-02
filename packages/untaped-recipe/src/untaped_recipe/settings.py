@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
-from typing import ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,8 +11,6 @@ from untaped.sdk import Dir, key
 
 class RecipeSettings(BaseModel):
     """Profile settings for local recipe storage."""
-
-    retired_keys: ClassVar[Mapping[str, str]] = {"library_root": "library_dir"}
 
     model_config = ConfigDict(frozen=True)
 

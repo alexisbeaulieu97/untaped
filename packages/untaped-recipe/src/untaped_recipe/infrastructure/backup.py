@@ -43,10 +43,7 @@ class BackupEntry(BaseModel):
 
 
 class BackupMetadata(BaseModel):
-    """A bundle's ``metadata.json``: which recipe ran, with what, over which files.
-
-    A data file since 11.1; 11.0's, unstamped, read in the same shape.
-    """
+    """A bundle's ``metadata.json``: which recipe ran, with what, over which files."""
 
     id: str
     created_at: str | None = None
@@ -323,7 +320,7 @@ def prune_selection(
 
 def read_metadata(bundle: BackupBundle) -> BackupMetadata:
     """One bundle's metadata; ``ValueError`` when it cannot be read."""
-    match read_data_file(bundle.path / METADATA_FILE, BackupMetadata, unstamped="accept"):
+    match read_data_file(bundle.path / METADATA_FILE, BackupMetadata):
         case Found(value=metadata):
             return metadata
         case Absent():

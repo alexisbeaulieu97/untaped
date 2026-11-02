@@ -16,7 +16,8 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Literal
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, Service, System, UntapedError
+from untaped_github.settings import GithubSettings
 
 GithubGraphqlErrorKind = Literal[
     "rate_limited",
@@ -39,7 +40,7 @@ _KIND_CATEGORIES: Mapping[GithubGraphqlErrorKind, ErrorCategory] = MappingProxyT
 class GithubError(UntapedError):
     """Base for GitHub plugin errors."""
 
-    system = "github"
+    system = Service(GithubSettings)
 
 
 class GithubGraphqlError(GithubError):
@@ -70,7 +71,7 @@ class GithubGraphqlError(GithubError):
 class GitCorpusError(GithubError):
     """Local Git corpus operation failure."""
 
-    system = "git"
+    system = System.GIT
 
 
 __all__ = ["GitCorpusError", "GithubError", "GithubGraphqlError", "GithubGraphqlErrorKind"]

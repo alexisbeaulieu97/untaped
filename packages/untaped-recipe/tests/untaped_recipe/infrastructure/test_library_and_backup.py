@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import stat
 from datetime import UTC, datetime
@@ -470,7 +469,7 @@ def test_backup_restore_reports_corrupt_metadata(tmp_path: Path, content: str) -
         store.plan_restore(draft.id)
 
 
-def test_backup_metadata_is_a_data_file_with_its_fields_where_11_0_reads_them(
+def test_backup_metadata_is_a_data_file_with_its_fields_at_the_top_level(
     tmp_path: Path,
 ) -> None:
     target = tmp_path / "target"
@@ -487,47 +486,9 @@ def test_backup_metadata_is_a_data_file_with_its_fields_where_11_0_reads_them(
     raw = json.loads((draft.path / "metadata.json").read_text())
     assert next(iter(raw)) == "untaped"
     assert raw["untaped"]["file"] == 1
-    # 11.0's recipe reads these by key and never looks at the stamp.
     assert (raw["id"], raw["recipe"], raw["inputs"]) == (draft.id, "demo", {"service": "api"})
     assert raw["files"][0]["relative_path"] == "a.txt"
     assert raw["files"][0]["backup_file"] == "files/0"
-
-
-def test_a_backup_11_0_wrote_still_reads_and_restores(tmp_path: Path) -> None:
-    target = tmp_path / "target"
-    target.mkdir()
-    (target / "a.txt").write_text("b\n")
-    bundle = tmp_path / "backups" / "20261001T120000000000Z-0123abcd"
-    (bundle / "files").mkdir(parents=True)
-    (bundle / "files" / "0").write_text("a\n")
-    metadata = {
-        "created_at": "2026-10-01T12:00:00+00:00",
-        "files": [
-            {
-                "after_hash": hashlib.sha256(b"b\n").hexdigest(),
-                "backup_file": "files/0",
-                "before_hash": hashlib.sha256(b"a\n").hexdigest(),
-                "inputs": {"service": "api"},
-                "relative_path": "a.txt",
-                "target": str(target),
-            }
-        ],
-        "id": bundle.name,
-        "inputs": {"service": "api"},
-        "recipe": "demo",
-    }
-    # As 11.0 wrote it: no stamp, indented, keys sorted.
-    (bundle / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True))
-    store = BackupStore(tmp_path / "backups")
-
-    read = store.metadata("latest")
-    assert (read.recipe, read.created_at, read.inputs) == (
-        "demo",
-        "2026-10-01T12:00:00+00:00",
-        {"service": "api"},
-    )
-    store.restore("latest")
-    assert (target / "a.txt").read_text() == "a\n"
 
 
 def test_backup_metadata_from_a_newer_untaped_is_reported(tmp_path: Path) -> None:

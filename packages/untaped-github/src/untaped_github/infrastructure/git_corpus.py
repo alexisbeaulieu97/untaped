@@ -40,6 +40,7 @@ from untaped.sdk import (
     GitResult,
     PluginHandle,
     ProgressHandle,
+    System,
     UntapedError,
     attribution,
     not_found,
@@ -278,7 +279,7 @@ class GitCorpusCache:
             scratch_root.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise GitCorpusError(
-                f"could not create {scratch_root}: {exc.strerror or exc}", system="local"
+                f"could not create {scratch_root}: {exc.strerror or exc}", system=System.LOCAL
             ) from exc
         with tempfile.TemporaryDirectory(prefix=".validate-", dir=scratch_root) as scratch:
             # --no-index needs no repository, so validation costs one git call.
@@ -409,7 +410,8 @@ class GitCorpusCache:
                 worktree.parent.mkdir(parents=True, exist_ok=True)
             except OSError as exc:
                 raise GitCorpusError(
-                    f"could not create {worktree.parent}: {exc.strerror or exc}", system="local"
+                    f"could not create {worktree.parent}: {exc.strerror or exc}",
+                    system=System.LOCAL,
                 ) from exc
             store.worktree_add(worktree, target)
         return Worktree(
@@ -509,8 +511,7 @@ def _names(names: list[str]) -> list[str]:
 class CorpusMeta(BaseModel):
     """github's private file in a store repo: what ``list_repos`` reads offline.
 
-    When the copy was fetched is the file's freshness, not a field. An 11.0
-    file kept it as ``fetched_at``, which is ignored: that copy refetches once.
+    When the copy was fetched is the file's freshness, not a field.
     """
 
     repo: str = ""

@@ -59,10 +59,10 @@ configuration or remote state are another `UntapedError`.
 ### Raise with a category, or inherit one
 
 Every `UntapedError` has a `category` (`ErrorCategory`) that selects the exit
-code, and a `system` that says who is responsible (`untaped`, `local`, `git`,
-or the service section, such as `awx`); [Scripting](./exit-codes.md#categories)
-lists the categories. A plugin's error classes declare them as class defaults
-(`category = ErrorCategory.NOT_FOUND`, `system = "awx"`); pass
+code, and a `system` that says who is responsible: a `System` (`UNTAPED`, `LOCAL`,
+`GIT`, `HTTP`) or the plugin's own `Service(Settings)` ([categories](./exit-codes.md#categories)).
+A plugin's error classes declare them as class defaults
+(`category = ErrorCategory.NOT_FOUND`, `system = Service(AwxSettings)`); pass
 `category=`, `system=`, `hint=` or `details=` to override one instance.
 
 - `ConfigError` means **local setup** (settings, credentials, a missing tool)

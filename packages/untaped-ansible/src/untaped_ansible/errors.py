@@ -10,19 +10,19 @@ the network).
 
 from __future__ import annotations
 
-from untaped.sdk import UntapedError
+from untaped.sdk import System, UntapedError
 
 
 class AnsibleError(UntapedError):
     """Base for Ansible plugin errors."""
 
-    system = "local"
+    system = System.LOCAL
 
 
 class RepoStoreError(AnsibleError):
     """Raised when a source's repo store operation (fetch, ``ls-remote``, blob read) fails."""
 
-    system = "git"
+    system = System.GIT
 
 
 class DependencyIndexError(AnsibleError):

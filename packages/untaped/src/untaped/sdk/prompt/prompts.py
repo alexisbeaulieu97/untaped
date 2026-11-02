@@ -9,7 +9,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, TextIO, TypeVar
 
-from untaped.sdk.errors import ConfigError, PromptInterruptedError, UntapedError
+from untaped.sdk.errors import ConfigError, PromptInterruptedError, System, UntapedError
 
 if TYPE_CHECKING:
     from untaped.screen.core import Cancel, Quit, Screen
@@ -248,7 +248,7 @@ class TerminalPromptBackend:
 
 def _cancelled_error() -> ConfigError:
     """What a prompt ended without an answer is: ``prompt cancelled``, exit 1."""
-    return ConfigError("prompt cancelled", category="failed", system="untaped")
+    return ConfigError("prompt cancelled", category="failed", system=System.UNTAPED)
 
 
 def handle_prompt_exception(exc: BaseException) -> UntapedError:

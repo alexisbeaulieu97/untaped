@@ -26,6 +26,7 @@ from untaped_awx.domain.suites.case_failure import (
     unhandled,
     workflow_failure,
 )
+from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.domain.suites.workflow_run import RunNode
 from untaped_awx.errors import (
     LaunchPromptError,
@@ -407,13 +408,13 @@ def test_a_timeout_blames_the_controller_until_the_job_runs(
 @pytest.mark.parametrize(
     ("error", "launching", "expected"),
     [
-        (ConfigError("rejected", category="auth", system="awx"), True, "awx.credentials"),
-        (ConfigError("denied", category="permission", system="awx"), False, "awx.credentials"),
+        (ConfigError("rejected", category="auth", system=AWX.name()), True, "awx.credentials"),
+        (ConfigError("denied", category="permission", system=AWX.name()), False, "awx.credentials"),
         (LaunchPromptError("does not prompt for limit"), True, "awx.suite"),
         (ResourceNotFoundError("job_template", {"name": "x"}), True, "awx.suite"),
         (ResourceNotFoundError("job", {"id": 5}), False, "awx.controller"),
-        (HttpTransportError("down", system="awx"), True, "awx.controller"),
-        (HttpTransportError("down", system="awx"), False, "awx.controller"),
+        (HttpTransportError("down", system=AWX.name()), True, "awx.controller"),
+        (HttpTransportError("down", system=AWX.name()), False, "awx.controller"),
         (LaunchPromptError("no", details={"field": "scm_branch"}), True, "awx.scm"),
         # not AWX's doing: an untaped bug stays untaped, local setup stays local
         (RuntimeError("boom"), False, "untaped"),
@@ -434,7 +435,7 @@ def test_a_request_failure_keeps_its_category_and_names_the_system(
 
 
 def test_a_request_failure_keeps_the_errors_own_hint() -> None:
-    error = ConfigError("rejected", category="auth", system="awx", hint="run `untaped x`")
+    error = ConfigError("rejected", category="auth", system=AWX.name(), hint="run `untaped x`")
     failure = request_failure(error, message="rejected; cancel requested")
     assert (failure.message, failure.hint) == ("rejected; cancel requested", "run `untaped x`")
 

@@ -335,10 +335,9 @@ it is absent and returns whether it did. `read_data_file(path, Model)`
 answers a `DataRead`: `Found(value, refreshed_at, by)` (`by` is the
 untaped version that wrote it), `Absent()`,
 `Unreadable(reason)` or `OtherVersion(file, by)` when a newer untaped wrote
-it, so a damaged file is never mistaken for a missing one. A file an earlier
-release of yours wrote without the stamp reads with `unstamped="accept"`, in
-the model's shape. A model may not name a field `untaped`: that key is the
-stamp's.
+it, so a damaged file is never mistaken for a missing one; a file with no
+stamp is `Unreadable`. A model may not name a field `untaped`: that key is
+the stamp's.
 
 A 12.0 plugin names the file and its model once: `DataFile[Mark].at(path)`
 reads with `read()` (no unstamped files) and writes with `write(value,

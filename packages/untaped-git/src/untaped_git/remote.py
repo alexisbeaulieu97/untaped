@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from untaped.sdk import GitCommandError, attribution, run_git
+from untaped.sdk import GitCommandError, System, attribution, run_git
 from untaped_git.errors import GitError
 from untaped_git.hosts import HostAuth
 from untaped_git.store import (
@@ -66,7 +66,8 @@ def _ls_remote(
         root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise GitError(
-            f"could not create repo store directory {root}: {exc.strerror or exc}", system="local"
+            f"could not create repo store directory {root}: {exc.strerror or exc}",
+            system=System.LOCAL,
         ) from exc
     secret, config = host_config(url, auth(url))
     try:
