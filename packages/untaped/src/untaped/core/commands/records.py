@@ -221,9 +221,6 @@ class ProjectOutcome(OutcomeRecord):
 SetupState = Literal["done", "todo", "failed", "skipped"]
 """Where a ``setup plan`` step stands."""
 
-SetupActor = Literal["agent", "user"]
-"""Who takes a ``setup plan`` step."""
-
 
 class SetupStep(Record):
     """One step of ``setup plan``; ``run`` is the command that does it, as arguments."""
@@ -237,8 +234,11 @@ class SetupStep(Record):
             "The complete argv to pass after `untaped`; a `<NAME>` token is a value to ask for."
         )
     )
-    by: Annotated[SetupActor, Column] = Field(
-        description="Whose step it is: the user's when a secret would pass through the agent."
+    secret: Annotated[bool, Column] = Field(
+        description=(
+            "Whether the step takes a secret (a token, a password): `run` asks for one, "
+            "or a `<NAME>` value in it is one."
+        )
     )
 
 

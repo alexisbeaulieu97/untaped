@@ -116,10 +116,10 @@ def run_fixes(
     runnable = [fix for fix in fixes if fix.automatic and refusals[fix] is None]
     manual = [fix for fix in fixes if not fix.automatic and refusals[fix] is None]
     to_run = [(_line(fix), list(fix.checks)) for fix in runnable]
-    needs_you = [(_line(fix), list(fix.checks)) for fix in manual]
+    skipped = [(_line(fix), list(fix.checks)) for fix in manual]
     question = f"Run {plural(len(runnable), 'automatic fix', 'automatic fixes')}?"
     # the planned rows are what --dry-run prints, so only a question shows the plan first
-    preview = None if confirm.dry_run else lambda: [fix_plan(to_run, needs_you)]
+    preview = None if confirm.dry_run else lambda: [fix_plan(to_run, skipped)]
     go = bool(runnable) and confirm(question, preview=preview)
     runs = _run_all(runnable) if go else {}
     ran = any(isinstance(run, ChildRun) for run in runs.values())
@@ -276,7 +276,7 @@ def _outcome(
         info = Failure.from_exception(refusal)
         return outcome(action="failed", detail=_error_detail(info), error=info)
     if not fix.automatic:
-        return outcome(action="skipped", detail=f"{_needs(fix)}; run it yourself")
+        return outcome(action="skipped", detail=_needs(fix))
     if dry_run:
         return outcome(action="planned", detail=f"would fix {', '.join(fix.checks)}")
     if not isinstance(run, ChildRun):

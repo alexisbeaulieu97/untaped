@@ -72,7 +72,7 @@ from untaped.runtime.redaction import redact_url_password
 from untaped.sdk._home import CORE
 from untaped.sdk._names import snake
 from untaped.sdk._run import is_verbose, run_or_none
-from untaped.sdk.errors import ErrorCategory, FixBy, HttpError, System, UntapedError, fix_by
+from untaped.sdk.errors import ErrorCategory, HttpError, System, UntapedError
 from untaped.sdk.words import ago_text, duration_text
 
 # --------------------------------------------------------------------------- #
@@ -498,13 +498,6 @@ class Failure(Diagnostic):
         default={},
         description="Machine context, such as `status`, `url` and `attempts` (`{}` when none).",
     )
-    fix_by: Annotated[FixBy | None, Field(exclude_if=_is_none)] = Field(
-        default=None,
-        description=(
-            "`user` when only the person can take the hint's step (a login, a secret "
-            "variable): an agent reports it and does not run it; absent otherwise."
-        ),
-    )
 
     @classmethod
     def _reorder(cls, names: list[str], declared_by: Mapping[str, type]) -> list[str]:
@@ -559,7 +552,6 @@ class Failure(Diagnostic):
             message=text,
             hint=hint,
             details=_jsonable(details),
-            fix_by=fix_by(error),
         )
 
     @classmethod
@@ -575,7 +567,6 @@ class Failure(Diagnostic):
             system=self.system,
             hint=self.hint,
             details=self.details,
-            fix_by=self.fix_by,
         )
 
 
@@ -802,7 +793,6 @@ def _stale_cause(
 # --------------------------------------------------------------------------- #
 
 _HINT_PREFIX = "hint: "
-_USER_HINT_PREFIX = "hint (your step): "
 
 
 def attribute(error: BaseException) -> tuple[ErrorCategory, str]:
@@ -821,13 +811,11 @@ def format_error(exc: UntapedError) -> str:
     from a JSON error body (the raw body under ``--verbose``); an error whose
     message already describes its body (``describes_body``) adds the raw body
     under ``--verbose`` only. A ``hint`` not already in the message follows
-    on its own ``hint:`` line, ``hint (your step):`` when only the person
-    can take it (``fix_by``). URL passwords are masked.
+    on its own ``hint:`` line. URL passwords are masked.
     """
     message = _with_body(exc)
     if exc.hint and exc.hint not in message:
-        prefix = _USER_HINT_PREFIX if fix_by(exc) == "user" else _HINT_PREFIX
-        message = f"{message}\n{prefix}{exc.hint}"
+        message = f"{message}\n{_HINT_PREFIX}{exc.hint}"
     return redact_url_password(message)
 
 
@@ -884,9 +872,8 @@ def split_hint(text: str) -> tuple[str, str | None]:
     kept: list[str] = []
     hints: list[str] = []
     for line in text.split("\n"):
-        prefix = next((p for p in (_HINT_PREFIX, _USER_HINT_PREFIX) if line.startswith(p)), None)
-        if prefix is not None:
-            hints.append(line.removeprefix(prefix))
+        if line.startswith(_HINT_PREFIX):
+            hints.append(line.removeprefix(_HINT_PREFIX))
         else:
             kept.append(line)
     return "\n".join(kept).strip(), "\n".join(hints) or None

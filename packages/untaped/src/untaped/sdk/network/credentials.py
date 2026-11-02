@@ -322,11 +322,8 @@ class BoundSecret(SecretStr):
 class NoCredential(ConfigError):
     """No credential answers a key, or every one that would is refused (exit 4).
 
-    Its hint is the person's step (``fix_by="user"``): ``untaped auth login``,
-    or a variable they set.
+    Its hint is ``untaped auth login`` or a variable to set.
     """
-
-    fix_by = "user"
 
 
 # --------------------------------------------------------------------------- #

@@ -110,7 +110,7 @@ def test_a_rejected_token_exits_4_with_the_token_hint(
 
     assert result.exit_code == 4
     assert result.stderr.endswith(
-        "error: AWX rejected the token (HTTP 401)\nhint (your step): run `untaped auth login awx`\n"
+        "error: AWX rejected the token (HTTP 401)\nhint: run `untaped auth login awx`\n"
     )
 
 

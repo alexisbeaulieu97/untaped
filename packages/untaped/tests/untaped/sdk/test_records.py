@@ -637,7 +637,7 @@ def _samples() -> dict[str, WireModel]:
             automatic=True,
         ),
         FixOutcome(fix=["config", "migrate"], checks=["config"], action="fixed", detail="d"),
-        SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], by="agent"),
+        SetupStep(step="profile", plugin="untaped", state="todo", detail="d", run=[], secret=False),
         Skill(name="untaped-hello", description="d"),
         InstalledSkill(
             name="untaped-hello",
@@ -914,7 +914,7 @@ _ROW_KEYS = {
     "untaped.config_migration_outcome": ["profile", "from", "to", "action", "detail"],
     "untaped.doctor_check": ["check", "plugin", "status", "title", "detail", "fix", "automatic"],
     "untaped.fix_outcome": ["fix", "checks", "action", "detail"],
-    "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "by"],
+    "untaped.setup_step": ["step", "plugin", "state", "detail", "run", "secret"],
     "untaped.skill": ["name", "description"],
     "untaped.installed_skill": ["name", "target", "scope", "state", "target_path"],
     "untaped.skill_outcome": ["name", "target", "scope", "target_path", "action"],
