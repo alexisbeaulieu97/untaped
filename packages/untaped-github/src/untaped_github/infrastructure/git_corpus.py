@@ -34,9 +34,16 @@ from urllib.parse import urlparse
 from pydantic import BaseModel
 
 from untaped.sdk import Diagnostics, PluginHandle, System, UntapedError, attribution, not_found
-from untaped.sdk.git import GitCommandError, GitResult, run_git, safe_path_segment
-from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
-from untaped_git.api import Removed, RepoStore, ls_remote, store_key
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle, safe_path_segment
+from untaped_git.api import (
+    GitCommandError,
+    GitResult,
+    Removed,
+    RepoStore,
+    ls_remote,
+    run_git,
+    store_key,
+)
 from untaped_github.domain import (
     CorpusFreshness,
     CorpusRepoTarget,

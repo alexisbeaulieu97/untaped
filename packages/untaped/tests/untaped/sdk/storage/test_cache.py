@@ -471,7 +471,7 @@ def test_only_an_auto_refill_runs_under_the_fail_fast_budget(clock: CacheClock) 
     from untaped.sdk.network.upstream import capped
 
     seen: list[bool] = []
-    UP.during = lambda _key, _task: seen.append(capped())
+    UP.during = lambda _key, _task: seen.append(capped() is not None)
     _show("a")  # a first fill keeps its full retries: there is no data to fall back to
     clock.advance(timedelta(hours=2))
     _show("a")
@@ -510,13 +510,13 @@ def test_a_nested_forced_or_first_fill_leaves_the_outer_budget(
     seen: list[bool] = []
 
     def inner_fill(_key: str, _task: ProgressHandle) -> Filled:
-        seen.append(capped())
+        seen.append(capped() is not None)
         return Filled()
 
     def outer_fill(key: str, task: ProgressHandle) -> Filled:
-        seen.append(capped())
+        seen.append(capped() is not None)
         inner.serve({"i": "toy i"}, refresh=inner_refresh, fill=inner_fill, read=lambda: [])
-        seen.append(capped())  # the outer budget is back
+        seen.append(capped() is not None)  # the outer budget is back
         return UP.fill(key, task)
 
     _refreshed(clock, "a", ago=timedelta(hours=2))

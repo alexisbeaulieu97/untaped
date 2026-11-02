@@ -1,4 +1,9 @@
-"""Network and secrets (``untaped.sdk.network``): the HTTP client, its retries, credentials."""
+"""Network and secrets (``untaped.sdk.network``): the HTTP client, its retries, credentials.
+
+``capped`` and ``succeeded`` are the upstream budget every call to an upstream
+reads and reports to, so ``doctor --online`` and a cache's automatic refresh
+fail fast offline.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +24,7 @@ if TYPE_CHECKING:
         rejected_token_error,
         same_origin,
     )
+    from untaped.sdk.network.upstream import capped, succeeded
 
 __all__ = [
     "Credential",
@@ -27,12 +33,14 @@ __all__ = [
     "HttpFactory",
     "RetryPolicy",
     "TlsVerify",
+    "capped",
     "find_program",
     "paginate_link",
     "paginate_offset",
     "paginate_pages",
     "rejected_token_error",
     "same_origin",
+    "succeeded",
 ]
 
 if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
@@ -51,5 +59,6 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "rejected_token_error",
                 "same_origin",
             ),
+            "upstream": ("capped", "succeeded"),
         },
     )

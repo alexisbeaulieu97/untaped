@@ -1,7 +1,8 @@
-"""Tests for the shared hardened git subprocess module (``untaped.sdk.git``)."""
+"""Tests for the hardened git subprocess runner (``untaped_git.run``, public through ``api``)."""
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import stat
@@ -15,18 +16,17 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import _process_groups, git
-from untaped.sdk.errors import ErrorCategory, UntapedError
-from untaped.sdk.git import (
+from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk.process import ProcessResult
+from untaped_git import run as git
+from untaped_git.run import (
     GitCommandError,
     git_env,
     git_toplevel,
     is_transient_failure,
     run_git,
-    safe_path_segment,
     stderr_gist,
 )
-from untaped.sdk.process import ProcessResult
 
 _HEADER = "AUTHORIZATION: basic c2VjcmV0LXRva2Vu"
 
@@ -436,7 +436,6 @@ def _fake_git_with_helper(
 def test_timeout_kills_the_helpers_git_started(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(_process_groups, "GRACE_S", 0.5)
     script, helper_pid, _ = _fake_git_with_helper(tmp_path)
 
     with pytest.raises(GitCommandError, match="timed out"):
@@ -450,7 +449,6 @@ def test_timeout_kills_the_helpers_git_started(
 def test_timeout_lets_git_clean_up_its_locks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(_process_groups, "GRACE_S", 0.5)
     script, _, lock = _fake_git_with_helper(tmp_path)
 
     with pytest.raises(GitCommandError, match="timed out"):
@@ -468,26 +466,32 @@ def test_an_interrupt_stops_git_and_its_helpers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # Git runs in its own session, so a terminal Ctrl-C no longer reaches it:
-    # run_git must stop the group itself.
+    # run_git must stop the group itself. SIGTERM and SIGHUP end the same way
+    # (untaped.sdk.process), so the credential file goes with them too.
     script, helper_pid, lock = _fake_git_with_helper(tmp_path)
+    temp = tmp_path / "tmp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
 
     def interrupt(*_: object) -> None:
         if lock.exists():
             raise KeyboardInterrupt
         signal.setitimer(signal.ITIMER_REAL, 0.1)
 
-    monkeypatch.setattr(_process_groups, "GRACE_S", 0.5)
     previous = signal.signal(signal.SIGALRM, interrupt)
     try:
         signal.setitimer(signal.ITIMER_REAL, 0.1)
         with pytest.raises(KeyboardInterrupt):
-            run_git(["fetch"], timeout=30, git=str(script))
+            run_git(
+                ["fetch"], timeout=30, git=str(script), auth_config={"http.extraHeader": _HEADER}
+            )
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
         signal.signal(signal.SIGALRM, previous)
 
     assert _wait_gone(int(helper_pid.read_text()))
     assert not lock.exists()
+    assert list(temp.iterdir()) == []
 
 
 def _wait_for(path: Path, seconds: float = 10.0) -> None:
@@ -760,29 +764,6 @@ def _unauthorized_http_server() -> Any:
     return server
 
 
-# ── path segments ────────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [("acme/api", "acme_api"), ("..", "_"), (".", "_"), ("", "_"), ("v1.2-rc_3", "v1.2-rc_3")],
-)
-def test_safe_path_segment(value: str, expected: str) -> None:
-    assert safe_path_segment(value) == expected
-
-
-def test_safe_path_segment_is_one_name_for_both_unicode_spellings() -> None:
-    composed, decomposed = "caf\u00e9", "cafe\u0301"
-    assert safe_path_segment(decomposed) == safe_path_segment(composed) == composed
-
-
-def test_a_long_segment_keeps_a_prefix_and_a_hash_within_the_limit() -> None:
-    first, second = "é" * 100 + "a", "é" * 100 + "b"
-    short, other = safe_path_segment(first), safe_path_segment(second)
-    assert short != other and len(short.encode()) <= 128 and len(other.encode()) <= 128
-    assert short.startswith("é" * 50) and safe_path_segment("x" * 128) == "x" * 128
-
-
 # ── command-scope config and extra environment ─────────────────────────────
 
 
@@ -832,3 +813,93 @@ def test_run_git_env_cannot_reopen_traces_under_auth(monkeypatch: pytest.MonkeyP
     assert "GIT_TRACE_CURL" not in call["env"]
     assert call["env"]["GIT_NO_LAZY_FETCH"] == "1"
     assert call["auth_config"] is not None
+
+
+# ── --verbose debug log ──────────────────────────────────────────────────────
+
+
+def test_git_logs_argv_with_credentials_masked(
+    caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    caplog.set_level(logging.DEBUG, logger="untaped")
+    header = "AUTHORIZATION: basic tok-123456789"
+    run_git(
+        ["ls-remote", "https://x-access-token:tok-123456789@invalid.invalid/r.git"],
+        timeout=10,
+        cwd=tmp_path,
+        check=False,
+        auth_config={"http.https://invalid.invalid/.extraHeader": header},
+    )
+    messages = [r.getMessage() for r in caplog.records if r.name == "untaped.git"]
+    assert len(messages) == 1
+    message = messages[0]
+    assert message.startswith("git ls-remote https://***@invalid.invalid/r.git in ")
+    assert "-> exit " in message
+    assert message.endswith("[auth config]")
+    assert "tok-123456789" not in message
+
+
+# ── error defaults and the upstream budget ────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("error", "category", "code"),
+    [
+        (GitCommandError("x"), ErrorCategory.FAILED, 1),
+        (GitCommandError("x", timed_out=True), ErrorCategory.UNAVAILABLE, 5),
+    ],
+)
+def test_a_git_error_declares_a_coherent_default(
+    error: GitCommandError, category: ErrorCategory, code: int
+) -> None:
+    assert (error.category, error.system, error.exit_code) == (category, "git", code)
+
+
+class _Budget:
+    """A stand-in for the upstream budget: capped at ``cap`` until a success lifts it."""
+
+    def __init__(self, cap: float | None) -> None:
+        self.cap = cap
+
+    def capped(self) -> float | None:
+        return self.cap
+
+    def succeeded(self) -> None:
+        self.cap = None
+
+
+@pytest.fixture
+def budget(monkeypatch: pytest.MonkeyPatch) -> _Budget:
+    found = _Budget(10.0)
+    monkeypatch.setattr(git, "capped", found.capped)
+    monkeypatch.setattr(git, "succeeded", found.succeeded)
+    return found
+
+
+def test_run_git_caps_a_network_command_and_never_retries_it(
+    monkeypatch: pytest.MonkeyPatch, budget: _Budget
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        git, "run_process", _recording_run(calls, returncode=128, stderr="early EOF")
+    )
+
+    with pytest.raises(GitCommandError):
+        run_git(["ls-remote", "origin"], timeout=120, retry_transient=True, sleep=lambda _s: None)
+
+    assert [call["timeout"] for call in calls] == [10.0]
+
+
+def test_run_git_leaves_a_local_command_alone_and_its_success_lifts_nothing(
+    monkeypatch: pytest.MonkeyPatch, budget: _Budget
+) -> None:
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(git, "run_process", _recording_run(calls))
+
+    run_git(["rev-parse", "HEAD"], timeout=120)
+    assert budget.cap == 10.0
+    run_git(["fetch", "origin"], timeout=120)
+    assert budget.cap is None
+    run_git(["fetch", "origin"], timeout=120)
+
+    assert [call["timeout"] for call in calls] == [120, 10.0, 120]

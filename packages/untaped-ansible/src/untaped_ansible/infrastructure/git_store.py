@@ -20,16 +20,18 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from untaped.sdk import PluginHandle, UntapedError, attribution
-from untaped.sdk.git import GitCommandError, git_toplevel, run_git
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
 from untaped_git.api import (
+    GitCommandError,
     Released,
     Removed,
     RepoStore,
     check_names,
     default_branch,
+    git_toplevel,
     ls_remote,
+    run_git,
 )
 
 DEFAULT_TIMEOUT = 60.0

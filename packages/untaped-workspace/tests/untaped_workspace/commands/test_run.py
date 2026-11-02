@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk.testing import Ran
-from untaped.sdk.testing.git import GitRemote
+from untaped_git.testing import GitRemote
 from untaped_workspace.commands.run import run_argv
 from workspace_test_support import err, run
 

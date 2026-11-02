@@ -48,7 +48,7 @@ from untaped.sdk.errors import (
     UntapedError,
 )
 from untaped.sdk.health.marks import section_marks
-from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
+from untaped.sdk.network.upstream import capped, succeeded
 from untaped.sdk.words import q, run_hint
 
 if TYPE_CHECKING:
@@ -232,13 +232,13 @@ class HttpClient:
         A final failure carries the client's ``system`` and the number of
         ``attempts`` in its ``details``. While the upstream budget is capped
         (:mod:`untaped.sdk.network.upstream`), the request is tried once with its timeout
-        capped at ``PROBE_TIMEOUT``; a response lifts a ``fail_fast`` cap.
+        capped (:func:`~untaped.sdk.network.capped`); a response lifts a ``fail_fast`` cap.
         """
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
         follow = bool(kwargs.pop("follow_redirects", False))
-        if capped():
+        if capped() is not None:
             policy = None
         attempt = 0
         while True:
@@ -343,10 +343,11 @@ class HttpClient:
 
     def _bounded(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """``kwargs`` with the timeout capped by the upstream budget."""
-        if not capped():
+        cap = capped()
+        if cap is None:
             return kwargs
         limit = kwargs.get("timeout", self._timeout)
-        limit = min(limit, PROBE_TIMEOUT) if isinstance(limit, int | float) else PROBE_TIMEOUT
+        limit = min(limit, cap) if isinstance(limit, int | float) else cap
         return {**kwargs, "timeout": limit}
 
     def get(self, path: str, **kwargs: Any) -> httpx.Response:

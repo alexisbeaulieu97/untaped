@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from git_test_support import StoreFor, git
-from untaped.sdk.testing.git import GitRemote, trace2_events
 from untaped_git.report import store_report
+from untaped_git.testing import GitRemote, trace2_events
 
 MAIN = "refs/untaped/github/heads/main"
 

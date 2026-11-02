@@ -52,7 +52,6 @@ from untaped.sdk import (
     attribution,
     experimental,
 )
-from untaped.sdk.git import GitCommandError, GitResult, run_git
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_git import store_release, worktree_config
 from untaped_git.delta import RefDelta, diff_refs
@@ -74,6 +73,7 @@ from untaped_git.repo_files import (
     worktree_entries,
 )
 from untaped_git.repo_lock import repo_lock
+from untaped_git.run import GitCommandError, GitResult, run_git
 from untaped_git.store_release import RELEASE_MARK
 from untaped_git.url import url_host
 from untaped_git.version import below_floor, floor_text, git_version, version_text

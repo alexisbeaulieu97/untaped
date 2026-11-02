@@ -11,12 +11,12 @@ import pytest
 from git_test_support import StoreError, StoreFor, all_refs, ensure, git
 from untaped.sdk import ErrorCategory
 from untaped.sdk.testing import install
-from untaped.sdk.testing.git import GitRemote
 from untaped_git.plugin import Git
 from untaped_git.release import Released, Removed
 from untaped_git.repo_files import worktree_entries
 from untaped_git.store import RepoStore
 from untaped_git.store_release import RELEASE_MARK
+from untaped_git.testing import GitRemote
 
 
 def _shared(store_for: StoreFor, tmp_path: Path) -> tuple[Path, Path]:

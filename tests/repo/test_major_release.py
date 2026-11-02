@@ -33,7 +33,7 @@ from packaging.version import Version
 
 from repo.support import REPO_ROOT, SURFACE_FILE, git, reachable_tags, release_baseline
 from untaped.core.surface import DeprecatedMark, Line, parse, postponements
-from untaped.sdk.git import GitCommandError
+from untaped_git.api import GitCommandError
 
 POSTPONE = (
     "Remove each in a prep PR (`scripts/gen_surface.py --due` lists them), or postpone it on "

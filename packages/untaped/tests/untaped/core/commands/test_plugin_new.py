@@ -323,12 +323,11 @@ def test_a_name_the_api_keeps_for_itself_comes_from_its_own_home(
 
 
 def test_a_name_is_placed_without_pytest_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A tool install has no pytest, which untaped.sdk.testing.git imports at the top.
+    # A tool install has no pytest: no SDK module may need it to import.
     from decimal import Decimal
 
     from untaped.core.commands.plugin_new import _home
 
-    monkeypatch.delitem(sys.modules, "untaped.sdk.testing.git", raising=False)
     monkeypatch.setitem(sys.modules, "pytest", None)
     assert _home("Decimal", Decimal) == "decimal"
 

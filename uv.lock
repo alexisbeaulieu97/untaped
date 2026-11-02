@@ -908,6 +908,7 @@ source = { editable = "packages/untaped-awx" }
 dependencies = [
     { name = "jinja2" },
     { name = "untaped" },
+    { name = "untaped-git" },
     { name = "untaped-lint" },
 ]
 
@@ -915,6 +916,7 @@ dependencies = [
 requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-lint", editable = "packages/untaped-lint" },
 ]
 
@@ -924,10 +926,14 @@ version = "11.1.0"
 source = { editable = "packages/untaped-dotfiles" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
+]
 
 [[package]]
 name = "untaped-git"
@@ -974,10 +980,14 @@ version = "11.1.0"
 source = { editable = "packages/untaped-lint" }
 dependencies = [
     { name = "untaped" },
+    { name = "untaped-git" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
+requires-dist = [
+    { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
+]
 
 [[package]]
 name = "untaped-recipe"
@@ -987,6 +997,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "tomlkit" },
     { name = "untaped" },
+    { name = "untaped-git" },
 ]
 
 [package.metadata]
@@ -994,6 +1005,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6,<4" },
     { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "untaped", editable = "packages/untaped" },
+    { name = "untaped-git", editable = "packages/untaped-git" },
 ]
 
 [[package]]

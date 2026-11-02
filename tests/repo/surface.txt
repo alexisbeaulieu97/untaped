@@ -6935,44 +6935,6 @@ sdk untaped.sdk.derive(omit=) default=[]
 sdk untaped.sdk.derive(qualname=) default=None
 sdk untaped.sdk.experimental
 sdk untaped.sdk.first_validation_error(exc)
-sdk untaped.sdk.git.GitCommandError(category=) default=None
-sdk untaped.sdk.git.GitCommandError(hint=) default=None
-sdk untaped.sdk.git.GitCommandError(message)
-sdk untaped.sdk.git.GitCommandError(returncode=) default=None
-sdk untaped.sdk.git.GitCommandError(stderr=) default=""
-sdk untaped.sdk.git.GitCommandError(system=) default=None
-sdk untaped.sdk.git.GitCommandError(timed_out=) default=false
-sdk untaped.sdk.git.GitCommandError.category class
-sdk untaped.sdk.git.GitCommandError.details class
-sdk untaped.sdk.git.GitCommandError.exit_code
-sdk untaped.sdk.git.GitCommandError.hint class
-sdk untaped.sdk.git.GitCommandError.retryable
-sdk untaped.sdk.git.GitCommandError.system class
-sdk untaped.sdk.git.GitResult(returncode, stdout, stderr)
-sdk untaped.sdk.git.GitResult.returncode
-sdk untaped.sdk.git.GitResult.stderr
-sdk untaped.sdk.git.GitResult.stdout
-sdk untaped.sdk.git.GitResult.text
-sdk untaped.sdk.git.git_toplevel(git=) default=git
-sdk untaped.sdk.git.git_toplevel(path)
-sdk untaped.sdk.git.git_toplevel(timeout=) default=30.0
-sdk untaped.sdk.git.run_git(args, *, timeout)
-sdk untaped.sdk.git.run_git(attempts=) default=3
-sdk untaped.sdk.git.run_git(auth_config=) default=None
-sdk untaped.sdk.git.run_git(batch_ssh=) default=true
-sdk untaped.sdk.git.run_git(capture=) default=false
-sdk untaped.sdk.git.run_git(ceiling=) default=false
-sdk untaped.sdk.git.run_git(check=) default=true
-sdk untaped.sdk.git.run_git(config=) default=None
-sdk untaped.sdk.git.run_git(cwd=) default=None
-sdk untaped.sdk.git.run_git(env=) default=None
-sdk untaped.sdk.git.run_git(git=) default=git
-sdk untaped.sdk.git.run_git(git_dir=) default=None
-sdk untaped.sdk.git.run_git(locale_c=) default=true
-sdk untaped.sdk.git.run_git(retry_transient=) default=false
-sdk untaped.sdk.git.run_git(sleep=) default=<computed> callback(1)
-sdk untaped.sdk.git.run_git(stdin=) default=None
-sdk untaped.sdk.git.safe_path_segment(value)
 sdk untaped.sdk.health.DoctorCheck(*, title, run) callback(run, 1)
 sdk untaped.sdk.health.DoctorCheck(online=) default=false
 sdk untaped.sdk.health.DoctorCheck.binding
@@ -7158,6 +7120,7 @@ sdk untaped.sdk.network.RetryPolicy.retry_on_transport
 sdk untaped.sdk.network.RetryPolicy.retry_statuses
 sdk untaped.sdk.network.RetryPolicy.status_delay(attempt, retry_after)
 sdk untaped.sdk.network.TlsVerify
+sdk untaped.sdk.network.capped()  [experimental]
 sdk untaped.sdk.network.find_program(name)
 sdk untaped.sdk.network.paginate_link(http, path)
 sdk untaped.sdk.network.paginate_link(item_key=) default=None
@@ -7182,6 +7145,7 @@ sdk untaped.sdk.network.rejected_token_error(cause=) default=None
 sdk untaped.sdk.network.rejected_token_error(field=) default=token
 sdk untaped.sdk.network.rejected_token_error(service, message)
 sdk untaped.sdk.network.same_origin(url, base)
+sdk untaped.sdk.network.succeeded()  [experimental]
 sdk untaped.sdk.not_found(known=) default=None
 sdk untaped.sdk.not_found(noun, name)
 sdk untaped.sdk.now()
@@ -7573,6 +7537,7 @@ sdk untaped.sdk.storage.dir_bytes(path)
 sdk untaped.sdk.storage.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
 sdk untaped.sdk.storage.read_structured_file(flag=) default=None
 sdk untaped.sdk.storage.read_structured_file(path)
+sdk untaped.sdk.storage.safe_path_segment(value)  [experimental]
 sdk untaped.sdk.summary(operation, counts)
 sdk untaped.sdk.testing.CacheClock(start)
 sdk untaped.sdk.testing.CacheClock.advance(by)
@@ -7719,41 +7684,6 @@ sdk untaped.sdk.testing.drive_screen(keys@2=) default=[]  [experimental]
 sdk untaped.sdk.testing.drive_screen(screen)  [experimental]
 sdk untaped.sdk.testing.drive_screen(size=) default=[100,30]  [experimental]
 sdk untaped.sdk.testing.drive_screen(theme=) default=<computed>  [experimental]
-sdk untaped.sdk.testing.git.GitRemote(path, work, url)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.allow_filter()  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.allow_filter(on@1=) default=true  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.branch(at@2=) default=main  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.branch(name)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.branches(at@2=) default=main  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.branches(names)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.commit(branch=) default=main  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.commit(path, text)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.delete_branch(name)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.drop_pack(*, on_call)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.drop_pack(times=) default=1  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.oid(rev)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.packs_requested()  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.path  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.refuse_by_oid()  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.spread(at@2=) default=main  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.spread(names)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.tag(at@2=) default=main  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.tag(message=) default=None  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.tag(name)  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.url  [experimental]
-sdk untaped.sdk.testing.git.GitRemote.work  [experimental]
-sdk untaped.sdk.testing.git.git_remote(base)  [experimental]
-sdk untaped.sdk.testing.git.git_remote(host=) default=git.example  [experimental]
-sdk untaped.sdk.testing.git.git_remote(name@2=) default=app  [experimental]
-sdk untaped.sdk.testing.git.git_shim(bin_dir, monkeypatch)  [experimental]
-sdk untaped.sdk.testing.git.git_shim(refuse_stdin=) default=false  [experimental]
-sdk untaped.sdk.testing.git.git_shim(stall_maintenance=) default=None  [experimental]
-sdk untaped.sdk.testing.git.git_shim(stall_stdin_fetch=) default=None  [experimental]
-sdk untaped.sdk.testing.git.git_shim(version=) default=None  [experimental]
-sdk untaped.sdk.testing.git.global_config(add=) default=false  [experimental]
-sdk untaped.sdk.testing.git.global_config(key, value)  [experimental]
-sdk untaped.sdk.testing.git.hostile_git_home()  [experimental]
-sdk untaped.sdk.testing.git.trace2_events(path)  [experimental]
 sdk untaped.sdk.testing.install()
 sdk untaped.sdk.testing.install(*plugins)
 sdk untaped.sdk.testing.install(names=) default=None
@@ -8042,8 +7972,22 @@ sdk untaped_git.api.Credential(verify_tls=) default=true
 sdk untaped_git.api.Credential.password
 sdk untaped_git.api.Credential.username
 sdk untaped_git.api.Credential.verify_tls
+sdk untaped_git.api.GitCommandError base=untaped.sdk.UntapedError
+sdk untaped_git.api.GitCommandError(category=) default=None
+sdk untaped_git.api.GitCommandError(hint=) default=None
+sdk untaped_git.api.GitCommandError(message)
+sdk untaped_git.api.GitCommandError(returncode=) default=None
+sdk untaped_git.api.GitCommandError(stderr=) default=""
+sdk untaped_git.api.GitCommandError(system=) default=None
+sdk untaped_git.api.GitCommandError(timed_out=) default=false
+sdk untaped_git.api.GitCommandError.system class
 sdk untaped_git.api.GitHost base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.GitHost implement=credential,home  [experimental]
+sdk untaped_git.api.GitResult(returncode, stdout, stderr)
+sdk untaped_git.api.GitResult.returncode
+sdk untaped_git.api.GitResult.stderr
+sdk untaped_git.api.GitResult.stdout
+sdk untaped_git.api.GitResult.text
 sdk untaped_git.api.GitUrl
 sdk untaped_git.api.HostAuth(plugin, credential)
 sdk untaped_git.api.HostAuth.credential
@@ -8143,12 +8087,66 @@ sdk untaped_git.api.TreeEntry.path
 sdk untaped_git.api.TreeEntry.type
 sdk untaped_git.api.check_names(names)
 sdk untaped_git.api.default_branch(url)
+sdk untaped_git.api.git_toplevel(git=) default=git
+sdk untaped_git.api.git_toplevel(path)
+sdk untaped_git.api.git_toplevel(timeout=) default=30.0
 sdk untaped_git.api.ls_remote(patterns@2=) default=[]
 sdk untaped_git.api.ls_remote(url)
 sdk untaped_git.api.repo_url_parts(url)
+sdk untaped_git.api.run_git(args, *, timeout)
+sdk untaped_git.api.run_git(attempts=) default=3
+sdk untaped_git.api.run_git(auth_config=) default=None
+sdk untaped_git.api.run_git(batch_ssh=) default=true
+sdk untaped_git.api.run_git(capture=) default=false
+sdk untaped_git.api.run_git(ceiling=) default=false
+sdk untaped_git.api.run_git(check=) default=true
+sdk untaped_git.api.run_git(config=) default=None
+sdk untaped_git.api.run_git(cwd=) default=None
+sdk untaped_git.api.run_git(env=) default=None
+sdk untaped_git.api.run_git(git=) default=git
+sdk untaped_git.api.run_git(git_dir=) default=None
+sdk untaped_git.api.run_git(locale_c=) default=true
+sdk untaped_git.api.run_git(retry_transient=) default=false
+sdk untaped_git.api.run_git(sleep=) default=<computed> callback(1)
+sdk untaped_git.api.run_git(stdin=) default=None
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
 sdk untaped_git.api.validate_git_url(value)
+sdk untaped_git.testing.GitRemote(path, work, url)  [experimental]
+sdk untaped_git.testing.GitRemote.allow_filter()  [experimental]
+sdk untaped_git.testing.GitRemote.allow_filter(on@1=) default=true  [experimental]
+sdk untaped_git.testing.GitRemote.branch(at@2=) default=main  [experimental]
+sdk untaped_git.testing.GitRemote.branch(name)  [experimental]
+sdk untaped_git.testing.GitRemote.branches(at@2=) default=main  [experimental]
+sdk untaped_git.testing.GitRemote.branches(names)  [experimental]
+sdk untaped_git.testing.GitRemote.commit(branch=) default=main  [experimental]
+sdk untaped_git.testing.GitRemote.commit(path, text)  [experimental]
+sdk untaped_git.testing.GitRemote.delete_branch(name)  [experimental]
+sdk untaped_git.testing.GitRemote.drop_pack(*, on_call)  [experimental]
+sdk untaped_git.testing.GitRemote.drop_pack(times=) default=1  [experimental]
+sdk untaped_git.testing.GitRemote.oid(rev)  [experimental]
+sdk untaped_git.testing.GitRemote.packs_requested()  [experimental]
+sdk untaped_git.testing.GitRemote.path  [experimental]
+sdk untaped_git.testing.GitRemote.refuse_by_oid()  [experimental]
+sdk untaped_git.testing.GitRemote.spread(at@2=) default=main  [experimental]
+sdk untaped_git.testing.GitRemote.spread(names)  [experimental]
+sdk untaped_git.testing.GitRemote.tag(at@2=) default=main  [experimental]
+sdk untaped_git.testing.GitRemote.tag(message=) default=None  [experimental]
+sdk untaped_git.testing.GitRemote.tag(name)  [experimental]
+sdk untaped_git.testing.GitRemote.url  [experimental]
+sdk untaped_git.testing.GitRemote.work  [experimental]
+sdk untaped_git.testing.git_remote(base)  [experimental]
+sdk untaped_git.testing.git_remote(host=) default=git.example  [experimental]
+sdk untaped_git.testing.git_remote(name@2=) default=app  [experimental]
+sdk untaped_git.testing.git_shim(bin_dir, monkeypatch)  [experimental]
+sdk untaped_git.testing.git_shim(refuse_stdin=) default=false  [experimental]
+sdk untaped_git.testing.git_shim(stall_maintenance=) default=None  [experimental]
+sdk untaped_git.testing.git_shim(stall_stdin_fetch=) default=None  [experimental]
+sdk untaped_git.testing.git_shim(version=) default=None  [experimental]
+sdk untaped_git.testing.global_config(add=) default=false  [experimental]
+sdk untaped_git.testing.global_config(key, value)  [experimental]
+sdk untaped_git.testing.hostile_git_home()  [experimental]
+sdk untaped_git.testing.trace2_events(path)  [experimental]
 sdk untaped_github.api.BatchRepoRefsFailure(*, full_name, reason, kind)
 sdk untaped_github.api.BatchRepoRefsFailure(category=) default=ErrorCategory.UNAVAILABLE
 sdk untaped_github.api.BatchRepoRefsFailure(status_code=) default=None

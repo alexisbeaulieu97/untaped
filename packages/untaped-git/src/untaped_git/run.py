@@ -1,36 +1,34 @@
-"""Hardened ``git`` subprocess execution shared by every plugin.
+"""Hardened ``git`` subprocess execution shared by every plugin (``untaped_git.api``).
 
 One place owns how untaped shells out to Git: binary resolution, the
 non-interactive environment (no terminal or credential-manager prompts,
 stdin closed, ssh ``BatchMode`` unless the user configured ssh, C locale so
 stderr parsing is locale-independent, inherited repository-redirecting
 variables dropped), secret settings (credentials) through a private include
-file, timeout and exit-status mapping to :class:`GitCommandError` with those
-secrets redacted, a bounded retry for transient transport failures, and the
-work-tree root lookup. A bare repository is always named with ``--git-dir``
-(``git_dir=``), never found from ``cwd``: hardened shells such as GitHub
-Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
+file (:mod:`untaped_git.host_auth`), timeout and exit-status mapping to
+:class:`GitCommandError` with those secrets redacted, a bounded retry for
+transient transport failures, the upstream budget, and the work-tree root
+lookup. A bare repository is always named with ``--git-dir`` (``git_dir=``),
+never found from ``cwd``: hardened shells such as GitHub Copilot CLI set
+``safe.bareRepository=explicit``, which refuses that discovery.
 """
 
 from __future__ import annotations
 
 import functools
-import hashlib
 import logging
 import os
 import re
 import subprocess
-import tempfile
 import time
-import unicodedata
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from untaped.sdk.errors import ErrorCategory, System, UntapedError
-from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
+from untaped.sdk import ErrorCategory, System, UntapedError
+from untaped.sdk.network import capped, find_program, succeeded
 from untaped.sdk.process import run_process
+from untaped_git.host_auth import auth_include, drop_traces, is_trace_variable
 
 # Lowercased stderr fragments of transport failures that a later identical
 # fetch can plausibly survive (dropped TLS/TCP streams, proxy/5xx hiccups).
@@ -68,7 +66,7 @@ _REPO_REDIRECT_ENV = (
     "GIT_COMMON_DIR",
 )
 _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
-# Subcommands that reach a remote: the ones the upstream budget caps (untaped.sdk.network.upstream).
+# Subcommands that reach a remote: the ones the upstream budget caps (untaped.sdk.network.capped).
 _NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull"})
 _GIST_LIMIT = 300
 _REDACTED = "<redacted>"
@@ -196,62 +194,6 @@ def _failure_category(stderr: str) -> ErrorCategory | None:
     return ErrorCategory.UNAVAILABLE if is_transient_failure(stderr) else None
 
 
-#: The most bytes :func:`safe_path_segment` returns: room for a suffix
-#: (``.git``, ``-<digest>``) under every filesystem's 255-byte name limit.
-_SEGMENT_MAX_BYTES = 128
-
-
-def safe_path_segment(value: str) -> str:
-    """Map ``value`` to one filesystem-safe path segment (never ``.``/``..``).
-
-    NFC-normalised first, so the composed and decomposed spellings of a name
-    (macOS file names are often decomposed) are one directory; every
-    character but letters, digits and ``._-`` becomes ``_``. A segment over
-    128 bytes keeps a prefix and a hash of the whole value, so two long
-    names stay apart.
-    """
-    normal = unicodedata.normalize("NFC", value)
-    safe = _sanitize(normal)
-    if safe in {"", ".", ".."}:
-        return "_"
-    if len(safe.encode()) <= _SEGMENT_MAX_BYTES:
-        return safe
-    digest = hashlib.sha256(normal.encode()).hexdigest()[:12]
-    prefix = safe.encode()[: _SEGMENT_MAX_BYTES - len(digest) - 1].decode("utf-8", "ignore")
-    return f"{prefix}-{digest}"
-
-
-@contextmanager
-def _auth_include(settings: Mapping[str, str]) -> Iterator[Path]:
-    """Write ``settings`` (``section[.subsection].name`` → value) to a private include file.
-
-    The values never appear in argv or the environment, only in this 0600
-    file, which is deleted on exit.
-    """
-    handle, name = tempfile.mkstemp(prefix="untaped-git-auth-", suffix=".config")
-    path = Path(name)
-    try:
-        with os.fdopen(handle, "w", encoding="utf-8") as config:
-            config.writelines(_config_entry(key, value) for key, value in settings.items())
-        yield path
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def _config_entry(key: str, value: str) -> str:
-    """One ``key = value`` as a git config file section, value quoted."""
-    section, _, rest = key.partition(".")
-    subsection, _, name = rest.rpartition(".")
-    if not section or not name or "\n" in key or "\n" in value:
-        raise ValueError(f"not a git config key and one-line value: {key!r}")
-    header = f"[{section}]" if not subsection else f'[{section} "{_quoted(subsection)}"]'
-    return f'{header}\n\t{name} = "{_quoted(value)}"\n'
-
-
-def _quoted(text: str) -> str:
-    return text.replace("\\", "\\\\").replace('"', '\\"')
-
-
 def git_env(
     *,
     git_path: str | None = None,
@@ -310,10 +252,7 @@ def git_env(
         env[f"GIT_CONFIG_VALUE_{count}"] = value
         env["GIT_CONFIG_COUNT"] = str(count + 1)
     if auth_config is not None:
-        # Git/curl trace output can include the injected Authorization header.
-        for key in list(env):
-            if _is_trace_variable(key):
-                del env[key]
+        drop_traces(env)
         count = _config_count(env)
         env[f"GIT_CONFIG_KEY_{count}"] = "include.path"
         env[f"GIT_CONFIG_VALUE_{count}"] = str(auth_config)
@@ -358,24 +297,23 @@ def run_git(
     argv or the environment, trace variables that could log them are dropped,
     and their values are redacted from stderr and the debug log. ``env`` adds
     variables on top of the hardened environment. While the upstream budget
-    is capped (:mod:`untaped.sdk.network.upstream`), a command that reaches a remote
-    (``clone``, ``fetch``, ``ls-remote``, ``pull``) runs once with its
-    ``timeout`` capped at ``PROBE_TIMEOUT``, and its success lifts a
-    ``fail_fast`` cap; a local command neither.
+    is capped (:func:`untaped.sdk.network.capped`), a command that reaches a
+    remote (``clone``, ``fetch``, ``ls-remote``, ``pull``) runs once with its
+    ``timeout`` capped, and its success lifts a ``fail_fast`` cap; a local
+    command neither.
     """
     argv = list(args)
     label = f"git {argv[0]}" if argv else "git"
     network = bool(argv) and argv[0] in _NETWORK_SUBCOMMANDS
-    if network and capped():
-        timeout, attempts = min(timeout, PROBE_TIMEOUT), 1
-    from untaped.sdk.network.auth import find_program  # noqa: PLC0415 - auth reads the settings
-
+    cap = capped() if network else None
+    if cap is not None:
+        timeout, attempts = min(timeout, cap), 1
     git_path = find_program(git)  # never a `git` planted in the folder git runs in
     if git_path is None:
         raise GitCommandError(f"`{git}` not found on PATH", category="config", system=System.LOCAL)
     payload = stdin.encode() if isinstance(stdin, str) else stdin
     secrets = tuple(value for value in (auth_config or {}).values() if value)
-    with _maybe_auth_include(auth_config) as include:
+    with auth_include(auth_config) as include:
         process_env = git_env(
             git_path=git_path,
             cwd=cwd,
@@ -390,7 +328,7 @@ def run_git(
             (key, value)
             for key, value in (env or {}).items()
             # Trace output can carry the injected header (see git_env).
-            if auth_config is None or not _is_trace_variable(key)
+            if auth_config is None or not is_trace_variable(key)
         )
         for attempt in range(1, max(attempts, 1) + 1):
             started = time.monotonic()
@@ -506,23 +444,6 @@ def stderr_gist(stderr: str) -> str:
     return gist
 
 
-@contextmanager
-def _maybe_auth_include(settings: Mapping[str, str] | None) -> Iterator[Path | None]:
-    if not settings:
-        yield None
-        return
-    with _auth_include(settings) as path:
-        yield path
-
-
-def _sanitize(value: str) -> str:
-    return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
-
-
-def _is_trace_variable(name: str) -> bool:
-    return name.startswith("GIT_TRACE") or name == "GIT_CURL_VERBOSE"
-
-
 def _config_count(env: Mapping[str, str]) -> int:
     try:
         return max(int(env.get("GIT_CONFIG_COUNT", "0")), 0)
@@ -596,4 +517,4 @@ def _core_ssh_command_set(
     return proc.returncode == 0 and bool(out.strip())
 
 
-__all__ = ["GitCommandError", "GitResult", "git_toplevel", "run_git", "safe_path_segment"]
+__all__ = ["GitCommandError", "GitResult", "git_toplevel", "run_git"]

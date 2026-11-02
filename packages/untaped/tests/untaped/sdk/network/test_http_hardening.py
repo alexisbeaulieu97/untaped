@@ -23,7 +23,6 @@ from untaped.runtime.redaction import redact_credentials, redact_url_password
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.settings import HttpSettings
 from untaped.sdk.errors import HttpError, HttpTransportError
-from untaped.sdk.git import run_git
 from untaped.sdk.network.auth import find_program, run_command
 from untaped.sdk.network.http import HttpClient, RetryPolicy, connected_client, same_origin
 
@@ -249,20 +248,6 @@ def test_programs_are_found_in_the_config_folder_not_the_current_one(
     assert find_program("tok") is None
     _program(_isolated_config.parent, "own")
     assert find_program("tok") == str(_isolated_config.parent / "." / "tok")
-
-
-@pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")
-def test_git_planted_in_the_folder_it_runs_in_is_not_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    repo = tmp_path / "repo"
-    repo.mkdir()
-    planted = repo / "git"
-    planted.write_text(f"#!{sys.executable}\nopen({str(tmp_path / 'ran')!r}, 'w')\n")
-    planted.chmod(0o755)
-    monkeypatch.setenv("PATH", f".{os.pathsep}{os.environ['PATH']}")
-    run_git(["--version"], cwd=repo, timeout=30)
-    assert not (tmp_path / "ran").exists()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX PATH lookup")

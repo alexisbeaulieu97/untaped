@@ -1,15 +1,13 @@
-"""``--verbose`` debug logs: HTTP exchanges and git runs, with credentials masked."""
+"""``--verbose`` debug logs: HTTP exchanges, with credentials masked (git runs: untaped-git)."""
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import httpx
 import pytest
 import respx
 
-from untaped.sdk.git import run_git
 from untaped.sdk.network.http import HttpClient, RetryPolicy
 
 
@@ -35,24 +33,3 @@ def test_http_logs_nothing_unless_debug(caplog: pytest.LogCaptureFixture) -> Non
         with HttpClient("https://api.example.com") as client:
             client.get("/x")
     assert not [r for r in caplog.records if r.name == "untaped.http"]
-
-
-def test_git_logs_argv_with_credentials_masked(
-    caplog: pytest.LogCaptureFixture, tmp_path: Path
-) -> None:
-    caplog.set_level(logging.DEBUG, logger="untaped")
-    header = "AUTHORIZATION: basic tok-123456789"
-    run_git(
-        ["ls-remote", "https://x-access-token:tok-123456789@invalid.invalid/r.git"],
-        timeout=10,
-        cwd=tmp_path,
-        check=False,
-        auth_config={"http.https://invalid.invalid/.extraHeader": header},
-    )
-    messages = [r.getMessage() for r in caplog.records if r.name == "untaped.git"]
-    assert len(messages) == 1
-    message = messages[0]
-    assert message.startswith("git ls-remote https://***@invalid.invalid/r.git in ")
-    assert "-> exit " in message
-    assert message.endswith("[auth config]")
-    assert "tok-123456789" not in message
