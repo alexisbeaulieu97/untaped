@@ -330,3 +330,23 @@ def test_doctor_leaves_a_bad_home_value_to_the_home_s_rows(
     rows = _doctor()
     assert rows[0]["status"] == "pass", rows[0]
     assert any(row["status"] == "fail" and "nosuch" in str(row["detail"]) for row in rows[1:])
+
+
+def test_doctor_still_blames_a_bad_project_value_beside_a_bad_home_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
+) -> None:
+    _isolated_config.write_text(HOME + "untaped: {http: {timeout_seconds: abc}}\n")
+    get_settings.cache_clear()
+    root = _project(tmp_path, monkeypatch, "untaped: {http: {proxy: 42}}\n")
+    row = _doctor()[0]
+    assert row["status"] == "fail", row
+    assert str(root / ".untaped" / "config.yml") in str(row["detail"])
+
+
+def test_doctor_refuses_a_secret_even_when_the_home_is_unreadable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
+) -> None:
+    _project(tmp_path, monkeypatch, "github: {token: abc}\n")
+    _isolated_config.write_text("untaped: [unclosed\n")
+    get_settings.cache_clear()
+    assert _doctor()[0]["status"] == "fail"

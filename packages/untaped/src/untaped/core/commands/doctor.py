@@ -868,29 +868,65 @@ def _project_config_row() -> dict[str, object] | None:
 def _check_project_values(layer: FolderLayer) -> None:
     """Refuse (:class:`ConfigError`) what the project's file may not set or sets wrong.
 
-    Each section it sets is checked as a run inside the project reads it
-    (the base, the project's picks, its values, variables), and blamed on
-    the file only when the same check passes without its values: a bad
-    value in the home is the config row's to report.
+    The file's values are checked twice: alone, over the defaults (so a bad
+    value in the home or a variable can't hide one of the file's), and as
+    a run inside the project reads them (the base, the project's picks, its
+    values, variables), blamed on the file only when that check passes
+    without its values: a bad value in the home is the home's rows' to report.
     """
     from dataclasses import replace  # noqa: PLC0415 - only for a project
 
-    from untaped.runtime.settings import profile_section_models  # noqa: PLC0415
+    from pydantic import ValidationError  # noqa: PLC0415
 
+    from untaped.runtime.settings import profile_section_models  # noqa: PLC0415
+    from untaped.sdk.errors import first_validation_error  # noqa: PLC0415
+
+    layout = active_settings_layout()
+    alone = layout.project_effective({}, replace(layer, picks=()))  # refuses what it may not set
+    models = profile_section_models()
+    checked = [
+        (section, part)
+        for section in sorted(set(layer.sections) & set(models))
+        for part in ((None,) if section != NAME else tuple(CoreSettings.model_fields))
+    ]
+    for section, part in checked:
+        node = alone.get(section)
+        if part is not None:
+            node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                continue
+            node = {part: node}
+        try:
+            models[section].model_validate(node or {})
+        except ValidationError as exc:
+            if any(_sets(node, error["loc"]) for error in exc.errors()):
+                where = section if part is None else f"{section}.{part}"
+                raise ConfigError(
+                    f"invalid config section {where!r} in {shown_path(layer.file)}: "
+                    f"{first_validation_error(exc)}"
+                ) from exc
     try:
         raw = read_config_dict()
     except ConfigError, OSError:
         return  # the home's own row reports it
-    layout = active_settings_layout()
-    with_file = layout.project_effective(raw, layer)  # raises for what the file may not set
+    with_file = layout.project_effective(raw, layer)
     without = layout.project_effective(raw, replace(layer, sections={}))
-    models = profile_section_models()
-    for section in sorted(set(layer.sections) & set(models)):
-        parts = (None,) if section != NAME else tuple(CoreSettings.model_fields)
-        for part in parts:
-            why = _section_error(with_file, section, models[section], part)
-            if why is not None and _section_error(without, section, models[section], part) is None:
-                raise ConfigError(why)
+    for section, part in checked:
+        why = _section_error(with_file, section, models[section], part)
+        if why is not None and _section_error(without, section, models[section], part) is None:
+            raise ConfigError(why)
+
+
+def _sets(node: object, loc: tuple[int | str, ...]) -> bool:
+    """Whether ``node`` holds a value at ``loc`` (a missing field is not the file's error)."""
+    for step in loc:
+        held = (isinstance(node, dict) and step in node) or (
+            isinstance(node, list) and isinstance(step, int) and step < len(node)
+        )
+        if not held:
+            return False
+        node = node[step]  # type: ignore[index]
+    return True
 
 
 def _section_error(
