@@ -1,13 +1,14 @@
 """Where each plugin's refs live in a store repo, and which refs a call covers.
 
 A plugin's refs live under ``refs/untaped/<plugin>/heads/<branch>`` and
-``refs/untaped/<plugin>/tags/<tag>``. One exception is declared here and
-nowhere else: workspace's refs are the plain-clone layout,
-``refs/remotes/origin/*`` for heads and ``refs/tags/*`` for tags, so
-``origin/main``, ``@{upstream}`` and a tag checkout work in its worktrees as
-in a clone. Its tags are never pruned (a user's unpushed local tag survives),
-and ``refs/remotes/origin/HEAD``, the symref the store writes for it, is never
-a fetched ref.
+``refs/untaped/<plugin>/tags/<tag>``. A plugin whose worktrees should work as
+in a clone declares the plain-clone layout when it opens the store
+(``plain_clone=True``): its refs are ``refs/remotes/origin/*`` for heads and
+``refs/tags/*`` for tags, so ``origin/main``, ``@{upstream}`` and a tag
+checkout work in its worktrees. Its tags are never pruned (a user's unpushed
+local tag survives), and ``refs/remotes/origin/HEAD``, the symref the store
+writes for it, is never a fetched ref. One plugin per repo holds that layout
+(:mod:`untaped_git.plain_clone` keeps the record).
 
 Callers name branches and tags, never refspecs: a name is a ref path below
 ``refs/heads/`` or ``refs/tags/`` with at most one ``*``, checked here before
@@ -21,8 +22,9 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-#: Plugins whose refs use the plain-clone layout (see the module docstring).
-PLAIN_CLONE = frozenset({"workspace"})
+#: The plain-clone layout's roots (see the module docstring).
+PLAIN_HEADS = "refs/remotes/origin/"
+PLAIN_TAGS = "refs/tags/"
 #: The symref the store writes for the plain-clone layout; never pruned.
 ORIGIN_HEAD = "refs/remotes/origin/HEAD"
 
@@ -41,6 +43,11 @@ class Layout:
     prune_tags: bool
 
     @property
+    def plain(self) -> bool:
+        """Whether this is the plain-clone layout."""
+        return self.heads == PLAIN_HEADS
+
+    @property
     def roots(self) -> tuple[str, str]:
         return self.heads, self.tags
 
@@ -51,7 +58,7 @@ class Layout:
 
     def relative(self, ref: str) -> str | None:
         """``heads/<b>`` or ``tags/<t>`` for a full ref in this namespace, else ``None``."""
-        if ref == ORIGIN_HEAD and self.heads == "refs/remotes/origin/":
+        if ref == ORIGIN_HEAD and self.plain:
             return None
         if ref.startswith(self.heads):
             return f"heads/{ref.removeprefix(self.heads)}"
@@ -73,10 +80,10 @@ class Layout:
         return relative.startswith("heads/") or self.prune_tags
 
 
-def layout_for(plugin: str) -> Layout:
-    """The namespace of ``plugin``'s refs."""
-    if plugin in PLAIN_CLONE:
-        return Layout(plugin, "refs/remotes/origin/", "refs/tags/", prune_tags=False)
+def layout_for(plugin: str, *, plain: bool = False) -> Layout:
+    """The namespace of ``plugin``'s refs: its own, or the plain-clone layout when ``plain``."""
+    if plain:
+        return Layout(plugin, PLAIN_HEADS, PLAIN_TAGS, prune_tags=False)
     base = f"refs/untaped/{plugin}/"
     return Layout(plugin, f"{base}heads/", f"{base}tags/", prune_tags=True)
 

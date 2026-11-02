@@ -1,9 +1,10 @@
 """Git worktrees over the repo store: one store repo per repo URL, many worktrees.
 
 Each repo URL maps to a repo of the git plugin's store
-(``untaped_git.api.RepoStore``), where workspace's refs are the plain-clone
-layout: ``refs/remotes/origin/*`` for the remote's branches, ``refs/tags/*``
-for its tags, ``refs/heads/*`` for workspace branches. Workspaces get ``git
+(``untaped_git.api.RepoStore``), opened with the plain-clone layout declared
+(``plain_clone=True``): workspace's refs are ``refs/remotes/origin/*`` for the
+remote's branches, ``refs/tags/*`` for its tags, ``refs/heads/*`` for
+workspace branches. Workspaces get ``git
 worktree`` checkouts from it, each with its own config (owner, refspec, URL,
 credential helper) written by the store. The store locks each repo itself,
 per call; failures become :class:`GitError` keeping git's attribution, and a
@@ -183,7 +184,9 @@ class LocalGitWorktrees:
         from untaped_git.api import RepoStore, store_key  # noqa: PLC0415
 
         found: list[StoredRepo] = []
-        for store in RepoStore.owned_by(self._plugin, error=GitError, map_error=_git_error):
+        for store in RepoStore.owned_by(
+            self._plugin, error=GitError, map_error=_git_error, plain_clone=True
+        ):
             key = store_key(store.url)
             if key[0] != "_unknown" and store.path.parts[-len(key) :] == key:
                 found.append(StoredRepo(key=key, origin=store.url))
@@ -609,7 +612,9 @@ class LocalGitWorktrees:
     def _store(self, url: str) -> RepoStore:
         from untaped_git.api import RepoStore  # noqa: PLC0415  # keeps CLI startup free of git
 
-        return RepoStore.for_url(url, plugin=self._plugin, error=GitError, map_error=_git_error)
+        return RepoStore.for_url(
+            url, plugin=self._plugin, error=GitError, map_error=_git_error, plain_clone=True
+        )
 
     def _in(
         self, worktree: Path, args: Sequence[str], *, capture: bool = False, check: bool = True

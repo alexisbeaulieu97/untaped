@@ -267,8 +267,8 @@ The sections above name the helper for each rule. Beyond those:
 - Start a child through `untaped.sdk.process`, which stops its whole group on a timeout or interrupt, when it runs in its own group, must stop as a tree, or may run on a worker thread past an interrupt; a short synchronous child in untaped's own group may stay plain (Ctrl-C reaches it).
 - To keep a repository, use `RepoStore.for_url(url, plugin=..., error=...)`
   from `untaped_git.api`, not a bare repo or a root setting of your own:
-  `plugin=` takes your plugin's name or what names it (a command's
-  `self.ctx.plugin`). Read blobs through
+  `plugin=` takes your plugin's name or what names it (`self.ctx.plugin`);
+  `plain_clone=True` gives your worktrees a clone's refs. Read blobs through
   `store.prefetched(...).run(...)` (the `blob-reader` rule).
 
 A row-producing command declares `Output[R]` and yields its records, which

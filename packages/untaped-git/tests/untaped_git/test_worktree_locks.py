@@ -18,7 +18,7 @@ _MAIN = "refs/remotes/origin/main"
 
 
 def _workspace(store_for: StoreFor) -> RepoStore:
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     store.fetch(branches=["main"])
     return store
 
