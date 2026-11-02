@@ -15,15 +15,16 @@ from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.domain.models import Checkout, RepoArg
 from untaped_workspace.errors import WorkspaceError
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.infrastructure import LocalGitWorktrees, ProjectWorkspaceStore
 from untaped_workspace.infrastructure.catalog import RepoSources
 from untaped_workspace.records import RepoOutcome
+from workspace_test_support import stored
 
 
 @pytest.fixture
 def provision(tmp_path: Path, store_root: Path) -> ProvisionRepos:
     return ProvisionRepos(
-        StateWorkspaceStore(),
+        ProjectWorkspaceStore(),
         LocalGitWorktrees(plugin="workspace"),
         RepoSources(),
         workspaces_dir=tmp_path / "ws",
@@ -51,7 +52,7 @@ def test_unknown_repo_fails_before_anything_is_created(
     with pytest.raises(UsageError):
         provision.create("J-1", [RepoArg(ident="typo")])
     assert not (tmp_path / "ws" / "J-1").exists()
-    assert StateWorkspaceStore().get("J-1") is None
+    assert stored("J-1") is None
 
 
 def test_partial_failure_keeps_the_good_repos(
@@ -62,7 +63,7 @@ def test_partial_failure_keeps_the_good_repos(
     rows = provision.create("J-1", [RepoArg(ident=api.url), RepoArg(ident=missing.url)])
     assert [r.action for r in rows] == ["created", "failed"]
     assert rows[1].error is not None
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and [s.dir for s in record.repos] == ["api"]
 
 
@@ -71,7 +72,7 @@ def test_add_skips_repos_already_present(
 ) -> None:
     api, web = make_upstream("api"), make_upstream("web")
     provision.create("J-1", [RepoArg(ident=api.url)])
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     rows = provision.add(record, [RepoArg(ident=api.url), RepoArg(ident=web.url)])
     assert [r.action for r in rows] == ["unchanged", "created"]
@@ -93,7 +94,9 @@ class _FlakyGit:
     def __init__(self) -> None:
         self.calls = 0
 
-    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+    def checkout(
+        self, url: str, dest: Path, *, branch: str | None, base: str | None, lock: str | None = None
+    ) -> Checkout:
         self.calls += 1
         if self.calls > 1:
             raise RuntimeError("boom")
@@ -102,7 +105,7 @@ class _FlakyGit:
 
 def test_unexpected_error_still_persists_finished_repos(tmp_path: Path) -> None:
     provision = ProvisionRepos(
-        StateWorkspaceStore(),
+        ProjectWorkspaceStore(),
         _FlakyGit(),  # type: ignore[arg-type]
         RepoSources(),
         workspaces_dir=tmp_path / "ws",
@@ -118,7 +121,7 @@ def test_unexpected_error_still_persists_finished_repos(tmp_path: Path) -> None:
                 RepoArg(ident="https://git.example/acme/two.git"),
             ],
         )
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and [s.dir for s in record.repos] == ["one"]
 
 
@@ -128,7 +131,7 @@ def test_same_url_twice_in_one_request(
     api = make_upstream("api")
     rows = provision.create("J-1", [RepoArg(ident=api.url), RepoArg(ident=api.url)])
     assert len(rows) == 1
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None and len(record.repos) == 1
 
 
@@ -137,12 +140,12 @@ def test_add_with_unresolvable_ident_changes_nothing(
 ) -> None:
     api = make_upstream("api")
     provision.create("J-1", [RepoArg(ident=api.url)])
-    before = StateWorkspaceStore().get("J-1")
+    before = stored("J-1")
     assert before is not None
     with pytest.raises(UsageError):
         provision.add(before, [RepoArg(ident="typo")])
-    assert StateWorkspaceStore().get("J-1") == before
-    assert sorted(p.name for p in (tmp_path / "ws" / "J-1").iterdir()) == ["api"]
+    assert stored("J-1") == before
+    assert sorted(p.name for p in (tmp_path / "ws" / "J-1").iterdir()) == [".untaped", "api"]
 
 
 def test_create_refuses_an_existing_non_empty_directory(
@@ -154,11 +157,12 @@ def test_create_refuses_an_existing_non_empty_directory(
     with pytest.raises(WorkspaceError) as caught:
         provision.create("J-1", [RepoArg(ident=make_upstream("api").url)])
     assert (caught.value.category, caught.value.system) == ("conflict", "local")
-    assert caught.value.hint == (
-        "a directory with that name already exists (perhaps an old workspace); "
-        "move it aside or pick another name"
+    assert caught.value.hint is not None
+    assert caught.value.hint.startswith(
+        "a directory with that name already exists; move it aside or pick another name, "
+        "or make it a project"
     )
-    assert StateWorkspaceStore().get("J-1") is None
+    assert stored("J-1") is None
     assert sorted(p.name for p in old.iterdir()) == ["untaped.yml"]
 
 
@@ -176,8 +180,11 @@ class _RecordingGit:
     def __init__(self) -> None:
         self.urls: list[str] = []
 
-    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+    def checkout(
+        self, url: str, dest: Path, *, branch: str | None, base: str | None, lock: str | None = None
+    ) -> Checkout:
         self.urls.append(url)
+        dest.mkdir(parents=True)
         return Checkout(action="created", base="main")
 
 
@@ -197,7 +204,7 @@ class _ChosenOnly:
 
 def _recording(tmp_path: Path, git: _RecordingGit, catalog: object) -> ProvisionRepos:
     return ProvisionRepos(
-        StateWorkspaceStore(),
+        ProjectWorkspaceStore(),
         git,  # type: ignore[arg-type]
         catalog,  # type: ignore[arg-type]
         workspaces_dir=tmp_path / "ws",
@@ -212,7 +219,7 @@ def test_https_and_ssh_urls_of_one_repo_are_the_same_repo(tmp_path: Path) -> Non
     provision = _recording(tmp_path, git, RepoSources())
     https, ssh = "https://github.com/acme/api.git", "git@github.com:acme/api.git"
     assert len(provision.create("J-1", [RepoArg(ident=https), RepoArg(ident=ssh)])) == 1
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [row] = provision.add(record, [RepoArg(ident=ssh)])
     assert row.action == "unchanged"
@@ -233,7 +240,7 @@ def test_a_chosen_repo_is_admitted_not_looked_up_and_keeps_its_source(tmp_path: 
     assert [(r.repo, r.action) for r in rows] == [("acme/gone", "created")]
     assert catalog.admitted == [picked]
     assert git.urls == ["https://git.example/acme/gone.git"]
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     [spec] = record.repos
     assert (spec.name, spec.source, spec.default_branch) == ("acme/gone", picked.source, "dev")
@@ -244,7 +251,7 @@ def test_an_unknown_name_fails_before_anything_is_created(tmp_path: Path) -> Non
         _recording(tmp_path, _RecordingGit(), RepoSources()).create(
             "J-1", [RepoArg(ident="acme/gone")]
         )
-    assert StateWorkspaceStore().get("J-1") is None
+    assert stored("J-1") is None
 
 
 def test_on_done_reports_each_finished_checkout(
@@ -257,7 +264,7 @@ def test_on_done_reports_each_finished_checkout(
         done.append((row.repo, finished, total))
 
     provision.create("J-1", [RepoArg(ident=api.url)], on_done=on_done)
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     provision.add(
         record,

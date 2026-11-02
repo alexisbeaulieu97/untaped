@@ -17,10 +17,9 @@ from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
-from untaped_workspace.errors import WorkspaceNotFoundError
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
+from untaped_workspace.infrastructure import LocalGitWorktrees, ProjectWorkspaceStore
 from untaped_workspace.infrastructure.catalog import RepoSources
-from workspace_test_support import commit_in, git
+from workspace_test_support import archived_records, commit_in, git, stored
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
 
@@ -38,7 +37,7 @@ class Env:
 def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]) -> Env:
     git_ = LocalGitWorktrees(plugin="workspace")
     workspaces = tmp_path / "ws"
-    store = StateWorkspaceStore()
+    store = ProjectWorkspaceStore()
     provision = ProvisionRepos(
         store,
         git_,
@@ -49,12 +48,12 @@ def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote
         now=lambda: T0,
     )
     provision.create("J-1", [RepoArg(ident=make_upstream("api").url)])
-    record = store.get("J-1")
+    record = stored("J-1")
     assert record is not None
     return Env(
         record,
-        WorkspaceStatus(git_, workspaces_dir=workspaces, parallel=2),
-        ArchiveWorkspace(store, git_, workspaces_dir=workspaces, now=lambda: T0),
+        WorkspaceStatus(git_, parallel=2),
+        ArchiveWorkspace(store, git_, now=lambda: T0),
         workspaces / "J-1" / "api",
         provision,
     )
@@ -113,7 +112,7 @@ def test_fetching_two_repos_reports_only_the_count_of_repos(
     env: Env, make_upstream: Callable[..., GitRemote]
 ) -> None:
     env.provision.add(env.record, [RepoArg(ident=make_upstream("web").url)])
-    record = StateWorkspaceStore().get("J-1")
+    record = stored("J-1")
     assert record is not None
     progress = _Recorder()
     env.status(record, fetch=True, progress=progress)
@@ -130,7 +129,7 @@ def test_read_only_commit_blocks(
     tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]
 ) -> None:
     git_ = LocalGitWorktrees(plugin="workspace")
-    store = StateWorkspaceStore()
+    store = ProjectWorkspaceStore()
     ProvisionRepos(
         store,
         git_,
@@ -141,9 +140,9 @@ def test_read_only_commit_blocks(
         now=lambda: T0,
     ).create("J-2", [RepoArg(ident=make_upstream("web").url, read_only=True)])
     commit_in(tmp_path / "ws" / "J-2" / "web")
-    record = store.get("J-2")
+    record = stored("J-2")
     assert record is not None
-    [row] = WorkspaceStatus(git_, workspaces_dir=tmp_path / "ws", parallel=1)(record)
+    [row] = WorkspaceStatus(git_, parallel=1)(record)
     assert row.blockers == ("1 commit not pushed",)
 
 
@@ -154,25 +153,28 @@ def test_a_repo_gone_from_the_store_is_cache_missing(env: Env, store_root: Path)
     assert row.blockers == ("repo missing from the repo store; local work cannot be checked",)
 
 
-def test_archive_removes_and_records(env: Env) -> None:
+def test_archive_removes_the_worktrees_and_keeps_the_project(env: Env) -> None:
     rows = env.archive(env.record, force=False)
     assert [r.action for r in rows if r.repo] == ["removed"]
-    assert not env.repo.parent.exists()
-    assert StateWorkspaceStore().get("J-1") is None
-    assert [a.name for a in StateWorkspaceStore().archived()] == ["J-1"]
+    assert not env.repo.exists()
+    assert (env.repo.parent / ".untaped" / "project.json").is_file()
+    assert stored("J-1") is None
+    [archived] = archived_records()
+    assert (archived.name, archived.meta and archived.meta.archived_at) == ("J-1", T0)
+    assert [spec.dir for spec in archived.repos] == ["api"]  # the rows stay, to resume
 
 
-def test_archive_after_the_dir_was_deleted(env: Env) -> None:
-    shutil.rmtree(env.repo.parent)
-    assert all(r.action == "removed" for r in env.archive(env.record, force=False))
+def test_archive_after_the_worktree_was_deleted(env: Env) -> None:
+    shutil.rmtree(env.repo)
+    assert [r.action for r in env.archive(env.record, force=False) if r.repo] == ["removed"]
 
 
 def test_archive_leaves_other_files(env: Env) -> None:
     (env.repo.parent / "notes.md").write_text("keep")
     rows = env.archive(env.record, force=False)
     [summary] = [r for r in rows if not r.repo]
-    assert (summary.action, summary.target_path) == ("skipped", env.repo.parent)
-    assert "left other files" in summary.detail
+    assert (summary.action, summary.target_path) == ("archived", env.repo.parent)
+    assert "workspace create J-1" in summary.detail
     assert (env.repo.parent / "notes.md").exists()
     assert not env.repo.exists()
 
@@ -182,21 +184,21 @@ def test_archive_failure_keeps_the_record(env: Env) -> None:
     rows = env.archive(env.record, force=False)
     assert [r.action for r in rows if r.repo] == ["failed"]
     assert rows[0].error is not None
-    assert StateWorkspaceStore().get("J-1") is not None
+    assert stored("J-1") is not None
 
 
 def test_archive_removes_repos_added_after_its_record_was_read(
     env: Env, make_upstream: Callable[..., GitRemote]
 ) -> None:
     env.provision.add(env.record, [RepoArg(ident=make_upstream("web").url)])
-    with env.archive.hold(env.record.name) as record:  # env.record predates the add
+    with env.archive.hold(env.record) as record:  # env.record predates the add
         rows = env.archive(record, force=False)
     assert [(r.repo, r.action) for r in rows if r.repo] == [
         ("acme/api", "removed"),
         ("acme/web", "removed"),
     ]
-    assert not env.repo.parent.exists()
-    [archived] = StateWorkspaceStore().archived()
+    assert not env.repo.exists()
+    [archived] = archived_records()
     assert [spec.dir for spec in archived.repos] == ["api", "web"]
 
 
@@ -217,12 +219,12 @@ class _GatedGit:
         self.inner.remove(url, dest, base=base, force=force)
 
 
-def test_add_during_archive_waits_then_fails_without_a_worktree(
+def test_add_during_archive_waits_then_resumes_the_workspace(
     tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote]
 ) -> None:
     workspaces = tmp_path / "ws"
     real = LocalGitWorktrees(plugin="workspace")
-    store = StateWorkspaceStore()
+    store = ProjectWorkspaceStore()
     provision = ProvisionRepos(
         store,
         real,
@@ -234,13 +236,13 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
     )
     provision.create("J-1", [RepoArg(ident=make_upstream("api").url)])
     web = RepoArg(ident=make_upstream("web").url)
-    record = store.get("J-1")
+    record = stored("J-1")
     assert record is not None
     gated = _GatedGit(real)
-    archive = ArchiveWorkspace(store, gated, workspaces_dir=workspaces, now=lambda: T0)  # type: ignore[arg-type]
+    archive = ArchiveWorkspace(store, gated, now=lambda: T0)  # type: ignore[arg-type]
 
     def archive_held() -> None:
-        with archive.hold("J-1") as held:
+        with archive.hold(record) as held:
             archive(held, force=False)
 
     archiver = threading.Thread(target=contextvars.copy_context().run, args=(archive_held,))
@@ -260,8 +262,8 @@ def test_add_during_archive_waits_then_fails_without_a_worktree(
     gated.release.set()
     archiver.join()
     adder.join()
-    assert [type(exc) for exc in errors] == [WorkspaceNotFoundError]
-    assert not (workspaces / "J-1" / "web").exists()
-    assert store.get("J-1") is None
-    [archived] = store.archived()
-    assert [spec.dir for spec in archived.repos] == ["api"]
+    assert errors == []
+    assert (workspaces / "J-1" / "api" / "README.md").exists()  # checked out again
+    assert (workspaces / "J-1" / "web" / "README.md").exists()
+    resumed = stored("J-1")
+    assert resumed is not None and [spec.dir for spec in resumed.repos] == ["api", "web"]

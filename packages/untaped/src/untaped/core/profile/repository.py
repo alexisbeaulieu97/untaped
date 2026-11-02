@@ -10,12 +10,10 @@ lives here. The base (``config.yml``'s top level) reads as the profile
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from untaped.runtime.config_file import mutate_config, read_config_dict
 from untaped.runtime.config_read import load_project_config
-from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.profile_resolver import (
     Picked,
     check_defined,
@@ -123,26 +121,6 @@ class ProfileFileRepository:
 # --------------------------------------------------------------------------- #
 # A project's ``profile:``
 # --------------------------------------------------------------------------- #
-
-
-def record_project_pick(root: Path, names: Sequence[str]) -> bool:
-    """Record ``names`` as the ``profile:`` of the project at ``root``, unless it has one.
-
-    What ``project init`` does with the run's explicit pick, so the folder
-    keeps the environment it was made in. Returns whether it wrote.
-    """
-    if not names:
-        return False
-    wrote = False
-
-    def apply(data: dict[str, Any]) -> None:
-        nonlocal wrote
-        if "profile" not in data:
-            data["profile"] = names[0] if len(names) == 1 else list(names)
-            wrote = True
-
-    mutate_config(apply, project_config_path(root), load=load_project_config)
-    return wrote
 
 
 def rewrite_project_picks(

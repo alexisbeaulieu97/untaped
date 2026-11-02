@@ -13,8 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError
-from untaped_workspace.application.locate import active_workspace, workspace_root
-from untaped_workspace.domain.models import RepoSpec
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.domain.naming import repo_key
 from untaped_workspace.records import ResolveAction, ResolveOutcome
 
@@ -32,18 +31,14 @@ class ResolveRepos:
         store: WorkspaceStore,
         git: GitWorktrees,
         catalog: RepoCatalog,
-        *,
-        workspaces_dir: Path,
     ) -> None:
         self._store = store
         self._git = git
         self._catalog = catalog
-        self._workspaces_dir = workspaces_dir
 
-    def __call__(self, name: str) -> list[ResolveOutcome]:
-        with self._store.locked(name):
-            record = active_workspace(self._store, name)
-            root = workspace_root(self._workspaces_dir, record.name)
+    def __call__(self, located: WorkspaceRecord) -> list[ResolveOutcome]:
+        with self._store.locked(located) as record:
+            root = record.root
             rows: list[ResolveOutcome] = []
             changed: list[RepoSpec] = []
             for spec in record.repos:
@@ -58,7 +53,7 @@ class ResolveRepos:
                 for spec in changed:
                     if spec.url != old[spec.dir]:
                         self._git.configure(spec.url, root / spec.dir)
-                self._store.update_repos(record.name, changed)
+                self._store.put_repos(record, changed)
             return rows
 
     def _one(

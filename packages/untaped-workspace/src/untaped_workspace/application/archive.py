@@ -1,4 +1,9 @@
-"""Archive a workspace: remove its worktrees and directory, keep its record as archived."""
+"""Archive a workspace: remove its worktrees; keep its folder, rows and holds.
+
+An archived workspace is still a project: its ``.untaped/`` keeps workspace's
+rows and the repos it holds, so the repo store keeps them, and ``create``
+(or ``add``) resumes it, checking its repos out again on their branches.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError
-from untaped_workspace.application.locate import active_workspace, workspace_root
+from untaped.sdk import Failure, UntapedError, command_line, q
+from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.records import ArchiveOutcome
 
 if TYPE_CHECKING:
@@ -23,52 +28,48 @@ class ArchiveWorkspace:
     The caller holds :meth:`hold` from its safety check to the removal, so no
     ``create``/``add`` of the workspace can land in between.
     Each repo's worktree is removed; a failure becomes a ``failed`` row and
-    leaves the workspace active so ``archive`` can be retried. When every repo
-    is gone, the directory is deleted if empty and the record moves to the
-    archived list; a directory with other files in it stays, as a
-    ``skipped`` workspace row.
+    leaves the workspace active so ``archive`` can be retried. When every
+    worktree is gone, the workspace is marked archived; its folder stays.
     """
 
     def __init__(
-        self,
-        store: WorkspaceStore,
-        git: GitWorktrees,
-        *,
-        workspaces_dir: Path,
-        now: Callable[[], datetime],
+        self, store: WorkspaceStore, git: GitWorktrees, *, now: Callable[[], datetime]
     ) -> None:
         self._store = store
         self._git = git
-        self._workspaces_dir = workspaces_dir
         self._now = now
 
     @contextmanager
-    def hold(self, name: str) -> Iterator[WorkspaceRecord]:
-        """Hold workspace ``name``'s lock; yield its record as stored now.
+    def hold(self, located: WorkspaceRecord) -> Iterator[WorkspaceRecord]:
+        """Hold the workspace's project lock; yield its record as stored now.
 
-        Not found when it was archived meanwhile; repos an ``add`` recorded
-        before the lock was taken are in the yielded record.
+        Refused when it is archived (meanwhile, or already).
         """
-        with self._store.locked(name):
-            yield active_workspace(self._store, name)
+        with self._store.locked(located) as record:
+            if record.archived:
+                raise WorkspaceError(
+                    f"workspace {q(record.name)} is already archived",
+                    category="conflict",
+                    hint=resume_hint(record),
+                )
+            yield record
 
     def __call__(self, record: WorkspaceRecord, *, force: bool) -> list[ArchiveOutcome]:
         """Archive ``record``, the one :meth:`hold` yielded (the caller holds the lock)."""
-        root = workspace_root(self._workspaces_dir, record.name)
-        rows = [self._remove(record.name, root, spec, force=force) for spec in record.repos]
+        rows = [self._remove(record.name, record.root, spec, force=force) for spec in record.repos]
         if any(row.action == "failed" for row in rows):
             return rows
-        emptied = _remove_if_empty(root)
+        if record.meta is not None:
+            self._store.set_archived(record, self._now())
         rows.append(
             ArchiveOutcome(
                 workspace=record.name,
                 repo="",
-                action="removed" if emptied else "skipped",
-                detail="workspace directory" if emptied else f"left other files in {root}",
-                target_path=root,
+                action="archived",
+                detail=f"kept the folder and its repos' holds; {resume_hint(record)}",
+                target_path=record.root,
             )
         )
-        self._store.archive(record.name, at=self._now())
         return rows
 
     def _remove(self, workspace: str, root: Path, spec: RepoSpec, *, force: bool) -> ArchiveOutcome:
@@ -89,12 +90,10 @@ class ArchiveWorkspace:
         )
 
 
-def _remove_if_empty(path: Path) -> bool:
-    """Delete ``path`` when it is empty (or already gone); ``False`` when files remain."""
-    try:
-        path.rmdir()
-    except FileNotFoundError:
-        return True
-    except OSError:
-        return False
-    return True
+def resume_hint(record: WorkspaceRecord) -> str:
+    """What resumes an archived workspace: ``create`` for one it made, else ``add``."""
+    from untaped_workspace.commands.create import Add, Create  # noqa: PLC0415 - import cycle
+
+    made = record.meta is not None and record.meta.created_by == "workspace"
+    command = Create.spelled(record.name) if made else Add.spelled(str(record.root))
+    return f"`{command_line(command)}` resumes it"

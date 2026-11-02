@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextvars
+import fcntl
 import json
 import shutil
 import threading
@@ -12,12 +13,22 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import Failure
+from untaped.sdk.projects import holder_of
+from untaped.sdk.storage.holds import holder_lock_file
 from untaped.sdk.testing import Ran, ScriptedTerminal
 from untaped.sdk.testing.git import GitRemote
-from untaped_workspace.domain.naming import workspace_key
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
-from untaped_workspace.infrastructure.state_store import CHECKOUTS
-from workspace_test_support import add_submodule, commit_in, err, git, init_submodules, run
+from untaped_workspace.infrastructure import LocalGitWorktrees
+from workspace_test_support import (
+    add_submodule,
+    archived_records,
+    commit_in,
+    composed,
+    err,
+    git,
+    init_submodules,
+    run,
+    stored,
+)
 
 
 def _rows(result: Ran) -> list[dict[str, object]]:
@@ -59,7 +70,8 @@ def test_create_without_repos_makes_an_empty_workspace(workspace_env: Path) -> N
     assert created.exit == 0, err(created)
     assert _rows(created) == []
     assert (workspace_env / "J-1").is_dir()
-    record = StateWorkspaceStore().get("J-1")
+    with composed():
+        record = stored("J-1")
     assert record is not None and not record.repos
 
 
@@ -77,7 +89,8 @@ def test_a_decomposed_name_finds_the_workspace_create_stored(
     assert not any("used by" in r["detail"] for r in _rows(dry))  # its own record isn't a holder
     assert run(["archive", "cafe\u0301", "--yes"]).exit == 0
     assert run(["remove", "cafe\u0301", "--yes"]).exit == 0  # archived only
-    assert not StateWorkspaceStore().archived()
+    with composed():
+        assert not archived_records()
 
 
 def test_add_without_repos_is_usage() -> None:
@@ -122,7 +135,7 @@ def test_outside_a_workspace_is_usage_with_hint(
     monkeypatch.chdir(tmp_path)
     result = run(["path"])
     assert result.exit == 2, err(result)
-    assert "not inside a workspace" in err(result)
+    assert "not in a project" in err(result)
     assert "hint:" in err(result)
 
 
@@ -197,11 +210,21 @@ def test_archive_holds_the_workspace_lock_from_check_to_removal(
 ) -> None:
     run(["create", "J-1", "--repo", make_upstream("api").url])
     commit_in(workspace_env / "J-1" / "api")
+    with composed():
+        record = stored("J-1")
+        assert record is not None
+        lock = holder_lock_file(holder_of(record.project))
     busy: list[bool] = []
 
-    def probe() -> None:  # another thread, as a concurrent ``add``: in one it is re-entrant
-        with CHECKOUTS.try_locked(workspace_key("J-1")) as held:
-            busy.append(not held)
+    def probe() -> None:  # another open of the file, as another process's ``add`` would
+        with lock.open("a") as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                busy.append(True)
+            else:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+                busy.append(False)
 
     answer = terminal.answers(True).confirm
 
@@ -259,7 +282,7 @@ def test_archive_reports_a_repo_that_changed_after_the_check_with_its_hint(
     assert (failure.item, failure.message, failure.hint) == (
         "J-1/acme/api",
         f"{repo}: uncommitted changes; nothing removed",
-        "the repo changed since the check; run status and archive again",
+        "the repo changed since the check; run status, then the command again",
     )
 
 
@@ -271,7 +294,9 @@ def test_archive_clean_workspace(
     assert [r["action"] for r in _rows(dry)] == ["planned"]
     archived = run(["archive", "J-1", "--format", "json"])
     assert archived.exit == 0, err(archived)
-    assert not (workspace_env / "J-1").exists()
+    assert [r["action"] for r in _rows(archived)] == ["removed", "archived"]
+    assert not (workspace_env / "J-1" / "api").exists()
+    assert (workspace_env / "J-1" / ".untaped" / "project.json").is_file()  # the project stays
     assert run(["list", "--format", "json"]).stdout.strip() in ("", "[]")
 
 
@@ -295,7 +320,7 @@ def test_remove_previews_confirms_then_releases(
 
     assert removed.exit == 0, err(removed)
     assert [(r["repo"], r["action"]) for r in _rows(removed)] == [
-        ("acme/api", "removed"),
+        ("acme/api", "released"),
         ("", "removed"),
     ]
     assert not (workspace_env / "J-1").exists()
@@ -310,11 +335,12 @@ def test_remove_refuses_work_it_would_lose(
     (workspace_env / "J-1" / "api" / "scratch.txt").write_text("precious")
     refused = run(["remove", "J-1", "--yes", "--format", "json"])
     assert refused.exit == 1
-    assert [r["action"] for r in _rows(refused)] == ["skipped", "planned"]
+    assert [r["action"] for r in _rows(refused)] == ["refused", "planned"]
     [failure] = [each for each in refused.diagnostics if isinstance(each, Failure)]
     assert (failure.message, failure.hint) == (
         "1 repo would lose work; nothing removed",
-        "commit and push your changes",
+        f"commit and push it from {workspace_env / 'J-1' / 'api'}; "
+        "or pass --force to remove anyway",
     )
     assert (workspace_env / "J-1" / "api" / "scratch.txt").exists()
 
@@ -386,7 +412,7 @@ def test_unreadable_worktree_is_an_error_row_and_force_archives(
     assert "check the repo by hand, then pass --force" in err(refused)
     forced = run(["archive", "J-1", "--force", "--yes", "--format", "json"])
     assert forced.exit == 0, err(forced)
-    assert not (workspace_env / "J-1").exists()
+    assert not (workspace_env / "J-1" / "api").exists()
 
 
 def test_status_survives_a_base_deleted_on_origin(
@@ -432,7 +458,7 @@ def test_stash_hint_protects_other_workspaces_stashes(
     assert "never drop those" in err(refused)
 
 
-def test_archive_with_leftover_files_skips_the_workspace_row(
+def test_archive_keeps_leftover_files_with_the_project(
     make_upstream: Callable[..., GitRemote], workspace_env: Path
 ) -> None:
     run(["create", "J-1", "--repo", make_upstream("api").url])
@@ -440,7 +466,7 @@ def test_archive_with_leftover_files_skips_the_workspace_row(
     archived = run(["archive", "J-1", "--format", "json"])
     assert archived.exit == 0, err(archived)
     summary = _rows(archived)[-1]
-    assert (summary["repo"], summary["action"]) == ("", "skipped")
+    assert (summary["repo"], summary["action"]) == ("", "archived")
     assert (workspace_env / "J-1" / "notes.md").exists()
 
 

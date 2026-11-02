@@ -592,7 +592,9 @@ def test_remove_rechecks_for_work_made_after_the_status_check(
     with pytest.raises(GitError) as caught:
         worktrees.remove(url, dest, base="main", force=False)
     assert (caught.value.category, caught.value.system) == ("conflict", "git")
-    assert caught.value.hint == "the repo changed since the check; run status and archive again"
+    assert caught.value.hint == (
+        "the repo changed since the check; run status, then the command again"
+    )
     assert (dest / "README.md").exists()
     assert git(dest, "rev-parse", "--abbrev-ref", "HEAD") == "b"
 

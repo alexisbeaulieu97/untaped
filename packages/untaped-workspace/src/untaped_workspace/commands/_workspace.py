@@ -11,10 +11,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from untaped.sdk import Command, Parallel, key
-from untaped_workspace.application.locate import locate_workspace, workspace_root
 from untaped_workspace.application.status import WorkspaceStatus
-from untaped_workspace.infrastructure import LocalGitWorktrees, StateWorkspaceStore
-from untaped_workspace.infrastructure.state_store import CHECKOUTS
+from untaped_workspace.infrastructure import LocalGitWorktrees, ProjectWorkspaceStore
+from untaped_workspace.infrastructure.project_store import CHECKOUTS
 from untaped_workspace.settings import MAX_WORKERS, WorkspaceSettings
 
 if TYPE_CHECKING:
@@ -26,7 +25,9 @@ if TYPE_CHECKING:
 WORKERS = Parallel(default=key(WorkspaceSettings).parallel, unset=8, cap=MAX_WORKERS)
 
 #: The help of the NAME most commands take.
-NAME_HELP = "Workspace name. Default: the workspace containing the current directory."
+NAME_HELP = (
+    "Workspace name, or a project's folder. Default: the project containing the current directory."
+)
 
 
 class WorkspaceCommand(Command[WorkspaceSettings]):
@@ -37,22 +38,20 @@ class WorkspaceCommand(Command[WorkspaceSettings]):
         """``workspace.workspaces_dir``, else ``plugins/workspace/checkouts/`` under the home."""
         return CHECKOUTS.path.resolve()
 
-    def workspace_dir(self, name: str) -> Path:
-        """Absolute directory of workspace ``name``."""
-        return workspace_root(self.workspaces_dir, name)
+    def store(self) -> ProjectWorkspaceStore:
+        return ProjectWorkspaceStore()
 
     def locate(self, name: str | None) -> WorkspaceRecord:
-        """The workspace ``name``, or the one containing the current directory."""
-        return locate_workspace(
-            StateWorkspaceStore(), name=name, workspaces_dir=self.workspaces_dir, cwd=Path.cwd()
-        )
+        """The workspace ``name`` names, or the project containing the current directory."""
+        store = self.store()
+        return store.current() if name is None else store.find(name)
 
     def git_worktrees(self) -> LocalGitWorktrees:
         return LocalGitWorktrees(plugin=self.ctx.plugin)
 
     def status_reader(self, git: LocalGitWorktrees) -> WorkspaceStatus:
         """The ``status`` use case, also ``archive``'s safety check, ``workspace.parallel`` wide."""
-        return WorkspaceStatus(git, workspaces_dir=self.workspaces_dir, parallel=WORKERS.value)
+        return WorkspaceStatus(git, parallel=WORKERS.value)
 
     def report[R: TargetRecord](self, rows: Iterable[R], item: Callable[[R], str]) -> None:
         """One stderr failure per row that carries an error, naming its ``item``."""

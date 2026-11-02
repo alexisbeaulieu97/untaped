@@ -16,6 +16,7 @@ from untaped.sdk.storage._fs import (
     file_lock,
     is_write_temp,
     read_structured_file,
+    unlink_lock_file,
 )
 
 
@@ -227,6 +228,30 @@ def test_file_lock_re_entrance_follows_the_path_not_its_spelling(tmp_path: Path)
     ):
         pass
     assert _in_thread(lock) is None
+
+
+def test_unlink_lock_file_waits_for_the_outermost_block(tmp_path: Path) -> None:
+    """A removed project's lock file goes only once nothing in this thread holds it."""
+    lock = tmp_path / "state.lock"
+
+    with _locked(lock, timeout=0):
+        with _locked(lock, timeout=0):
+            unlink_lock_file(lock)
+        assert lock.exists()  # the outer block still works under it
+        assert isinstance(_in_thread(lock), ConfigError)
+    assert not lock.exists()
+    with _locked(lock, timeout=0):  # a later lock starts a fresh file, and keeps it
+        pass
+    assert lock.exists()
+
+
+def test_unlink_lock_file_unheld_goes_now(tmp_path: Path) -> None:
+    lock = tmp_path / "state.lock"
+    with _locked(lock, timeout=0):
+        pass
+    unlink_lock_file(lock)
+    assert not lock.exists()
+    unlink_lock_file(lock)  # already gone: nothing to do
 
 
 def test_file_lock_os_failure_raises_the_failed_message_with_the_reason(tmp_path: Path) -> None:
