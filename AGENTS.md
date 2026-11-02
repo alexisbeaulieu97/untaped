@@ -25,7 +25,7 @@ we notice.
 Everything untaped does can run unattended, so scripts and agents can drive it:
 what a command asks at a terminal can come from a flag, an environment variable
 or configuration, or another command does the job without asking. untaped
-treats people and agents alike: a step states only facts about itself, such as
+treats people and agents alike: what it says about a step names facts such as
 that it asks for a secret or needs admin rights, never who should take it.
 
 Core and each plugin care only about what comes in and what goes out, and know
