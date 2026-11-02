@@ -18,7 +18,12 @@ from untaped.core.commands.project import ProjectGroup
 from untaped.core.commands.records import CORE_RECORDS
 from untaped.core.commands.setup import Setup
 from untaped.core.commands.skills import Skills
-from untaped.core.doctor_checks import CONFIG_PERMISSIONS, TOKEN_STORE, UNKNOWN_KEYS
+from untaped.core.doctor_checks import (
+    CONFIG_PERMISSIONS,
+    HOME_ONLY_IN_PROFILES,
+    TOKEN_STORE,
+    UNKNOWN_KEYS,
+)
 from untaped.core.run_uses import RUN_USES
 from untaped.core.settings import DECLARATION, NAME, CoreSettings
 from untaped.sdk.network._credential_store import INDEX
@@ -52,6 +57,7 @@ class Core(Plugin):
     )
     config_permissions = CONFIG_PERMISSIONS
     unknown_keys = UNKNOWN_KEYS
+    home_only = HOME_ONLY_IN_PROFILES
     token_store = TOKEN_STORE
     refs = REFS
     credentials = INDEX

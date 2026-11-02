@@ -162,7 +162,8 @@ migration would rewrite: migrate once every install is upgraded.
 A profile is a named set of settings under `profiles:`. `default` names the
 base, the top level of `config.yml`. A run layers the profiles it picks over
 the base, in order, field by field: a later profile wins, mappings merge and
-lists replace.
+lists replace. A profile may not set what only the base sets, such as
+`git.store_dir` (exit 4 when picked); `config unset --profile` removes it.
 
 ```bash
 untaped profile create stage --copy-from default

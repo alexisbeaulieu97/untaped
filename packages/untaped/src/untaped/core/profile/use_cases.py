@@ -36,13 +36,16 @@ class CreateProfile:
 
     ``copy_from`` seeds the new profile from another existing one, or from
     the base (``default``). The copy is a deep copy — later edits to the
-    source must not affect the new profile.
+    source must not affect the new profile — without the settings only the
+    base sets, which the call returns.
     """
 
     def __init__(self, repo: ProfileWriter) -> None:
         self._repo = repo
 
-    def __call__(self, name: str, *, copy_from: str | None = None, dry_run: bool = False) -> None:
+    def __call__(
+        self, name: str, *, copy_from: str | None = None, dry_run: bool = False
+    ) -> tuple[str, ...]:
         _check_name(name)
         if self._repo.read(name) is not None:
             raise ConfigError(f"profile {name!r} already exists", category="conflict")
@@ -57,8 +60,10 @@ class CreateProfile:
             data = copy.deepcopy(source)
         else:
             data = {}
+        left = self._repo.leave_out_home_only(data)
         if not dry_run:
             self._repo.write(name, data)
+        return left
 
 
 class DeleteProfile:

@@ -25,6 +25,7 @@ from untaped.runtime.settings import (
     profile_section_models,
     resolve_config_path,
 )
+from untaped.runtime.settings_layout import home_only_set
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import key_mappings, scan_keys
@@ -95,6 +96,37 @@ def _unknown_keys(ctx: PluginContext) -> DoctorResult:
     )
 
 
+def _home_only_in_profiles(ctx: PluginContext) -> DoctorResult:
+    """Warn about each named profile that sets a setting only the home's base sets.
+
+    A run that picks such a profile is refused; one nobody picks is only
+    read here, so its value is never used.
+    """
+    del ctx
+    raw = _raw()
+    if raw is None:
+        return DoctorResult(ok=True, detail=_NOT_CHECKED)
+    models = profile_section_models()
+    found: list[tuple[str, str]] = []
+    for name, data, location in profile_entries(dict(raw)):
+        if not location:
+            continue  # the base is where they belong
+        for section, model in models.items():
+            section_data = data.get(section)
+            if isinstance(section_data, dict):
+                found.extend((name, key) for key in home_only_set(section, model, section_data))
+    if not found:
+        return DoctorResult(ok=True, detail="no profile sets one")
+    listed = ", ".join(f"{key} (profile {name})" for name, key in found)
+    name, key = found[0]
+    return DoctorResult(
+        ok=True,
+        warn=True,
+        detail=f"only the home's base sets {listed}; a run picking that profile is refused",
+        fix=f"--profile {name} config unset {key}",
+    )
+
+
 def _token_store(ctx: PluginContext) -> DoctorResult:
     """Fail when a stored credential needs ``pass`` and it cannot work here (no key, no gpg).
 
@@ -116,6 +148,7 @@ def _token_store(ctx: PluginContext) -> DoctorResult:
 
 CONFIG_PERMISSIONS = DoctorCheck(title="config file permissions", run=_config_permissions)
 UNKNOWN_KEYS = DoctorCheck(title="unknown config keys", run=_unknown_keys)
+HOME_ONLY_IN_PROFILES = DoctorCheck(title="settings only the base sets", run=_home_only_in_profiles)
 TOKEN_STORE = DoctorCheck(title="pass token store", run=_token_store)
 
 

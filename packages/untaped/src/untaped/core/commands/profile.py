@@ -133,9 +133,11 @@ class Create(Command[CoreSettings]):
     output: Output[ProfileOutcome]
 
     def run(self) -> ProfileOutcome:
-        CreateProfile(ProfileFileRepository())(
+        left = CreateProfile(ProfileFileRepository())(
             self.name, copy_from=self.copy_from, dry_run=bool(self.dry_run)
         )
+        for key in left:
+            self.ctx.diag.info(f"left out {key}: only the home's base sets it")
         if not self.dry_run:
             suffix = f" (copied from {self.copy_from})" if self.copy_from else ""
             self.ctx.diag.success(f"created profile: {self.name}{suffix}")

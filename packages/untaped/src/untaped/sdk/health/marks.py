@@ -7,8 +7,10 @@ what follows (``setup``, ``setup plan``, doctor's ``setup`` row, ``auth``):
   (a :class:`~untaped.sdk.network.credentials.CredentialKey` model included): the plugin
   can't be used until the field has a value. Nested models' fields count
   too, by their dotted path.
-- :class:`HomeOnly` on a leaf field that locates data every project shares:
-  a project's ``.untaped/config.yml`` may not set it.
+- :class:`HomeOnly` on a leaf field that locates or describes what a whole
+  home shares: only the home's base sets it, never a project's
+  ``.untaped/config.yml`` or a profile. A setting a ``Dir(at=...)`` places
+  is home-only without the mark.
 - each :class:`~untaped.sdk.network.credentials.Credential` its plugin class holds
   is a secret the plugin needs: set once :meth:`~untaped.sdk.network.credentials.Credential.answer`
   names a source. It is no setting: ``untaped auth login`` stores it.

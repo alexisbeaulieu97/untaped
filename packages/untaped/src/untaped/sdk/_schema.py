@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import types
 import typing
+import weakref
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, get_args, get_origin
@@ -88,13 +89,42 @@ class Argv:
 
 @dataclass(frozen=True)
 class HomeOnly:
-    """``Annotated`` marker: a setting read from the home only, never from a project's file.
+    """``Annotated`` marker: a setting only the home's base sets: no project file, no profile.
 
-    Mark a setting that locates data shared by every project (a store's
-    folder, an index): a project that set its own would split that data.
-    A project's ``.untaped/config.yml`` setting one is refused (exit 4).
-    Annotate the field itself: ``Annotated[Path | None, HomeOnly()]``.
+    Mark a setting that locates or describes what a whole home shares (a
+    store's folder, an index, this machine's choices): a project or a profile
+    that set its own would split it, or make it depend on the folder a command
+    runs in. A project's ``.untaped/config.yml`` or a picked profile setting
+    one is refused (exit 4); ``UNTAPED_*`` variables still apply. A setting a
+    ``Dir(at=...)`` places is home-only without the mark. Annotate the field
+    itself: ``Annotated[Path | None, HomeOnly()]``.
+
+    First consumer: dotfiles' machine choices (``tags``, ``os``) in its redesign.
     """
+
+
+#: Each settings model's settings a ``Dir(at=...)`` places, by path inside the model.
+#: Composition fills it from the plugin's declaration; those settings are home-only.
+_PLACED: weakref.WeakKeyDictionary[type[BaseModel], frozenset[tuple[str, ...]]] = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def place_home_only(model: type[BaseModel], paths: Iterable[tuple[str, ...]]) -> None:
+    """Record that a ``Dir`` places each of ``paths`` of ``model``, which makes them home-only.
+
+    :func:`walk_settings` marks them as :class:`HomeOnly` would, in
+    ``model`` and in any model derived from it (the composed section model);
+    a call replaces what ``model`` had.
+    """
+    _PLACED[model] = frozenset(paths)
+
+
+def _placed(model_cls: type[BaseModel]) -> frozenset[tuple[str, ...]]:
+    """The paths a ``Dir`` places in ``model_cls`` or a model it derives from."""
+    return frozenset().union(
+        *(_PLACED.get(cls, frozenset()) for cls in model_cls.__mro__ if isinstance(cls, type))
+    )
 
 
 def field_choices(field: FieldInfo) -> Choices | None:
@@ -137,7 +167,7 @@ class FieldDescriptor:
     """Whether the field carries the :class:`Argv` marker: a command's argv."""
 
     home_only: bool = False
-    """Whether the field carries the :class:`HomeOnly` marker: never read from a project."""
+    """Whether only the home's base sets it: a :class:`HomeOnly` mark, or a ``Dir``'s place."""
 
     @property
     def key(self) -> str:
@@ -155,18 +185,25 @@ def walk_settings(
     _prefix: tuple[str, ...] = (),
     *,
     include_collections: bool = False,
+    _home: frozenset[tuple[str, ...]] = frozenset(),
 ) -> list[FieldDescriptor]:
     """Return every leaf scalar field of ``model_cls``, recursing into nested models.
 
     ``include_collections`` also returns list/dict fields as single leaves.
     """
     entries: list[FieldDescriptor] = []
+    placed = _home | _placed(model_cls)
     for name, field in model_cls.model_fields.items():
         annotation = unwrap_optional(field.annotation)
         path = (*_prefix, name)
 
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-            entries.extend(walk_settings(annotation, path, include_collections=include_collections))
+            inner = frozenset(each[1:] for each in placed if len(each) > 1 and each[0] == name)
+            entries.extend(
+                walk_settings(
+                    annotation, path, include_collections=include_collections, _home=inner
+                )
+            )
             continue
 
         if _is_collection(annotation) and not include_collections:
@@ -196,7 +233,8 @@ def walk_settings(
                 choices=field_choices(field),
                 bounds=tuple(item for item in field.metadata if isinstance(item, _BOUNDS)),
                 argv=any(isinstance(item, Argv) for item in field.metadata),
-                home_only=any(isinstance(item, HomeOnly) for item in field.metadata),
+                home_only=(name,) in placed
+                or any(isinstance(item, HomeOnly) for item in field.metadata),
             )
         )
     return entries

@@ -61,6 +61,7 @@ from untaped.runtime.stability_help import apply_marks, docs_footer, mark_app, p
 from untaped.sdk._behaviours import bind_behaviours
 from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
+from untaped.sdk._schema import place_home_only
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import bind_owners
@@ -104,7 +105,8 @@ def _register_sections(result: CompositionResult) -> None:
     removals name untaped's own major), and its listed behaviours as its own
     (read only when one of them first warns). The root's behaviours are the
     SDK's to list (:func:`untaped.sdk._behaviours.behaviour_owner` reads one nobody
-    lists as core's), so asking who lists one never imports core's class.
+    lists as core's), so asking who lists one never imports core's class. The
+    setting each ``Dir(at=...)`` names is marked home-only in its section.
     """
     bind_owners(
         {
@@ -121,6 +123,9 @@ def _register_sections(result: CompositionResult) -> None:
         {plugin.name: _credentials(plugin) for plugin in result.plugins if plugin.credential_names}
     )
     for plugin in result.plugins:
+        # a Dir's at= setting is home-only, read from the declaration: no class is imported
+        placed = (tuple(block.at.split(".")) for block in plugin.decl.blocks if block.at)
+        place_home_only(plugin.settings, placed)
         register_profile_settings(plugin.name, section_settings(plugin), plugin.stability)
 
 

@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import key
-from untaped.sdk.health import HomeOnly
 from untaped.sdk.storage import Dir
 from untaped_dotfiles.models import OsName
 
@@ -18,14 +16,14 @@ class DotfilesSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    repos_dir: Annotated[Path | None, HomeOnly()] = Field(
+    repos_dir: Path | None = Field(
         default=None,
         description=(
             "Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`), an absolute "
             "path. Unset: `plugins/dotfiles/clones/` under the home."
         ),
     )
-    kept_dir: Annotated[Path | None, HomeOnly()] = Field(
+    kept_dir: Path | None = Field(
         default=None,
         description=(
             "Where `apply`, `sync` and `remove` keep local files they replace, "
@@ -33,7 +31,7 @@ class DotfilesSettings(BaseModel):
             "`plugins/dotfiles/kept/` under the home."
         ),
     )
-    state_dir: Annotated[Path | None, HomeOnly()] = Field(
+    state_dir: Path | None = Field(
         default=None,
         description=(
             "Holds `status.json` and `attention`, the files a prompt segment reads; an "

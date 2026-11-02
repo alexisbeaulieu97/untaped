@@ -27,7 +27,7 @@ from ansible_index_support import (
     record_refresh,
     seed_index,
 )
-from ansible_test_support import Result, run, run_root, running, use_config, write_config
+from ansible_test_support import Result, run, run_root, running, use_config
 from untaped.sdk import ErrorCategory, Failure, Message, Progress, Stale
 from untaped.sdk.storage import Freshness
 from untaped.sdk.testing import cache_clock, progress_clock
@@ -614,21 +614,20 @@ def test_an_empty_source_refreshes_once_and_answers_nothing(
     assert fill.keys == ["source:prod"]
 
 
-def test_profiles_with_their_own_index_refresh_their_own(
+def test_an_index_dir_from_a_variable_refreshes_its_own(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
 ) -> None:
     _seed(tmp_path, "source:prod", make_edge(), ago=timedelta(hours=1))
     use_config(tmp_path, monkeypatch, _PROD)
     (tmp_path / "other").mkdir()
-    write_config({"profiles": {"other": {"ansible": {"index_dir": str(tmp_path / "other")}}}})
 
     default = _impact()
     second = _impact()
-    monkeypatch.setenv("UNTAPED_PROFILE", "other")
-    profiled = _impact()
+    monkeypatch.setenv("UNTAPED_ANSIBLE__INDEX_DIR", str(tmp_path / "other"))
+    elsewhere = _impact()
 
-    assert _repos(default) == _repos(second) == _repos(profiled) == ["acme/site"]
-    assert fill.keys == ["source:prod"]  # only the other profile's first read
+    assert _repos(default) == _repos(second) == _repos(elsewhere) == ["acme/site"]
+    assert fill.keys == ["source:prod"]  # only the other index's first read
 
 
 # --- source refresh and source status -----------------------------------------
