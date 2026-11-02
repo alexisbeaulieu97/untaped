@@ -21,7 +21,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from untaped.runtime.redaction import redact_credentials
-from untaped.runtime.sink import current_sink
+from untaped.runtime.run_output import current_sink
 from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Debug
 

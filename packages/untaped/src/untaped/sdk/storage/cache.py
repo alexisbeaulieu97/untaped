@@ -63,8 +63,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, overload
 
 from pydantic import BaseModel, ConfigDict, SkipValidation, TypeAdapter, ValidationError
 
+from untaped.runtime.run_output import current_sink
 from untaped.runtime.settings import load_settings_section, registered_profile_model
-from untaped.runtime.sink import current_sink
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._run import run_clock
 from untaped.sdk.diagnostic import NOT_COUNTED, Failure, Stale, format_utc, parse_utc
@@ -1300,7 +1300,7 @@ class Cache[M = None](OwnedBlock):
         try:
             self._write_file(own, key, freshness, typing, value)
         except OSError as exc:
-            from untaped.runtime.sink import Diagnostics  # noqa: PLC0415 - no cycle
+            from untaped.runtime.run_output import Diagnostics  # noqa: PLC0415 - no cycle
 
             Diagnostics().warning(
                 f"could not keep {self.label} for {label} ({exc.strerror or exc}); "

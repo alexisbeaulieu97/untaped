@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING
 
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk.diagnostic import Failure
 
 if TYPE_CHECKING:

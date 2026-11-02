@@ -917,7 +917,7 @@ def notify_deprecation(
     """
     if not first_notice(id if key is None else key):
         return
-    from untaped.runtime.sink import Diagnostics  # noqa: PLC0415
+    from untaped.runtime.run_output import Diagnostics  # noqa: PLC0415
     from untaped.sdk.diagnostic import Deprecation  # noqa: PLC0415 - off the CLI path
 
     removal = removal_text(removed_in, owner)

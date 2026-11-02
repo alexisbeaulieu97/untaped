@@ -16,7 +16,7 @@ option applies), the install's plugins through
 ``installed_plugins()`` (read once, on first use), the home and the themed
 terminal (each resolved on first use: a home that doesn't resolve fails the
 read that needs it, through the run's own sink). The run's output
-(``untaped.runtime.sink.RunOutput``) and its policy, ``UNTAPED_DIAGNOSTICS``
+(``untaped.runtime.run_output.RunOutput``) and its policy, ``UNTAPED_DIAGNOSTICS``
 read once, are built with it.
 """
 
@@ -32,8 +32,9 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from untaped.runtime.profile_resolver import pick_names, picked_names
+from untaped.runtime.run_output import RunOutput, opened
 from untaped.runtime.settings import get_config_section
-from untaped.runtime.sink import RunOutput, forced_diagnostics, opened
+from untaped.runtime.sink import forced_diagnostics
 from untaped.runtime.verbose import restore as restore_logging
 from untaped.sdk._app_context import app_context
 from untaped.sdk._run import (
@@ -132,7 +133,7 @@ def entered(run: Run) -> Iterator[Run]:
     """Make ``run`` current for the block as an invocation's: its output open while it is.
 
     Shown Python warnings reach its sink, and lines a screen held print when
-    the block ends (:func:`untaped.runtime.sink.opened`). Its root flags end
+    the block ends (:func:`untaped.runtime.run_output.opened`). Its root flags end
     with it; a ``--verbose`` run puts the ``untaped`` logger's level back to
     what the run current after it asks for (:func:`untaped.runtime.verbose.restore`).
     """

@@ -15,8 +15,8 @@ from __future__ import annotations
 import importlib as _importlib
 import typing as _typing
 
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import HttpSettings
-from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import OutputFormat, TreeOutputFormat
 from untaped.runtime.yaml_roundtrip import yaml_mapping_indent
 from untaped.screen.picker import (

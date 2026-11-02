@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from untaped.runtime.render import column_value, render_collection
-from untaped.runtime.sink import (
+from untaped.runtime.run_output import (
     Diagnostics,
     current_sink,
     derived_exit_code,
@@ -33,12 +33,8 @@ from untaped.runtime.sink import (
 )
 
 # re-exported: untaped.sdk.fields imports no runtime
-from untaped.runtime.sink import (
-    count_failed_actions as count_failed_actions,
-)
-from untaped.runtime.sink import (
-    count_row_failures as count_row_failures,
-)
+from untaped.runtime.run_output import count_failed_actions as count_failed_actions
+from untaped.runtime.run_output import count_row_failures as count_row_failures
 from untaped.runtime.theme import (
     OutputFormat as OutputFormat,
 )
@@ -1010,7 +1006,7 @@ def report_errors() -> Iterator[None]:
     it, so users see ``error: ...`` instead of a Python traceback. The exit code follows the error's
     ``category`` (``2`` usage, ``4`` environment, ``5`` unavailable, ``130``
     interrupted, ``1`` otherwise), raised to the most severe failure already
-    reported in the run (:func:`~untaped.runtime.sink.failure_exit_code`). A
+    reported in the run (:func:`~untaped.runtime.run_output.failure_exit_code`). A
     declined confirmation (:class:`~untaped.sdk.errors.OperationCancelledError`)
     prints its message without the ``error:`` prefix. :class:`~untaped.sdk.errors.Failed`
     and :class:`~untaped.sdk.errors.Matched` print nothing, since the rows

@@ -56,8 +56,8 @@ from cyclopts import App
 from rich.console import Console
 
 from untaped.core.commands.records import PluginCheck
+from untaped.runtime.progress_stack import cadence_clock, cadence_is_set, frozen_cadence, tick
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.sink import cadence_clock, cadence_is_set, frozen_cadence, tick
 from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk._run import (
     _RUN,

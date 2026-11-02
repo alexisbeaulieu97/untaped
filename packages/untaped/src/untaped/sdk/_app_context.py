@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from pydantic import BaseModel
 
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import (
     HttpSettings,
     Settings,
@@ -24,7 +25,6 @@ from untaped.runtime.settings import (
     load_core_part,
     load_settings_section,
 )
-from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import resolve_theme_or_default
 from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError

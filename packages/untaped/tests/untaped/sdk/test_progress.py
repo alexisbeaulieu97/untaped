@@ -18,14 +18,10 @@ from contextvars import Context
 import pytest
 from cyclopts import App
 
-from untaped.runtime import sink
+from untaped.runtime import progress_stack
+from untaped.runtime.progress_stack import _compose, open_tasks
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import (
-    Diagnostics,
-    _compose,
-    current_sink,
-    open_tasks,
-)
+from untaped.runtime.run_output import Diagnostics, current_sink
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk.diagnostic import Failure, Progress, Stale
 from untaped.sdk.errors import UntapedError
@@ -437,7 +433,7 @@ def test_a_task_opened_while_the_ticker_is_joined_gets_its_own(
         ticking.set()
         assert release.wait(_JOIN)
 
-    monkeypatch.setattr(sink, "tick", blocked_tick)
+    monkeypatch.setattr(progress_stack, "tick", blocked_tick)
     stream = io.StringIO()
     with _session(stream):
         first = _progress("A")
@@ -446,7 +442,7 @@ def test_a_task_opened_while_the_ticker_is_joined_gets_its_own(
         closing = threading.Thread(target=first.__exit__, args=(None, None, None), name="close-A")
         closing.start()  # stops the ticker, then joins it: blocked until the tick returns
         deadline = time.monotonic() + _JOIN
-        while sink._ticker is not None and time.monotonic() < deadline:
+        while progress_stack._ticker is not None and time.monotonic() < deadline:
             time.sleep(0.001)  # A's close has stopped the ticker and is joining it
         with _progress("C"):
             tickers = [t for t in threading.enumerate() if t.name == "untaped-progress"]
@@ -465,7 +461,7 @@ def test_a_tick_that_raises_keeps_the_ticker(monkeypatch: pytest.MonkeyPatch) ->
         if len(calls) == 1:
             raise ValueError("I/O operation on closed file")
 
-    monkeypatch.setattr(sink, "tick", failing_tick)
+    monkeypatch.setattr(progress_stack, "tick", failing_tick)
     with _session(io.StringIO()), _progress("T"):
         deadline = time.monotonic() + _JOIN
         while len(calls) < 2 and time.monotonic() < deadline:
