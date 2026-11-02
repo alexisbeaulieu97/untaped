@@ -412,17 +412,20 @@ class SettingsFileRepository:
         """Move a map still under an old spelling to its name before one of its entries changes.
 
         Otherwise the entry would land under the new name, which wins over the
-        old one, and the map's other entries would stop being read.
+        old one, and the map's other entries would stop being read. Only the
+        spelling the reader reads is carried: the closest one still read.
         ``only_if_set`` (an unset) leaves the map where it is unless it holds
         ``descriptor``, so removing nothing changes nothing.
         """
         declared = self._declared(descriptor)
         if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
             return
+        model = self.section_model(declared.path[0])
+        readable = key_mappings(model).readable if model is not None else {}
         for old in self._old_paths(declared):
             value = _at_path(data, old)
-            if value is None:
-                continue
+            if value is None or ".".join(old[1:]) not in readable:
+                continue  # a retired spelling is no longer read, so it isn't carried
             if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
                 return  # the closest old spelling is the one read; the others are ignored
             unset_at_path(data, old)

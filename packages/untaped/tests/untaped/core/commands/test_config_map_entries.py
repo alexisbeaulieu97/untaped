@@ -64,6 +64,7 @@ class ShelfSettings(BaseModel):
         "old_groups": Renamed("groups", removed_in=99),
         "legacy_groups": Renamed("groups", removed_in=99),
     }
+    retired_keys: ClassVar[Mapping[str, str]] = {"a_groups": "groups"}
 
     sources: Annotated[dict[str, Source], HomeOnly()] = {}
     labels: dict[str, str] = {}
@@ -517,3 +518,17 @@ def test_unsetting_an_entry_of_an_ignored_old_map_changes_nothing(_isolated_conf
     assert result.exit_code == 0, result.output
     assert _isolated_config.read_text(encoding="utf-8") == text
     assert _get("shelf.groups.ops.lead")["value"] == "ana"
+
+
+def test_a_retired_spelling_of_a_map_is_never_carried(_isolated_config: Path) -> None:
+    """``a_groups`` is retired (no longer read): the readable ``old_groups`` is what moves."""
+    write_config(
+        _isolated_config,
+        "format_version: 2\nshelf:\n  a_groups: {ops: {lead: ana}}\n"
+        "  old_groups: {dev: {lead: bo}}\n",
+    )
+    result = _config("set", "shelf.groups.dev.team", "x")
+    assert result.exit_code == 0, result.output
+    shelf = _shelf(_isolated_config)
+    assert shelf["groups"] == {"dev": {"lead": "bo", "team": "x"}}
+    assert _get("shelf.groups.dev.lead")["value"] == "bo"
