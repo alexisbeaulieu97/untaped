@@ -30,12 +30,15 @@ Core and each plugin care only about what comes in and what goes out, and know
 one another only through public interfaces, never how the other is built. A
 plugin doesn't know other plugins exist unless it depends on one. Whoever owns
 a capability does its wiring and offers it through a small interface; everyone
-else only declares what they need or provide. untaped owns the CLI, so it
-mounts the commands plugins build and wires help and agent support from what
-they declare. When one side has to know something only the other cares about,
-the boundary is in the wrong place. The checks on these boundaries catch honest
-mistakes; they don't wall plugins off. A plugin runs with the user's rights and
-could get around any guard, so we add no guards that only look like protection.
+else only declares what they need or provide, and uses the owner's interface
+rather than doing the job itself, so installing a plugin that provides a
+capability is all it takes for every plugin to use it, with no setup. untaped
+owns the CLI, so it mounts the commands plugins build and wires help and agent
+support from what they declare. When one side has to know something only the
+other cares about, the boundary is in the wrong place. The checks on these
+boundaries catch honest mistakes; they don't wall plugins off. A plugin runs
+with the user's rights and could get around any guard, so we add no guards that
+only look like protection.
 
 untaped is made of building blocks. A mechanic several features need, such as
 caching or state, is solved once by its owner (core unless something narrower
