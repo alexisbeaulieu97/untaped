@@ -155,7 +155,10 @@ def test_a_copy_with_its_own_id_runs_no_git_until_its_worktrees_go(
     assert ran.exit == 0, err(ran)
     status = run(["status", str(copy)])
     assert "repos in this copy belong to another project: delete api/ here" in err(status)
-    shutil.rmtree(copy / "api")  # as the refusal says, then add: a workspace of its own
+    shutil.rmtree(copy / "api")  # as the refusal says: no workspace until its first add
+    assert run(["status", "J-1"]).exit == 0  # the original's name names only the original
+    listed = json.loads(run(["list", "--format", "json"]).stdout)
+    assert len(listed) == 1  # the copy isn't listed
     added = run(["add", str(copy), "--repo", make_upstream("web").url])
     assert added.exit == 0, err(added)
     record = ProjectWorkspaceStore().find(str(copy))

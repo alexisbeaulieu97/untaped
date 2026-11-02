@@ -81,15 +81,14 @@ def copy_refusal(record: WorkspaceRecord) -> WorkspaceError | None:
     Even ``git status`` in a copied worktree refreshes the original's index.
     A row whose repo the project no longer holds (a removal that let go of
     some repos and not others) is no copy: ``remove`` drops it. A copy with
-    its own id whose copied worktrees are deleted is no longer refused: its
-    first ``add`` makes it a workspace of its own (:meth:`ProjectWorkspaceStore.adopt`).
+    its own id whose copied worktrees are deleted is no workspace yet
+    (:func:`record_of`), so its first ``add`` makes it one of its own.
     """
     project = record.project
-    dirs = [spec.dir for spec in record.repos if (project.root / spec.dir).exists()]
-    copied = record.meta is not None and record.meta.project != project.id and bool(dirs)
+    copied = record.meta is not None and record.meta.project != project.id
     if project.copy_of is None and not copied:
         return None
-    dirs = dirs or [spec.dir for spec in record.repos]
+    dirs = [spec.dir for spec in record.repos]
     original = shown_path(project.copy_of) if project.copy_of is not None else "another project"
     here = " and ".join(f"{name}/" for name in dirs) or "its worktrees"
     return WorkspaceError(
@@ -101,13 +100,18 @@ def copy_refusal(record: WorkspaceRecord) -> WorkspaceError | None:
 
 
 def record_of(project: Project) -> WorkspaceRecord:
-    """``project`` as a workspace: its meta row (``None`` before its first ``add``), its repos."""
+    """``project`` as a workspace: its meta row (``None`` before its first ``add``), its repos.
+
+    A copy with its own id whose copied worktrees are all deleted is no
+    workspace yet: neither listed nor named, and its first ``add`` adopts it.
+    """
     metas = META.of(project).all()
-    return WorkspaceRecord(
-        project=project,
-        meta=metas[0] if metas else None,
-        repos=tuple(WORKTREES.of(project).all()),
-    )
+    meta = metas[0] if metas else None
+    repos = tuple(WORKTREES.of(project).all())
+    copied = meta is not None and meta.project != project.id
+    if copied and not any((project.root / spec.dir).exists() for spec in repos):
+        return WorkspaceRecord(project=project)
+    return WorkspaceRecord(project=project, meta=meta, repos=repos)
 
 
 class ProjectWorkspaceStore:
@@ -209,22 +213,15 @@ class ProjectWorkspaceStore:
     def adopt(self, record: WorkspaceRecord, *, at: datetime) -> WorkspaceRecord:
         """Make the project a workspace if it isn't one yet (an ``add`` in any project).
 
-        A copy whose copied worktrees are gone (:func:`copy_refusal`) becomes
-        one of its own: the original's rows go, its name stays.
+        A cleaned-up copy (:func:`record_of`) loses the original's rows.
         """
-        if record.meta is not None and record.meta.project == record.project.id:
+        if record.meta is not None:
             return record
-        if record.meta is not None:  # a cleaned-up copy
-            WORKTREES.of(record.project).replace_all(lambda _rows: [])
-            meta = record.meta.model_copy(
-                update={"project": record.project.id, "created_by": "user", "archived_at": None}
-            )
-            META.of(record.project).update(record.meta.name, lambda _old: meta)
-            return record.model_copy(update={"meta": meta, "repos": ()})
         name = validate_workspace_name(record.project.name)  # the folder's name names it
         meta = WorkspaceMeta(name=name, project=record.project.id, created_by="user", created_at=at)
-        META.of(record.project).add(meta)
-        return record.model_copy(update={"meta": meta})
+        WORKTREES.of(record.project).replace_all(lambda _rows: [])
+        META.of(record.project).replace_all(lambda _rows: [meta])
+        return record.model_copy(update={"meta": meta, "repos": ()})
 
     def hold(self, record: WorkspaceRecord, url: str) -> None:
         """Hold ``url``'s repo for the workspace's project (before its worktree is added)."""
