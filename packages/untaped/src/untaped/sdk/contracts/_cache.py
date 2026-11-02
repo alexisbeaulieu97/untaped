@@ -35,7 +35,7 @@ from typing import Any, TypeVar, get_args, get_origin
 
 from pydantic_core import to_jsonable_python
 
-from untaped.runtime.sink import current_sink
+from untaped.runtime.run_output import current_sink
 from untaped.sdk.contracts._declare import Binding, Contract, binding_of
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.progress import ProgressHandle

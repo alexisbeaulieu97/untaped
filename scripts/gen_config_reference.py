@@ -124,7 +124,7 @@ def _default_text(value: Any) -> str:
 
 
 def _env_name(key: str) -> str:
-    from untaped.runtime.settings import env_var_name  # noqa: PLC0415
+    from untaped.runtime.settings_env import env_var_name  # noqa: PLC0415
 
     return env_var_name(key.split("."))
 

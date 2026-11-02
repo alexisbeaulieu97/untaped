@@ -24,29 +24,27 @@ from untaped.runtime.config_file import (
     set_at_path,
     unset_at_path,
 )
+from untaped.runtime.config_read import load_config_yaml, load_project_config
 from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.profile_resolver import (
     profile_entries,
     profile_path,
     write_target,
 )
+from untaped.runtime.section_models import model_sections
 from untaped.runtime.settings import (
     CorePart,
     Settings,
     active_settings_layout,
-    env_var_name,
-    env_var_setting,
     get_settings_model,
-    load_config_yaml,
     load_core_part,
-    load_project_config,
     load_settings_section,
-    model_sections,
     resolve_config_path,
     section_stabilities,
     validate_core_part,
     validate_settings_section,
 )
+from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal
 from untaped.runtime.yaml_roundtrip import KeyRename
 from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings

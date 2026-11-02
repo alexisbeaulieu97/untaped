@@ -456,7 +456,10 @@ def _dispatch(
     A run that emitted a failure fails, as at the root.
     """
     from untaped.runtime.mount import run_built  # noqa: PLC0415
-    from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure  # noqa: PLC0415
+    from untaped.runtime.run_output import (  # noqa: PLC0415
+        derived_exit_code,
+        exit_on_counted_failure,
+    )
     from untaped.sdk._cli import report_errors  # noqa: PLC0415
 
     try:

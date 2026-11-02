@@ -33,19 +33,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from untaped.runtime.config_read import PROJECT_FILE_KEYS, load_config_yaml, load_project_config
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     check_names,
     named_profiles,
     pick_names,
 )
-from untaped.runtime.settings import (
-    PROJECT_FILE_KEYS,
-    load_config_yaml,
-    load_project_config,
-    resolve_config_path,
-)
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
+from untaped.runtime.settings import resolve_config_path
 from untaped.sdk._run import run_or_none
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX

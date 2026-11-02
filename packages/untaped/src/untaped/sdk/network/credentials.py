@@ -621,7 +621,7 @@ def override_variable(plugin: str, name: str) -> str | None:
 
     Matched without regard to case, as settings read variables.
     """
-    from untaped.runtime.settings import env_var_name  # noqa: PLC0415
+    from untaped.runtime.settings_env import env_var_name  # noqa: PLC0415
 
     variable = env_var_name([plugin, name])
     if _env(variable).strip():
@@ -636,7 +636,7 @@ def override_variable(plugin: str, name: str) -> str | None:
 
 
 def _override_value(plugin: str, name: str) -> str:
-    from untaped.runtime.settings import env_var_name  # noqa: PLC0415
+    from untaped.runtime.settings_env import env_var_name  # noqa: PLC0415
 
     direct = _env(env_var_name([plugin, name])).strip()
     if direct:
@@ -668,9 +668,9 @@ def is_folder_source(source: str) -> bool:
 
 def folder_leaves() -> dict[tuple[str, ...], str]:
     """Every effective leaf a folder's file set, with its source, for this run."""
+    from untaped.runtime.config_read import load_config_yaml  # noqa: PLC0415
     from untaped.runtime.settings import (  # noqa: PLC0415
         active_settings_layout,
-        load_config_yaml,
         resolve_config_path,
     )
 

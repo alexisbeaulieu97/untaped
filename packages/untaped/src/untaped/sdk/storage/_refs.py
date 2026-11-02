@@ -45,7 +45,7 @@ from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
 
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk._home import CORE
 from untaped.sdk._run import NoRunError
 from untaped.sdk.diagnostic import _is_none

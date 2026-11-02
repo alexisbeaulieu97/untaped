@@ -17,8 +17,9 @@ from cyclopts import App
 
 from core_test_support.commands.support import GithubProfile, make_plugin, plugin_candidate
 from untaped.runtime import bootstrap
+from untaped.runtime.config_read import load_project_config
 from untaped.runtime.folder_layer import forget_folder_layer
-from untaped.runtime.settings import get_settings, load_project_config
+from untaped.runtime.settings import get_settings
 from untaped.sdk.testing import CliResult, invoke_cli, make_project
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")

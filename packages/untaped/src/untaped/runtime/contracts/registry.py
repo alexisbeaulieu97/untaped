@@ -27,13 +27,13 @@ from untaped.runtime.registry import (
     plain_requirements,
     range_text,
 )
+from untaped.runtime.section_models import ExtensionSettings
 from untaped.runtime.settings import (
-    ExtensionSettings,
     active_settings_layout,
-    env_var_name,
     load_settings_section,
     registered_profile_model,
 )
+from untaped.runtime.settings_env import env_var_name
 from untaped.sdk._keys import SettingKey
 from untaped.sdk.contracts._declare import (
     Binding,

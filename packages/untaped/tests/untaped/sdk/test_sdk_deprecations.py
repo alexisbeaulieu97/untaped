@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated
 import pytest
 
 from untaped.core.plugin_check.stability import deprecation_text_violations
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk.marks import (
     UntapedDeprecationWarning,
     callable_owner,

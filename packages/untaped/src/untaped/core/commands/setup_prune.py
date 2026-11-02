@@ -28,7 +28,8 @@ from typing import TYPE_CHECKING
 
 from untaped.core.commands.records import PruneOutcome
 from untaped.core.settings import CoreSettings
-from untaped.runtime.settings import PLUGIN_NAME_PATTERN, plugins_root
+from untaped.runtime.section_models import PLUGIN_NAME_PATTERN
+from untaped.runtime.settings import plugins_root
 from untaped.sdk._keys import key
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.fields import Confirm, Output, table_row

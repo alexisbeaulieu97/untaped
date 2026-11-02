@@ -1,4 +1,4 @@
-"""stderr has one writer: the sink in ``untaped/runtime/sink.py``.
+"""stderr has one writer: ``untaped/runtime/stderr.py``, which the sink writes through.
 
 A line written around the sink can garble the spinner, skip ``--quiet``, miss
 the exit code and break JSON Lines. So no shipped module but
@@ -14,8 +14,8 @@ from pathlib import Path
 
 from repo.support import PACKAGES, REPO_ROOT
 
-#: The sink, relative to its ``src``.
-OWNER = "untaped/runtime/sink.py"
+#: The one writer, relative to its ``src``.
+OWNER = "untaped/runtime/stderr.py"
 #: The recipe hook worker is a child process: its stderr is a pipe the parent
 #: reads and reports through the sink, so its traceback is not a CLI line.
 EXEMPT = {"untaped_recipe/_worker/hook_worker.py": 1}

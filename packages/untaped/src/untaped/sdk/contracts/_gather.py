@@ -30,7 +30,7 @@ from untaped.runtime.contracts.registry import (
     ready_of,
     upgrade_hint,
 )
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk.contracts._cache import return_type
 from untaped.sdk.contracts._declare import (

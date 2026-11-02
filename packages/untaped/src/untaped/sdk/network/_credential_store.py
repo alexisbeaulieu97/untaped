@@ -27,8 +27,8 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import resolve_config_path
-from untaped.runtime.sink import Diagnostics
 from untaped.sdk._home import CONFIG_FILE, CORE, DEFAULT_HOME
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.fields import Key

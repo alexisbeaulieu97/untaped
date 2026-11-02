@@ -39,8 +39,8 @@ from untaped.core.skills import (
     update_installed_skill,
 )
 from untaped.runtime.registry import CompositionResult
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import SkillsSettings, load_core_part
-from untaped.runtime.sink import Diagnostics
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
 from untaped.sdk.fields import Confirm, DryRun, Output, Positional, Stdin

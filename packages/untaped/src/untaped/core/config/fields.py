@@ -32,7 +32,7 @@ from pydantic_core import to_jsonable_python
 
 from untaped.core.config.ports import SettingsReader
 from untaped.core.config.use_cases import GetSetting, ListNames, NamedValue
-from untaped.runtime.settings import ExtensionSettings
+from untaped.runtime.section_models import ExtensionSettings
 from untaped.screen.components.choices import Check, Cycle, ListItem, Select, SingleList
 from untaped.screen.components.fields import Field
 from untaped.screen.components.inputs import NumberInput, PathInput, SecretInput, TextInput

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from untaped.runtime.config_file import mutate_config, read_config_dict
+from untaped.runtime.config_read import load_project_config
 from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.profile_resolver import (
     Picked,
@@ -22,7 +23,7 @@ from untaped.runtime.profile_resolver import (
     explicit_pick,
     pick_names,
 )
-from untaped.runtime.settings import active_settings_layout, load_project_config
+from untaped.runtime.settings import active_settings_layout
 from untaped.sdk.errors import ConfigError, UntapedError
 
 if TYPE_CHECKING:

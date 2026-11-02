@@ -12,7 +12,8 @@ import pytest
 from pydantic import BaseModel, Field
 
 from core_test_support.contracts.support import BOOKS, Book, BookSource, Shop
-from untaped.runtime.composition import PluginEntry, bundle_panel, compose
+from untaped.runtime.command_walk import bundle_panel
+from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
 from untaped.runtime.run import build_run, entered
 from untaped.sdk import (

@@ -15,7 +15,8 @@ from pydantic import BaseModel, SecretStr
 
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.settings import FORMAT_VERSION, get_settings, register_profile_settings
+from untaped.runtime.config_read import FORMAT_VERSION
+from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk.testing import CliInvoker, ScriptedTerminal, TtyStringIO, invoke_cli
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

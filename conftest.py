@@ -11,9 +11,9 @@ import release  # scripts/release.py (``pythonpath = ["scripts"]``)
 from packaging.utils import canonicalize_name
 
 from untaped.runtime import bootstrap
+from untaped.runtime.progress_stack import drop_tasks
 from untaped.runtime.registry import PluginCandidate, discover_candidates
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import drop_tasks
 from untaped.sdk._run import Run
 
 pytest_plugins = ["untaped.sdk.testing.plugin"]

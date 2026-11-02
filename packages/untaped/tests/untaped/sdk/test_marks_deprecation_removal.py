@@ -16,7 +16,7 @@ from cyclopts import App
 from pydantic import BaseModel, Field
 
 from core_test_support.commands.support import make_plugin
-from untaped.runtime import bootstrap, sink
+from untaped.runtime import bootstrap, run_output
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Deprecated
 from untaped.sdk.diagnostic import Deprecation
@@ -244,7 +244,7 @@ def test_an_alias_names_both_full_paths() -> None:
 @pytest.fixture
 def shown(monkeypatch: pytest.MonkeyPatch) -> None:
     """Python shows warnings as it does outside pytest's recording, every time."""
-    monkeypatch.setattr(warnings, "_showwarnmsg_impl", sink._SHOW_UNRECORDED)
+    monkeypatch.setattr(warnings, "_showwarnmsg_impl", run_output._SHOW_UNRECORDED)
     monkeypatch.setattr(warnings._get_context(), "log", None)  # context-aware recording
     monkeypatch.setattr(warnings, "filters", [])
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")

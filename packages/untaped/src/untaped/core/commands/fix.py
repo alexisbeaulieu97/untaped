@@ -43,13 +43,13 @@ from untaped.core.commands.doctor import (
 from untaped.core.commands.records import FixOutcome
 from untaped.runtime.profile_resolver import selected_profile
 from untaped.runtime.registry import CompositionResult
-from untaped.runtime.sink import (
-    DIAGNOSTICS_ENV,
+from untaped.runtime.run_output import (
     Diagnostics,
     count_failed_actions,
     count_row_failures,
     current_sink,
 )
+from untaped.runtime.sink import DIAGNOSTICS_ENV
 from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ErrorCategory, Failed, System, UntapedError

@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from core_test_support.runtime.run import quiet
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk import Column
 
 

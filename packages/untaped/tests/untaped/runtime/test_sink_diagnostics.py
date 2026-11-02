@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from core_test_support.commands.support import make_plugin
 from untaped.runtime.bootstrap import build_root_app
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk import Command, Output
 from untaped.sdk import _cli as cli
 from untaped.sdk._cli import emit, render_rows, report_declined

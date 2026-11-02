@@ -28,7 +28,7 @@ from untaped.core.config.models import (
 )
 from untaped.core.config.ports import SettingsReader, SettingsWriter
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, current_pick
-from untaped.runtime.settings import ContractName, ExtensionSettings
+from untaped.runtime.section_models import ContractName, ExtensionSettings
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.health.deprecated_keys import rename_keys

@@ -2,8 +2,10 @@
 
 A command opens a task with ``ctx.diag.progress(label)`` and passes the
 handle it yields to the layer that does the work; the sink
-(``untaped.runtime.sink``) decides what becomes output. An inner layer takes
-``progress: ProgressHandle = NO_PROGRESS`` and never checks for ``None``.
+(``untaped.runtime.sink``) and the progress stack
+(``untaped.runtime.progress_stack``) decide what becomes output. An inner
+layer takes ``progress: ProgressHandle = NO_PROGRESS`` and never checks for
+``None``.
 This module imports nothing from the sink.
 """
 

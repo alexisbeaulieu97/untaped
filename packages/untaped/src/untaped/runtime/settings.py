@@ -1,32 +1,29 @@
-"""Registry-backed configuration loaded from the home's ``config.yml``.
+"""The settings registry and the sources that resolve a plugin's section.
 
-The unified composition root owns YAML/env loading and the in-process registry
-of typed plugin settings sections over the profiles layout. A plugin's
-state lives in its own folder (:mod:`untaped.sdk.storage.state`).
+It keeps the in-process registry of typed plugin settings sections, the
+settings sources (the profiles layout with the run's overlay, environment
+variables over init values), and the loaders and validators of a section
+and of core's parts. Reading ``config.yml`` lives in
+:mod:`untaped.runtime.config_read`, the environment source in
+:mod:`untaped.runtime.settings_env` and a section's models in
+:mod:`untaped.runtime.section_models`. A plugin's state lives in its own
+folder (:mod:`untaped.sdk.storage.state`).
 """
 
 from __future__ import annotations
 
-import json
 import os
-import re
-import weakref
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from functools import cache, lru_cache
 from pathlib import Path
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, cast, overload
+from typing import Annotated, Any, Literal, cast, overload
 
-import yaml
 from pydantic import (
-    AfterValidator,
     BaseModel,
     BeforeValidator,
-    ConfigDict,
     Field,
     SecretStr,
-    StringConstraints,
     ValidationError,
     create_model,
 )
@@ -35,48 +32,34 @@ from pydantic_settings import (
     PydanticBaseSettingsSource,
     SettingsConfigDict,
 )
-from pydantic_settings.sources import EnvSettingsSource, InitSettingsSource
+from pydantic_settings.sources import InitSettingsSource
 
+from untaped.runtime.config_read import load_config_yaml
 from untaped.runtime.profile_resolver import (
     DEFAULT_PROFILE,
     FILE_KEYS,
     picked_names,
     settings_key,
 )
+from untaped.runtime.section_models import RESERVED_SECTION_KEYS, model_sections
+from untaped.runtime.settings_env import RenamingEnvSource, env_is_set, env_name_of, env_var_name
 from untaped.runtime.settings_layout import ProfilesSettingsLayout, ResolvedConfig, SectionModels
 from untaped.runtime.theme import CONFIG_WRITE_CONTEXT, CONFIG_WRITTEN_KEY_CONTEXT, UiSettings
 from untaped.sdk._home import PLUGINS_FOLDER, config_path, home
-from untaped.sdk._run import SECTION_OF, current_overlay
+from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError, UntapedError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     KeyUse,
-    Renamed,
     key_mappings,
     notify_use,
-    rename_keys,
 )
 from untaped.sdk.marks import Stability
 from untaped.sdk.words import run_hint
-
-if TYPE_CHECKING:
-    from untaped.sdk.storage.cache import Cache
-
-STATE_FILE_NAME = "state.yml"
 
 
 def plugins_root() -> Path:
     """The home's ``plugins/``: every plugin's folder, installed here or not."""
     return home().expanduser() / PLUGINS_FOLDER
-
-
-#: On-disk format of ``config.yml``: format 2 holds the base at the top level
-#: and named profiles under ``profiles:``. A non-empty file must carry
-#: ``format_version: 2``; an unstamped one is 11.x's format 1, refused. Bump
-#: only in a major release, when an older reader ignoring a new core key would
-#: change behaviour (see CONTRIBUTING.md). A renamed key (``renamed_keys``)
-#: does not bump it: a bump would make an older release refuse the whole file,
-#: and ``untaped config migrate`` renames keys only when the user runs it.
-FORMAT_VERSION = 2
 
 
 class HttpSettings(BaseModel):
@@ -166,7 +149,7 @@ class _SettingsSources(BaseSettings):
         path = resolve_config_path()
         return (
             init_settings,
-            _RenamingEnvSource(settings_cls),
+            RenamingEnvSource(settings_cls),
             LayoutSettingsSource(settings_cls, yaml_file=path),
             file_secret_settings,
         )
@@ -174,234 +157,6 @@ class _SettingsSources(BaseSettings):
 
 class Settings(_SettingsSources):
     """Base settings class; concrete aggregate models are built dynamically."""
-
-
-#: A contract's or a contract method's name in settings: snake_case.
-ContractName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")]
-
-#: The grammar every plugin name follows.
-PLUGIN_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
-
-#: A plugin's name in settings, checked against the grammar only: a ranking
-#: in the base must not break a profile without that plugin.
-PluginName = Annotated[str, StringConstraints(pattern=PLUGIN_NAME_PATTERN.pattern)]
-
-
-def _distinct(names: list[str]) -> list[str]:
-    repeated = sorted({name for name in names if names.count(name) > 1})
-    if repeated:
-        raise ValueError(f"{', '.join(repeated)} ranked twice")
-    return names
-
-
-class ExtensionSettings(BaseModel):
-    """One contract's settings under ``<owner>.extensions.<contract>``.
-
-    ``rank`` orders the providers of each method, first first; a provider
-    it doesn't name ranks below every one it does.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    rank: dict[ContractName, Annotated[list[PluginName], AfterValidator(_distinct)]] = Field(
-        default_factory=dict
-    )
-
-
-#: Keys the SDK injects into a plugin's section, so its own settings model may
-#: not declare them: ``extensions`` on every contract owner,
-#: ``caches`` for the caches a plugin declares.
-RESERVED_SECTION_KEYS = frozenset({"extensions", "caches"})
-
-
-def reserved_section_keys(
-    model: type[BaseModel], *, injected: frozenset[str] = frozenset()
-) -> list[str]:
-    """The keys of ``model`` that collide with a key the SDK injects.
-
-    No field and no field alias may take a :data:`RESERVED_SECTION_KEYS`
-    name. An old key (``renamed_keys``, ``retired_keys``) collides only with
-    a key the SDK actually ``injected`` into this section, so a plugin can
-    still move its own ``extensions`` setting away under a new name.
-    """
-    keys = set(model.model_fields)
-    for field in model.model_fields.values():
-        keys.update(
-            alias for alias in (field.alias, field.validation_alias) if isinstance(alias, str)
-        )
-    taken = RESERVED_SECTION_KEYS & keys
-    for name in ("renamed_keys", "retired_keys"):
-        declared = getattr(model, name, None)
-        if isinstance(declared, Mapping):
-            taken |= injected & {str(old).partition(".")[0] for old in declared}
-    return sorted(taken)
-
-
-class CacheSettings(BaseModel):
-    """One cache's settings under ``<plugin>.caches.<cache>``; each cache's model subclasses it.
-
-    An unknown key here loads, as anywhere in a plugin's section: doctor's
-    ``untaped.unknown-keys`` row names it, and it never breaks the plugin's commands.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-
-@cache
-def section_model(
-    model: type[BaseModel],
-    *,
-    extensions: bool,
-    caches: tuple[Cache[Any], ...],
-    section: str = "",
-    credentials: frozenset[str] = frozenset(),
-) -> type[BaseModel]:
-    """``model`` with the keys the SDK injects into a plugin's section.
-
-    ``extensions`` (every contract owner's) is typed structurally (contract
-    name → :class:`ExtensionSettings`), so reading settings never imports an
-    owner's contracts: whether a contract or method exists is for ``gather``
-    and doctor to say, never a load error. ``caches`` holds one
-    ``max_age_seconds`` per declared cache, defaulting to its declared max
-    age; an unknown cache name loads (doctor names it), so a cache a plugin
-    drops never breaks a config. Each cache's ``renamed_from`` joins
-    ``model``'s ``renamed_keys`` here, on the composed class only: the
-    owner's own declarations never point at an injected key. ``credentials``
-    names the section's credentials, which ``UNTAPED_<SECTION>__<NAME>`` overrides.
-    """
-    caches = timed_caches(caches)
-    declared = model
-    renamed = _cache_renames(model, caches)
-    if renamed:
-        model = cast(
-            "type[BaseModel]",
-            type(
-                model.__name__,
-                (model,),
-                {
-                    "__module__": model.__module__,
-                    "__qualname__": model.__qualname__,
-                    "__annotations__": {"renamed_keys": ClassVar[Mapping[str, str | Renamed]]},
-                    "renamed_keys": MappingProxyType(renamed),
-                },
-            ),
-        )
-    injected: dict[str, Any] = {}
-    if extensions:
-        injected["extensions"] = (
-            dict[ContractName, ExtensionSettings],
-            Field(default_factory=dict, description="Settings of the contracts this plugin owns."),
-        )
-    if caches:
-        held = _caches_model(model, caches)
-        injected["caches"] = (
-            held,
-            Field(default_factory=held, description="Max ages of the caches this plugin keeps."),
-        )
-    composed = cast(
-        "type[BaseModel]",
-        create_model(model.__name__, __base__=model, __module__=model.__module__, **injected),
-    )
-    if credentials:
-        _CREDENTIAL_NAMES[composed] = credentials
-    setattr(composed, SECTION_OF, declared)  # its owner's model, which owner_of_settings reads
-    return composed
-
-
-#: Each composed section model's credential names: ``UNTAPED_<SECTION>__<NAME>`` overrides one.
-_CREDENTIAL_NAMES: weakref.WeakKeyDictionary[type[BaseModel], frozenset[str]] = (
-    weakref.WeakKeyDictionary()
-)
-
-
-def _cache_renames(
-    model: type[BaseModel], caches: tuple[Cache[Any], ...]
-) -> dict[str, str | Renamed]:
-    """``model``'s ``renamed_keys`` plus each cache's ``renamed_from``; ``{}`` when none renames.
-
-    A cache's old keys are dated by its ``removed_in`` (undated without one).
-
-    Raises :class:`ConfigError` for an old key two caches claim, or one the
-    owner already declares (renamed or retired).
-    """
-    claimed: dict[str, Cache[Any]] = {}
-    for declared in caches:
-        for old in declared.renamed_from:
-            if old in claimed:
-                raise ConfigError(
-                    f"old key {old!r} is renamed by both caches "
-                    f"{claimed[old].name!r} and {declared.name!r}"
-                )
-            claimed[old] = declared
-    if not claimed:
-        return {}
-    own: dict[str, Any] = {}
-    for name in ("renamed_keys", "retired_keys"):
-        mapping = getattr(model, name, None)
-        if isinstance(mapping, Mapping):
-            if clash := sorted(mapping.keys() & claimed.keys()):
-                raise ConfigError(
-                    f"old key {clash[0]!r} is in {model.__name__}.{name} and in the cache "
-                    f"{claimed[clash[0]].name!r}'s renamed_from"
-                )
-            if name == "renamed_keys":
-                own = dict(mapping)
-    return own | {
-        old: Renamed(f"caches.{declared.name}.max_age_seconds", removed_in=declared.removed_in)
-        for old, declared in claimed.items()
-    }
-
-
-def timed_caches(caches: Iterable[Cache[Any]]) -> tuple[Cache[Any], ...]:
-    """The caches with a max age: each has a ``caches.<name>.max_age_seconds`` setting.
-
-    A version-only cache (``max_age=None``) has none.
-    """
-    return tuple(cache for cache in caches if not cache.version_only)
-
-
-def _caches_model(model: type[BaseModel], caches: tuple[Cache[Any], ...]) -> type[BaseModel]:
-    """The ``caches`` key's model: one :class:`CacheSettings` field per cache."""
-    fields: dict[str, Any] = {}
-    for declared in caches:
-        max_age = declared.default_max_age
-        assert max_age is not None  # timed_caches(): only a cache with a max age has a setting
-        seconds: Any = (
-            int,
-            Field(
-                default=int(max_age.total_seconds()),
-                ge=0,
-                description=(
-                    f"Seconds {declared.label} is served before untaped checks upstream; "
-                    "0 checks every time."
-                ),
-            ),
-        )
-        held = create_model(
-            "".join(part.title() for part in declared.name.split("_")) + "CacheSettings",
-            __base__=CacheSettings,
-            __module__=model.__module__,
-            max_age_seconds=seconds,
-        )
-        fields[declared.name] = (held, Field(default_factory=held))
-    return cast(
-        "type[BaseModel]",
-        create_model(
-            f"{model.__name__}Caches",
-            __config__=ConfigDict(extra="ignore"),
-            __module__=model.__module__,
-            **fields,
-        ),
-    )
-
-
-def model_sections(settings_cls: type[BaseModel]) -> dict[str, type[BaseModel]]:
-    """``section -> model`` for every field of ``settings_cls`` holding a model."""
-    return {
-        name: field.annotation
-        for name, field in settings_cls.model_fields.items()
-        if isinstance(field.annotation, type) and issubclass(field.annotation, BaseModel)
-    }
 
 
 def profile_section_models() -> SectionModels:
@@ -546,342 +301,6 @@ def notify_config_key(use: KeyUse, *, section: str) -> None:
     )
 
 
-def env_var_name(path: Iterable[str]) -> str:
-    """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``).
-
-    The one place an environment name is built. A hyphen becomes an
-    underscore, as in the plugin's import package (``acme-tools`` reads
-    ``UNTAPED_ACME_TOOLS__KEY``): plugin names hold no ``_``, so the
-    spelling stays unambiguous, and ``__`` stays the nesting delimiter.
-    """
-    return "UNTAPED_" + "__".join(part.replace("-", "_") for part in path).upper()
-
-
-def _env_name(section: str, key: str) -> str:
-    """The ``UNTAPED_*`` variable that sets ``key`` of ``section``."""
-    return env_var_name([section, *key.split(".")])
-
-
-def _env_is_set(name: str) -> bool:
-    return any(key.upper() == name for key in os.environ)
-
-
-def env_sets_key(section: str, key: str) -> bool:
-    """Whether the environment sets top-level field ``key`` of ``section``, blank or not.
-
-    Its ``UNTAPED_<SECTION>__<KEY>`` variable, or the key inside an
-    ``UNTAPED_<SECTION>`` JSON object; a blob that isn't a JSON object
-    counts, since it cannot be told apart. Names match case-insensitively,
-    as the settings source reads them. ``key`` is the current name; an old
-    name from ``renamed_keys`` is not checked.
-    """
-    if _env_is_set(_env_name(section, key)):
-        return True
-    blob_name = env_var_name([section])
-    blob = next((value for name, value in os.environ.items() if name.upper() == blob_name), None)
-    if blob is None:
-        return False
-    try:
-        data = json.loads(blob)
-    except ValueError:
-        return True
-    return not isinstance(data, dict) or key in data
-
-
-def env_var_setting(
-    path: tuple[str, ...], *, environ: Mapping[str, str] | None = None
-) -> str | None:
-    """The set ``UNTAPED_*`` variable that supplies the leaf at ``path``, if any.
-
-    The deepest one wins: the leaf's own variable, else an ancestor's JSON
-    object that holds it; an ancestor whose value (or a level inside it)
-    isn't a JSON object counts, since it cannot be told apart. Old spellings
-    are not checked; ``env_var_supplying`` finds a field's. ``environ``
-    defaults to this process's variables.
-    """
-    variables = os.environ if environ is None else environ
-    for depth in range(len(path), 0, -1):
-        name = env_var_name(path[:depth])
-        value = next((text for key, text in variables.items() if key.upper() == name), None)
-        if value is None:
-            continue
-        if depth == len(path):
-            return name
-        try:
-            data: Any = json.loads(value)
-        except ValueError:
-            return name
-        for part in path[depth:]:
-            if not isinstance(data, dict):
-                return name
-            if part not in data:
-                break
-            data = data[part]
-        else:
-            return name
-    return None
-
-
-@dataclass(frozen=True)
-class RetiredVariable:
-    """A set ``UNTAPED_*`` variable naming a key that is no longer read."""
-
-    name: str
-    new: str | None = None
-    """The current key's variable, for a retired key."""
-    note: str | None = None
-    """The :class:`~untaped.sdk.health.deprecated_keys.Retired` note, for a deleted key."""
-
-
-def retired_env_vars(sections: Mapping[str, type[BaseModel]]) -> list[RetiredVariable]:
-    """Each set variable spelling a retired or deleted key of ``sections``.
-
-    Neither is read any more, so without this a variable left in a shell
-    profile or CI is ignored with no signal.
-    """
-    found: list[RetiredVariable] = []
-    for section, model in sections.items():
-        mappings = key_mappings(model)
-        for old in sorted(mappings.retired):
-            name = _env_name(section, old)
-            if _env_is_set(name):
-                found.append(
-                    RetiredVariable(name, new=_env_name(section, mappings.migratable[old]))
-                )
-        for old, deleted in sorted(mappings.deleted.items()):
-            name = _env_name(section, old)
-            if _env_is_set(name):
-                found.append(RetiredVariable(name, note=deleted.reason()))
-    return found
-
-
-def _env_spelling(section: str, key: str) -> str:
-    """How the environment spells ``key``: its variable when set, else a key in the JSON blob."""
-    name = _env_name(section, key)
-    return name if _env_is_set(name) else f"{key} in {env_var_name([section])}"
-
-
-class _RenamingEnvSource(EnvSettingsSource):
-    """The ``UNTAPED_*`` environment source, with old key names renamed.
-
-    pydantic-settings builds each section's dict from its ``UNTAPED_<SECTION>__*``
-    variables (and an ``UNTAPED_<SECTION>`` JSON blob) without checking the
-    inner names, so old names arrive here and are renamed like YAML keys.
-    """
-
-    def _load_env_vars(self) -> Mapping[str, str | None]:
-        """The environment, with a hyphenated section's variables under its field name.
-
-        pydantic-settings looks a section up by its field name, so
-        ``UNTAPED_ACME_TOOLS__KEY`` (see :func:`env_var_name`) is read as
-        ``UNTAPED_ACME-TOOLS__KEY``.
-        """
-        env_vars = dict(super()._load_env_vars())
-        for section in self.settings_cls.model_fields:
-            if "-" not in section:
-                continue
-            spelled = env_var_name([section])
-            field = f"{self.env_prefix}{section}"
-            if not self.case_sensitive:
-                spelled, field = spelled.lower(), field.lower()
-            moved = [key for key in env_vars if key.partition("__")[0] == spelled]
-            for key in moved:
-                env_vars[field + key[len(spelled) :]] = env_vars.pop(key)
-        return env_vars
-
-    def __call__(self) -> dict[str, Any]:
-        data = super().__call__()
-        for section, model in model_sections(self.settings_cls).items():
-            value = data.get(section)
-            if not isinstance(value, dict) or not key_mappings(model):
-                continue
-            data[section], uses = rename_keys(model, value)
-            overrides = _CREDENTIAL_NAMES.get(model, frozenset())
-            for use in uses:
-                if use.kind == "deprecated" and use.old in overrides:
-                    continue  # UNTAPED_<SECTION>__<NAME> is a credential's override, not deprecated
-                # The new key follows the old one's form: a variable or a blob key.
-                as_variable = _env_is_set(_env_name(section, use.old))
-                notify_use(
-                    use,
-                    section=section,
-                    old=_env_spelling(section, use.old),
-                    new=_env_name(section, use.new) if as_variable else use.new,
-                    kept=None if use.kept is None else _env_spelling(section, use.kept),
-                )
-        return data
-
-
-def load_config_yaml(yaml_file: Path) -> dict[str, Any]:
-    """Parse ``config.yml`` into a dict (``{}`` when absent or empty).
-
-    Unreadable files, YAML syntax errors, a non-mapping document root, a
-    file that is not format 2 (:func:`check_config_format`) and an 11.x
-    ``state.yml`` beside it all raise :class:`ConfigError` naming the path.
-    """
-    _check_no_shared_state(yaml_file.parent)
-    raw = _read_yaml(yaml_file)
-    check_config_format(raw, yaml_file)
-    return raw
-
-
-#: A project's ``config.yml``'s own top-level keys; every other key is a section.
-PROJECT_FILE_KEYS = frozenset({"format_version", "profile"})
-
-
-def load_project_config(yaml_file: Path) -> dict[str, Any]:
-    """Parse a project's ``.untaped/config.yml`` into a dict (``{}`` when absent or empty).
-
-    Its stamp is optional (a hand-written file may leave it out) and is
-    refused when newer than this release reads, as the home's is. A project
-    picks profiles and defines none, so ``profiles:`` and ``active:`` are
-    refused too. Raises :class:`ConfigError` (exit 4) naming the path.
-    """
-    raw = _read_yaml(yaml_file)
-    _check_stamp(raw, yaml_file, newest=FORMAT_VERSION)
-    for key in ("profiles", "active"):
-        if key in raw:
-            raise ConfigError(
-                f"`{key}:` in {yaml_file} is not read: a project picks the home's profiles "
-                "with `profile:` and defines none",
-                hint=f"move it to the home's config.yml, or delete the `{key}:` key",
-            )
-    return raw
-
-
-def _check_no_shared_state(folder: Path) -> None:
-    """Refuse a folder holding 11.x's shared ``state.yml`` beside the config read from it.
-
-    12.0 keeps each plugin's state in its own ``plugins/<name>/state.yml``
-    and never reads the shared file, so it has no upgrade path either.
-    """
-    shared = folder / STATE_FILE_NAME
-    if shared.exists():
-        raise OlderFormatError(
-            f"{shared} was written by untaped 11.x; this release keeps each plugin's state "
-            "under plugins/ and has no upgrade path",
-            hint="delete it, or keep untaped 11.1 for this home",
-        )
-
-
-def load_state_yaml(yaml_file: Path) -> dict[str, Any]:
-    """Parse a plugin's ``state.yml`` into a dict (``{}`` when absent or empty).
-
-    Raises as :func:`load_config_yaml` does for an unreadable file, a YAML
-    syntax error or a non-mapping root; its stamp is the state rows' to check.
-    """
-    return _read_yaml(yaml_file)
-
-
-def _read_yaml(yaml_file: Path) -> dict[str, Any]:
-    if not yaml_file.exists():
-        return {}
-    if not yaml_file.is_file():
-        raise ConfigError(f"could not read {yaml_file}: not a file")
-    try:
-        with yaml_file.open(encoding="utf-8") as f:
-            raw = yaml.safe_load(f)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"could not parse {yaml_file}: {exc}") from exc
-    except UnicodeDecodeError as exc:
-        raise ConfigError(f"could not read {yaml_file}: not UTF-8 text ({exc.reason})") from exc
-    except OSError as exc:
-        raise ConfigError(f"could not read {yaml_file}: {exc.strerror or exc}") from exc
-    return _checked_root(raw, yaml_file)
-
-
-def check_config_text(text: str, path: Path) -> None:
-    """Raise :class:`ConfigError` when ``text`` is not a readable config document.
-
-    Applies the same root and format checks as :func:`load_config_yaml`
-    to text already read from ``path``.
-    """
-    try:
-        raw = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        raise ConfigError(f"could not parse {path}: {exc}") from exc
-    check_config_format(_checked_root(raw, path), path)
-
-
-def _checked_root(raw: Any, path: Path) -> dict[str, Any]:
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise ConfigError(
-            f"invalid config in {path}: the document root must be a mapping, "
-            f"got {type(raw).__name__}"
-        )
-    return raw
-
-
-class FormatVersionError(ConfigError):
-    """A config or state file this release must not read or write."""
-
-
-class NewerFormatError(FormatVersionError):
-    """A file stamped with a ``format_version`` newer than this release reads."""
-
-    def __init__(self, message: str, *, version: int, path: Path) -> None:
-        super().__init__(message)
-        self.version = version
-        self.path = path
-
-
-class OlderFormatError(FormatVersionError):
-    """A ``config.yml`` (format 1) or shared ``state.yml`` untaped 11.x wrote: no upgrade path."""
-
-
-def check_config_format(raw: dict[str, Any], path: Path) -> None:
-    """Refuse a ``config.yml`` this release must not read: not format 2, or holding 11.x keys.
-
-    11.x's keys are ``active:`` and ``profiles.default``. An empty file is a
-    fresh home. Raises :class:`FormatVersionError` (exit 4), so nothing is
-    written beside a file this release must not read.
-    """
-    if not raw:
-        return
-    stamp = raw.get("format_version")
-    if "format_version" not in raw or (type(stamp) is int and stamp == 1):
-        raise OlderFormatError(
-            f"{path} was written by untaped 11.x (format 1); this release reads format "
-            f"{FORMAT_VERSION} and has no upgrade path",
-            hint=(
-                f"delete it and run `untaped setup`, or keep untaped 11.1 for this home; "
-                f"a file written for 12.0 starts with `format_version: {FORMAT_VERSION}`"
-            ),
-        )
-    _check_stamp(raw, path, newest=FORMAT_VERSION)
-    if "active" in raw:
-        raise FormatVersionError(
-            f"`active:` in {path} is not read: a run picks its profiles with "
-            "--profile or UNTAPED_PROFILE, else reads the base alone",
-            hint="delete the `active:` line",
-        )
-    profiles = raw.get("profiles")
-    if isinstance(profiles, dict) and DEFAULT_PROFILE in profiles:
-        raise FormatVersionError(
-            f"profiles.default in {path} is not read: the base is config.yml's top level",
-            hint="move its sections to the top of the file",
-        )
-
-
-def _check_stamp(raw: dict[str, Any], path: Path, *, newest: int) -> None:
-    if "format_version" not in raw:
-        return
-    value = raw["format_version"]
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise FormatVersionError(  # invalid stamps get the same write-path protection
-            f"invalid format_version in {path}: expected a positive integer, got {value!r}"
-        )
-    if value > newest:
-        raise NewerFormatError(
-            f"{path} was written by a newer untaped (format {value}; "
-            f"this release reads format {newest}); upgrade untaped",
-            version=value,
-            path=path,
-        )
-
-
 #: Config sections core owns: the top-level layout keys (``format_version``,
 #: ``profiles``, 11.x's ``active``) and the keys injected into plugin sections
 #: (:data:`RESERVED_SECTION_KEYS`). No plugin section may take one, so a plugin
@@ -966,7 +385,7 @@ def validate_config_file(candidate: Path) -> None:
             file_secret_settings: PydanticBaseSettingsSource,
         ) -> tuple[PydanticBaseSettingsSource, ...]:
             layout = LayoutSettingsSource(settings_cls, candidate)
-            env = _RenamingEnvSource(settings_cls)
+            env = RenamingEnvSource(settings_cls)
             return (init_settings, env, layout, file_secret_settings)
 
     try:
@@ -1014,6 +433,8 @@ def validate_settings_section(
 
 #: The parts of core's section, each validated alone (:func:`load_core_part`).
 CorePart = Literal["http", "ui", "skills"]
+
+
 #: Core's section: ``untaped.core.settings.NAME``, which imports this module.
 _CORE = "untaped"
 
@@ -1046,10 +467,16 @@ def _core_part_models(part: CorePart) -> tuple[type[BaseModel], type[_SettingsSo
 
 @overload
 def load_core_part(part: Literal["http"]) -> HttpSettings: ...
+
+
 @overload
 def load_core_part(part: Literal["ui"]) -> UiSettings: ...
+
+
 @overload
 def load_core_part(part: Literal["skills"]) -> SkillsSettings: ...
+
+
 def load_core_part(part: CorePart) -> BaseModel:
     """One part of core's section (``untaped.http``, ``.ui`` or ``.skills``), validated alone.
 
@@ -1113,7 +540,7 @@ class _EnvOverInit(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        return (_RenamingEnvSource(settings_cls), init_settings)
+        return (RenamingEnvSource(settings_cls), init_settings)
 
 
 def check_settings_field(
@@ -1189,8 +616,8 @@ def _env_culprit(exc: ValidationError, settings_cls: type[BaseModel]) -> str | N
             return candidate
         path = ".".join(loc[1:depth])
         for old in sorted(old for old, new in readable.items() if new == path):
-            name = _env_name(loc[0], old)
-            if _env_is_set(name):
+            name = env_name_of(loc[0], old)
+            if env_is_set(name):
                 return name
     return None
 

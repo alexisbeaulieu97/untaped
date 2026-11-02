@@ -43,7 +43,8 @@ from untaped.core.profile.repository import ProfileFileRepository
 from untaped.core.profile.use_cases import CreateProfile
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.run import child_run
-from untaped.runtime.settings import env_var_setting, load_settings_section
+from untaped.runtime.settings import load_settings_section
+from untaped.runtime.settings_env import env_var_setting
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.network.credentials import Credential, credential_key, describe_key, key_fields
 from untaped.sdk.words import run_hint

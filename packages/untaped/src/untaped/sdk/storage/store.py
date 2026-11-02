@@ -421,7 +421,7 @@ class _Aside:
 
     def finish(self) -> None:
         """Delete the renamed paths and say so; a path that will not go is a warning."""
-        from untaped.runtime.sink import Diagnostics  # noqa: PLC0415 - no cycle
+        from untaped.runtime.run_output import Diagnostics  # noqa: PLC0415 - no cycle
 
         for text in self.delete():
             Diagnostics().warning(f"{text}; delete it by hand, nothing uses it")
@@ -429,7 +429,7 @@ class _Aside:
 
 
 def _report_pruned(aside: _Aside) -> None:
-    from untaped.runtime.sink import current_sink  # noqa: PLC0415 - no cycle
+    from untaped.runtime.run_output import current_sink  # noqa: PLC0415 - no cycle
     from untaped.sdk.diagnostic import Pruned  # noqa: PLC0415 - no cycle
     from untaped.sdk.words import shown_path, size_text  # noqa: PLC0415 - no cycle
 
