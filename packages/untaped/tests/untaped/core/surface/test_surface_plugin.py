@@ -152,11 +152,12 @@ def test_a_root_command_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatc
 
 
 def test_a_behaviour_no_plugin_owns_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    from untaped.sdk import marks
+    import untaped.sdk._behaviours as behaviours
+    from untaped.sdk.marks import deprecated
 
-    old = marks.DeprecatedBehaviour("old-thing", marks.deprecated(removed_in=13))
-    monkeypatch.setattr(marks, "_core_behaviours", lambda: (old,))
-    monkeypatch.setattr(marks, "_CORE_OWNER", "core")
+    old = behaviours.DeprecatedBehaviour("old-thing", deprecated(removed_in=13))
+    monkeypatch.setattr(behaviours, "_core_behaviours", lambda: (old,))
+    monkeypatch.setattr(behaviours, "_CORE_OWNER", "core")
 
     with pytest.raises(SurfaceError, match="no composed plugin owns: behaviour owner core"):
         generate([])

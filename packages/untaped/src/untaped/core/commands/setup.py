@@ -50,9 +50,9 @@ from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, picked_names, write_target
 from untaped.runtime.settings import active_settings_layout
+from untaped.sdk._output import Output
 from untaped.sdk._ui import build_terminal
 from untaped.sdk.errors import ConfigError, Failed, Matched, PromptInterruptedError
-from untaped.sdk.fields import Output
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import command_line
 

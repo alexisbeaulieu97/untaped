@@ -19,8 +19,9 @@ from repo.support import REPO_ROOT
 from untaped import sdk
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.stability_marks import marks
 from untaped.sdk import testing
-from untaped.sdk.marks import Experimental, function_mark, marks
+from untaped.sdk.marks import Experimental, function_mark
 
 _BULLET = re.compile(r"^- `([^`]+)`:", re.MULTILINE)
 

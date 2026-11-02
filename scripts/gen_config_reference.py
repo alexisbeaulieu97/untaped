@@ -206,7 +206,8 @@ def _with_bounds(description: str | None, bounds: str | None) -> str | None:
 
 def _description(row: Row) -> str:
     """The description cell: the text, then the sentence for a marked setting."""
-    from untaped.sdk.marks import Deprecated, removal_text, replacement_text  # noqa: PLC0415
+    from untaped.sdk._replacement import replacement_text  # noqa: PLC0415
+    from untaped.sdk.marks import Deprecated, removal_text  # noqa: PLC0415
     from untaped.sdk.words import EXPERIMENTAL_LINE, deprecated_line  # noqa: PLC0415
 
     if row.mark is None:

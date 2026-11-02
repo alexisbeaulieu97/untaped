@@ -17,8 +17,8 @@ from pydantic import SecretStr
 from core_test_support.commands.support import write_config
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.stability_marks import field_marks
 from untaped.sdk._schema import unwrap_optional
-from untaped.sdk.marks import field_marks
 from untaped.sdk.testing import invoke_cli
 
 pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")

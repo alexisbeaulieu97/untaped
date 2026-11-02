@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING, Annotated, ClassVar, Literal, Protocol
 from pydantic import BaseModel
 
 from untaped.sdk import UntapedError
-from untaped.sdk.marks import deprecated, deprecated_parameters, experimental
+from untaped.sdk._parameter_marks import deprecated_parameters
+from untaped.sdk.marks import deprecated, experimental
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

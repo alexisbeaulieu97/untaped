@@ -17,7 +17,8 @@ from pydantic import Field
 
 from untaped.core.commands.records import RegisteredHolder, RegisteredTarget, RegisterOutcome
 from untaped.core.settings import CoreSettings
-from untaped.sdk.fields import DryRun, Output
+from untaped.sdk._confirm import DryRun
+from untaped.sdk._output import Output
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._refs import Reference, register_this_install, unregister
 

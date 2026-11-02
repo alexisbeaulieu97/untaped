@@ -151,8 +151,8 @@ def _rows_model(name: str, rows: tuple[Any, ...]) -> type[BaseModel] | None:
 
 def setting_leaves(section: Section) -> list[Setting]:
     """Every leaf key of ``section``, collections included, with its effective mark."""
+    from untaped.runtime.stability_marks import setting_mark  # noqa: PLC0415
     from untaped.sdk._schema import bounds_text, walk_settings  # noqa: PLC0415
-    from untaped.sdk.marks import setting_mark  # noqa: PLC0415
 
     prefix, model = section.prefix, section.model
     leaves = walk_settings(model, (prefix,), include_collections=True)
