@@ -22,13 +22,8 @@ from untaped_github.application.search import (
     SearchRepos,
     SearchUsers,
 )
-from untaped_github.application.sweep import (
-    CorpusSyncOptions,
-    Sweep,
-    SweepOptions,
-    SweepReport,
-    SyncCorpus,
-)
+from untaped_github.application.sweep import Sweep, SweepOptions, SweepReport
+from untaped_github.application.sync_corpus import CorpusSyncOptions, SyncCorpus
 from untaped_github.application.whoami import WhoAmI
 
 __all__ = [
