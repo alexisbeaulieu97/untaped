@@ -6,6 +6,7 @@ import importlib
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tomllib
 from collections.abc import Iterator
@@ -376,11 +377,18 @@ def test_a_local_version_is_left_out_of_the_floor() -> None:
 def test_the_scaffold_passes_its_own_mypy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, contract_plugins_site: Path
 ) -> None:
-    api = pytest.importorskip("mypy.api")  # a tool install of core has no mypy
+    pytest.importorskip("mypy")  # a tool install of core has no mypy
     pytest.importorskip("untaped_lint.testing")  # its tests' dev group has it; core's run doesn't
     _new(tmp_path)
     root = tmp_path / "untaped-gitlab"
-    monkeypatch.chdir(root)  # its own pyproject.toml and its files = ["src", "tests"]
-    monkeypatch.setenv("MYPYPATH", os.pathsep.join([str(root / "src"), str(contract_plugins_site)]))
-    out, err, status = api.run(["--no-incremental"])
-    assert status == 0, out + err
+    paths = os.pathsep.join([str(root / "src"), str(contract_plugins_site)])
+    # Its own process: mypy raises the interpreter's recursion limit for good.
+    done = subprocess.run(
+        [sys.executable, "-m", "mypy", "--no-incremental"],
+        cwd=root,  # its own pyproject.toml and its files = ["src", "tests"]
+        env={**os.environ, "MYPYPATH": paths},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
