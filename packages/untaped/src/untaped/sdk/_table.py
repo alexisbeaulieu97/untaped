@@ -37,7 +37,9 @@ def _column_name(column: SettingKey) -> str:
         raise TypeError(f"a table column is a field of the record, not {column!r}")
     model = SettingKey.model_of(column)
     names: list[str] = []
-    for attr in SettingKey.path_of(column):  # ``key()`` only steps into a nested model
+    for attr in SettingKey.path_of(column):
+        if attr not in model.model_fields:
+            raise TypeError(f"a table column is a field of the record, not a map entry: {column!r}")
         names.append(dumped_names(model)[attr])
         model = model_in(model.model_fields[attr].annotation) or model
     return ".".join(names)

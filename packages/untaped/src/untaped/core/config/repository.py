@@ -49,7 +49,7 @@ from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
 from untaped.runtime.yaml_roundtrip import KeyRename
-from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
+from untaped.sdk._schema import EntryNameError, FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
     apply_move,
@@ -83,6 +83,7 @@ class SettingsFileRepository:
         self._settings_cls = settings_cls
         self._project = project
         self._descriptors: list[FieldDescriptor] | None = None
+        self._walked: dict[tuple[str, ...], FieldDescriptor] | None = None
         self._sections: dict[str, Any] = {}
         self._resolved: ResolvedConfig | None = None
 
@@ -116,7 +117,10 @@ class SettingsFileRepository:
 
     def descriptor(self, key: str) -> FieldDescriptor:
         descriptors = self.descriptors()
-        descriptor = find_descriptor(descriptors, key)
+        try:
+            descriptor = find_descriptor(descriptors, key)
+        except EntryNameError as exc:
+            raise ConfigError(str(exc), category="usage") from exc
         if descriptor is None:
             # The section's keys when the section exists, else the sections.
             section = key.partition(".")[0]
@@ -132,11 +136,18 @@ class SettingsFileRepository:
         Validates only the leaf's section (a part of core's, for ``untaped.*``);
         raises ``ConfigError`` when it is invalid.
         """
-        holder = self.holder_value(descriptor)
-        return None if holder is None else getattr(holder, descriptor.path[-1], None)
+        value = _child(self.holder_value(descriptor), descriptor.path[-1])
+        declared = self._declared(descriptor)
+        choices = declared.choices
+        if value is None and choices is not None and descriptor.path[:-1] == declared.path:
+            # An entry a map's declared names give a default (a theme's symbol).
+            defaults = choices.defaults
+            if defaults is not None:
+                value = defaults(self.holder_value(declared)).get(descriptor.path[-1])
+        return value
 
     def holder_value(self, descriptor: FieldDescriptor) -> Any:
-        """The validated model that holds one leaf: its section, or a model nested in it.
+        """The validated value that holds one leaf: its section, a model in it, or a map.
 
         Raises ``ConfigError`` when the leaf's section is invalid.
         """
@@ -150,9 +161,7 @@ class SettingsFileRepository:
             )
         cursor: Any = self._sections[loaded]
         for segment in descriptor.path[len(loaded.split(".")) : -1]:
-            cursor = getattr(cursor, segment, None)
-            if cursor is None:
-                return None
+            cursor = _child(cursor, segment)
         return cursor
 
     def validated_with(self, descriptor: FieldDescriptor) -> str:
@@ -240,12 +249,25 @@ class SettingsFileRepository:
         return self._section_models().get(section)
 
     def mark(self, descriptor: FieldDescriptor) -> Stability | None:
-        """The effective stability mark of ``descriptor``: its own, else its plugin's."""
+        """The effective stability mark of ``descriptor``: its own, else its plugin's.
+
+        A map entry, or a setting inside one, has the map setting's mark.
+        """
         return setting_mark(
-            descriptor.key,
+            self._declared(descriptor).key,
             sections=self._section_models(),
             section_stability=section_stabilities(),
         )
+
+    def _declared(self, descriptor: FieldDescriptor) -> FieldDescriptor:
+        """The setting a settings model declares that holds ``descriptor``: it, or its map."""
+        if self._walked is None:
+            self._walked = {each.path: each for each in self.descriptors()}
+        for depth in range(len(descriptor.path), 0, -1):
+            found = self._walked.get(descriptor.path[:depth])
+            if found is not None:
+                return found
+        return descriptor
 
     def deprecated_source(self, descriptor: FieldDescriptor) -> OldSpelling | None:
         """The old key or variable that supplied ``descriptor``'s value, if any.
@@ -332,7 +354,7 @@ class SettingsFileRepository:
                 olds = self._old_paths(descriptor)
                 raw_value = update(resolved, self._own(target_data, descriptor))
                 if raw_value is None:
-                    unset_at_path(target_data, descriptor.path)
+                    unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
                 else:
                     value = _coerce_value(key, descriptor, raw_value)
                     set_at_path(target_data, descriptor.path, value)
@@ -400,7 +422,7 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = self._write_target(data, profile)
-            own = unset_at_path(target_data, descriptor.path)
+            own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
             olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
             if not (own or olds):
                 return
@@ -551,6 +573,13 @@ def _relative(descriptor: FieldDescriptor) -> str:
     return ".".join(descriptor.path[1:])
 
 
+def _child(value: Any, name: str) -> Any:
+    """``value``'s field or map entry ``name``; ``None`` when it has none."""
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return None if value is None else getattr(value, name, None)
+
+
 def _at_path(data: Any, path: tuple[str, ...]) -> Any:
     for segment in path:
         data = data.get(segment) if isinstance(data, dict) else None
@@ -575,7 +604,8 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
 
     ``str``/``SecretStr`` fields keep the input verbatim (no YAML parsing, so
     ``p4ss #word`` or ``0123`` survive intact). Mapping and list fields parse
-    the input as JSON or YAML and replace the whole value. Other types
+    the input as JSON or YAML and replace the whole value (a map entry
+    whose value is a model too, without the defaults it fills). Other types
     validate the raw string in pydantic's lax mode and store the JSON-mode
     dump (e.g. a ``Path`` as a string). For those non-string types the
     literal ``null`` stores ``None``; the section validation in ``update_value``
@@ -598,7 +628,8 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         ) from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
-    return adapter.dump_python(value, mode="json")
+    # A model's defaults stay unwritten, as if the value had been typed into the file.
+    return adapter.dump_python(value, mode="json", exclude_unset=descriptor.is_collection)
 
 
 def _parse_structured(key: str, raw_value: str) -> Any:

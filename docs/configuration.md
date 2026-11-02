@@ -212,14 +212,12 @@ untaped config list --all-profiles
 untaped config get awx.server.url
 untaped config set untaped.http.timeout_seconds 60 --dry-run
 untaped --profile prod config unset jira.default_project
-untaped config set untaped.ui.symbols '{"success": "✓", "error": "✗"}'
+untaped config set untaped.ui.symbols.success ✓
 untaped config edit
 ```
 
-Each cache a plugin keeps from an upstream has a setting
-`<plugin>.caches.<cache>.max_age_seconds`: how long its data is used before
-untaped checks upstream again (`0` checks every time). The
-[config reference](./reference/config.md) lists them.
+Each plugin cache has a `<plugin>.caches.<cache>.max_age_seconds` setting:
+how long its data is used before checking upstream again (`0`: every time).
 
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
@@ -234,7 +232,10 @@ parsing it as YAML:
 
 - string and secret settings store the input verbatim (`p4ss #word`,
   `0123456` and `no` stay as typed);
-- mapping and list settings take the whole value as JSON or YAML;
+- mapping and list settings take the whole value as JSON or YAML, or a map
+  one entry at a time (`untaped.ui.symbols.success`); a value under a missing
+  entry creates it, `config unset` on an entry removes it, and a name with a
+  capital or a dot is set only with the whole map;
 - for an optional non-string setting, the literal `null` stores an explicit
   null; `config unset` removes the key instead;
 - an invalid value is rejected before anything is written.
@@ -249,9 +250,8 @@ Each prints an `untaped.setting_outcome` record that never echoes the value.
 adds its source (`profile:<name>`, `base`, `project:<name>`, `env`, `default`
 or `unset`), profile and default, secrets `"***"` unless `--show-secrets`.
 
-Because a command validates only the section it reads, you can repair a
-broken key through the CLI: `config set KEY --prompt` offers the raw stored
-value as the default.
+A command validates only the section it reads, so `config set KEY --prompt`
+repairs a broken key through the CLI, offering the raw stored value.
 
 `config edit` opens `VISUAL`, falling back to `EDITOR`; include your GUI
 editor's wait option (`EDITOR="code --wait"`). It validates the result before

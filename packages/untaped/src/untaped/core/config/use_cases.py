@@ -755,6 +755,9 @@ def _resolve_source(
         return Source(kind="env", variable=variable)
     if profile_name is not None:
         return Source.of(profile_name)
-    if current is None and not (descriptor.has_default and descriptor.default is not None):
+    if current is None and (
+        # Under a map entry nothing sets, the default applies to nothing.
+        descriptor.entry_depth or not (descriptor.has_default and descriptor.default is not None)
+    ):
         return Source(kind="unset")
     return Source(kind="default")

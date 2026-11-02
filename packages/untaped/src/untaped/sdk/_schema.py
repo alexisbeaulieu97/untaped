@@ -13,14 +13,15 @@ import types
 import typing
 import weakref
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, get_args, get_origin
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
 import annotated_types
 from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 
 from untaped.runtime.redaction import redact_url_password
+from untaped.sdk._keys import ENTRY_NAME, map_value_type
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -169,6 +170,14 @@ class FieldDescriptor:
     home_only: bool = False
     """Whether only the home's base sets it: a :class:`HomeOnly` mark, or a ``Dir``'s place."""
 
+    entry_depth: int = 0
+    """The path length of the map entry that holds it, ``0`` when no entry does.
+
+    A key steps into a map setting by entry name (:func:`find_descriptor`):
+    a write never removes that entry, and the setting has a value only while
+    the entry exists. An entry's own descriptor counts only an entry above it.
+    """
+
     @property
     def key(self) -> str:
         """Dotted key, e.g. ``"untaped.http.proxy"``."""
@@ -176,8 +185,12 @@ class FieldDescriptor:
 
     @property
     def is_collection(self) -> bool:
-        """Whether the leaf holds a whole mapping or list (e.g. ``untaped.ui.symbols``)."""
-        return _is_collection(self.annotation)
+        """Whether the leaf holds a whole mapping or list (e.g. ``untaped.ui.symbols``).
+
+        A map entry whose value is a model holds a mapping too: it is set as
+        JSON or YAML and shown as one.
+        """
+        return _is_collection(self.annotation) or _is_model(self.annotation)
 
 
 def walk_settings(
@@ -268,12 +281,84 @@ def bounds_text(descriptor: FieldDescriptor) -> str | None:
     return f"{text[0].upper()}{text[1:]}." if text else None
 
 
+class EntryNameError(ValueError):
+    """A key names a map entry no key can address; the message says to set the whole map."""
+
+
 def find_descriptor(descriptors: list[FieldDescriptor], key: str) -> FieldDescriptor | None:
-    """Return the descriptor matching the dotted ``key``, or ``None``."""
-    for d in descriptors:
-        if d.key == key:
-            return d
+    """Return the descriptor matching the dotted ``key``, or ``None``.
+
+    ``descriptors`` are :func:`walk_settings`' (with ``include_collections``).
+    A key that goes past a ``dict[str, X]`` setting takes the next segment as
+    an entry name and continues into ``X``: a model's fields, a map's
+    entries, or ``X`` itself. Such a descriptor carries the full path and
+    ``X``'s type, and is home-only when the map is. An entry name that
+    :data:`ENTRY_NAME` doesn't match raises :class:`EntryNameError`.
+    """
+    return _find(descriptors, tuple(key.split(".")))
+
+
+def _find(descriptors: list[FieldDescriptor], parts: tuple[str, ...]) -> FieldDescriptor | None:
+    for descriptor in descriptors:
+        if descriptor.path == parts:
+            return descriptor
+        depth = len(descriptor.path)
+        if parts[:depth] == descriptor.path and map_value_type(descriptor.annotation) is not None:
+            return _within(descriptor, parts[depth:])
     return None
+
+
+def _within(
+    holder: FieldDescriptor, rest: tuple[str, ...], *, entry: bool = False
+) -> FieldDescriptor | None:
+    """The descriptor ``rest`` reaches from ``holder``, a map or (``entry``) a map's entry."""
+    if not rest:
+        return holder
+    if map_value_type(holder.annotation) is not None:
+        above = len(holder.path) if entry else holder.entry_depth
+        return _within(_entry(holder, rest[0], above), rest[1:], entry=True)
+    if not _is_model(holder.annotation):
+        return None
+    inner = walk_settings(holder.annotation, holder.path, include_collections=True)
+    return _find(
+        [
+            replace(
+                each,
+                home_only=each.home_only or holder.home_only,
+                entry_depth=len(holder.path),
+            )
+            for each in inner
+        ],
+        (*holder.path, *rest),
+    )
+
+
+def _entry(holder: FieldDescriptor, name: str, above: int) -> FieldDescriptor:
+    """The descriptor of entry ``name`` of map ``holder``; ``above`` is the entry holding it."""
+    if ENTRY_NAME.fullmatch(name) is None:
+        raise EntryNameError(
+            f"{holder.key} entry {name!r} can't be named in a key: a key names an entry "
+            "in lower-case letters, digits, '_' and '-'; set the whole map instead "
+            f"(config set {holder.key} VALUE)"
+        )
+    value = get_args(holder.annotation)[1]
+    metadata: tuple[Any, ...] = ()
+    if get_origin(value) is Annotated:
+        value, *rest = get_args(value)
+        metadata = tuple(rest)
+    annotation = unwrap_optional(value)
+    return FieldDescriptor(
+        path=(*holder.path, name),
+        annotation=annotation,
+        default=None,
+        has_default=False,
+        is_secret=annotation is SecretStr,
+        optional=_is_optional(value),
+        bounds=tuple(item for item in metadata if isinstance(item, _BOUNDS)),
+        argv=any(isinstance(item, Argv) for item in metadata),
+        home_only=holder.home_only,
+        entry_depth=above,
+    )
 
 
 def secret_field_paths(model_cls: type[BaseModel]) -> list[tuple[str, ...]]:
@@ -348,3 +433,7 @@ def _is_optional(annotation: Any) -> bool:
 
 def _is_collection(annotation: Any) -> bool:
     return get_origin(annotation) in (list, dict, set, tuple, frozenset)
+
+
+def _is_model(annotation: Any) -> bool:
+    return isinstance(annotation, type) and issubclass(annotation, BaseModel)

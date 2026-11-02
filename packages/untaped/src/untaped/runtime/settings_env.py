@@ -27,12 +27,16 @@ from untaped.sdk.health.deprecated_keys import (
 def env_var_name(path: Iterable[str]) -> str:
     """The ``UNTAPED_*`` variable that sets the setting at ``path`` (``("github", "token")``).
 
-    The one place an environment name is built. A hyphen becomes an
-    underscore, as in the plugin's import package (``acme-tools`` reads
-    ``UNTAPED_ACME_TOOLS__KEY``): plugin names hold no ``_``, so the
-    spelling stays unambiguous, and ``__`` stays the nesting delimiter.
+    The one place an environment name is built. A hyphen in the section
+    becomes an underscore, as in the plugin's import package (``acme-tools``
+    reads ``UNTAPED_ACME_TOOLS__KEY``): plugin names hold no ``_``, so the
+    spelling stays unambiguous, and ``__`` stays the nesting delimiter. A map
+    entry's name keeps its hyphen (``UNTAPED_DOTFILES__SOURCES__MY-REPO__URL``),
+    since the settings source reads the name as written; a POSIX shell can't
+    ``export`` that name, but the whole map as one JSON variable still works.
     """
-    return "UNTAPED_" + "__".join(part.replace("-", "_") for part in path).upper()
+    section, *rest = path
+    return "UNTAPED_" + "__".join((section.replace("-", "_"), *rest)).upper()
 
 
 def env_name_of(section: str, key: str) -> str:

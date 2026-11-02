@@ -6,7 +6,11 @@ each of them can import it, and the marks can mark a field block's method.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, get_args
+import re
+import types
+import typing
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Annotated, Any, get_args, get_origin
 
 from pydantic import BaseModel
 from pydantic_core import core_schema
@@ -21,9 +25,12 @@ class SettingKey:
 
     Created by :func:`key`; each attribute step is checked against the
     model's fields, so a typo fails where it is written, and a nested model
-    is followed (``key(AcmeSettings).server.url``). The key knows its model
-    and its path; core spells the full dotted key (with the plugin's section)
-    from the composition. ``str()`` is the path inside the section.
+    is followed (``key(AcmeSettings).server.url``). A ``dict[str, X]`` field
+    steps into one entry by name, then into ``X``
+    (``key(DotfilesSettings).sources["dotfiles"].url``); the name is checked
+    against :data:`ENTRY_NAME`. The key knows its model and its path; core
+    spells the full dotted key (with the plugin's section) from the
+    composition. ``str()`` is the path inside the section.
     """
 
     __slots__ = ("_model", "_parts")
@@ -43,18 +50,40 @@ class SettingKey:
             )
         return SettingKey(self._model, (*self._parts, name))
 
+    def __getitem__(self, name: str) -> SettingKey:
+        value = map_value_type(self._annotation())
+        if value is None:
+            raise TypeError(
+                f"{self!r} is not a map setting; [name] names an entry of a dict[str, ...] field"
+            )
+        if not isinstance(name, str) or ENTRY_NAME.fullmatch(name) is None:
+            raise ValueError(
+                f"{self!r} entry {name!r} can't be named in a key: a key names an entry "
+                "in lower-case letters, digits, '_' and '-'"
+            )
+        return SettingKey(self._model, (*self._parts, name))
+
+    def _annotation(self) -> Any:
+        """The type this key reaches: the settings model, a field's type, or a map entry's."""
+        current: Any = self._model
+        for part in self._parts:
+            value = map_value_type(current)
+            if value is not None:
+                current = value
+                continue
+            model = model_in(current)
+            assert model is not None  # each step was checked when the key was built
+            current = model.model_fields[part].annotation
+        return current
+
     def _field_model(self) -> type[BaseModel]:
         """The model the next attribute step reads: the settings model, or the nested one."""
-        current: type[BaseModel] = self._model
-        for part in self._parts:
-            annotation = current.model_fields[part].annotation
-            nested = model_in(annotation)
-            if nested is None:
-                raise AttributeError(
-                    f"{'.'.join(self._parts)} of {self._model.__name__} is a value, not a model"
-                )
-            current = nested
-        return current
+        nested = model_in(self._annotation())
+        if nested is None:
+            raise AttributeError(
+                f"{'.'.join(self._parts)} of {self._model.__name__} is a value, not a model"
+            )
+        return nested
 
     @staticmethod
     def model_of(setting: SettingKey) -> type[BaseModel]:
@@ -66,7 +95,7 @@ class SettingKey:
 
     @staticmethod
     def path_of(setting: SettingKey) -> tuple[str, ...]:
-        """The field names from the settings model down to ``setting``."""
+        """The field names (and map entry names) from the settings model down to ``setting``."""
         return setting._parts
 
     def __str__(self) -> str:
@@ -104,14 +133,59 @@ class SettingKey:
         return {"type": "string"}
 
 
+def value_in(setting: SettingKey, settings: BaseModel) -> Any:
+    """``setting``'s value in ``settings``, a validated instance of its model.
+
+    ``None`` when a map entry on the way is missing.
+    """
+    value: Any = settings
+    for part in SettingKey.path_of(setting):
+        if isinstance(value, Mapping):
+            value = value.get(part)
+        elif value is not None:
+            value = getattr(value, part)
+    return value
+
+
+ENTRY_NAME = re.compile(r"[a-z0-9_][a-z0-9_-]*")
+"""The map entry names a key can address: no dot, so a key splits one way, and lower case,
+because ``UNTAPED_*`` variables match without regard to case."""
+
+
 def model_in(annotation: object) -> type[BaseModel] | None:
-    """The one pydantic model ``annotation`` is (``Model`` or ``Model | None``), if any."""
+    """The one pydantic model ``annotation`` is (``Model`` or ``Model | None``), if any.
+
+    Only a union is looked into: a ``list[Model]`` or ``dict[str, Model]`` is not a model.
+    """
+    annotation = _bare(annotation)
     if isinstance(annotation, type) and issubclass(annotation, BaseModel):
         return annotation
+    if get_origin(annotation) not in (types.UnionType, typing.Union):
+        return None
     models = [
         arg for arg in get_args(annotation) if isinstance(arg, type) and issubclass(arg, BaseModel)
     ]
     return models[0] if len(models) == 1 else None
+
+
+def map_value_type(annotation: object) -> Any:
+    """``X`` for a ``dict[str, X]`` annotation (or ``dict[str, X] | None``); ``None`` otherwise.
+
+    An ``Annotated`` value type is returned bare.
+    """
+    annotation = _bare(annotation)
+    if get_origin(annotation) in (types.UnionType, typing.Union):
+        present = [arg for arg in get_args(annotation) if arg is not type(None)]
+        annotation = present[0] if len(present) == 1 else None
+    if get_origin(annotation) is not dict:
+        return None
+    args = get_args(annotation)
+    return _bare(args[1]) if len(args) == 2 and args[0] is str else None
+
+
+def _bare(annotation: object) -> object:
+    """``annotation`` without an ``Annotated`` wrapper."""
+    return get_args(annotation)[0] if get_origin(annotation) is Annotated else annotation
 
 
 def key(model: type[BaseModel]) -> SettingKey:

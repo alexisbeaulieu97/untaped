@@ -217,8 +217,9 @@ untaped --profile staging acme hello
 
 Config keys are fully qualified (`acme.greeting`); a message or record names
 one as `setting_name(key(AcmeSettings).greeting)`, which follows a renamed
-plugin, never as a literal. A plugin reads and
-writes only its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
+plugin, never as a literal; `[name]` names a map's entry
+(`key(AcmeSettings).servers["main"].url`). A plugin reads and writes only
+its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
 `untaped config set` rejects state fields.
 
 The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
