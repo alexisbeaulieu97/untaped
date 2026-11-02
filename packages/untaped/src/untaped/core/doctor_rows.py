@@ -32,7 +32,7 @@ from untaped.core.settings import NAME, CoreSettings
 from untaped.core.skills import SkillState, local_project_root, outdated_skills
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.plugin_uses import use_line
-from untaped.runtime.profile_resolver import current_pick, fix_target
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE, current_pick, fix_target
 from untaped.runtime.registry import (
     CompositionResult,
     QuarantineRecord,
@@ -50,6 +50,7 @@ from untaped.runtime.settings import (
     section_stabilities,
 )
 from untaped.runtime.settings_env import retired_env_vars
+from untaped.runtime.settings_layout import picked_home_only
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
 from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, UntapedError
@@ -109,12 +110,39 @@ def collect_doctor_rows(
     plugins (``setup`` checks only what it configured).
     """
     project_row = project_config_row()
-    if project_row is None:
-        return _collect_rows(result, online=online, plugins=plugins)
-    if project_row["status"] != FAIL:
-        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
-    with child_run(folder=False):  # the rest as if outside the project, so every row shows
-        return [project_row, *_collect_rows(result, online=online, plugins=plugins)]
+    folder_fails = project_row is not None and project_row["status"] == FAIL
+    pick_row = None if folder_fails else _picked_profiles_row()
+    lead = [row for row in (project_row, pick_row) if row is not None]
+    if not folder_fails and pick_row is None:
+        return [*lead, *_collect_rows(result, online=online, plugins=plugins)]
+    # the rest as if outside the project, or over the base alone, so every row shows
+    with child_run(
+        folder=False if folder_fails else None,
+        profiles=DEFAULT_PROFILE if pick_row is not None else None,
+    ):
+        return [*lead, *_collect_rows(result, online=online, plugins=plugins)]
+
+
+def _picked_profiles_row() -> dict[str, object] | None:
+    """A failed row when a picked profile sets what only the base sets; ``None`` otherwise.
+
+    Any other problem with the file or the pick is the config and profile rows' to report.
+    """
+    try:
+        refusal = picked_home_only(read_config_dict(), profile_section_models())
+    except ConfigError:
+        return None
+    if refusal is None:
+        return None
+    key, profile = refusal.details["key"], refusal.details["profile"]
+    return doctor_row(
+        "profile",
+        NAME,
+        FAIL,
+        "resolve picked profiles",
+        f"{refusal} (the rows below read the base alone)",
+        command_argv(f"config unset {key}", profile=str(profile)),
+    )
 
 
 def _collect_rows(

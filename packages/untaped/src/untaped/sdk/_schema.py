@@ -113,8 +113,9 @@ _PLACED: weakref.WeakKeyDictionary[type[BaseModel], frozenset[tuple[str, ...]]] 
 def place_home_only(model: type[BaseModel], paths: Iterable[tuple[str, ...]]) -> None:
     """Record that a ``Dir`` places each of ``paths`` of ``model``, which makes them home-only.
 
-    :func:`walk_settings` marks them as :class:`HomeOnly` would; a call
-    replaces what ``model`` had.
+    :func:`walk_settings` marks them as :class:`HomeOnly` would, in
+    ``model`` and in any model derived from it (the composed section model);
+    a call replaces what ``model`` had.
     """
     _PLACED[model] = frozenset(paths)
 

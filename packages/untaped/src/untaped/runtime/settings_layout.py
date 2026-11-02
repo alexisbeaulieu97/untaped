@@ -105,7 +105,9 @@ class ProfilesSettingsLayout:
         else:
             layers, layer = run_layers()
             picks = tuple(pick.name for pick in layers)
-            _refuse_picked_home_settings(raw, models, layers, layer)
+            refusal = _picked_home_only(raw, models, layers, layer)
+            if refusal is not None:
+                raise refusal
             folder = None if layer is None else _folder_values(layer, layers, models)
         renamed, uses = _rename_profiles(raw, models, picks)
         if folder is not None:
@@ -231,20 +233,29 @@ def _folder_values(
     return FolderValues(at=at, source=layer.source, sections=sections), uses
 
 
-def _refuse_picked_home_settings(
+def picked_home_only(raw: dict[str, Any], models: SectionModels) -> ConfigError | None:
+    """The refusal (exit 4) a run with this pick meets reading ``models``; ``None`` when none.
+
+    What doctor checks first, so its other rows can read the base alone.
+    """
+    picks, layer = run_layers()
+    return _picked_home_only(raw, models, picks, layer)
+
+
+def _picked_home_only(
     raw: dict[str, Any],
     models: SectionModels,
     picks: Sequence[Picked],
     layer: FolderLayer | None,
-) -> None:
-    """Raise :class:`ConfigError` (exit 4) for the first home-only setting a pick sets.
+) -> ConfigError | None:
+    """The refusal of the first home-only setting a pick sets; ``None`` when none sets one.
 
     Read as the profile spells it, an old key name included. A profile no
     run picks is never read here (doctor names it).
     """
     profiles = raw.get("profiles")
     if not picks or not models or not isinstance(profiles, dict):
-        return  # ``resolve_profiles`` reports a malformed ``profiles``
+        return None  # ``resolve_profiles`` reports a malformed ``profiles``
     for pick in picks:
         data = profiles.get(pick.name)
         if not isinstance(data, dict):
@@ -253,34 +264,34 @@ def _refuse_picked_home_settings(
             section_data = data.get(section)
             if not isinstance(section_data, dict):
                 continue
-            key = home_only_set(section, model, section_data)
-            if key is not None:
-                raise ConfigError(
+            keys = home_only_set(section, model, section_data)
+            if keys:
+                key = keys[0]
+                return ConfigError(
                     f"{key} can't be set in profile {pick.name} "
                     f"(picked by {_picker(pick, layer)}): {PROFILE_REFUSAL}",
                     hint=f"{run_hint(f'--profile {pick.name} config unset {key}')}, then "
                     f"`{command_line(f'config set {key} VALUE')}` if the base should hold it",
                     details={"key": key, "profile": pick.name},
                 )
+    return None
 
 
 #: Why a profile may not set a home-only setting: what the refusals say.
 PROFILE_REFUSAL = "only the home's base sets it, so every run on this machine reads the same value"
 
 
-def home_only_set(section: str, model: type[BaseModel], data: dict[str, Any]) -> str | None:
-    """The first home-only setting ``data`` (one profile's ``section``) sets, as ``section.key``.
+def home_only_set(section: str, model: type[BaseModel], data: dict[str, Any]) -> list[str]:
+    """Each home-only setting ``data`` (one profile's ``section``) sets, as ``section.key``.
 
-    ``None`` when it sets none. An old spelling counts as the key it names.
+    An old spelling counts as the key it names.
     """
     renamed, _ = rename_keys(model, data)
-    for descriptor in walk_settings(model, include_collections=True):
-        if (
-            profile_refusal(descriptor) is not None
-            and _at(renamed, descriptor.path) is not _MISSING
-        ):
-            return f"{section}.{descriptor.key}"
-    return None
+    return [
+        f"{section}.{descriptor.key}"
+        for descriptor in walk_settings(model, include_collections=True)
+        if profile_refusal(descriptor) is not None and _at(renamed, descriptor.path) is not _MISSING
+    ]
 
 
 def leave_out_home_only(sections: dict[str, Any], models: SectionModels) -> tuple[str, ...]:
@@ -303,7 +314,7 @@ def leave_out_home_only(sections: dict[str, Any], models: SectionModels) -> tupl
             removed = [path for path in (descriptor.path, *olds) if unset_at_path(data, path)]
             if removed:
                 left.append(f"{section}.{descriptor.key}")
-        if not data:
+        if not data and any(key.startswith(f"{section}.") for key in left):
             del sections[section]
     return tuple(left)
 

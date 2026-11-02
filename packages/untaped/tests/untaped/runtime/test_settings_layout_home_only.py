@@ -9,9 +9,10 @@ still removes it, variables still apply, and doctor names a profile nobody picks
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import json
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import pytest
 from pydantic import BaseModel
@@ -24,6 +25,7 @@ from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Output, key
 from untaped.sdk._schema import walk_settings
 from untaped.sdk.health import HomeOnly
+from untaped.sdk.health.deprecated_keys import Renamed
 from untaped.sdk.storage import Dir
 from untaped.sdk.testing import CliResult, invoke_cli, make_project, plugin_candidate
 
@@ -32,6 +34,8 @@ pytestmark = pytest.mark.usefixtures("_isolated_config")
 
 class AcmeSettings(BaseModel):
     """Where acme keeps its data, and what it greets with."""
+
+    renamed_keys: ClassVar[Mapping[str, object]] = {"old_dir": Renamed("data_dir", removed_in=99)}
 
     data_dir: Path | None = None
     machine: Annotated[str | None, HomeOnly()] = None
@@ -172,6 +176,28 @@ def test_an_explicit_mark_is_refused_in_a_profile_too(_isolated_config: Path) ->
     assert "acme.machine can't be set in profile work" in result.stderr
 
 
+def test_an_old_spelling_counts_as_the_key(_isolated_config: Path, tmp_path: Path) -> None:
+    _home(_isolated_config, f"profiles:\n  work: {{acme: {{old_dir: {tmp_path}}}}}\n")
+
+    result = _untaped("--profile", "work", "acme", "show")
+
+    assert result.exit_code == 4
+    assert "acme.data_dir can't be set in profile work" in result.stderr
+
+
+def test_a_project_file_may_not_set_a_dir_place(
+    _isolated_config: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _home(_isolated_config, "")
+    file = _project(tmp_path / "api", monkeypatch, "default")
+    file.write_text(f"acme: {{data_dir: {tmp_path}}}\n", encoding="utf-8")
+
+    result = _untaped("acme", "show")
+
+    assert result.exit_code == 4
+    assert "acme.data_dir can't be set in" in result.stderr
+
+
 def test_a_profile_nobody_picks_fails_no_run(work: Path, tmp_path: Path) -> None:
     result = _untaped("acme", "show", "-f", "json")
 
@@ -197,6 +223,21 @@ def test_doctor_names_a_profile_nobody_picks(work: Path) -> None:
     assert '"check": "untaped.home-only"' in result.stdout
     assert "acme.data_dir (profile work)" in result.stdout
     assert '"fix": ["--profile", "work", "config", "unset", "acme.data_dir"]' in result.stdout
+
+
+def test_doctor_inside_a_project_picking_the_profile_shows_every_row(
+    work: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _project(tmp_path / "api", monkeypatch, "work")
+
+    result = _untaped("doctor", "-f", "json")
+
+    rows = json.loads(result.stdout)
+    [picked] = [row for row in rows if row["check"] == "profile" and row["status"] == "fail"]
+    assert "acme.data_dir can't be set in profile work" in picked["detail"]
+    assert "(the rows below read the base alone)" in picked["detail"]
+    assert picked["fix"] == ["--profile", "work", "config", "unset", "acme.data_dir"]
+    assert any(row["check"] == "untaped.home-only" for row in rows)
 
 
 # --- writing and fixing ----------------------------------------------------------

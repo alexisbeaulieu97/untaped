@@ -114,9 +114,7 @@ def _home_only_in_profiles(ctx: PluginContext) -> DoctorResult:
         for section, model in models.items():
             section_data = data.get(section)
             if isinstance(section_data, dict):
-                key = home_only_set(section, model, section_data)
-                if key is not None:
-                    found.append((name, key))
+                found.extend((name, key) for key in home_only_set(section, model, section_data))
     if not found:
         return DoctorResult(ok=True, detail="no profile sets one")
     listed = ", ".join(f"{key} (profile {name})" for name, key in found)
