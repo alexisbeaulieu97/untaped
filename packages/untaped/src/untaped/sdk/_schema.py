@@ -21,7 +21,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 
 from untaped.runtime.redaction import redact_url_password
-from untaped.sdk._keys import ENTRY_NAME, map_value_type
+from untaped.sdk._keys import ENTRY_NAME, ENTRY_NAME_RULE, map_value_type
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -192,6 +192,11 @@ class FieldDescriptor:
         """
         return _is_collection(self.annotation) or _is_model(self.annotation)
 
+    @property
+    def holds_secret(self) -> bool:
+        """Whether the value is a secret or holds one (a map of secrets, a model with one)."""
+        return self.is_secret or _holds_secret(self.annotation, frozenset())
+
 
 def walk_settings(
     model_cls: type[BaseModel],
@@ -337,9 +342,8 @@ def _entry(holder: FieldDescriptor, name: str, above: int) -> FieldDescriptor:
     """The descriptor of entry ``name`` of map ``holder``; ``above`` is the entry holding it."""
     if ENTRY_NAME.fullmatch(name) is None:
         raise EntryNameError(
-            f"{holder.key} entry {name!r} can't be named in a key: a key names an entry "
-            "in lower-case letters, digits, '_' and '-'; set the whole map instead "
-            f"(config set {holder.key} VALUE)"
+            f"{holder.key} entry {name!r} can't be named in a key: {ENTRY_NAME_RULE}; "
+            f"set the whole map instead (config set {holder.key} VALUE)"
         )
     value = get_args(holder.annotation)[1]
     metadata: tuple[Any, ...] = ()
@@ -433,6 +437,19 @@ def _is_optional(annotation: Any) -> bool:
 
 def _is_collection(annotation: Any) -> bool:
     return get_origin(annotation) in (list, dict, set, tuple, frozenset)
+
+
+def _holds_secret(annotation: Any, seen: frozenset[type]) -> bool:
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+    if annotation is SecretStr:
+        return True
+    if _is_model(annotation):
+        if annotation in seen:
+            return False
+        inner = seen | {annotation}
+        return any(_holds_secret(f.annotation, inner) for f in annotation.model_fields.values())
+    return any(_holds_secret(arg, seen) for arg in get_args(annotation))
 
 
 def _is_model(annotation: Any) -> bool:

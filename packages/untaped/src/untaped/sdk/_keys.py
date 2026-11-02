@@ -57,11 +57,10 @@ class SettingKey:
                 f"{self!r} is not a map setting; [name] names an entry of a dict[str, ...] field"
             )
         if not isinstance(name, str) or ENTRY_NAME.fullmatch(name) is None:
-            raise ValueError(
-                f"{self!r} entry {name!r} can't be named in a key: a key names an entry "
-                "in lower-case letters, digits, '_' and '-'"
-            )
+            raise ValueError(f"{self!r} entry {name!r} can't be named in a key: {ENTRY_NAME_RULE}")
         return SettingKey(self._model, (*self._parts, name))
+
+    __iter__ = None  # ``[name]`` names an entry; a key is not a sequence
 
     def _annotation(self) -> Any:
         """The type this key reaches: the settings model, a field's type, or a map entry's."""
@@ -150,6 +149,24 @@ def value_in(setting: SettingKey, settings: BaseModel) -> Any:
 ENTRY_NAME = re.compile(r"[a-z0-9_][a-z0-9_-]*")
 """The map entry names a key can address: no dot, so a key splits one way, and lower case,
 because ``UNTAPED_*`` variables match without regard to case."""
+
+ENTRY_NAME_RULE = (
+    "a key names an entry with lower-case letters, digits, '_' and '-', not starting with '-'"
+)
+""":data:`ENTRY_NAME` in words, for the messages that refuse a name."""
+
+
+def names_entry(setting: SettingKey) -> bool:
+    """Whether ``setting`` steps into a map entry on its way (``sources["main"].url``)."""
+    current: Any = SettingKey.model_of(setting)
+    for part in SettingKey.path_of(setting):
+        value = map_value_type(current)
+        if value is not None:
+            return True
+        model = model_in(current)
+        assert model is not None  # each step was checked when the key was built
+        current = model.model_fields[part].annotation
+    return False
 
 
 def model_in(annotation: object) -> type[BaseModel] | None:

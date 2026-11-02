@@ -38,7 +38,7 @@ from untaped.runtime.describe import (
     prose,
 )
 from untaped.sdk._block import Block, OwnedBlock
-from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import SettingKey, names_entry
 from untaped.sdk._names import kebab, snake
 from untaped.sdk._replacement import COMMAND_TEXT
 from untaped.sdk.marks import class_mark, stability_refusal
@@ -641,6 +641,14 @@ class PluginWalk:
                 where,
                 f"places its folder at a setting of {model.__qualname__}; a Dir's at= names "
                 f"one of the plugin's own settings, and its settings model is {ours}",
+            )
+            return None
+        if names_entry(value.at):
+            self.problem(
+                "block-shape",
+                where,
+                f"places its folder at {value.at!r}, an entry of a map; a Dir's at= names a "
+                "setting the plugin's settings model declares",
             )
             return None
         return ".".join(SettingKey.path_of(value.at))

@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
+from pydantic_core import to_jsonable_python
 
 from untaped.core.config.models import OldSpelling
 from untaped.core.settings import NAME, CoreSettings
@@ -49,6 +50,7 @@ from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
 from untaped.runtime.yaml_roundtrip import KeyRename
+from untaped.sdk._keys import map_value_type, model_in
 from untaped.sdk._schema import EntryNameError, FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
 from untaped.sdk.health.deprecated_keys import (
@@ -83,7 +85,7 @@ class SettingsFileRepository:
         self._settings_cls = settings_cls
         self._project = project
         self._descriptors: list[FieldDescriptor] | None = None
-        self._walked: dict[tuple[str, ...], FieldDescriptor] | None = None
+        self._walked: dict[tuple[str, ...], FieldDescriptor] = {}
         self._sections: dict[str, Any] = {}
         self._resolved: ResolvedConfig | None = None
 
@@ -113,6 +115,7 @@ class SettingsFileRepository:
     def descriptors(self) -> list[FieldDescriptor]:
         if self._descriptors is None:
             self._descriptors = walk_settings(self._profile_model(), include_collections=True)
+            self._walked = {each.path: each for each in self._descriptors}
         return self._descriptors
 
     def descriptor(self, key: str) -> FieldDescriptor:
@@ -127,7 +130,24 @@ class SettingsFileRepository:
             known = [d.key for d in descriptors if d.key.partition(".")[0] == section] or sorted(
                 {d.key.partition(".")[0] for d in descriptors}
             )
-            raise ConfigError(not_found("setting", key, known=known), category="not_found")
+            parts = tuple(key.split("."))
+            # Past a map of plain values, only a name with a dot in it can be meant.
+            maps = [
+                d.key
+                for d in descriptors
+                if parts[: len(d.path)] == d.path
+                and len(parts) > len(d.path) + 1
+                and model_in(map_value_type(d.annotation)) is None
+                and map_value_type(d.annotation) is not None
+            ]
+            raise ConfigError(
+                not_found("setting", key, known=known),
+                category="not_found",
+                hint=f"an entry whose name holds a dot is set with the whole map: "
+                f"config set {maps[0]} VALUE"
+                if maps
+                else None,
+            )
         return descriptor
 
     def setting_value(self, descriptor: FieldDescriptor) -> Any:
@@ -261,10 +281,10 @@ class SettingsFileRepository:
 
     def _declared(self, descriptor: FieldDescriptor) -> FieldDescriptor:
         """The setting a settings model declares that holds ``descriptor``: it, or its map."""
-        if self._walked is None:
-            self._walked = {each.path: each for each in self.descriptors()}
+        self.descriptors()
+        walked = self._walked
         for depth in range(len(descriptor.path), 0, -1):
-            found = self._walked.get(descriptor.path[:depth])
+            found = walked.get(descriptor.path[:depth])
             if found is not None:
                 return found
         return descriptor
@@ -351,6 +371,7 @@ class SettingsFileRepository:
             target_data, resolved = self._write_target(data, profile)
             for key, update in updates.items():
                 descriptor = descriptors[key]
+                self._carry_old_map(target_data, descriptor, on_spelling_removed)
                 olds = self._old_paths(descriptor)
                 raw_value = update(resolved, self._own(target_data, descriptor))
                 if raw_value is None:
@@ -390,6 +411,27 @@ class SettingsFileRepository:
         name = profile or write_target()
         return self._own(self.profile_data(name) or {}, descriptor)
 
+    def _carry_old_map(
+        self, data: dict[str, Any], descriptor: FieldDescriptor, report: SpellingRemoved | None
+    ) -> None:
+        """Move a map still under an old spelling to its name before one of its entries changes.
+
+        Otherwise the entry would land under the new name, which wins over the
+        old one, and the map's other entries would stop being read.
+        """
+        declared = self._declared(descriptor)
+        if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
+            return
+        for old in self._old_paths(declared):
+            value = _at_path(data, old)
+            if value is None:
+                continue
+            unset_at_path(data, old)
+            set_at_path(data, declared.path, value)
+            if report is not None:
+                report(".".join(old))
+            return
+
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
         """The key's raw value in one profile's ``data``: its own spelling, else an old one."""
         paths = [descriptor.path, *self._old_paths(descriptor)]
@@ -422,6 +464,7 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = self._write_target(data, profile)
+            self._carry_old_map(target_data, descriptor, on_spelling_removed)
             own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
             olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
             if not (own or olds):
@@ -628,8 +671,21 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         ) from exc
     if isinstance(value, SecretStr):
         return value.get_secret_value()
-    # A model's defaults stay unwritten, as if the value had been typed into the file.
-    return adapter.dump_python(value, mode="json", exclude_unset=descriptor.is_collection)
+    # A model's defaults stay unwritten, as if the value had been typed into the file;
+    # a secret inside is written as given (the JSON dump would mask it).
+    dumped = adapter.dump_python(value, exclude_unset=descriptor.is_collection)
+    return to_jsonable_python(_revealed(dumped))
+
+
+def _revealed(value: Any) -> Any:
+    """``value`` with every ``SecretStr`` inside it replaced by its secret."""
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    if isinstance(value, dict):
+        return {key: _revealed(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_revealed(item) for item in value]
+    return value
 
 
 def _parse_structured(key: str, raw_value: str) -> Any:

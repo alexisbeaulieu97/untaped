@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, get_args, get_origin
 
 from pydantic import BaseModel
 
-from untaped.sdk._keys import SettingKey, model_in
+from untaped.sdk._keys import SettingKey, model_in, names_entry
 from untaped.sdk.fields import (
     Age,
     Bytes,
@@ -37,9 +37,9 @@ def _column_name(column: SettingKey) -> str:
         raise TypeError(f"a table column is a field of the record, not {column!r}")
     model = SettingKey.model_of(column)
     names: list[str] = []
-    for attr in SettingKey.path_of(column):
-        if attr not in model.model_fields:
-            raise TypeError(f"a table column is a field of the record, not a map entry: {column!r}")
+    if names_entry(column):
+        raise TypeError(f"a table column is a field of the record, not a map entry: {column!r}")
+    for attr in SettingKey.path_of(column):  # ``key()`` steps only into nested models here
         names.append(dumped_names(model)[attr])
         model = model_in(model.model_fields[attr].annotation) or model
     return ".".join(names)

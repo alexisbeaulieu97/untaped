@@ -7,8 +7,9 @@ inherits the map's marks; ``key()`` names an entry with ``[name]``.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 import pytest
 import yaml
@@ -23,11 +24,15 @@ from core_test_support.commands.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.folder_layer import forget_folder_layer
+from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.settings_env import env_var_name
 from untaped.sdk import key
-from untaped.sdk._keys import SettingKey, value_in
+from untaped.sdk._keys import SettingKey, model_in, value_in
+from untaped.sdk._table import _column_name
 from untaped.sdk.health import HomeOnly
+from untaped.sdk.health.deprecated_keys import Renamed
 from untaped.sdk.marks import experimental
+from untaped.sdk.storage import Dir
 from untaped.sdk.testing import CliInvoker, CliResult, invoke_cli, make_project
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -49,12 +54,20 @@ class Source(BaseModel):
         return self
 
 
+class Server(BaseModel):
+    url: str
+    token: SecretStr | None = None
+
+
 class ShelfSettings(BaseModel):
+    renamed_keys: ClassVar[Mapping[str, object]] = {"old_groups": Renamed("groups", removed_in=99)}
+
     sources: Annotated[dict[str, Source], HomeOnly()] = {}
     labels: dict[str, str] = {}
     tokens: dict[str, SecretStr] = {}
     trial: Annotated[dict[str, Item], experimental] = {}
     groups: dict[str, dict[str, str]] = {}
+    servers: dict[str, Server] = {}
 
 
 HOME = """\
@@ -205,7 +218,14 @@ def test_config_list_keeps_one_row_per_map() -> None:
     result = _config("list", "-f", "json")
     assert result.exit_code == 0, result.output
     keys = [row["key"] for row in json.loads(result.stdout) if row["key"].startswith("shelf.")]
-    assert keys == ["shelf.sources", "shelf.labels", "shelf.tokens", "shelf.trial", "shelf.groups"]
+    assert keys == [
+        "shelf.sources",
+        "shelf.labels",
+        "shelf.tokens",
+        "shelf.trial",
+        "shelf.groups",
+        "shelf.servers",
+    ]
 
 
 def test_an_entry_has_its_maps_stability() -> None:
@@ -322,3 +342,114 @@ def test_an_unset_entry_of_a_map_with_declared_names_shows_its_default() -> None
     assert themed.exit_code == 0, themed.output
     got = _get("untaped.ui.symbols.heading")
     assert (got["value"], got["source"]) == ("◆", "default")
+
+
+# ── found in review ──────────────────────────────────────────────────────────
+
+
+def test_an_entry_set_to_nothing_is_read_from_where_it_is_written(_isolated_config: Path) -> None:
+    assert _config("set", "shelf.sources.main.packages.fish", "{}").exit_code == 0
+    got = _get("shelf.sources.main.packages.fish")
+    assert (got["source"], got["profile"]) == ("base", DEFAULT_PROFILE)
+
+
+def test_an_entry_of_a_renamed_map_carries_the_map_to_its_name(_isolated_config: Path) -> None:
+    write_config(_isolated_config, "format_version: 2\nshelf: {old_groups: {ops: {lead: ana}}}\n")
+    result = _config("set", "shelf.groups.dev.lead", "bo")
+    assert result.exit_code == 0, result.output
+    shelf = _shelf(_isolated_config)
+    assert "old_groups" not in shelf
+    assert shelf["groups"] == {"ops": {"lead": "ana"}, "dev": {"lead": "bo"}}
+    assert _get("shelf.groups.ops.lead")["value"] == "ana"
+
+
+def test_a_secret_inside_a_map_is_written_as_given(_isolated_config: Path) -> None:
+    whole = _config("set", "shelf.tokens", '{"ci": "s3cret"}')
+    assert whole.exit_code == 0, whole.output
+    entry = _config("set", "shelf.servers.main", '{"url": "https://x.example.com", "token": "t0k"}')
+    assert entry.exit_code == 0, entry.output
+    shelf = _shelf(_isolated_config)
+    assert shelf["tokens"] == {"ci": "s3cret"}
+    assert shelf["servers"] == {"main": {"url": "https://x.example.com", "token": "t0k"}}
+
+
+def test_a_map_of_models_set_whole_keeps_only_what_was_given(_isolated_config: Path) -> None:
+    result = _config("set", "shelf.trial", '{"one": {"policy": "sync"}}')
+    assert result.exit_code == 0, result.output
+    assert _shelf(_isolated_config)["trial"] == {"one": {"policy": "sync"}}
+
+
+@pytest.mark.usefixtures("home_run")
+@pytest.mark.parametrize(
+    ("key_", "value"),
+    [
+        ("shelf.tokens", '{"ci": "s"}'),
+        ("shelf.servers.main", '{"url": "https://x.example.com", "token": "s"}'),
+        ("shelf.servers", '{"main": {"url": "https://x.example.com"}}'),
+    ],
+)
+def test_a_map_or_entry_that_holds_a_secret_is_refused_in_a_projects_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, key_: str, value: str
+) -> None:
+    root = make_project(tmp_path / "PROJ-1").root
+    monkeypatch.chdir(root)
+    forget_folder_layer()
+    try:
+        app = bootstrap.build_root_app(
+            candidates=[plugin_candidate(make_plugin("shelf", settings=ShelfSettings))]
+        ).meta
+        result = invoke_cli(app, ["config", "set", key_, value, "--project"])
+    finally:
+        forget_folder_layer()
+    assert result.exit_code == 4, result.output
+    assert "it is a secret" in result.stderr
+
+
+def test_a_stray_declared_name_never_blocks_another_entry_or_its_own_removal(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config, "format_version: 2\nuntaped: {ui: {symbols: {old1: a, old2: b}}}\n"
+    )
+    assert _config("set", "untaped.ui.symbols.success", "Y").exit_code == 0
+    removed = _config("unset", "untaped.ui.symbols.old1")
+    assert removed.exit_code == 0, removed.output
+    symbols = read_config_dict(_isolated_config)["untaped"]["ui"]["symbols"]
+    assert symbols == {"old2": "b", "success": "Y"}
+
+
+def test_a_name_starting_with_a_hyphen_is_refused_saying_so() -> None:
+    result = _config("set", "shelf.labels.-x", "y")
+    assert result.exit_code == 2, result.output
+    assert "not starting with '-'" in result.stderr
+
+
+def test_a_dotted_name_in_a_map_of_values_points_to_the_whole_map() -> None:
+    result = _config("set", "untaped.ui.symbols.check.fail", "x")
+    assert result.exit_code == 1, result.output
+    assert "config set untaped.ui.symbols VALUE" in result.stderr
+
+
+def test_a_dir_placed_at_a_map_entry_is_refused() -> None:
+    stray = make_plugin(
+        "stray", settings=ShelfSettings, data=Dir(at=key(ShelfSettings).labels["x"])
+    )
+    result = bootstrap.compose_root(candidates=[plugin_candidate(stray)])
+    [refused] = result.quarantine
+    assert "an entry of a map" in refused.detail
+
+
+def test_a_table_column_is_never_a_map_entry() -> None:
+    class Repo(BaseModel):
+        name: str
+        labels: dict[str, str] = {}
+
+    assert _column_name(key(Repo).name) == "name"
+    with pytest.raises(TypeError, match="not a map entry"):
+        _column_name(key(Repo).labels["name"])
+
+
+def test_only_a_union_is_looked_into_for_a_model() -> None:
+    assert model_in(Server | None) is Server
+    assert model_in(list[Server]) is None
+    assert model_in(dict[str, Server]) is None
