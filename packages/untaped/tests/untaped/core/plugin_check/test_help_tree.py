@@ -136,3 +136,38 @@ def test_examples_that_parse_are_clean() -> None:
         """
 
     assert help_tree_violations(_root(demo={"show": _good}), ["demo"]) == []
+
+
+Mode = Annotated[
+    str, Parameter(name="--mode", help="As `untaped demo show --mode X`, or `untaped demo gone`.")
+]
+
+
+def _prose(*, mode: Mode = "") -> None:
+    """Show it; `untaped demo show --bogus` and `untaped demo show` name it too."""
+
+
+def test_a_command_named_in_its_help_or_an_option_s_help_must_parse() -> None:
+    root = _root(demo={"show": _prose})
+    lines = help_tree_violations(root, ["demo"])
+    assert [line.split(": ", 1)[0] for line in lines] == [
+        "demo show::example-command::untaped demo show --bogus",
+        "demo show::example-command::untaped demo gone",
+    ]
+
+
+def _parameters(*, mode: str = "") -> None:
+    """Show it.
+
+    Parameters
+    ----------
+    mode
+        As `untaped demo gone` does.
+    """
+
+
+def test_a_mention_in_an_option_s_docstring_help_is_reported_once() -> None:
+    lines = help_tree_violations(_root(demo={"show": _parameters}), ["demo"])
+    assert [line.split(": ", 1)[0] for line in lines] == [
+        "demo show::example-command::untaped demo gone"
+    ]
