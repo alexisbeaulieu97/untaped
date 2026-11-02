@@ -6,7 +6,7 @@
 2.29 or newer (`untaped doctor` checks Git's version).
 
 ```bash
-uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one plugin, e.g. 'untaped[awx]'
+uv tool install --compile-bytecode 'untaped[all]'   # or 'untaped[<name>]' for one plugin, e.g. 'untaped[awx]'
 untaped --version
 untaped --help
 ```
@@ -20,6 +20,13 @@ restates the whole set and replaces the old one, so list every extra and
 not work: uv finds no executable in a plugin package. In an environment
 you manage, `pip install 'untaped[<name>]'` or `pip install <plugin>` adds to
 the same environment.
+
+`--compile-bytecode` compiles untaped's Python code while it installs;
+without it, the first command compiles it instead and takes several seconds
+longer. Give it to every `uv tool install` and `uv tool upgrade`, or set
+`UV_COMPILE_BYTECODE=1`. The first command after an install or an upgrade
+still reads every installed plugin once, which a terminal shows as
+`Reading the installed plugins`.
 
 `untaped --install-completion` adds shell completion.
 
@@ -100,7 +107,7 @@ command for each step, and marks every step that asks for or reveals a token
 as yours to run, so a token never passes through the agent. Paste this into your agent:
 
 ```text
-Install untaped with `uv tool install 'untaped[all]'`, then install its
+Install untaped with `uv tool install --compile-bytecode 'untaped[all]'`, then install its
 agent skills with `untaped skills install --all --target codex` (or
 `claude`). Read `untaped docs`, then `untaped docs untaped commands setup plan`,
 and set up a profile with me: run the steps that are yours and hand me the

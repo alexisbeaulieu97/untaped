@@ -27,7 +27,7 @@ Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 Python 3.14.1 or newer, [uv](https://docs.astral.sh/uv/) and Git 2.29 or newer are required.
 
 ```bash
-uv tool install 'untaped[all]'   # or 'untaped[<name>]' for one tool, e.g. 'untaped[awx]'
+uv tool install --compile-bytecode 'untaped[all]'   # or 'untaped[<name>]' for one tool, e.g. 'untaped[awx]'
 untaped --version
 untaped doctor
 ```

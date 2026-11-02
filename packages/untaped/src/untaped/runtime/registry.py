@@ -20,7 +20,8 @@ import logging
 import re
 import sys
 from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import cached_property
 from importlib import import_module
@@ -611,7 +612,8 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
 
     def fill(_key: str, _progress: ProgressHandle) -> Filled[KeptDeclaration]:
         filling.append(True)
-        composed.append(_compose(ordered))
+        with _reading_plugins():
+            composed.append(_compose(ordered))
         return Filled(
             value=KeptDeclaration(candidates=read, declaration=composed[-1].mount.declaration)
         )
@@ -640,6 +642,28 @@ def compose(candidates: Sequence[PluginCandidate] = ()) -> CompositionResult:
         _LOG.debug("composing without the declaration cache", exc_info=True)
         return _compose(ordered)
     return composed[-1]
+
+
+#: What a terminal shows while a start imports every plugin class to keep their declaration.
+READING_PLUGINS = "Reading the installed plugins (once per install or upgrade)"
+
+
+@contextmanager
+def _reading_plugins() -> Iterator[None]:
+    """A spinner on a terminal while every plugin class is imported, else nothing.
+
+    The first start after an install, an upgrade or a plugin change imports
+    every plugin and every command it declares, then compiles their bytecode:
+    seconds of silence that look hung. Only a terminal's spinner shows it: the
+    line's ``--format`` is read by the declaration being built, so a progress
+    line on another stream could break the JSON a script asked for. A leading
+    ``--quiet`` silences it, as it does every task.
+    """
+    from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - only a fill reads it
+    from untaped.runtime.run_output import current_sink  # noqa: PLC0415 - as above
+
+    with current_sink().progress(READING_PLUGINS, quiet=not stream_is_tty(sys.stderr)):
+        yield
 
 
 def kept_declaration(candidates: Sequence[PluginCandidate]) -> Declaration | None:
