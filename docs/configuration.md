@@ -162,7 +162,8 @@ migration would rewrite: migrate once every install is upgraded.
 A profile is a named set of settings under `profiles:`. `default` names the
 base, the top level of `config.yml`. A run layers the profiles it picks over
 the base, in order, field by field: a later profile wins, mappings merge and
-lists replace.
+lists replace. A profile may not set what only the base sets, such as
+`git.store_dir` (exit 4 when picked); `config unset --profile` removes it.
 
 ```bash
 untaped profile create stage --copy-from default
@@ -186,12 +187,6 @@ and go anywhere before `--` (`untaped github --profile work whoami`).
   keys with `config unset`. Other profiles must exist before a write targets
   them, and `profile create` and `rename` take only names `--profile` can
   pick.
-- A setting only the home's base sets (a plugin's shared folder, such as
-  `git.store_dir`) is never read from a profile. A run whose pick sets one
-  exits 4 naming it, `config set --profile` refuses it, and
-  `untaped --profile NAME config unset KEY` removes it; `profile create
-  --copy-from` leaves it out, and doctor's `untaped.home-only` row names one
-  in a profile nobody picks. Its `UNTAPED_*` variable still applies.
 - `profile create`, `delete` and `rename` accept `--dry-run`, which checks the
   change and writes nothing. `profile delete` asks first; pass `--yes` when
   not interactive.
