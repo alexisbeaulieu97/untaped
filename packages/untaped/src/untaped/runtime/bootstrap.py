@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import inspect
 import sys
+import weakref
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -138,16 +139,20 @@ def _credentials(plugin: ComposedPlugin) -> Callable[[], Sequence[Credential[Any
     return lambda: plugin.credentials
 
 
-#: The root composition last attached to an invocation's run (:func:`attached`).
-_ATTACHED: CompositionResult | None = None
+#: Each root composition attached to a run, by the id of the run's composition (:func:`attached`).
+_ATTACHED: dict[int, CompositionResult] = {}
 
 
 def attached() -> CompositionResult | None:
-    """The root composition attached to the latest invocation's run; ``None`` before one.
+    """The root composition attached to the current run; ``None`` outside one.
 
-    What a run's records about its plugins (:mod:`untaped.core.run_uses`) read.
+    A run of another composition (the testing kit's, a nested check's) has
+    none, so nothing judges its plugins by the root's. What a run's records
+    about its plugins (:mod:`untaped.core.run_uses`) and the error
+    boundary's translations (:mod:`untaped.runtime.missing_names`) read.
     """
-    return _ATTACHED
+    run = run_or_none()
+    return None if run is None else _ATTACHED.get(id(run.composition))
 
 
 def _attach(run: Run, result: CompositionResult) -> None:
@@ -162,10 +167,11 @@ def _attach(run: Run, result: CompositionResult) -> None:
     """
     from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
 
-    global _ATTACHED
-    _ATTACHED = result
     mount = result.mount
-    run.attach(composition_of(mount.declaration, mount.settings, mount.plugins))
+    composition = composition_of(mount.declaration, mount.settings, mount.plugins)
+    _ATTACHED[id(composition)] = result
+    weakref.finalize(composition, _ATTACHED.pop, id(composition), None)
+    run.attach(composition)
     for record in result.quarantine:
         run.diag.warning(
             f"plugin {record.name!r} from {record.distribution!r} quarantined "
@@ -657,8 +663,9 @@ def _record_uses(ran: Sequence[Dispatched]) -> None:
     """Record what the command was seen calling, once the recorder is loaded (core's own
     commands load it; a plugin's only when a warning did)."""
     recorder = sys.modules.get("untaped.core.run_uses")
-    if recorder is not None and ran and _ATTACHED is not None:
-        words = _ATTACHED.mount.declaration.words(ran[-1].decl)
+    result = attached()
+    if recorder is not None and ran and result is not None:
+        words = result.mount.declaration.words(ran[-1].decl)
         recorder.flush(" ".join(("untaped", *words)))
 
 
