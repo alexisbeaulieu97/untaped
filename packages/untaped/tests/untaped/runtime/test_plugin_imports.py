@@ -264,6 +264,8 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
                         from untaped.sdk import swallowed
                     except ImportError:
                         raise
+                    else:
+                        from untaped.sdk import otherwise
                     finally:
                         return None
                 """,
@@ -275,6 +277,7 @@ def test_suppress_and_any_if_guard_and_a_handler_that_only_raises_does_not(site:
         ("untaped.sdk.needed", 14, False, False),
         ("untaped.sdk.newer", 6, True, False),
         ("untaped.sdk.optional_name", 25, True, False),
+        ("untaped.sdk.otherwise", 37, True, False),
         ("untaped.sdk.strict", 8, False, False),
         ("untaped.sdk.swallowed", 33, True, False),
         ("untaped.sdk.thirteen", 10, True, False),

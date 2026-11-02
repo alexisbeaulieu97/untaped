@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import ast
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
@@ -171,15 +171,19 @@ class _Reader(ast.NodeVisitor):
         self._try(node)
 
     def _try(self, node: ast.Try | ast.TryStar) -> None:
-        if any(_handles(handler) for handler in node.handlers) or _leaves(node.finalbody):
+        if _leaves(node.finalbody):  # it swallows any error the rest raises
+            self._guarded(node.body, node.handlers, node.orelse)
+        elif any(_handles(handler) for handler in node.handlers):
             self._guarded(node.body)
+            for part in (*node.handlers, *node.orelse):
+                self.visit(part)
         else:
-            for child in node.body:
-                self.visit(child)
-        for part in (*node.handlers, *node.orelse, *node.finalbody):
+            for part in (*node.body, *node.handlers, *node.orelse):
+                self.visit(part)
+        for part in node.finalbody:
             self.visit(part)
 
-    def _guarded(self, *bodies: list[ast.stmt]) -> None:
+    def _guarded(self, *bodies: Sequence[ast.AST]) -> None:
         self.guarded += 1
         try:
             for body in bodies:
