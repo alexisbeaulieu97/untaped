@@ -1543,7 +1543,7 @@ class Parallel(FieldBlock):
     def _from_default(self) -> int:
         if isinstance(self.default, int):
             return self._clamped(self.default, f"the default {self.default}")
-        from untaped.sdk._run import current_run, settings_of  # noqa: PLC0415 - a setting pays
+        from untaped.sdk._run import setting_name, settings_of  # noqa: PLC0415 - a setting pays
 
         model = SettingKey.model_of(self.default)
         value: object = settings_of(model)
@@ -1551,7 +1551,7 @@ class Parallel(FieldBlock):
             value = getattr(value, part)
         if value is None and self.unset is not None:
             return self.unset if self.cap is None else min(self.unset, self.cap)
-        setting = f"{current_run().composition.owner_of_settings(model)}.{self.default}"
+        setting = setting_name(self.default)
         if not isinstance(value, int) or isinstance(value, bool) or value < 1:
             raise ConfigError(
                 f"setting {setting} is {value!r}; it must be a number of at least 1",

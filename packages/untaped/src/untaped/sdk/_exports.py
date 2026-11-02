@@ -38,6 +38,7 @@ from untaped.sdk._run import (
     http_of,
     now,
     plugin_of,
+    setting_name,
     settings_of,
 )
 from untaped.sdk._stdin import read_stdin, read_stdin_text
@@ -372,6 +373,7 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "System",
     "Service",
     "settings_of",
+    "setting_name",
     "plugin_of",
     "http_of",
     "PluginHandle",

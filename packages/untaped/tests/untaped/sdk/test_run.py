@@ -17,7 +17,9 @@ from untaped.sdk import (
     System,
     UntapedError,
     attribution,
+    key,
     plugin_of,
+    setting_name,
     settings_of,
 )
 from untaped.sdk._run import (
@@ -98,6 +100,8 @@ def test_outside_a_run_the_handles_say_so() -> None:
         current_run()
     with pytest.raises(NoRunError):
         settings_of(HelloSettings)
+    with pytest.raises(NoRunError):
+        setting_name(key(HelloSettings).greeting)
 
 
 def test_run_scope_restores_the_run_before(tmp_path: Path) -> None:
@@ -224,6 +228,23 @@ def test_a_service_names_its_plugin_in_the_run(run: Run) -> None:
     assert HelloError("boom", system=System.LOCAL).system == "local"
     assert UntapedError("boom", system=Service(LintSettings)).system == "lint"
     assert repr(HelloError.__dict__["system"]) == "Service(HelloSettings)"
+
+
+def test_a_setting_key_reads_as_its_full_name_under_the_plugins_run_name(tmp_path: Path) -> None:
+    class Server(BaseModel):
+        url: str = ""
+
+    class Acme(BaseModel):
+        server: Server = Server()
+
+    class Stray(BaseModel):
+        x: int = 0
+
+    renamed = replace(_run(tmp_path), composition=Composition(owners={Acme: "renamed"}))
+    with run_scope(renamed):
+        assert setting_name(key(Acme).server.url) == "renamed.server.url"
+        with pytest.raises(LookupError):
+            setting_name(key(Stray).x)
 
 
 def test_an_error_keeps_its_service_after_the_run(tmp_path: Path) -> None:

@@ -54,6 +54,7 @@ SURFACE_GROUPS: dict[str, tuple[str, ...]] = {
         "System",
         "Service",
         "settings_of",
+        "setting_name",
         "plugin_of",
         "http_of",
         "PluginHandle",

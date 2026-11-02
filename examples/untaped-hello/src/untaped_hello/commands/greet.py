@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 from untaped.core.api import Set
-from untaped.sdk import Command, Message, key, run_hint
+from untaped.sdk import Command, Message, key, run_hint, setting_name
 from untaped_hello.settings import HelloSettings
 
 
@@ -25,7 +25,7 @@ class Greet(Command[HelloSettings]):
                 DefaultGreeting(
                     message="this is the default greeting",
                     hint=run_hint(Set.spelled(key(HelloSettings).greeting, "TEXT")),
-                    setting="hello.greeting",
+                    setting=setting_name(key(HelloSettings).greeting),
                 )
             )
         return self.settings.greeting

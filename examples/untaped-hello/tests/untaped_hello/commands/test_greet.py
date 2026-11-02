@@ -26,4 +26,5 @@ def test_hello_greets_with_a_configured_greeting(install: Installer) -> None:
 def test_hello_names_the_setting_while_the_greeting_is_the_default(install: Installer) -> None:
     ran = install(Hello).run(Greet())
     assert [type(each) for each in ran.diagnostics] == [DefaultGreeting]
+    assert ran.diagnostics[0].setting == "hello.greeting"  # type: ignore[attr-defined]
     assert ran.stderr[0] == "hint: this is the default greeting"

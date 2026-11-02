@@ -197,7 +197,9 @@ untaped --profile staging config set acme.greeting "hello from staging"
 untaped --profile staging acme hello
 ```
 
-Config keys are fully qualified (`acme.greeting`). A plugin reads and
+Config keys are fully qualified (`acme.greeting`); a message or record names
+one as `setting_name(key(AcmeSettings).greeting)`, which follows a renamed
+plugin, never as a literal. A plugin reads and
 writes only its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
 `untaped config set` rejects state fields.
 
