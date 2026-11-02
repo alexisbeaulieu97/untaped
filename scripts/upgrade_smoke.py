@@ -7,11 +7,12 @@ without it, and ``examples/untaped-library`` as 1.0 calling it, then checks
 what a user sees:
 
 1. with shelf 1.0, ``untaped shelf list`` lists the library's books and
-   warns that the library uses ``book_titled``; ``untaped doctor`` has the
-   library's ``plugin-uses`` row naming the release that removes it;
+   warns that the library imports ``book_titled``; ``untaped doctor`` has
+   the library's ``plugin-uses`` rows: the import, which the removal turns
+   into a disabled plugin, and the call ``shelf list`` was seen making;
 2. upgraded to shelf 3.0, the library is disabled as out of date
-   (``uses-missing``), and shelf still composes and runs (``shelf list``
-   says no provider is ready, as with no provider installed).
+   (``uses-missing``), and shelf still composes and runs: ``shelf list``
+   says no provider is ready and exits 4, as with no provider installed.
 
 Every failure prints one line on stderr and exits 1.
 """
@@ -26,6 +27,7 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ROOT / "examples"
@@ -174,27 +176,34 @@ def run(core: Path, work: Path) -> None:
         f"shelf list with shelf 1.0 exited {listed.returncode}: {listed.stderr}",
     )
     _expect(
-        [row["title"] for row in json.loads(listed.stdout)] == ["Dune"],
+        [row.get("title") for row in _rows(listed, "shelf list")] == ["Dune"],
         f"shelf list printed {listed.stdout!r}",
     )
-    _expect("book_titled" in listed.stderr, f"no warning about book_titled: {listed.stderr!r}")
+    # Composition's warning about the import, not the call's own warning while the command ran.
+    warned = [
+        line
+        for line in _lines(listed.stderr)
+        if line.get("kind") == "untaped.deprecation"
+        and line.get("plugin") == "library"
+        and "untaped_shelf.api.book_titled" in str(line.get("message"))
+        and "imports at" in str(line.get("message"))
+    ]
+    _expect(bool(warned), f"no warning that the library imports book_titled: {listed.stderr!r}")
 
     doctor = _untaped(untaped, env, "doctor", "--format", "json")
-    rows = [
-        row
-        for row in json.loads(doctor.stdout)
+    details = " ".join(
+        str(row.get("detail", ""))
+        for row in _rows(doctor, "doctor")
         if row.get("check") == "plugin-uses" and row.get("plugin") == "library"
-    ]
-    _expect(
-        any(
-            "book_titled" in row.get("detail", "") and "3.0" in row.get("detail", "")
-            for row in rows
-        ),
-        f"doctor has no plugin-uses row for the library's book_titled: {rows}",
     )
+    for wanted in (
+        "imports untaped_shelf.api.book_titled",  # read from the import, before the code runs
+        "disables library",
+        "calls untaped_shelf.api.book_titled (in `untaped shelf list`)",  # seen while it ran
+    ):
+        _expect(wanted in details, f"doctor's plugin-uses rows lack {wanted!r}: {details!r}")
 
     _call(["uv", "pip", "install", "-q", "--python", str(python), *_wheels(wheels, "shelf-3")])
-    # shelf runs; with its only provider disabled it has no books to list (exit 4, its own words).
     upgraded = _untaped(untaped, env, "shelf", "list", "--format", "json")
     words = " ".join(upgraded.stderr.split())
     _expect(
@@ -203,12 +212,43 @@ def run(core: Path, work: Path) -> None:
         and "untaped-library is out of date" in words,
         f"the library isn't disabled as out of date: {upgraded.stderr!r}",
     )
+    # shelf runs: with its only provider disabled it says none is ready, as with none installed.
+    _expect(
+        upgraded.returncode == 4 and "no provider of shelf.book_source.books is ready" in words,
+        f"shelf list with shelf 3.0 exited {upgraded.returncode}: {upgraded.stderr!r}",
+    )
     plugins = _untaped(untaped, env, "plugin", "list", "--format", "json")
-    statuses = {row["name"]: row["status"] for row in json.loads(plugins.stdout)}
+    statuses = {row.get("name"): row.get("status") for row in _rows(plugins, "plugin list")}
     _expect(
         statuses.get("library") == "quarantined" and statuses.get("shelf") == "ready",
         f"plugin list says {statuses}",
     )
+
+
+def _rows(done: subprocess.CompletedProcess[str], what: str) -> list[dict[str, Any]]:
+    """The JSON rows a command printed on stdout; a failure when it printed none."""
+    try:
+        rows = json.loads(done.stdout)
+    except ValueError:
+        raise Failed(
+            f"{what} printed no JSON (exit {done.returncode}): {done.stderr.strip()!r}"
+        ) from None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise Failed(f"{what} printed {done.stdout!r}, not rows")
+    return rows
+
+
+def _lines(stderr: str) -> list[dict[str, Any]]:
+    """The JSON diagnostics among ``stderr``'s lines."""
+    found: list[dict[str, Any]] = []
+    for line in stderr.splitlines():
+        try:
+            parsed = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(parsed, dict):
+            found.append(parsed)
+    return found
 
 
 def _wheels(wheels: Path, name: str) -> list[str]:

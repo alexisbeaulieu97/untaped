@@ -476,6 +476,8 @@ def test_ci_wheel_matrix_smokes_each_install_shape_from_the_built_wheels() -> No
         ' "$RUNNER_TEMP/hello-broken/pyproject.toml"'
     )
     assert _find(steps, run=breaks) == broken
+    upgrade = 'uv run --no-sync python scripts/upgrade_smoke.py "$CORE" "$RUNNER_TEMP/upgrade"'
+    assert build < _find(steps, run=upgrade) < broken
 
 
 def test_ci_bare_install_runs_the_root_commands_and_shows_the_install_hint() -> None:
