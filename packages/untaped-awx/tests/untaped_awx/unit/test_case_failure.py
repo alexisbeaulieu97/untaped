@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -406,24 +407,33 @@ def test_a_timeout_blames_the_controller_until_the_job_runs(
 
 
 @pytest.mark.parametrize(
-    ("error", "launching", "expected"),
+    ("make", "launching", "expected"),
     [
-        (ConfigError("rejected", category="auth", system=AWX.name()), True, "awx.credentials"),
-        (ConfigError("denied", category="permission", system=AWX.name()), False, "awx.credentials"),
-        (LaunchPromptError("does not prompt for limit"), True, "awx.suite"),
-        (ResourceNotFoundError("job_template", {"name": "x"}), True, "awx.suite"),
-        (ResourceNotFoundError("job", {"id": 5}), False, "awx.controller"),
-        (HttpTransportError("down", system=AWX.name()), True, "awx.controller"),
-        (HttpTransportError("down", system=AWX.name()), False, "awx.controller"),
-        (LaunchPromptError("no", details={"field": "scm_branch"}), True, "awx.scm"),
+        (
+            lambda: ConfigError("rejected", category="auth", system=AWX.name()),
+            True,
+            "awx.credentials",
+        ),
+        (
+            lambda: ConfigError("denied", category="permission", system=AWX.name()),
+            False,
+            "awx.credentials",
+        ),
+        (lambda: LaunchPromptError("does not prompt for limit"), True, "awx.suite"),
+        (lambda: ResourceNotFoundError("job_template", {"name": "x"}), True, "awx.suite"),
+        (lambda: ResourceNotFoundError("job", {"id": 5}), False, "awx.controller"),
+        (lambda: HttpTransportError("down", system=AWX.name()), True, "awx.controller"),
+        (lambda: HttpTransportError("down", system=AWX.name()), False, "awx.controller"),
+        (lambda: LaunchPromptError("no", details={"field": "scm_branch"}), True, "awx.scm"),
         # not AWX's doing: an untaped bug stays untaped, local setup stays local
-        (RuntimeError("boom"), False, "untaped"),
-        (ConfigError("awx.base_url is not configured"), True, "local"),
+        (lambda: RuntimeError("boom"), False, "untaped"),
+        (lambda: ConfigError("awx.base_url is not configured"), True, "local"),
     ],
 )
 def test_a_request_failure_keeps_its_category_and_names_the_system(
-    error: Exception, launching: bool, expected: str
+    make: Callable[[], Exception], launching: bool, expected: str
 ) -> None:
+    error = make()  # inside the run, so an AWX error's system reads the plugin's name
     failure = request_failure(error, launching=launching)
     info = Failure.from_exception(error)
     assert (failure.system, failure.category, failure.message) == (

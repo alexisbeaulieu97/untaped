@@ -227,6 +227,7 @@ def test_a_service_names_its_plugin_in_the_run(run: Run) -> None:
     assert HelloError("boom").system == "hello"
     assert HelloError("boom", system=System.LOCAL).system == "local"
     assert UntapedError("boom", system=Service(LintSettings)).system == "lint"
+    assert Service(HelloSettings, part="suite").name() == "hello.suite"
     assert repr(HelloError.__dict__["system"]) == "Service(HelloSettings)"
 
 
@@ -262,6 +263,13 @@ def test_a_service_never_fails_a_read() -> None:
     assert HelloError.system == "Service(HelloSettings)"
     assert HelloError("boom").system == "Service(HelloSettings)"
     assert Service(Stray).name().endswith(".Stray)")
+    assert repr(Service(HelloSettings, part="suite")) == "Service(HelloSettings, part='suite')"
+
+
+@pytest.mark.parametrize("part", ["", "suite.case"])
+def test_a_service_part_is_one_word(part: str) -> None:
+    with pytest.raises(ValueError, match="one word"):
+        Service(HelloSettings, part=part)
 
 
 def test_system_is_a_closed_vocabulary_of_strings() -> None:

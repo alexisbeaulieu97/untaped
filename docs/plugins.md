@@ -207,7 +207,8 @@ The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
 an `UntapedError` from `run` and the root prints its standard diagnostics and
 [exit codes](./reference/exit-codes.md). Give your error classes a `category`
 and a `system` as class defaults, `Service(YourSettings)` for your own
-service or a `System` member otherwise; see
+service (`Service(YourSettings, part="cache")` for a part of it) or a
+`System` member otherwise; see
 [Raise with a category](./reference/conventions.md#raise-with-a-category-or-inherit-one).
 [Conventions](./reference/conventions.md) covers flags, messages, exit codes
 and record shapes; interactive screens are in [Screens](./screens.md).

@@ -52,7 +52,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from untaped.sdk import ErrorCategory, Failure, UntapedError, q
+from untaped.sdk import ErrorCategory, Failure, Service, UntapedError, q
 from untaped_awx.domain.jobs.job import HostSummary, Job, JobEvent
 from untaped_awx.domain.suites.systems import (
     AWX,
@@ -82,7 +82,7 @@ _MAX_DETAIL = 1000
 _MAX_TRACEBACK = 2000
 """Characters of the end of a ``result_traceback`` kept as evidence."""
 
-_UPDATES: dict[str, tuple[str, ErrorCategory]] = {
+_UPDATES: dict[str, tuple[Service, ErrorCategory]] = {
     "project_update": (SCM, ErrorCategory.FAILED),
     # A broken inventory source is the environment, not the change.
     "inventory_update": (INVENTORIES, ErrorCategory.CONFIG),
@@ -278,15 +278,16 @@ class CaseFailure(Failure):
 
 
 def failure(
-    system: str, category: ErrorCategory, message: str, *, hint: str | None = None
+    system: str | Service, category: ErrorCategory, message: str, *, hint: str | None = None
 ) -> CaseFailure:
     """A :class:`CaseFailure`; ``hint`` defaults to the system's advice."""
+    name = system if isinstance(system, str) else system.name()
     return CaseFailure(
-        system=system,
+        system=name,
         category=category,
         retryable=category.retryable,
         message=message,
-        hint=hint or _HINTS.get(system),
+        hint=hint or next((advice for part, advice in _HINTS.items() if part.name() == name), None),
     )
 
 
@@ -303,12 +304,12 @@ def failure_system(error: BaseException, *, launching: bool) -> str:
     if info.system != AWX.name():
         return info.system
     if info.category in (ErrorCategory.AUTH, ErrorCategory.PERMISSION):
-        return CREDENTIALS
+        return CREDENTIALS.name()
     if not launching or info.category not in _SUITE_CATEGORIES:
-        return CONTROLLER
+        return CONTROLLER.name()
     if isinstance(error, UntapedError) and error.details.get("field") == "scm_branch":
-        return SCM
-    return SUITE
+        return SCM.name()
+    return SUITE.name()
 
 
 def request_failure(
@@ -501,13 +502,15 @@ def workflow_failure(
     if workflow.status == "canceled" or (workflow.status == "error" and culprit is None):
         return _ended_failure(workflow, "workflow job")
     if status_held or workflow.status == "successful":
-        decided = next((found for found in node_failures if found.system != EXPECTATION), None)
+        decided = next(
+            (found for found in node_failures if found.system != EXPECTATION.name()), None
+        )
         return decided or failure(EXPECTATION, ErrorCategory.FAILED, "; ".join(reasons))
     if culprit is None:
         why = f": {workflow.job_explanation}" if workflow.job_explanation else ""
         message = f"workflow job failed, but no failed node explains it{why}"
         return failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message)
-    if culprit.system == EXPECTATION:
+    if culprit.system == EXPECTATION.name():
         return culprit.model_copy(update={"message": "; ".join([culprit.message, *reasons])})
     return culprit
 
