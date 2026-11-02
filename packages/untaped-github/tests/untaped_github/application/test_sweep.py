@@ -18,13 +18,8 @@ from untaped.sdk import (
     UsageError,
 )
 from untaped_github.application import RepositoryInventoryScope, TeamScope
-from untaped_github.application.sweep import (
-    CorpusSyncOptions,
-    Sweep,
-    SweepOptions,
-    SweepReport,
-    SyncCorpus,
-)
+from untaped_github.application.sweep import Sweep, SweepOptions, SweepReport
+from untaped_github.application.sync_corpus import CorpusSyncOptions, SyncCorpus
 from untaped_github.domain import (
     ArchivedMode,
     CorpusFailure,
