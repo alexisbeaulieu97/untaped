@@ -60,7 +60,10 @@ class Server(BaseModel):
 
 
 class ShelfSettings(BaseModel):
-    renamed_keys: ClassVar[Mapping[str, object]] = {"old_groups": Renamed("groups", removed_in=99)}
+    renamed_keys: ClassVar[Mapping[str, object]] = {
+        "old_groups": Renamed("groups", removed_in=99),
+        "legacy_groups": Renamed("groups", removed_in=99),
+    }
 
     sources: Annotated[dict[str, Source], HomeOnly()] = {}
     labels: dict[str, str] = {}
@@ -500,3 +503,17 @@ def test_a_setting_inside_a_map_a_project_may_not_hold_is_refused_before_writing
     assert result.exit_code == 4, result.output
     assert "leave out --project" in result.stderr
     assert not (root / ".untaped" / "config.yml").exists()
+
+
+def test_unsetting_an_entry_of_an_ignored_old_map_changes_nothing(_isolated_config: Path) -> None:
+    """Of two old spellings, the closest is read; unsetting what only the other holds is a no-op."""
+    text = (
+        "format_version: 2\nshelf:\n  legacy_groups: {ops: {lead: ana}}\n"
+        "  old_groups: {dev: {lead: bo}}\n"
+    )
+    write_config(_isolated_config, text)
+    assert _get("shelf.groups.ops.lead")["value"] == "ana"
+    result = _config("unset", "shelf.groups.dev")
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text(encoding="utf-8") == text
+    assert _get("shelf.groups.ops.lead")["value"] == "ana"
