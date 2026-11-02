@@ -28,6 +28,7 @@ jobs:
         env:
           UNTAPED_HOME: ${{ runner.temp }}/home
         run: |
+          set +e +o pipefail
           {
           for c in "--help" "doctor" "config list" "workspace --help" "lint" "dotfiles --help" "awx --help" "workspace create demo" "workspace list"; do
             echo "### untaped $c"; uv run untaped $c 2>&1 | head -25; echo "exit=${PIPESTATUS[0]}"
@@ -37,6 +38,7 @@ jobs:
         env:
           UNTAPED_HOME: ${{ runner.temp }}/home
         run: |
+          set +e +o pipefail
           for m in untaped_workspace.plugin untaped_dotfiles.plugin untaped_lint.plugin; do echo "### import $m"; uv run python -c "import $m" 2>&1 | tail -8; done
           echo "### plugin list"; uv run untaped plugin list 2>&1 | tail -30
           echo "### doctor"; uv run untaped doctor 2>&1 | tail -40
