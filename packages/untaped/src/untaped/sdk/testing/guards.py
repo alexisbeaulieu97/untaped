@@ -132,8 +132,12 @@ def assert_surface(
         found.extend(broken(before, current, major=number))
         # a name plugins use was judged above; anything else goes when due, or at a major
         found.extend(
-            f"{line}: a minor keeps it; deprecate it with removed_in={number + 1} and remove "
-            "it then"
+            f"{line}: a minor keeps it; "
+            + (
+                f"it goes at {mark.removed_in}.0"
+                if (mark := line.deprecation) is not None and mark.removed_in is not None
+                else f"deprecate it with removed_in={number + 1} and remove it then"
+            )
             for line in gone
             if not line.plugin_facing and not at_major and not due([line], number)
         )

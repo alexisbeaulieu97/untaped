@@ -83,11 +83,11 @@ def two_majors(baseline: str) -> bool:
 def removal_exempt(line: Line, target: int, baseline: str) -> bool:
     """Whether ``line`` may be gone: a dated one at its major, any other in a major's prep.
 
-    A plugin-facing line under the two-major window is never exempt here:
-    :func:`broken` decides when it may go.
+    A plugin-facing line under the two-major window is left to :func:`broken`,
+    which decides when it may go (``test_names_plugins_use_last_two_majors``).
     """
     if line.plugin_facing and two_majors(baseline):
-        return False
+        return True
     mark = line.deprecation
     if mark is not None and mark.removed_in is not None:
         return mark.removed_in <= target
@@ -165,7 +165,7 @@ def test_an_early_removal_ships_a_security_note() -> None:
     for tag, lines in EARLY_REMOVALS.items():
         for text, reason in lines.items():
             assert reason.strip(), f"{tag}: {text} needs its reason"
-            subject = Line(text).key.split(" ")[1].partition("(")[0]
+            subject = Line(text).key.partition(" ")[2].partition("(")[0]
             assert any(subject in note for note in notes), (
                 f"{tag}: {text} goes early, so a changelog.d/<slug>.security.md names {subject}"
             )
@@ -291,18 +291,22 @@ def test_a_major_in_preparation_removes_what_is_due(
 
 
 @pytest.mark.parametrize(
-    ("baseline", "target", "exempt"),
+    ("baseline", "target", "mark", "fails"),
     [
-        ("v11.1.0", 12, True),  # 12.0 is a clean slate: 11.x names go without a deprecation
-        ("v12.1.0", 13, False),  # from 12.x on, broken() decides when a name plugins use goes
+        ("v11.1.0", 12, None, False),  # 12.0 is a clean slate: 11.x names go undeprecated
+        ("v12.1.0", 13, None, True),  # from 12.x on, an undeprecated one stays
+        ("v12.1.0", 13, DeprecatedMark(14), True),  # and a dated one waits for its major
+        ("v13.2.0", 14, DeprecatedMark(14), False),  # then goes
     ],
 )
 def test_names_plugins_use_keep_two_majors_from_12(
-    baseline: str, target: int, exempt: bool
+    baseline: str, target: int, mark: LineMark | None, fails: bool
 ) -> None:
-    line = Line("sdk untaped.sdk.bounded_map(func, items)")
-    assert removal_exempt(line, target, baseline) is exempt
-    assert removal_exempt(Line("cli untaped awx put"), target, baseline)
+    """Both release checks over one removal: ``removal_exempt`` leaves it to ``broken``."""
+    line = Line("sdk untaped.sdk.bounded_map(func, items)", mark)
+    assert removal_exempt(line, target, baseline)
+    found = broken([line], [], major=target, removals=two_majors(baseline))
+    assert bool(found) is fails
 
 
 @pytest.mark.parametrize(
