@@ -107,8 +107,9 @@ class Located(Plugin):
 """
 
 
-def test_a_ready_plugin_says_what_it_may_import_from() -> None:
+def test_a_ready_plugin_says_what_it_may_import_from(monkeypatch: pytest.MonkeyPatch) -> None:
     """``requires``: its default requirements, canonical; an extra adds none."""
+    monkeypatch.setattr("untaped.runtime.registry.distribution_present", lambda name: True)
     requires = ("Untaped_Git>=1", "jinja2; python_version >= '3'", "rich; extra == 'pretty'")
     [row] = _listing([make_candidate(make_plugin("acme"), "acme-dist", requires_dist=requires)])
     assert (row["requires"], row["fills"]) == (["jinja2", "untaped-git"], [])
