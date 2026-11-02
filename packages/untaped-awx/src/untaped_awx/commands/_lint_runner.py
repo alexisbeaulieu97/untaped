@@ -136,7 +136,7 @@ def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> Resources:
     is its own partition, ``""``.
     """
     server = ctx.settings.server
-    # The URL as 11.0 keyed it: no slash after a bare host.
+    # One key per server, however its URL is spelled: no slash after a bare host.
     base_url = "" if server is None else str(server.url).rstrip("/")
     token = TOKEN.find(server)
     served = RESOURCES.serve(

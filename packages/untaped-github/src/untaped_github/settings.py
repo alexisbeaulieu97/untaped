@@ -58,12 +58,6 @@ class InventorySettings(BaseModel):
 
 _TOKEN_NOTE = "deleted in 12.0; store the token with `untaped auth login github`"
 
-_INVENTORY_NOTE = (
-    "deleted in 11.0; workspace keeps the repos github lists for "
-    "workspace.caches.repo_source_repos.max_age_seconds, 6 hours by default "
-    "(ctrl-r in its picker refreshes them)"
-)
-
 
 class GithubServer(CredentialKey):
     """The GitHub API a token is for: its URL, and how its certificate is checked."""
@@ -92,11 +86,6 @@ class GithubSettings(BaseModel):
         "sweep.max_age_seconds": Retired(
             note="deleted in 12.0; use github.caches.sweep.max_age_seconds"
         ),
-        "corpus_path": "cache_dir",
-        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
-        "sweep.sync_concurrency": "sweep.parallel",
-        "inventory.path": Retired(note=_INVENTORY_NOTE),
-        "inventory.max_age_seconds": Retired(note=_INVENTORY_NOTE),
     }
 
     model_config = ConfigDict(frozen=True)

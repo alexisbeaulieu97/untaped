@@ -5,6 +5,13 @@
 
 from __future__ import annotations
 
+from untaped.sdk import Service
+from untaped_awx.settings import AwxSettings
+
+AWX = Service(AwxSettings)
+"""AWX itself: the system an :class:`~untaped_awx.errors.AwxError` names until one of
+the parts below is blamed."""
+
 SUITE = "awx.suite"
 CREDENTIALS = "awx.credentials"
 CONTROLLER = "awx.controller"

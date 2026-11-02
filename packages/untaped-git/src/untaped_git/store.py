@@ -51,6 +51,7 @@ from untaped.sdk import (
     GitCommandError,
     GitResult,
     ProgressHandle,
+    System,
     UntapedError,
     attribution,
     experimental,
@@ -289,11 +290,10 @@ class RepoStore:
 
         Found, absent, unreadable or a newer untaped's (:data:`~untaped.sdk.DataRead`);
         ``Found.refreshed_at`` is the freshness :meth:`write_private` was given.
-        A file with no stamp is 11.0's, which wrote the same fields at the top level.
         """
         from untaped.sdk import read_data_file  # noqa: PLC0415  # the data file loads on first use
 
-        return read_data_file(private_file(self._path, self._plugin), model, unstamped="accept")
+        return read_data_file(private_file(self._path, self._plugin), model)
 
     @experimental
     def write_private(
@@ -321,7 +321,7 @@ class RepoStore:
                 raise self._error(
                     f"no repo store repository at {self._path} to keep {path.name} in",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 )
             try:
                 if value is None:
@@ -332,7 +332,7 @@ class RepoStore:
                 raise self._error(
                     f"could not write {path}: {exc.strerror or exc}",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 ) from exc
 
     def exists(self) -> bool:
@@ -406,7 +406,7 @@ class RepoStore:
                     f"could not create repo store directory {self._path.parent}: "
                     f"{exc.strerror or exc}",
                     category=ErrorCategory.FAILED,
-                    system="local",
+                    system=System.LOCAL,
                 ) from exc
             # An empty template keeps a user's template hooks out of store repos.
             self._git(["init", "--bare", "--quiet", "--template=", str(self._path)], bare=False)

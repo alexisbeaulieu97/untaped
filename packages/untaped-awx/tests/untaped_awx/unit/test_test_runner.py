@@ -29,6 +29,7 @@ from untaped_awx.domain.suites.suite import (
     SuiteRunOutcome,
     TemplateBinding,
 )
+from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import ActionResponseError, LaunchPromptError
 from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
@@ -633,7 +634,7 @@ def test_timeout_reports_a_job_that_ended_before_its_cancel() -> None:
 def test_polling_error_cancels_the_job() -> None:
     class FailingWatcher:
         def __call__(self, job: Job, *, timeout: float | None = None) -> Job:
-            raise HttpTransportError("503 Service Unavailable", system="awx")
+            raise HttpTransportError("503 Service Unavailable", system=AWX.name())
 
     canceller = StubCanceller()
     runner = _make_runner(
@@ -727,7 +728,7 @@ def test_a_failed_job_is_the_playbooks_with_a_tail_from_the_newest_events() -> N
 
 
 def test_an_unreadable_log_errors_only_when_nothing_else_failed() -> None:
-    reader = StubLogReader([], error=HttpTransportError("502 Bad Gateway", system="awx"))
+    reader = StubLogReader([], error=HttpTransportError("502 Bad Gateway", system=AWX.name()))
     runner, _ = _expect_runner("failed", reader)
     [row] = runner([_case_suite({})]).results
     assert row.failure is not None
@@ -756,7 +757,7 @@ def test_an_unreadable_log_errors_only_when_nothing_else_failed() -> None:
 
 
 def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
-    reader = StubLogReader([], error=HttpTransportError("down", system="awx"))
+    reader = StubLogReader([], error=HttpTransportError("down", system=AWX.name()))
     runner, _ = _expect_runner("successful", reader)
     assert _exit_code(runner([_case_suite({"expect": {"log": {"contains": ["x"]}}})])) == 5
 
@@ -1240,7 +1241,7 @@ def test_a_preflight_failure_carries_its_most_severe_category() -> None:
         raise ConfigError(
             "AWX rejected the token (HTTP 401)",
             category="auth",
-            system="awx",
+            system=AWX.name(),
             hint="run `untaped config set awx.token --prompt`",
         )
 
@@ -1443,7 +1444,7 @@ def test_host_bounds_that_hold_pass() -> None:
 
 def test_unreadable_summaries_a_check_needs_are_the_cases_error() -> None:
     def broken(job: Job) -> list[dict[str, Any]]:
-        raise HttpTransportError("503 Service Unavailable", system="awx")
+        raise HttpTransportError("503 Service Unavailable", system=AWX.name())
 
     runner = _make_runner(
         fk=StubFk(),
@@ -1638,7 +1639,7 @@ def test_a_rerun_the_controller_refuses_keeps_its_error() -> None:
 
     def launch(spec: AwxResourceSpec, **kwargs: Any) -> Job:
         if launcher.next_id == 6:
-            raise HttpTransportError("503 Service Unavailable", system="awx")
+            raise HttpTransportError("503 Service Unavailable", system=AWX.name())
         return launcher(spec, **kwargs)
 
     runner = _make_runner(
@@ -1672,7 +1673,7 @@ class WatchFails(StubWatcher):
 
 def test_a_rerun_whose_polling_failed_reports_an_unknown_status() -> None:
     canceller = StubCanceller()
-    error = HttpTransportError("503 Service Unavailable", system="awx")
+    error = HttpTransportError("503 Service Unavailable", system=AWX.name())
     runner, _, _, _ = _regression_runner({}, watcher=WatchFails(6, error), canceller=canceller)
     [row] = runner([_case_suite({"expect": {"idempotent": True}})]).results
     assert row.failure is not None
@@ -1724,7 +1725,7 @@ def test_a_rerun_runs_the_commit_the_first_job_ran() -> None:
 class SettleFails(StubJobReader):
     def settled(self, job: Job) -> Job:
         if job.id == 5:
-            raise HttpTransportError("502 Bad Gateway", system="awx")
+            raise HttpTransportError("502 Bad Gateway", system=AWX.name())
         return super().settled(job)
 
 
@@ -1884,7 +1885,7 @@ def test_a_cut_host_list_that_cannot_be_completed_is_the_cases_error() -> None:
     class Broken(HostsById):
         def __call__(self, job: Job, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
             if params is not None:
-                raise HttpTransportError("503 Service Unavailable", system="awx")
+                raise HttpTransportError("503 Service Unavailable", system=AWX.name())
             return super().__call__(job)
 
     runner, _, _, _ = _regression_runner({5: "successful"}, host_reader=Broken({5: _many_hosts()}))

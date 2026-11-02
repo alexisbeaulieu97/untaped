@@ -6,40 +6,15 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from untaped.sdk import home, settings_of
+from untaped.sdk import home
 from untaped.sdk.health.deprecated_keys import key_mappings
-from untaped.sdk.testing import install, invoke_root
-from untaped_github.plugin import Github
+from untaped.sdk.testing import invoke_root
 from untaped_github.settings import SWEEP, GithubSettings
 
 
 def test_inventory_defaults() -> None:
     inventory = GithubSettings().inventory
     assert (inventory.orgs, inventory.teams) == ([], [])
-
-
-def test_the_inventory_file_settings_are_deleted() -> None:
-    """github keeps no inventory file: workspace's answer cache holds the repos it lists."""
-    deleted = key_mappings(GithubSettings).deleted
-    path, max_age = deleted["inventory.path"], deleted["inventory.max_age_seconds"]
-
-    assert path.reason() == max_age.reason()
-    assert path.reason().startswith("deleted in 11.0; workspace keeps the repos github lists")
-    assert set(GithubSettings().inventory.model_dump()) == {"orgs", "teams"}
-
-
-@pytest.mark.parametrize(
-    "inventory", [{"path": "/tmp/inv.json"}, {"max_age_seconds": 0}], ids=["path", "max-age"]
-)
-def test_a_deleted_inventory_setting_is_not_read(inventory: dict[str, object]) -> None:
-    installed = install(Github)  # before the config it reads: install writes its sections
-    _write({"inventory": {**inventory, "orgs": ["acme"]}})
-
-    with installed.running():
-        settings = settings_of(GithubSettings)
-
-    assert settings.inventory.orgs == ["acme"]
-    assert set(settings.inventory.model_dump()) == {"orgs", "teams"}
 
 
 @pytest.mark.parametrize("sweep", [{"parallel": 0}, {"parallel": -2}])
@@ -52,40 +27,6 @@ def _write(data: dict[str, object]) -> None:
     config = home().expanduser() / "config.yml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(yaml.safe_dump({"format_version": 2, "github": data}))
-
-
-def test_a_retired_key_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:
-    installed = install(Github)  # before the config it reads: install writes its sections
-    _write({"sweep": {"sync_concurrency": 3}})
-
-    with installed.running():
-        settings = settings_of(GithubSettings)
-
-    assert settings.sweep.parallel == GithubSettings().sweep.parallel != 3
-    assert "sweep.sync_concurrency" not in capsys.readouterr().err
-
-
-def test_the_corpus_directory_settings_are_deleted() -> None:
-    """``cache_dir`` (and ``corpus_path`` before it) gave way to ``git.store_dir``."""
-    deleted = key_mappings(GithubSettings).deleted
-
-    corpus = {key: deleted[key].reason() for key in ("cache_dir", "corpus_path")}
-    assert corpus == {
-        "cache_dir": "deleted in 11.0; the repo store lives under git.store_dir",
-        "corpus_path": "deleted in 11.0 (via cache_dir); the repo store lives under git.store_dir",
-    }
-    assert "cache_dir" not in GithubSettings.model_fields
-
-
-@pytest.mark.parametrize("data", [{"cache_dir": "/c"}, {"corpus_path": "/c"}])
-def test_a_deleted_corpus_directory_is_not_read(data: dict[str, object]) -> None:
-    installed = install(Github)  # before the config it reads: install writes its sections
-    _write(data)
-
-    with installed.running():
-        settings = settings_of(GithubSettings)
-
-    assert not hasattr(settings, "cache_dir")
 
 
 @pytest.mark.parametrize("protocol", ["https", "ssh"])

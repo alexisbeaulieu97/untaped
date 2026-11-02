@@ -66,24 +66,12 @@ class AnsibleSettings(BaseModel):
     """User-tunable profile settings."""
 
     retired_keys: ClassVar[Mapping[str, str | Retired]] = {
-        "stale_after": Retired(
-            note="deleted in 11.0; use ansible.caches.source_data.max_age_seconds"
-        ),
         "stale_after_seconds": Retired(
             note="deleted in 12.0; use ansible.caches.source_data.max_age_seconds"
         ),
         "index_path": Retired(
             note="deleted in 12.0; ansible.index_dir names the folder that holds the index"
         ),
-        "repo_cache_path": "cache_dir",
-        "cache_dir": Retired(note="deleted in 11.0; the repo store lives under git.store_dir"),
-        "git_fetch_depth": Retired(note="deleted in 11.0; the repo store fetches full history"),
-        "git_blob_filter": Retired(note="deleted in 11.0; the repo store is blobless"),
-        "git_clone_protocol": Retired(
-            note="deleted in 11.0; set github.git_protocol: ssh to keep ssh"
-        ),
-        "git_fetch_concurrency": "git_fetch_parallel",
-        "probe_concurrency": "probe_parallel",
     }
 
     model_config = ConfigDict(frozen=True)

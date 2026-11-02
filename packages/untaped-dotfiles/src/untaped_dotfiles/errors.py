@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk import ErrorCategory, System, UntapedError
 
 
 class DotfilesError(UntapedError):
     """Base for dotfiles errors (local filesystem and state by default)."""
 
-    system = "local"
+    system = System.LOCAL
 
 
 class ManifestError(DotfilesError):
@@ -20,7 +20,7 @@ class ManifestError(DotfilesError):
 class GitError(DotfilesError):
     """A git operation on a subscribed repo failed."""
 
-    system = "git"
+    system = System.GIT
 
 
 class RepoNotFoundError(DotfilesError):

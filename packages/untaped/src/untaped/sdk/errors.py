@@ -205,7 +205,7 @@ class UntapedError(Exception):
     ``category``, ``system``, ``hint`` and ``details`` default to the class's
     declaration (``failed`` in ``untaped`` unless a subclass says otherwise);
     pass them as keyword arguments to override one instance, e.g.
-    ``ConfigError("token rejected", category="auth", system="awx")``.
+    ``ConfigError("token rejected", category="auth", system=System.HTTP)``.
     ``exit_code`` and ``retryable`` derive from ``category``.
     """
 
@@ -302,7 +302,7 @@ class ConfigError(UntapedError):
     """
 
     category = ErrorCategory.CONFIG
-    system = "local"
+    system = System.LOCAL
 
 
 class UsageError(UntapedError):
@@ -409,7 +409,7 @@ class PromptInterruptedError(UntapedError):
     """Raised when a prompt is interrupted with Ctrl-C; exits ``130``."""
 
     category = ErrorCategory.INTERRUPTED
-    system = "untaped"
+    system = System.UNTAPED
 
 
 def category_for_status(status_code: int) -> ErrorCategory:
@@ -448,7 +448,7 @@ class HttpError(UntapedError):
     shows the raw body only under ``--verbose``.
     """
 
-    system = "http"
+    system: str = System.HTTP
     describes_body: bool = False
 
     def __init__(

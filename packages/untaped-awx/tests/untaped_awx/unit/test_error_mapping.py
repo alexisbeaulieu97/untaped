@@ -13,6 +13,7 @@ from untaped.sdk import (
     HttpTransportError,
     UntapedError,
 )
+from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import (
     ActionResponseError,
     AmbiguousIdentityError,
@@ -74,10 +75,11 @@ def test_http_errors_map_to_awx_errors(
     ],
 )
 def test_mapped_errors_keep_the_http_attribution(status: int, category: ErrorCategory) -> None:
-    raw = HttpStatusError(
-        f"HTTP {status} for /x", status_code=status, url="/x", body="", system="awx"
-    )
-    mapped = to_awx_error(raw)
+    with installed().running():  # a 401's error names the section awx declares
+        raw = HttpStatusError(
+            f"HTTP {status} for /x", status_code=status, url="/x", body="", system=AWX.name()
+        )
+        mapped = to_awx_error(raw)
     assert mapped.category is category
     assert mapped.system == "awx"
     assert mapped.details["status"] == status
@@ -85,7 +87,7 @@ def test_mapped_errors_keep_the_http_attribution(status: int, category: ErrorCat
 
 
 def test_rejected_token_stays_a_config_error_with_its_hint_as_a_field() -> None:
-    raw = HttpStatusError("HTTP 401 for /me/", status_code=401, url="/me/", system="awx")
+    raw = HttpStatusError("HTTP 401 for /me/", status_code=401, url="/me/", system=AWX.name())
     with installed().running():  # the hint names the credential awx declares
         mapped = to_awx_error(raw)
     assert isinstance(mapped, ConfigError)
@@ -95,7 +97,7 @@ def test_rejected_token_stays_a_config_error_with_its_hint_as_a_field() -> None:
 
 
 def test_transport_failures_stay_unavailable() -> None:
-    raw = HttpTransportError("connection refused", url="/x", system="awx")
+    raw = HttpTransportError("connection refused", url="/x", system=AWX.name())
     mapped = to_awx_error(raw)
     assert isinstance(mapped, AwxApiError)
     assert mapped.category is ErrorCategory.UNAVAILABLE
@@ -132,6 +134,15 @@ def test_nested_mapping_keeps_the_typed_error() -> None:
 )
 def test_awx_errors_declare_a_category_in_awx(error: AwxError, category: ErrorCategory) -> None:
     assert error.category is category
+    assert error.system == AWX.name()
+
+
+def test_an_awx_error_raised_in_a_run_names_the_plugin_and_keeps_the_name() -> None:
+    with installed().running():
+        try:
+            raise BadRequestError("x")
+        except BadRequestError as raised:
+            error = raised
     assert error.system == "awx"
 
 

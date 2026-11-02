@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from untaped.sdk import UntapedError
+from untaped.sdk import System, UntapedError
 
 
 class LibraryError(UntapedError):
-    """Base for library plugin failures."""
+    """Base for library plugin failures: library has no service, so its files are to blame."""
 
-    system = "library"
+    system = System.LOCAL

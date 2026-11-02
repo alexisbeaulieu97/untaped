@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from untaped.sdk import ConfigError, experimental
+from untaped.sdk import ConfigError, System, experimental
 from untaped.sdk.contracts import Answers, Contract, Errored, Ok, gather
 from untaped_git.url import url_host
 
@@ -114,7 +114,7 @@ def _choose(host: str, candidates: list[str]) -> str:
     named = ", ".join(candidates)
     raise ConfigError(
         f"{named} all supply credentials for {host}; rank them to choose one",
-        system="git",
+        system=System.GIT,
         hint=Rank.spelled("git.git_host", "credential", *candidates),
         details={"contract": "git.git_host", "method": "credential", "providers": candidates},
     )

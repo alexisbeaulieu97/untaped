@@ -22,6 +22,7 @@ from untaped.sdk import (
     PluginHandle,
     ProgressHandle,
     Served,
+    Service,
     UntapedError,
     command_line,
     most_severe,
@@ -208,7 +209,7 @@ def _pause_error(result: RefreshResult) -> AnsibleError:
     return AnsibleError(
         result.pause_reason or "source refresh paused before completion",
         category="unavailable",
-        system="github",
+        system=Service(GithubSettings),
         hint="rerun to resume; finished repos are skipped",
         details={} if reset is None else {"retry_at": reset.isoformat()},
     )

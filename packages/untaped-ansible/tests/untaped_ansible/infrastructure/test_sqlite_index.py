@@ -651,18 +651,6 @@ def test_fresh_index_stamps_what_it_is_additive_since(tmp_path) -> None:
     assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
 
 
-def test_a_current_index_from_before_the_stamp_gets_it_and_keeps_its_rows(tmp_path) -> None:
-    db_path = tmp_path / "index.sqlite3"
-    _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))
-    with closing(sqlite3.connect(db_path)) as db:
-        db.execute("drop table schema_meta")
-        db.commit()
-
-    index = SqliteDependencyIndex(db_path)
-    assert index.dependencies("acme/site", "main", source_key="source:prod")
-    assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
-
-
 def test_a_newer_index_that_only_added_is_read_and_refreshed_in_place(tmp_path) -> None:
     db_path = tmp_path / "index.sqlite3"
     _commit(SqliteDependencyIndex(db_path), scans=(_scan(),))

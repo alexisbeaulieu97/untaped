@@ -5,10 +5,9 @@ number (``file``) and the untaped version (``by``), and, for data that can
 go stale, when it was last refreshed. Two layouts share the stamp:
 
 - the *object* layout, ``{"untaped": {...}, <the model's fields>}``: one JSON
-  object whose other keys are a model's fields, at the top level, where a
-  reader from before the stamp (11.0) finds them. :func:`read_data_file`
-  and :func:`write_data_file` read and write it, for a file whose place its
-  owner decides (a repo store, a backup folder, a
+  object whose other keys are a model's fields, at the top level.
+  :func:`read_data_file` and :func:`write_data_file` read and write it, for a
+  file whose place its owner decides (a repo store, a backup folder, a
   project's ``.untaped/``).
 - the *line* layout, core's caches: line 1 ``{"untaped": {...}}`` with a key's
   freshness, line 2 the value, any JSON. Freshness is read without parsing
@@ -25,13 +24,13 @@ import hashlib
 import json
 import os
 import typing
-from collections.abc import Collection, Mapping
+from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final
 
 from pydantic import BaseModel, ValidationError
 
@@ -134,19 +133,11 @@ def _check_fields(model: type[BaseModel]) -> None:
 def read_data_file[M: BaseModel](
     path: Path,
     model: type[M],
-    *,
-    unstamped: Literal["refuse", "accept"] = "refuse",
-    legacy_stamps: Collection[str] = (),
 ) -> DataRead[M]:
     """What ``path`` holds, read as ``model``: found, absent, unreadable or a newer untaped's.
 
-    ``unstamped="accept"`` reads a file with no stamp in the model's shape:
-    one an earlier untaped wrote before the stamp existed. ``"refuse"`` fits
-    only files no earlier untaped wrote. A plain string under ``untaped`` is
-    data, never a stamp, unless ``legacy_stamps`` names it: the stamps an
-    earlier format of this one file wrote, read as that file in the model's
-    shape. The model's own rules decide unknown fields (pydantic ignores
-    them unless the model forbids them).
+    A file with no stamp is unreadable. The model's own rules decide unknown
+    fields (pydantic ignores them unless the model forbids them).
     """
     check_model(model)
     try:
@@ -170,10 +161,6 @@ def read_data_file[M: BaseModel](
         refreshed_at = parse_utc(checked.get("refreshed_at"))
         by = checked["by"] if isinstance(checked.get("by"), str) else None
         fields = {key: value for key, value in data.items() if key != STAMP}
-    elif isinstance(stamp, str) and stamp in legacy_stamps:
-        fields = {key: value for key, value in data.items() if key != STAMP}
-    elif unstamped == "accept":
-        fields = data
     else:
         return Unreadable(f"has no {STAMP!r} stamp")
     try:

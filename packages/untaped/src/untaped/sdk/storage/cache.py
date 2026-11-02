@@ -68,7 +68,7 @@ from untaped.runtime.sink import current_sink
 from untaped.sdk._block import OwnedBlock
 from untaped.sdk._run import run_clock
 from untaped.sdk.diagnostic import NOT_COUNTED, Failure, Stale, format_utc, parse_utc
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
+from untaped.sdk.errors import ConfigError, ErrorCategory, System, UntapedError
 from untaped.sdk.git import safe_path_segment
 from untaped.sdk.network.upstream import fail_fast, full_retries
 from untaped.sdk.progress import NO_PROGRESS, ProgressHandle
@@ -1479,7 +1479,7 @@ class Cache[M = None](OwnedBlock):
             paths.dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             raise ConfigError(
-                f"could not create {paths.dir}: {exc.strerror or exc}", system="local"
+                f"could not create {paths.dir}: {exc.strerror or exc}", system=System.LOCAL
             ) from exc
         busy = f"another untaped process is still refreshing {label} after {duration_text(timeout)}"
         with file_lock(
@@ -1570,7 +1570,7 @@ class Cache[M = None](OwnedBlock):
 class _LockError(ConfigError):
     """A cache key's lock: busy (``unavailable``, exit 5), or its file could not be opened."""
 
-    system = "local"
+    system = System.LOCAL
 
     @property
     def busy(self) -> bool:

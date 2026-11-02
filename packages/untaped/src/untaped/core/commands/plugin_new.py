@@ -46,7 +46,7 @@ from untaped.runtime.registry import (
     check_plugin_name,
     range_text,
 )
-from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError, UsageError
+from untaped.sdk.errors import ConfigError, ErrorCategory, System, UntapedError, UsageError
 from untaped.sdk.words import not_found
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def scaffold(
         raise UntapedError(
             f"{dest} already exists; choose another --path or plugin name",
             category=ErrorCategory.CONFLICT,
-            system="local",
+            system=System.LOCAL,
         )
     files = _Scaffold(name, owner, contract, candidates).files()
     outcomes: list[ScaffoldOutcome] = []
@@ -260,13 +260,15 @@ class _Scaffold:
 
             from __future__ import annotations
 
-            from untaped.sdk import UntapedError
+            from untaped.sdk import Service, UntapedError
+
+            from {self.package}.settings import {self.camel}Settings
 
 
             class {self.camel}Error(UntapedError):
                 """Base for {self.name} plugin failures."""
 
-                system = "{self.name}"
+                system = Service({self.camel}Settings)
             '''
         )
 

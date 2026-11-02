@@ -34,6 +34,7 @@ from untaped.sdk import (
     HttpError,
     HttpTransportError,
     RetryPolicy,
+    Service,
     UntapedError,
     bounded_map,
     parse_utc,
@@ -47,6 +48,7 @@ from untaped_github.domain.models import (
 )
 from untaped_github.domain.repo_id import split_repo_id
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
+from untaped_github.settings import GithubSettings
 
 _REF_PREFIXES: dict[RefKind, str] = {"heads": "refs/heads/", "tags": "refs/tags/"}
 _PAGE_SIZE = 100
@@ -216,7 +218,7 @@ def _probe_chunk(
                     raise UntapedError(
                         f"github graphql returned null for {target.full_name} "
                         "without an explanatory error",
-                        system="github",
+                        system=Service(GithubSettings),
                     )
                 missing.append(target.full_name)
                 continue
@@ -633,7 +635,7 @@ def _resolve_repo(
             if _classify_errors(payload):
                 raise UntapedError(
                     f"github graphql lost access to {target.full_name} during ref pagination",
-                    system="github",
+                    system=Service(GithubSettings),
                 )
             rate_limit = _merge_rate_limit(rate_limit, _rate_limit(payload))
             connection = payload["data"]["r0"][kind]

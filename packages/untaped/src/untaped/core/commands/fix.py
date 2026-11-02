@@ -52,7 +52,7 @@ from untaped.runtime.sink import (
 )
 from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Failure
-from untaped.sdk.errors import ErrorCategory, Failed, UntapedError
+from untaped.sdk.errors import ErrorCategory, Failed, System, UntapedError
 from untaped.sdk.fields import Confirm, table_row
 from untaped.sdk.words import (
     command_argv,
@@ -333,7 +333,7 @@ def _child_error(run: ChildRun) -> Failure:
             break
     return Failure(
         category=ErrorCategory.FAILED,
-        system="untaped",
+        system=System.UNTAPED,
         retryable=False,
         message=f"exited with status {run.code}",
     )
