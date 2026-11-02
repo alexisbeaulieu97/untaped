@@ -7,7 +7,7 @@ from typing import Literal, get_args, get_origin
 
 from untaped.core.config.ports import SettingsReader
 from untaped.core.config.use_cases import GetSetting
-from untaped.sdk._cli import raise_usage
+from untaped.runtime.run_output import raise_usage
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk._stdin import read_stdin_line
 from untaped.sdk._ui import build_terminal

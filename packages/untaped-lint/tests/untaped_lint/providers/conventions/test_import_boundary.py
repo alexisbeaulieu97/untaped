@@ -69,9 +69,9 @@ def test_core_imports_other_than_the_sdk_are_violations(check: Check) -> None:
 
 
 def test_sdk_modules_the_surface_does_not_promise_are_violations(check: Check) -> None:
-    source = "from untaped.sdk._cli import echo\nimport untaped.sdk.storage.cache\n"
+    source = "from untaped.sdk._emit import echo\nimport untaped.sdk.storage.cache\n"
     assert check({"cli/__init__.py": source}) == [
-        "demo/cli/__init__.py:1::import-boundary::imports untaped.sdk._cli; use untaped.sdk",
+        "demo/cli/__init__.py:1::import-boundary::imports untaped.sdk._emit; use untaped.sdk",
         "demo/cli/__init__.py:2::import-boundary::imports untaped.sdk.storage.cache; "
         "use untaped.sdk",
     ]
@@ -110,12 +110,12 @@ def test_function_level_and_type_checking_imports_count(check: Check) -> None:
     source = (
         "from typing import TYPE_CHECKING\n"
         "if TYPE_CHECKING:\n"
-        "    from untaped.sdk._cli import a\n"
+        "    from untaped.sdk._emit import a\n"
         "def f():\n"
         "    from untaped.runtime.settings import b\n"
     )
     assert check({"cli/__init__.py": source}) == [
-        "demo/cli/__init__.py:3::import-boundary::imports untaped.sdk._cli; use untaped.sdk",
+        "demo/cli/__init__.py:3::import-boundary::imports untaped.sdk._emit; use untaped.sdk",
         "demo/cli/__init__.py:5::import-boundary::imports untaped.runtime.settings; "
         "use untaped.sdk",
     ]
@@ -123,7 +123,7 @@ def test_function_level_and_type_checking_imports_count(check: Check) -> None:
 
 def test_a_waiver_suppresses_one_line(check: Check) -> None:
     source = (
-        "import untaped.sdk._cli  # untaped: allow import-boundary\n"
+        "import untaped.sdk._emit  # untaped: allow import-boundary\n"
         "import untaped.runtime.settings  # untaped: allow lint.import-boundary\n"
         "import untaped.runtime.sink\n"
     )

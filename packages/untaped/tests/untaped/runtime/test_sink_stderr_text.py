@@ -25,12 +25,9 @@ import pytest
 
 from untaped.runtime import verbose
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.run_output import Diagnostics, current_sink
+from untaped.runtime.run_output import Diagnostics, current_sink, raise_usage
 from untaped.runtime.theme import BUILTIN_THEMES
-from untaped.sdk._cli import (
-    raise_usage,
-    report_declined,
-)
+from untaped.sdk._emit import report_declined
 from untaped.sdk._run import Rendering
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk._ui import Ui, collection

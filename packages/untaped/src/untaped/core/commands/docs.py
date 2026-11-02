@@ -12,7 +12,7 @@ import sys
 from pydantic import Field
 
 from untaped.core.settings import CoreSettings
-from untaped.sdk._cli import echo
+from untaped.sdk._emit import echo
 from untaped.sdk.errors import UsageError
 from untaped.sdk.fields import Positional
 from untaped.sdk.plugin import Command

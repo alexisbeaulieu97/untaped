@@ -45,8 +45,8 @@ from untaped.runtime.settings import (
     notify_config_key,
 )
 from untaped.runtime.stability_help import show_deprecated
-from untaped.sdk._cli import echo, emit
 from untaped.sdk._confirm import DryRun
+from untaped.sdk._emit import echo, emit
 from untaped.sdk._keys import key
 from untaped.sdk._output import Output
 from untaped.sdk._table import default_columns

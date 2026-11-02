@@ -33,7 +33,7 @@ from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.registry import CompositionResult
 from untaped.runtime.run import child_run
-from untaped.sdk._cli import emit
+from untaped.sdk._emit import emit
 from untaped.sdk._table import default_columns, table_row
 from untaped.sdk.health._setup_status import set_command
 from untaped.sdk.health.marks import MarkedField

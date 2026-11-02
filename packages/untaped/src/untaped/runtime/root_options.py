@@ -25,9 +25,17 @@ from cyclopts import App, Parameter
 from cyclopts.exceptions import CycloptsError
 from cyclopts.utils import is_option_like
 
+from untaped.runtime.cli_run import parse_error
 from untaped.runtime.declaration import CommandDecl
+from untaped.runtime.default_format import (
+    follows_user_format,
+    note_requested_format,
+    requested_format,
+    user_default_format,
+    user_theme,
+)
 from untaped.runtime.profile_resolver import check_pick, parse_pick
-from untaped.runtime.run_output import Diagnostics
+from untaped.runtime.run_output import Diagnostics, raise_usage
 from untaped.runtime.stability_help import (
     command_selection,
     mark_of,
@@ -37,15 +45,6 @@ from untaped.runtime.stability_help import (
 )
 from untaped.runtime.stability_marks import Alias, deprecated_aliases
 from untaped.runtime.verbose import enable as _enable_verbose
-from untaped.sdk._cli import (
-    follows_user_format,
-    note_requested_format,
-    parse_error,
-    raise_usage,
-    requested_format,
-    user_default_format,
-    user_theme,
-)
 from untaped.sdk._replacement import replacement_text
 from untaped.sdk._run import Rendering, Run
 from untaped.sdk.errors import ConfigError
@@ -194,11 +193,11 @@ class RootLine:
         """How the run renders stderr for the line; ``None`` to leave it to the command's parse.
 
         For a declared command it is decided as the command's parse decides
-        its ``--format`` (:func:`untaped.sdk._cli.apply_default_format`),
+        its ``--format`` (:func:`untaped.runtime.default_format.apply_default_format`),
         from the declaration alone, so the command's module is not imported:
         the ``--format`` the line gives, else, for a command whose ``Output``
         defaults to ``table``, ``UNTAPED_FORMAT`` and then
-        ``untaped.ui.format`` (:func:`untaped.sdk._cli.user_default_format`;
+        ``untaped.ui.format`` (:func:`untaped.runtime.default_format.user_default_format`;
         an invalid ``UNTAPED_FORMAT`` is a usage error unless the command
         ``repairs`` or the line asks for help, which never reads it), else
         none: the command's own default. A line naming no declared command
@@ -525,7 +524,7 @@ def _table_default(command: CommandDecl) -> bool:
     """Whether ``command``'s ``--format`` offers every shared format and defaults to ``table``.
 
     Only such a ``--format`` follows the user's default format, as the
-    parse reads it (:func:`untaped.sdk._cli.apply_default_format`).
+    parse reads it (:func:`untaped.runtime.default_format.apply_default_format`).
     """
     return any(
         option.flag == "--format" and follows_user_format(option.choices, option.default or "table")

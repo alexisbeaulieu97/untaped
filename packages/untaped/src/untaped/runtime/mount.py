@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeGuard, cast, get_
 from cyclopts import App, Group, Parameter
 from pydantic import BaseModel, ValidationError
 
+from untaped.runtime.cli_run import report_errors
 from untaped.runtime.declaration import (
     BlockDecl,
     CommandDecl,
@@ -44,11 +45,11 @@ from untaped.runtime.declaration import (
     UseDecl,
     target_of,
 )
+from untaped.runtime.default_format import follows_user_format
 from untaped.runtime.registry import resolve_target
 from untaped.runtime.stability_help import DEPRECATED_OPTIONS, docs_footer, mark_app
 from untaped.runtime.stability_marks import deprecated_alias
 from untaped.sdk._block import FieldBlock, Invocation
-from untaped.sdk._cli import follows_user_format, report_errors
 from untaped.sdk._confirm import Confirm, DryRun
 from untaped.sdk._input_blocks import Stdin
 from untaped.sdk._output import Output

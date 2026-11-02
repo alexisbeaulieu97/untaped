@@ -15,11 +15,11 @@ from rich.console import Console
 from core_test_support.runtime.run import hold_run
 from untaped.core.skill_stubs import SKILL_FILE, STUB_MARKER, digest
 from untaped.runtime import bootstrap
+from untaped.runtime.cli_run import run_cyclopts_app
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.settings import active_settings_layout, get_settings
 from untaped.sdk import HttpStatusError, Plugin, StubSkill
-from untaped.sdk._cli import run_cyclopts_app
 from untaped.sdk.health import NeedsSetup, OnlineCheck
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
 from untaped.sdk.marks import Stability

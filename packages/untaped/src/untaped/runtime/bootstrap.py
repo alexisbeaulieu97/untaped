@@ -26,7 +26,9 @@ from untaped.core.commands.plugins import INSTALL_HINT
 from untaped.core.commands.skills import check_installed_skills, composed_skills
 from untaped.core.settings import NAME
 from untaped.core.skills import PackagedSkill
+from untaped.runtime.cli_run import given_tokens, report_errors, run_cyclopts_app
 from untaped.runtime.declaration import Declaration
+from untaped.runtime.default_format import apply_default_format, note_requested_format
 from untaped.runtime.help_panels import GLOBAL_OPTIONS_GROUP, PLUGINS_GROUP
 from untaped.runtime.mount import Dispatched, Mount, add_commands, dispatching, repairs_at
 from untaped.runtime.registry import (
@@ -56,13 +58,6 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.stability_help import apply_marks, docs_footer, mark_app, panel_for
 from untaped.sdk._behaviours import bind_behaviours
-from untaped.sdk._cli import (
-    apply_default_format,
-    given_tokens,
-    note_requested_format,
-    report_errors,
-    run_cyclopts_app,
-)
 from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
 from untaped.sdk.errors import ConfigError
@@ -320,7 +315,7 @@ def build_root_app(
     wires ``--version`` to installed-distribution metadata, installs
     position-independent root options, and registers shell completion. In
     tests, drive ``app.meta`` through :class:`~untaped.sdk.testing.CliInvoker` (or
-    :func:`~untaped.sdk._cli.run_cyclopts_app`), never by calling it directly:
+    :func:`~untaped.runtime.cli_run.run_cyclopts_app`), never by calling it directly:
     the root reads the tokens as given only there. Run via :func:`run_root`
     in production.
     """

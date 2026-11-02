@@ -204,9 +204,13 @@ _STARTUP_PROBE = (
 #: more: 114 and 655, 2026-11-02, so the budget goes to 117 and the total
 #: to 658. Splitting value types, tables, Output, streams, input, confirmation
 #: and run blocks out of the command fields adds seven modules: 120 and
-#: 661, 2026-11-02, so the budget goes to 123 and the total to 664.
-_TOTAL_BUDGET = 664
-_UNTAPED_BUDGET = 123
+#: 661, 2026-11-02, so the budget goes to 123 and the total to 664. Work
+#: since then reached 123 and 664. Splitting the SDK's command-line module
+#: by owner leaves its run and default-format parts on the start, without
+#: the row rendering: 124 and 665, 2026-11-02, so the budget goes to 127 and
+#: the total to 668.
+_TOTAL_BUDGET = 668
+_UNTAPED_BUDGET = 127
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.

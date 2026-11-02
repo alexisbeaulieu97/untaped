@@ -453,7 +453,7 @@ def test_untaped_diagnostics_overrides_the_fixed_rendering(
 def test_a_fixed_rendering_is_fixed_once_and_notes_change_nothing(
     _isolated_config: Path,
 ) -> None:
-    from untaped.sdk._cli import note_requested_format
+    from untaped.runtime.default_format import note_requested_format
 
     _config(_isolated_config, "    format: json\n")
     declaration = bootstrap.compose_root(candidates=[CHIME]).mount.declaration
