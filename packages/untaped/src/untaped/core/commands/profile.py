@@ -35,8 +35,10 @@ from untaped.core.settings import CoreSettings
 from untaped.runtime.folder_layer import folder_layer
 from untaped.runtime.profile_resolver import folder_picks_aside
 from untaped.runtime.settings import get_settings_model, resolve_config_path
+from untaped.sdk._confirm import Confirm, DryRun
+from untaped.sdk._output import Output
 from untaped.sdk._schema import redact_secrets, secret_field_paths
-from untaped.sdk.fields import Confirm, DryRun, Output, Positional
+from untaped.sdk.fields import Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import command_line, plural, q
 

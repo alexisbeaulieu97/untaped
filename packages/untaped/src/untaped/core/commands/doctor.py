@@ -44,8 +44,10 @@ from untaped.runtime.profile_resolver import (
     selected_profile,
 )
 from untaped.runtime.run_output import Diagnostics
+from untaped.sdk._confirm import Confirm
+from untaped.sdk._output import Output
+from untaped.sdk._table import table_row
 from untaped.sdk.errors import Failed
-from untaped.sdk.fields import Confirm, Output, table_row
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import (
     command_argv,

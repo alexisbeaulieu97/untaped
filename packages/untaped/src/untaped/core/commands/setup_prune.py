@@ -30,9 +30,11 @@ from untaped.core.commands.records import PruneOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.section_models import PLUGIN_NAME_PATTERN
 from untaped.runtime.settings import plugins_root
+from untaped.sdk._confirm import Confirm
 from untaped.sdk._keys import key
+from untaped.sdk._output import Output
+from untaped.sdk._table import table_row
 from untaped.sdk.errors import UntapedError
-from untaped.sdk.fields import Confirm, Output, table_row
 from untaped.sdk.plugin import Command
 from untaped.sdk.storage._fs import dir_bytes
 from untaped.sdk.words import plural, shown_path, size_text

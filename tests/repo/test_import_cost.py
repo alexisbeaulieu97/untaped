@@ -202,9 +202,11 @@ _STARTUP_PROBE = (
 #: the budget goes to 114 and the total to 655. Splitting the settings
 #: module into its section models, environment and config reading adds three
 #: more: 114 and 655, 2026-11-02, so the budget goes to 117 and the total
-#: to 658.
-_TOTAL_BUDGET = 658
-_UNTAPED_BUDGET = 117
+#: to 658. Splitting value types, tables, Output, streams, input, confirmation
+#: and run blocks out of the command fields adds seven modules: 120 and
+#: 661, 2026-11-02, so the budget goes to 123 and the total to 664.
+_TOTAL_BUDGET = 664
+_UNTAPED_BUDGET = 123
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.

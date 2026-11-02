@@ -27,8 +27,10 @@ from untaped.core.commands.records import ScaffoldOutcome
 from untaped.core.config.models import SettingOutcome
 from untaped.core.settings import CoreSettings
 from untaped.runtime.registry import CompositionResult
+from untaped.sdk._confirm import DryRun
+from untaped.sdk._output import Output
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.fields import Column, DryRun, Output, Positional
+from untaped.sdk.fields import Column, Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.plugin_records import InstalledPlugin
 from untaped.sdk.records import Record, record_model

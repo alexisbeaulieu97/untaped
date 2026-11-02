@@ -22,9 +22,12 @@ from untaped.core.profile.repository import record_project_pick
 from untaped.core.settings import CoreSettings
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import check_defined, explicit_pick, named_profiles
+from untaped.sdk._confirm import Confirm
 from untaped.sdk._keys import key
+from untaped.sdk._output import Output
+from untaped.sdk._table import table_row
 from untaped.sdk.errors import ConfigError, Failed, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, Output, Positional, table_row
+from untaped.sdk.fields import Positional
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (
