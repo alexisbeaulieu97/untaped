@@ -13,7 +13,7 @@ import pytest
 from packaging.requirements import Requirement
 
 from untaped.core.docs import UntapedRequirement, older_pin_note, untaped_requirement
-from untaped.sdk import nearest_pyproject
+from untaped.sdk.projects import nearest_pyproject
 from untaped.sdk.testing import make_project
 
 pytestmark = pytest.mark.usefixtures("home_run")

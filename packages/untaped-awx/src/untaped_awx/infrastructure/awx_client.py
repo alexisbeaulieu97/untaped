@@ -10,7 +10,7 @@ from __future__ import annotations
 from types import TracebackType
 from typing import Any
 
-from untaped.sdk import HttpFactory, same_origin
+from untaped.sdk.network import HttpFactory, same_origin
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.settings import TOKEN, AwxSettings

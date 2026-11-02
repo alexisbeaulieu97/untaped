@@ -24,12 +24,12 @@ from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.run import hold_run, holding_runs
 from untaped.core.project_lifecycle import Removal, apply_removal, plan_removal
 from untaped.runtime import bootstrap
-from untaped.sdk import Dir, Plugin
+from untaped.sdk import Plugin
 from untaped.sdk._run import Run
 from untaped.sdk.errors import ConfigError, UntapedError
 from untaped.sdk.projects import Project, holder_of, known_projects
+from untaped.sdk.storage import Dir, holds
 from untaped.sdk.storage import _refs as refs
-from untaped.sdk.storage import holds
 from untaped.sdk.storage._refs import PROJECT, RefHolder, RefTarget
 from untaped.sdk.storage.holds import (
     HolderKind,

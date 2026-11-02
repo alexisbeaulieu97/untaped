@@ -28,14 +28,8 @@ from collections.abc import Callable, Iterable, Sequence
 from itertools import batched
 from typing import Any, NamedTuple
 
-from untaped.sdk import (
-    HttpClient,
-    HttpError,
-    HttpTransportError,
-    RetryPolicy,
-    UntapedError,
-    bounded_map,
-)
+from untaped.sdk import HttpError, HttpTransportError, UntapedError, bounded_map
+from untaped.sdk.network import HttpClient, RetryPolicy
 from untaped_github.domain.models import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,

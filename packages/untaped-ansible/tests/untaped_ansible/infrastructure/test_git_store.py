@@ -12,7 +12,8 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import GitResult, PluginHandle
+from untaped.sdk import PluginHandle
+from untaped.sdk.git import GitResult
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.git_store import GitSourceStore
 from untaped_git.api import TreeEntry

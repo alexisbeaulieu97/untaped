@@ -7,7 +7,8 @@ from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
-from untaped.sdk import Credential, CredentialKey, NeedsSetup, Retired, TlsVerify
+from untaped.sdk.health import NeedsSetup, Retired
+from untaped.sdk.network import Credential, CredentialKey, TlsVerify
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 

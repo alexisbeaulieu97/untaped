@@ -14,7 +14,6 @@ from pydantic import BaseModel, Field, field_validator
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import (
-    Cache,
     Command,
     ConfigError,
     Confirm,
@@ -29,6 +28,7 @@ from untaped.sdk import (
     Written,
     key,
 )
+from untaped.sdk.storage import Cache
 from untaped.sdk.testing import CliInvoker, CliResult, Install, ScriptedTerminal
 from untaped.sdk.words import command_argv
 

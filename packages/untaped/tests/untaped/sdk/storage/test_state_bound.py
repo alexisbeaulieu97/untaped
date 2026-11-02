@@ -14,10 +14,11 @@ from pydantic import BaseModel, Field
 from core_test_support.runtime.run import run_owning
 from untaped.runtime.composition import PluginEntry, compose
 from untaped.runtime.declaration import Declaration
-from untaped.sdk import Command, ConfigError, Key, Plugin, StateRows, UntapedError
+from untaped.sdk import Command, ConfigError, Key, Plugin, UntapedError
 from untaped.sdk._run import Run, run_scope
 from untaped.sdk.fields import Positional
 from untaped.sdk.projects import Project
+from untaped.sdk.storage import StateRows
 
 
 class Item(BaseModel):

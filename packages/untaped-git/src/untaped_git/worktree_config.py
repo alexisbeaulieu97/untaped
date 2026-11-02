@@ -15,7 +15,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory, UntapedError, find_program
+from untaped.sdk import ErrorCategory, UntapedError
+from untaped.sdk.network import find_program
 from untaped_git.helper_nonce import helper_nonce
 from untaped_git.namespace import layout_for
 from untaped_git.repo_files import (

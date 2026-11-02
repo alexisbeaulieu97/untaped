@@ -21,9 +21,9 @@ from untaped.sdk import (
     not_found,
     plural,
     q,
-    run_editor,
     run_hint,
 )
+from untaped.sdk.prompt import run_editor
 from untaped_recipe.commands._library import NO_LOCK_NOTE, find_pack
 from untaped_recipe.commands._recipe import RecipeCommand, as_recipe_error, recipe_errors
 from untaped_recipe.commands.detail import pack_record

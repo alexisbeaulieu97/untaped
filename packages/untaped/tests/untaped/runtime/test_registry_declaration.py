@@ -31,7 +31,8 @@ from datetime import timedelta
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Cache, Command, Plugin
+from untaped.sdk import Command, Plugin
+from untaped.sdk.storage import Cache
 
 from {package}.settings import ToySettings
 
@@ -156,7 +157,8 @@ def test_a_second_start_composes_the_plugin_without_importing_it(toys: Path) -> 
 
 
 KEYED = '''
-from untaped.sdk import Command, Credential, CredentialKey, Plugin
+from untaped.sdk import Command, Plugin
+from untaped.sdk.network import Credential, CredentialKey
 
 from {package}.settings import ToySettings
 

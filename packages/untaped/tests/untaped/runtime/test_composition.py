@@ -25,12 +25,9 @@ from untaped.runtime.declaration import (
 from untaped.runtime.registry import resolve_target
 from untaped.runtime.run import build_run, entered
 from untaped.sdk import (
-    Cache,
     Column,
     Command,
     Confirm,
-    Credential,
-    CredentialKey,
     Deprecated,
     DeprecatedBehaviour,
     Document,
@@ -60,7 +57,9 @@ from untaped.sdk._names import kebab, snake, words
 from untaped.sdk.contracts import Contract, Provider, cached
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.fields import table_row
+from untaped.sdk.network import Credential, CredentialKey
 from untaped.sdk.records import kind_of, record_model
+from untaped.sdk.storage import Cache
 
 PACKAGE = __name__.partition(".")[0]
 

@@ -19,8 +19,11 @@ from pydantic import BaseModel, HttpUrl, SecretStr
 from core_test_support.commands.support import compose, make_plugin
 from core_test_support.runtime.run import holding_runs
 from untaped.runtime.settings import HttpSettings
-from untaped.sdk import BoundSecret, Credential, CredentialKey, NeedsSetup, Service
+from untaped.sdk import Service
 from untaped.sdk.errors import ConfigError, HttpError
+from untaped.sdk.health import NeedsSetup
+from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.network.credentials import BoundSecret
 from untaped.sdk.network.http import connected_client, rejected_token_error
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

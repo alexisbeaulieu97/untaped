@@ -9,8 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from untaped.sdk import UsageError
-from untaped.sdk.contracts import Source
+from untaped.sdk import Source, UsageError
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos

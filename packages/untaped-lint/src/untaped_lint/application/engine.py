@@ -21,17 +21,16 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from untaped.sdk import ConfigError, ErrorCategory, Failure, InstalledPlugin, Record, kind_of
-from untaped.sdk.contracts import (
-    Errored,
-    NoProviderReady,
-    Ok,
-    Reason,
-    Skipped,
+from untaped.sdk import (
+    ConfigError,
+    ErrorCategory,
+    Failure,
+    InstalledPlugin,
+    Record,
     Source,
-    gather,
-    providing,
+    kind_of,
 )
+from untaped.sdk.contracts import Errored, NoProviderReady, Ok, Reason, Skipped, gather, providing
 from untaped.sdk.testing import PluginCandidate
 from untaped_lint.application.hints import new_line, rules_hint, rules_line, select_hint
 from untaped_lint.application.modules import Loaded, load, rule_imports

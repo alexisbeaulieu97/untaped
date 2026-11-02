@@ -14,7 +14,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from untaped.sdk import InstalledPlugin, Record, UsageError, nearest_pyproject
+from untaped.sdk import InstalledPlugin, Record, UsageError
+from untaped.sdk.projects import nearest_pyproject
 from untaped_lint.providers import conventions
 from untaped_lint.records import Finding, public
 

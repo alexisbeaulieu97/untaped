@@ -12,17 +12,9 @@ from filelock import FileLock
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
-from untaped.sdk import (
-    Absent,
-    ConfigError,
-    DataFile,
-    Found,
-    OtherVersion,
-    Unreadable,
-    UntapedError,
-)
+from untaped.sdk import ConfigError, UntapedError
 from untaped.sdk._run import run_scope
-from untaped.sdk.storage import data_file
+from untaped.sdk.storage import Absent, DataFile, Found, OtherVersion, Unreadable, data_file
 
 
 class Mark(BaseModel):

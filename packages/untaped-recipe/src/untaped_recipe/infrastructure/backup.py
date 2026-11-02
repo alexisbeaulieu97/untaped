@@ -15,7 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, JsonValue
 
-from untaped.sdk import Absent, Found, OtherVersion, not_found, read_data_file, write_data_file
+from untaped.sdk import not_found
+from untaped.sdk.storage import Absent, Found, OtherVersion, read_data_file, write_data_file
 from untaped_recipe.domain.paths import confined_path
 from untaped_recipe.domain.plan import CONTENT_ERRORS, FileChange
 from untaped_recipe.errors import BackupNotFoundError, LocalChangesError

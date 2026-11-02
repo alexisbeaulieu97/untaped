@@ -9,7 +9,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Command, ErrorCategory, UntapedError, command_line, read_structured_file
+from untaped.sdk import Command, ErrorCategory, UntapedError, command_line
+from untaped.sdk.storage import read_structured_file
 from untaped_recipe.domain.hook_project import HookKind
 from untaped_recipe.domain.pack import InstalledPack
 from untaped_recipe.errors import RecipeError

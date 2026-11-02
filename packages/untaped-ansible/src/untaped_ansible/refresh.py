@@ -16,18 +16,16 @@ from datetime import datetime
 from typing import Literal
 
 from untaped.sdk import (
-    NO_PROGRESS,
     Failure,
-    HttpFactory,
     PluginHandle,
-    ProgressHandle,
-    Served,
     Service,
     UntapedError,
     command_line,
     most_severe,
     plural,
 )
+from untaped.sdk.network import HttpFactory
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle, Served
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,

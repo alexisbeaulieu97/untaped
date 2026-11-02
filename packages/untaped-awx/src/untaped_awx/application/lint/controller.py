@@ -24,7 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from untaped.sdk import NO_PROGRESS, ProgressHandle
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_awx.application.lint.resolution import (
     OfflineBase,
     SnapshotReferences,

@@ -1,10 +1,10 @@
 # Screens
 
-A screen is an interactive terminal UI built on the SDK's runtime: a full
-screen (or one inline question) with a footer of keys, drawn in the user's
-theme. `untaped.sdk` owns the shared behavior (keys, look, the refusal when
-there is no terminal, testing), so a screen declares what it shows and does
-and nothing else. Screens are
+A screen is an interactive terminal UI built on untaped's screen runtime
+(`untaped.screen`, outside the SDK): a full screen (or one inline question)
+with a footer of keys, drawn in the user's theme. untaped owns the shared
+behavior (keys, look, the refusal when there is no terminal, testing), so a
+screen declares what it shows and does and nothing else. Screens are
 [experimental](./versioning.md#experimental): the API may change in a minor
 release. A plugin never imports `prompt_toolkit`; `untaped lint` flags it
 (see [Enforcement](./reference/conventions.md#enforcement)).
@@ -20,7 +20,7 @@ returns what the screen quits with:
 from dataclasses import dataclass, replace
 
 from rich.text import Text
-from untaped.sdk import Cmd, Frame, KeyPress, Quit, Screen
+from untaped.screen.core import Cmd, Frame, KeyPress, Quit, Screen
 
 
 @dataclass(frozen=True)

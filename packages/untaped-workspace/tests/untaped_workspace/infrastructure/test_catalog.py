@@ -13,8 +13,8 @@ from datetime import timedelta
 import pytest
 from pydantic import BaseModel
 
-from untaped.sdk import ErrorCategory, UntapedError, UsageError, key
-from untaped.sdk.contracts import Ambiguous, NotReady, Source, gather
+from untaped.sdk import ErrorCategory, Source, UntapedError, UsageError, key
+from untaped.sdk.contracts import Ambiguous, NotReady, gather
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock, Running
 from untaped_workspace.api import Repo, RepoSource

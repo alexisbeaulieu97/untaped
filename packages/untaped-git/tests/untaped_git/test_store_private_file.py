@@ -10,7 +10,8 @@ import pytest
 from pydantic import BaseModel
 
 from git_test_support import StoreError, StoreFor
-from untaped.sdk import Absent, ErrorCategory, Found, OtherVersion, Unreadable
+from untaped.sdk import ErrorCategory
+from untaped.sdk.storage import Absent, Found, OtherVersion, Unreadable
 
 
 class Listing(BaseModel):

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from untaped.sdk import NO_PROGRESS, Failure, ProgressHandle, bounded_map
+from untaped.sdk import Failure, bounded_map
+from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
 from untaped_github.application.corpus_repos import (
     CorpusUseCase,
     ReadyRepo,

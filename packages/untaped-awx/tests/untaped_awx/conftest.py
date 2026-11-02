@@ -16,7 +16,7 @@ from pydantic import HttpUrl
 
 from awx_fake_aap import _LAUNCH_PROMPTS, FakeAap
 from awx_test_support import Settings, installed, using
-from untaped.sdk import HttpFactory
+from untaped.sdk.network import HttpFactory
 from untaped.sdk.testing import ManualClock
 from untaped_awx.settings import AwxServer, AwxSettings
 

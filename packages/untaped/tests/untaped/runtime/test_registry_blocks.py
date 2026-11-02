@@ -7,8 +7,9 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from core_test_support.runtime.run import run_owning
-from untaped.sdk import DoctorCheck, DoctorResult, Plugin
+from untaped.sdk import Plugin
 from untaped.sdk._run import run_scope
+from untaped.sdk.health import DoctorCheck, DoctorResult
 from untaped.sdk.health.doctor import ExecutableCheck
 
 

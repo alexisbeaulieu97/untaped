@@ -11,9 +11,9 @@ import respx
 from pydantic import BaseModel
 
 from untaped.runtime.settings import HttpSettings
-from untaped.sdk import connected_client
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.network.auth import CommandToken, clear_token_cache, forget_token_command
+from untaped.sdk.network.http import connected_client
 
 
 def _printer(text: str, *, log: Path | None = None, code: int = 0) -> list[str]:

@@ -12,7 +12,8 @@ import pytest
 import respx
 from pydantic import HttpUrl
 
-from untaped.sdk import HttpFactory, UntapedError
+from untaped.sdk import UntapedError
+from untaped.sdk.network import HttpFactory
 from untaped.sdk.testing import Running
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.errors import GithubGraphqlError

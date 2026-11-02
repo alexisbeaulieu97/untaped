@@ -8,7 +8,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from untaped.sdk import ConfigError, StateRows
+from untaped.sdk import ConfigError
+from untaped.sdk.storage import StateRows
 from untaped.sdk.testing import read_rows, write_rows
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.domain.naming import workspace_key

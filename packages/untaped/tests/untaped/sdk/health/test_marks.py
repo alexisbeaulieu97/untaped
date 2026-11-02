@@ -22,15 +22,10 @@ from untaped.core.surface._settings import settings_lines
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import CompositionResult, PluginCandidate, compose
 from untaped.runtime.settings import registered_profile_model
-from untaped.sdk import (
-    Credential,
-    CredentialKey,
-    HomeOnly,
-    NeedsSetup,
-    Suggest,
-    TokenUrl,
-    deprecated,
-)
+from untaped.sdk import deprecated
+from untaped.sdk.health import HomeOnly, NeedsSetup, Suggest
+from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.network.credentials import TokenUrl
 from untaped.sdk.testing import plugin_candidate
 
 

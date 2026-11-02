@@ -15,9 +15,9 @@ from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import BoundProvider, offers, reset
 from untaped.runtime.registry import CompositionResult, PluginCandidate
 from untaped.runtime.settings import get_settings
-from untaped.sdk import Plugin, experimental
+from untaped.sdk import Issued, Plugin, Record, experimental
 from untaped.sdk._home import config_path
-from untaped.sdk.contracts import Contract, Issued, Provider, Record, cached
+from untaped.sdk.contracts import Contract, Provider, cached
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.testing import plugin_candidate
 

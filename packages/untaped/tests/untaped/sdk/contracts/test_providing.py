@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import reset
 from untaped.runtime.registry import CompositionResult, PluginCandidate
-from untaped.sdk import Plugin, experimental
-from untaped.sdk.contracts import Contract, Issued, Ok, Provider, gather, providing
+from untaped.sdk import Issued, Plugin, experimental
+from untaped.sdk.contracts import Contract, Ok, Provider, gather, providing
 from untaped.sdk.errors import ConfigError
 
 

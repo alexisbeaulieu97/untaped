@@ -12,18 +12,8 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple
 
-from untaped.sdk import (
-    PickCatalog,
-    PickItem,
-    PickRequest,
-    PickResult,
-    PickSetting,
-    Terminal,
-    UntapedError,
-    UsageError,
-    command_line,
-    q,
-)
+from untaped.sdk import Terminal, UntapedError, UsageError, command_line, q
+from untaped.sdk.prompt import PickCatalog, PickItem, PickRequest, PickResult, PickSetting
 from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore
 from untaped_workspace.application.provision import refuse_occupied
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord

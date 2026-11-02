@@ -9,7 +9,8 @@ from pydantic import BaseModel
 
 from untaped.core.surface._settings import sections, settings_lines
 from untaped.runtime.registry import CompositionResult, PluginCandidate, compose
-from untaped.sdk import Key, Plugin, StateRows
+from untaped.sdk import Key, Plugin
+from untaped.sdk.storage import StateRows
 
 pytestmark = pytest.mark.usefixtures("home_run")
 

@@ -21,14 +21,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from untaped.sdk import (
-    ConfigError,
-    UsageError,
-    checkout_root,
-    first_validation_error,
-    plugin_of,
-    read_structured_file,
-)
+from untaped.sdk import ConfigError, UsageError, first_validation_error, plugin_of
+from untaped.sdk.projects import checkout_root
+from untaped.sdk.storage import read_structured_file
 from untaped_lint.domain.selection import parse_suppression
 from untaped_lint.records import RULE_ID
 from untaped_lint.settings import LintSettings

@@ -9,8 +9,9 @@ from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
-from untaped.sdk import Cache, Dir, Key, Retired, StateRows, installed_code, key
-from untaped.sdk.health import HomeOnly
+from untaped.sdk import Key, installed_code, key
+from untaped.sdk.health import HomeOnly, Retired
+from untaped.sdk.storage import Cache, Dir, StateRows
 
 DEFAULT_DEPENDENCY_PATHS = (
     "roles/requirements.yml",

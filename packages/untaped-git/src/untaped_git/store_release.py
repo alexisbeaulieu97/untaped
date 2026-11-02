@@ -14,7 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import ErrorCategory, System, dir_bytes, shown_path
+from untaped.sdk import ErrorCategory, System, shown_path
+from untaped.sdk.storage import dir_bytes
 from untaped_git.namespace import ORIGIN_HEAD, check_names, is_glob, layout_for
 from untaped_git.release import Released, Removed
 from untaped_git.repo_files import (

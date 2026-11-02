@@ -11,23 +11,10 @@ from pydantic import BaseModel
 
 from untaped.runtime.bootstrap import build_root_app, compose_root
 from untaped.runtime.registry import PluginCandidate
-from untaped.sdk import (
-    Cache,
-    Command,
-    Credential,
-    CredentialKey,
-    DeprecatedBehaviour,
-    DoctorCheck,
-    DoctorResult,
-    Filled,
-    Key,
-    Output,
-    Plugin,
-    PluginContext,
-    ProgressHandle,
-    Refresh,
-    StateRows,
-)
+from untaped.sdk import Command, DeprecatedBehaviour, Key, Output, Plugin, Refresh
+from untaped.sdk.health import DoctorCheck, DoctorResult, PluginContext
+from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.storage import Cache, Filled, ProgressHandle, StateRows
 from untaped.sdk.testing import CliInvoker, CliResult
 
 NOTES = Cache(label="notes", max_age=timedelta(hours=1))

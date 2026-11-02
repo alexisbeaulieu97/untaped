@@ -28,7 +28,8 @@ from ansible_index_support import (
     seed_index,
 )
 from ansible_test_support import Result, run, run_root, running, use_config, write_config
-from untaped.sdk import ErrorCategory, Failure, Freshness, Message, Progress, Stale
+from untaped.sdk import ErrorCategory, Failure, Message, Progress, Stale
+from untaped.sdk.storage import Freshness
 from untaped.sdk.testing import cache_clock, progress_clock
 from untaped_ansible import refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult

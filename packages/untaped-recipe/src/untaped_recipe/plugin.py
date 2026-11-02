@@ -6,7 +6,8 @@ module: the class imports every command.
 
 from __future__ import annotations
 
-from untaped.sdk import ExecutableCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import ExecutableCheck
 from untaped_recipe.commands.apply import Apply
 from untaped_recipe.commands.backups import BackupsGroup
 from untaped_recipe.commands.hooks import HooksGroup

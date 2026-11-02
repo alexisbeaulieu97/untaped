@@ -14,7 +14,8 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from untaped.sdk import ConfigError, UsageError, plural, read_structured_file
+from untaped.sdk import ConfigError, UsageError, plural
+from untaped.sdk.storage import read_structured_file
 from untaped_awx.domain.suites.suite import VariableSpec
 
 if TYPE_CHECKING:

@@ -7,7 +7,8 @@ providers import without them.
 
 from __future__ import annotations
 
-from untaped.sdk import OnlineCheck, Plugin, StubSkill
+from untaped.sdk import Plugin, StubSkill
+from untaped.sdk.health import OnlineCheck
 from untaped_awx.commands.controller import Ping, Schema, probe
 from untaped_awx.commands.documents import Apply, Export
 from untaped_awx.commands.jobs import JobsGroup

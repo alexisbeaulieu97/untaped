@@ -6,7 +6,8 @@ import stat
 from collections.abc import Iterator
 from pathlib import Path
 
-from untaped.sdk import UntapedError, atomic_write
+from untaped.sdk import UntapedError
+from untaped.sdk.storage import atomic_write
 from untaped_awx.application import SaveResource, SaveResources
 from untaped_awx.application.resources.selection import SelectedResource
 from untaped_awx.commands.context import AwxContext

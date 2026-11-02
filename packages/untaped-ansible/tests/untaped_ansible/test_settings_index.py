@@ -11,7 +11,7 @@ import pytest
 
 from ansible_index_support import index_path
 from ansible_test_support import Sections, running
-from untaped.sdk import Filled
+from untaped.sdk.storage import Filled
 from untaped.sdk.testing import Home, assert_schema_pinned
 from untaped_ansible import settings
 from untaped_ansible.infrastructure import open_index

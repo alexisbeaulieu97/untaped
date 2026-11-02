@@ -23,7 +23,6 @@ from untaped.sdk import (
     Positional,
     UntapedError,
     UsageError,
-    checkout_root,
     command_line,
     experimental,
     key,
@@ -32,6 +31,7 @@ from untaped.sdk import (
     run_hint,
     summary,
 )
+from untaped.sdk.projects import checkout_root
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.commands._options import OrganizationScope, SourceRef
 from untaped_awx.commands.context import AwxContext

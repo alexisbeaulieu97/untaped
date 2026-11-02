@@ -9,7 +9,8 @@ freshness check, `--refresh` flag or stale warning:
 ```python
 from datetime import timedelta
 
-from untaped.sdk import Cache, Command, Refresh
+from untaped.sdk import Command, Refresh
+from untaped.sdk.storage import Cache
 
 MOTD = Cache(label="message of the day", max_age=timedelta(hours=1))
 
@@ -148,7 +149,8 @@ version of the code that fills the cache with `version=`, a function
 called each time the cache is read (never at import):
 
 ```python
-from untaped.sdk import Cache, Plugin, code_version
+from untaped.sdk import Plugin
+from untaped.sdk.storage import Cache, code_version
 
 class Acme(Plugin):
     index = Cache(
