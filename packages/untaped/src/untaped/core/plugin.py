@@ -25,7 +25,7 @@ from untaped.core.doctor_checks import (
     UNKNOWN_KEYS,
 )
 from untaped.core.run_uses import RUN_USES
-from untaped.core.settings import DECLARATION, IMPORTS, NAME, CoreSettings
+from untaped.core.settings import DECLARATION, NAME, CoreSettings
 from untaped.sdk.network._credential_store import INDEX
 from untaped.sdk.plugin import Plugin, StubSkill
 from untaped.sdk.storage._refs import REFS
@@ -48,7 +48,6 @@ class Core(Plugin):
     )
     records = CORE_RECORDS
     declaration = DECLARATION
-    imports = IMPORTS
     skill = StubSkill(
         "Installs, sets up and diagnoses the untaped CLI itself: profiles, service "
         "URLs and tokens, setup, health checks, output formats and agent skills. "

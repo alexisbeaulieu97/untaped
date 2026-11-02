@@ -16,6 +16,7 @@ import warnings
 from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
+from untaped.sdk._lazy import peek
 from untaped.sdk._replacement import sdk_replacement_text
 from untaped.sdk.marks import (
     Deprecated,
@@ -42,7 +43,12 @@ def callable_owner(obj: object) -> str | None:
     ``untaped-<name>`` (every plugin's distribution is named after it). No
     package metadata is read.
     """
-    package = str(getattr(obj, "__module__", "") or "").partition(".")[0]
+    return module_owner(str(getattr(obj, "__module__", "") or ""))
+
+
+def module_owner(module: str) -> str | None:
+    """The distribution whose major a deprecation in ``module`` names; ``None`` for core's."""
+    package = module.partition(".")[0]
     if not package.startswith(_PLUGIN_PACKAGE):
         return None
     name = package.removeprefix(_PLUGIN_PACKAGE).replace("_", "-")
@@ -100,7 +106,10 @@ def _exports(module: str, name: str, obj: object) -> bool:
     loaded = sys.modules.get(module)
     if loaded is None or name not in getattr(loaded, "__all__", (name,)):
         return False
-    found = vars(loaded)[name] if name in vars(loaded) else getattr(loaded, name, None)
+    try:
+        found = peek(loaded, name)  # a lookup would warn for a deprecated name, and call this again
+    except AttributeError:
+        return False
     return found is obj or _unwrapped(found) is _unwrapped(obj)
 
 

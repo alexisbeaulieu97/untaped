@@ -6,8 +6,7 @@
 declaration of every plugin class, core's own included: a version-only
 cache keyed by the whole install's code, so a start reads it instead of
 importing a plugin class, which imports every command. Its files are under
-``~/.untaped/plugins/untaped/cached/declaration/``. :data:`IMPORTS` is what each
-plugin imports, which composition looks up before importing it.
+``~/.untaped/plugins/untaped/cached/declaration/``.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from untaped.runtime.declaration import KeptDeclaration
-from untaped.runtime.plugin_imports import PluginImports
 from untaped.runtime.settings import HttpSettings, SkillsSettings
 from untaped.runtime.theme import UiSettings
 from untaped.sdk._home import CORE
@@ -37,23 +35,6 @@ DECLARATION = Cache(
 )._bound_to(NAME, "declaration")
 
 
-#: Core's ``imports``: what each plugin's code imports from untaped and other plugins, read
-#: from its source (:mod:`untaped.runtime.plugin_imports`) and keyed by that plugin's own code,
-#: so installing one plugin reads only that one. Its version is the reader's code.
-IMPORTS = Cache(
-    label="what plugins import",
-    model=PluginImports,
-    # the reader, how it finds files and a plugin's package: a change reads every plugin again
-    version=installed_code(
-        "untaped.runtime.plugin_imports",
-        "untaped.sdk.storage.installed_code",
-        "untaped.runtime.plugin_package",
-    ),
-    max_age=None,
-    split="none",
-)._bound_to(NAME, "imports")
-
-
 class CoreSettings(BaseModel):
     """untaped's own settings (the ``untaped`` section)."""
 
@@ -68,4 +49,4 @@ class CoreSettings(BaseModel):
     )
 
 
-__all__ = ["DECLARATION", "IMPORTS", "NAME", "CoreSettings"]
+__all__ = ["DECLARATION", "NAME", "CoreSettings"]

@@ -100,6 +100,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo store.
 - `untaped.sdk.testing.assert_surface` and the line format of the
   `surface.txt` it writes.
+- `untaped.sdk.testing.deprecation_of`, which tells a linter whether a name
+  a plugin imports carries a deprecation mark.
 - Stores: `Dir(layout=)`, `holders`, `RefHolder`, `RefTarget` and the
   `HomeOnly` mark in `untaped.sdk`, `Cache(follows=)`, and
   `assert_schema_pinned` and `write_reference` in `untaped.sdk.testing`. The
@@ -149,8 +151,10 @@ their files, last two majors after their deprecation:
   gets a new name: a changed signature, default or return type is a removal,
   so the old spelling stays, deprecated, beside the new name.
 - A parameter goes only with its function. A field of a pydantic model that
-  refuses or keeps unknown fields (`extra="forbid"` or `"allow"`) may go when
-  due; a model that ignores them can't carry a deprecated field.
+  keeps unknown fields (`extra="allow"`) may go when due; one of a model that
+  refuses them (`extra="forbid"`) goes only with its model, since a plugin
+  still passing it would meet a validation error; a model that ignores them
+  can't carry a deprecated field.
 - An experimental name may still go in a minor, but never changes shape
   under the same name.
 - Only a security fix removes one early, with a Security changelog entry.
@@ -163,55 +167,45 @@ the same.
 
 ## Plugins across releases
 
-untaped checks each installed plugin against the release it runs on before
-the plugin's code runs. The first start after an install or upgrade reads
-the modules the plugin's entry point reaches (as text, never importing
-them) and records each name they import from untaped or another plugin.
-untaped's own plugins, which release in lockstep with it, are not read. Then
-each name is looked up in what is installed:
+untaped acts on what a plugin declares and on what happens while it runs;
+it never reads a plugin's code. Its declared requirements are checked
+before its code runs. What it uses is known two ways:
 
-- a name that is there runs as before;
-- a deprecated name warns once, on that start, naming the plugin, the file
-  and line, and the release that removes it; `untaped doctor` keeps listing
-  it as a `plugin-uses` row, one per plugin and owner, until the plugin
-  stops using it;
-- a missing name disables that plugin alone (`uses-missing`), naming the
-  file and line. When a major of the owner came out after the plugin's
-  floor on it, the plugin is out of date ("upgrade untaped-acme, or remove
-  it"); otherwise it needs a newer owner than it declares ("upgrade
-  untaped");
-- a name of a disabled plugin disables this one too, with that plugin's fix.
+- a contract method its provider fills is checked against the contract when
+  the plugin composes; a deprecated one is kept on the plugin's declaration;
+- a deprecated name its code looks up or calls while a command runs warns,
+  naming the plugin and its version, once per run per plugin and name. The
+  SDK's modules warn at the lookup itself, an import included, so a plugin
+  that imports a deprecated name and rarely calls it is seen too. untaped
+  records each use in its own state, once per plugin version, name and
+  command; a name a plugin's module looks up as it loads is recorded under
+  the command whose start loaded it. Recording never fails or slows the
+  command: on a home it can't write, or a lock another untaped holds, it
+  skips, and a later run records it. Rows of plugin versions no longer
+  installed are dropped on the next record.
 
-An import inside a `try` that catches `ImportError`, a
-`with suppress(ImportError)`, or any `if` (a version check, a `hasattr`
-test) is the plugin's own fallback: a missing name there, or one of a
-disabled plugin, changes nothing. A contract method a plugin's provider fills is checked the same
-way: a deprecated one warns and gets a `plugin-uses` row. `untaped lint`
-reports each deprecated name a plugin uses as a `uses-deprecated` warning,
-and a star import of untaped or another plugin as an `import-boundary`
-error, since nobody can tell what it binds.
+untaped's own plugins, which release in lockstep with it, are left out of
+both. `untaped doctor` lists each as a `plugin-uses` row, one per plugin and
+owner: the name, how the plugin uses it (it fills it, or a command uses it),
+the release that removes it, and "upgrade untaped-acme once a release stops
+using it". `untaped lint` reports each deprecated name a plugin fills or
+imports as a `uses-deprecated` warning, and a star import of untaped or
+another plugin as an `import-boundary` error, since nobody can tell what it
+binds.
 
-A name reached on an object the plugin got back (`store.prefetched(...).cat`)
-is no import, so only running it shows it. When a plugin's code calls a
-deprecated one while a command runs, untaped records it in its own state,
-once per plugin version, name and command, and `doctor` lists it as a
-`plugin-uses` row saying the release that removes it makes that command
-fail. Recording never fails or slows the command: on a home it can't write,
-or a lock another untaped holds, it skips, and a later run records it. Rows
-of plugin versions no longer installed are dropped on the next record.
-
-Once such a name is gone, the command that reaches it stops with an error
-naming the plugin and the name, by the module plugins import it from, and
-exits 4, with the same fixes as a disabled plugin; `--verbose` adds the
-traceback. That covers a member gone from an object, a module attribute or
-submodule looked up while the code runs, and a field a model no longer has
-passed to its constructor (the same field in a file you wrote stays a
-validation error). A name looked up while the plugin's modules load
-disables it (`uses-missing`) as an import would. When no major of the owner
-came out after the plugin's floor on it, the name can't have gone (a typo,
-or a floor set too low): the traceback stays, after a line naming the
-plugin. A name missing from the plugin's own code, or from a library, is a
-bug and keeps its traceback.
+Once such a name is gone, a plugin that looks it up while its modules load
+is disabled alone (`uses-missing`), a command that reaches it while it runs
+stops with an error and exits 4, and a contract provider that reaches it
+answers with that error. Each states the facts: the name by the module
+plugins import it from, the owner's installed version, what the plugin
+requires of it, and both fixes ("upgrade untaped-acme or untaped, or remove
+untaped-acme"). The quarantine names the file and line; for a running
+command, `--verbose` adds the traceback. That covers a name imported, a
+member gone from an object, and a module attribute or submodule looked up.
+untaped translates an error only when it shows that a public module or class
+of another distribution lacks the name; anything else, such as a name
+missing from the plugin's own code or from a library, or a field a model
+refuses, keeps its own error and traceback.
 
 ## Breaking changes
 

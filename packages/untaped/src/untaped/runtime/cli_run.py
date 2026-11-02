@@ -242,30 +242,16 @@ def report_errors() -> Iterator[None]:
         raise SystemExit(failure_exit_code(exc.exit_code)) from exc
 
 
-#: Set on an exception a boundary has explained, so an outer one (the root's, around the
-#: mount's) doesn't say it again.
-_EXPLAINED = "__untaped_explained__"
-
-
 @contextmanager
 def _missing_names() -> Iterator[None]:
     """Raise a name a plugin missed as the error saying so; any other exception goes on as is."""
     try:
         yield
-    except (AttributeError, ImportError, ValueError) as exc:
-        from untaped.runtime.missing_names import explain, traceback_text  # noqa: PLC0415
+    except (AttributeError, ImportError) as exc:
+        from untaped.runtime.missing_names import traceback_text, translated  # noqa: PLC0415
 
-        if getattr(exc, _EXPLAINED, False):  # an inner boundary said it already
-            raise
-        try:
-            explained = explain(exc)
-        except Exception:  # reading the error never hides it
-            explained = None
+        explained = translated(exc)
         if explained is None:
-            raise
-        if isinstance(explained, str):  # it can't have gone: the traceback stays, named first
-            Diagnostics().warning(explained)
-            setattr(exc, _EXPLAINED, True)
             raise
         if is_verbose():
             Diagnostics().emit(Debug(logger="untaped", message=traceback_text(exc)))

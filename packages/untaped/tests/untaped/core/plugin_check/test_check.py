@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -150,10 +151,10 @@ def test_assert_fills_finds_the_installed_plugin_and_its_owner(
 
 
 @pytest.mark.parametrize("by_class", [False, True], ids=["entry-point", "class"])
-def test_a_provider_importing_a_quarantined_owner_is_quarantined_with_it(
+def test_a_provider_importing_an_owner_it_doesn_t_require_loads_and_its_fill_fails(
     contract_plugins_site: Path, by_class: bool
 ) -> None:
-    """Without declaring the owner, by its import, whether the owner's candidate names the class."""
+    """Undeclared, the owner's quarantine reaches it through its fill: untaped reads no code."""
     rack = importlib.import_module("untaped_rack.plugin").Rack if by_class else None
     found = [
         candidate
@@ -168,13 +169,24 @@ def test_a_provider_importing_a_quarantined_owner_is_quarantined_with_it(
         for candidate in candidates(bin_requires=(CORE_FLOOR,))
     ]
     result = bootstrap.compose_root(candidates=found)
-    [row] = check_plugins(result, found, "bin")
-    assert (row.check, row.title, row.status) == ("registration", "unmet-requirement", "fail")
-    assert row.detail == (
-        "untaped-bin 1.0: untaped_bin/providers/rack.py:8 imports untaped_rack.api.Item "
-        "from untaped-rack, which is disabled [unmet-requirement]; fix untaped-rack first: "
-        "upgrade untaped, or remove untaped-rack"
-    )
+    rows = check_plugins(result, found, "bin")
+    assert [(row.check, row.title, row.status, row.detail) for row in rows] == [
+        (
+            "conventions",
+            "requirement-floor",
+            "fail",
+            "bin: fills a contract of rack, which it does not require "
+            "(add untaped-rack>=1.4 to its dependencies)",
+        ),
+        (
+            "registration",
+            "rack",
+            "fail",
+            "rack is quarantined (unmet-requirement): untaped-rack 1.4 requires untaped>=99, "
+            f"but untaped {version('untaped')} is installed; "
+            "upgrade untaped, or remove untaped-rack",
+        ),
+    ]
 
 
 def test_a_provider_requiring_a_quarantined_owner_is_quarantined_with_it(

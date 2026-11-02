@@ -50,7 +50,7 @@ from pydantic import BaseModel
 from untaped.core.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.core.surface._lists import HOOKS, IMPLEMENTERS
 from untaped.core.surface._types import default_text, factory_default, literal_values, named_token
-from untaped.sdk._lazy import old_names_of
+from untaped.sdk._lazy import old_names_of, peek
 from untaped.sdk._parameter_marks import parameter_marks
 from untaped.sdk._replacement import replacement_text, sdk_replacement_text
 from untaped.sdk.marks import (
@@ -120,7 +120,7 @@ def collect_exports(modules: Mapping[str, LineMark | None]) -> Exports:
     for path in sorted(modules):
         module = importlib.import_module(path)
         for name in _exported(module):
-            obj = getattr(module, name)
+            obj = peek(module, name)  # a lookup of a deprecated name warns
             if not _is_plain(obj):
                 exports.names.setdefault(id(obj), name)
             if isinstance(obj, type):
@@ -142,7 +142,7 @@ def module_lines(
     walker = _Walker(module, exports, plugin=plugin)
     lines: list[Line] = []
     for name in _exported(module):
-        obj = getattr(module, name)
+        obj = peek(module, name)
         subject = f"{path}.{name}"
         lines.extend(walker.export(subject, obj, own_mark(obj) or plugin_mark))
     # an old name is the renamed object, promised under its old spelling until it goes
@@ -628,10 +628,10 @@ def field_marks(cls: object) -> dict[str, Deprecated]:
 def _extra_lines(subject: str, cls: type, mark: LineMark | None) -> list[Line]:
     """``extra=forbid`` or ``extra=allow`` for a pydantic model: whether a field may go.
 
-    A field such a model drops at its major fails loudly (``extra_forbidden``)
-    or stays readable as an extra, so it may go when due; a model that ignores
-    unknown fields would drop a caller's value silently, so it can't carry a
-    deprecated field at all.
+    The surface window reads it: a field of an ``allow`` model stays readable
+    as an extra once it goes, so it may go when due, and one of a ``forbid``
+    model goes only with its model; a model that ignores unknown fields would
+    drop a caller's value silently, so it can't carry a deprecated field at all.
     """
     if not (isinstance(cls, type) and issubclass(cls, BaseModel)):
         return []

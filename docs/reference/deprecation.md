@@ -22,7 +22,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="records on the plugin class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
 | A renamed contract method | the old method stays on the contract with both marks of a method, `@deprecated(removed_in=3, replacement=new_method)` first; a provider still filling the old name fills the new one, and `gather` or `Stdin(via=)` given the old name asks the new one |
 | A renamed name of `untaped.sdk` or a group (core) | `size_words=deprecated(removed_in=14, replacement=size_text)` in `old_names(...)`: the root's `OLD_NAMES` in `sdk/_exports.py`, or the group's `lazy_names(..., old=...)`; plus `size_words = size_text` in the module's `TYPE_CHECKING` block |
-| A field of a model in your Python API | `old: Annotated[int, deprecated(removed_in=4, replacement="name")] = 0` on a model with `extra="forbid"` or `"allow"` |
+| A field of a model in your Python API | `old: Annotated[int, deprecated(removed_in=4, replacement="name")] = 0` on a model with `extra="allow"`; one of a model with `extra="forbid"` goes only with its model |
 | A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="records on the plugin class")` on the plugin class |
 
 `removed_in` is a bare major of your distribution: `3` for `untaped-acme
@@ -108,10 +108,11 @@ untaped's own deprecations name the version without a distribution.
 `config list` notes "use acme.mode, removed in untaped-acme 3.0" on a
 deprecated setting and "from acme.old_key, removed in untaped-acme 3.0" on a
 value read through an old key; `doctor` names the version beside each old key.
-A plugin importing or filling a deprecated name warns once, when untaped first
-reads it, with the line's `plugin` naming it, and `doctor` lists it as a
-`plugin-uses` row; so does a deprecated name its code was seen calling while
-a command ran ([Versioning](../versioning.md#plugins-across-releases)).
+A deprecated name a plugin's code looks up or calls while a command runs
+warns with the line's `plugin` naming it, once per run, and `doctor` lists it
+as a `plugin-uses` row, as it does a deprecated contract method a provider
+fills; `untaped lint` reports both, and the deprecated names a plugin imports
+([Versioning](../versioning.md#plugins-across-releases)).
 
 ## The checks
 

@@ -11,21 +11,20 @@ startup the root composes the plugins in this order:
    other plugins by version, any other distribution by presence. One that
    isn't met quarantines the plugin (`unmet-requirement`), and so does
    requiring a plugin that is quarantined, however deep.
-2. **What it uses.** The names the plugin imports from untaped and other
-   plugins, read from its source (once per version of its code, under
-   `~/.untaped/plugins/untaped/cached/imports/`), are looked up: a missing
-   one quarantines it (`uses-missing`), and a deprecated one warns
-   ([Plugins across releases](./versioning.md#plugins-across-releases)).
-3. **Resolution.** The entry point is loaded, never called, and must name a
+2. **Resolution.** The entry point is loaded, never called, and must name a
    plugin class in a leaf module (`untaped_acme.plugin:Acme`); anything
    else, an 11.x `PluginSpec` included, is quarantined (`not-a-plugin-class`).
    A target that names nothing is `malformed-entry-point`; an exception while
-   importing the plugin's module is `import-failed`, unless it is a name of
-   untaped or another plugin the owner doesn't have, which is `uses-missing`.
-4. **Validation.** The declaration is checked: reserved names, duplicate
+   importing the plugin's module is `import-failed`, unless it shows that a
+   public module or class of untaped or another plugin lacks a name the
+   plugin uses, which is `uses-missing`
+   ([Plugins across releases](./versioning.md#plugins-across-releases)).
+3. **Validation.** The declaration is checked: reserved names, duplicate
    names, skills and doctor checks, and the settings model's
-   [renamed keys](./reference/conventions.md#renaming-a-setting).
-5. **Commit.** The survivors are mounted under their names. A plugin's
+   [renamed keys](./reference/conventions.md#renaming-a-setting). A
+   deprecated contract method a provider fills is kept on the declaration
+   for `doctor` and `untaped lint`.
+4. **Commit.** The survivors are mounted under their names. A plugin's
    commands are built from its declaration the first time one is
    dispatched; one whose commands can't be built fails them, `--help`
    included, with exit 4, and `untaped doctor` shows why.

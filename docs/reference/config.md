@@ -40,7 +40,7 @@ Kept in `~/.untaped/plugins/untaped/state.yml`.
 | Key | Type | Description |
 |---|---|---|
 | `untaped.credentials` | list | One stored credential in the index: what it is for and how to read it, never the secret. |
-| `untaped.run_uses` | list | One deprecated name a plugin version was seen calling, and the command that called it. |
+| `untaped.run_uses` | list | One deprecated name a plugin version was seen using, and the command that used it. |
 
 ## `ansible`
 

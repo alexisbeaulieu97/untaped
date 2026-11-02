@@ -1,4 +1,4 @@
-"""Doctor's ``plugin-uses`` rows: the deprecated names a plugin uses, kept by its declaration."""
+"""Doctor's ``plugin-uses`` rows: the deprecated contract methods a plugin fills, as declared."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def _uses_rows(site: Site, report: str) -> list[dict[str, Any]]:
     return [row for row in rows if row["check"] == "plugin-uses"]
 
 
-def test_one_row_per_plugin_and_owner_names_each_use_and_what_its_removal_does(
+def test_a_deprecated_fill_is_a_row_naming_its_removal_and_an_import_is_not_read(
     site: Site,
 ) -> None:
     report = FILLS_BOOKS.replace(
@@ -45,12 +45,8 @@ def test_one_row_per_plugin_and_owner_names_each_use_and_what_its_removal_does(
         None,
     )
     assert row["detail"] == (
-        "untaped-acme 1.0 imports untaped_shelf.api.human_size (untaped_acme/report.py:3), "
-        "removed in untaped-shelf 5.0: upgrading untaped-shelf to 5.0 disables acme unless a "
-        "newer untaped-acme stops using it; "
         "untaped-acme 1.0 fills shelf.book_source.books (untaped_acme.report:Shelved.books), "
-        "removed in untaped-shelf 5.0: upgrading untaped-shelf to 5.0 disables acme unless a "
-        "newer untaped-acme stops using it"
+        "removed in untaped-shelf 5.0: upgrade untaped-acme once a release stops using it"
     )
 
 

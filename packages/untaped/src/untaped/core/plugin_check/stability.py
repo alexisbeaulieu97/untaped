@@ -65,6 +65,7 @@ from untaped.runtime.stability_marks import (
     marks,
     pydantic_deprecated_fields,
 )
+from untaped.sdk._lazy import peek
 from untaped.sdk._parameter_marks import (
     deprecation_sentence,
     read_parameter_marks,
@@ -338,7 +339,13 @@ def _exports(module: ModuleType) -> list[tuple[str, object]]:
             for name, obj in vars(module).items()
             if not name.startswith("_") and getattr(obj, "__module__", None) == module.__name__
         ]
-    return [(name, getattr(module, name)) for name in sorted(set(names)) if hasattr(module, name)]
+    found: list[tuple[str, object]] = []
+    for name in sorted(set(names)):
+        try:
+            found.append((name, peek(module, name)))  # a lookup of a deprecated name warns
+        except AttributeError:
+            continue
+    return found
 
 
 def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:

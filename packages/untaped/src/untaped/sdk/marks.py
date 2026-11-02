@@ -25,13 +25,14 @@ from typing import Any, Literal
 from cyclopts import App
 
 from untaped.sdk._keys import SettingKey
+from untaped.sdk._lazy import STABILITY_ATTR
 from untaped.sdk.words import (
     deprecated_ignored_message,
     deprecated_message,
 )
 
 _ROOT_NAME = "untaped"
-_FUNCTION_ATTR = "__untaped_stability__"
+_FUNCTION_ATTR = STABILITY_ATTR
 
 
 class _Marker:
