@@ -1,32 +1,30 @@
 """A name of untaped or another plugin that a plugin's code reached, and its owner doesn't have.
 
-The startup check (:mod:`untaped.runtime.plugin_uses`) finds the names a
-plugin imports; a name reached on an object a call returned, or looked up
-while a module loads, shows only when the code runs. :func:`missed` reads
-it from the exception itself, never from its text:
+untaped reads no plugin's code to predict what it uses, so a name its owner
+no longer has (or doesn't have yet) shows when the code runs: while the
+plugin loads (composition quarantines it ``uses-missing``) or while its
+command runs (the error boundary, :func:`explain`, exit 4). :func:`missed`
+reads the name from the exception itself, never from its text:
 
 - ``AttributeError``: its ``obj`` (a module, class or instance) and ``name``;
 - ``ModuleNotFoundError``: its ``name``; another ``ImportError``: its
-  ``name`` and ``name_from`` (``from M import N``);
-- pydantic's ``ValidationError`` whose every error is ``extra_forbidden``,
-  raised by ``BaseModel.__init__`` called straight from the plugin's code (a
-  field it passes that the model no longer has). The same error from
-  ``model_validate`` on data a user wrote is their mistyped key, never this.
+  ``name`` and ``name_from`` (``from M import N``).
 
 The plugin is the one owning the deepest frame in a plugin's package; the
-frames after it may only be the import machinery, a module's or pydantic's
-``__getattr__`` (or that ``__init__``), so a name the owner's own code
-misses stays the owner's bug, as does a name the module lists in
-``__all__`` and fails to give. A submodule the plugin never imported, a
-nested model's field and a module right under ``untaped`` (where nested
-plugins live) are the plugin's slip or a plugin not installed, not a name
-removed. The owner is untaped or another plugin's distribution, found
-by the name's module; a library's name, or the plugin's own, is a bug and
-stays one. The name is spelled by the module plugins import it from
+frames after it may only be the import machinery or a module's or
+pydantic's ``__getattr__``. One rule says the rest: the error is translated
+only when the exception shows that a public module or class of another
+distribution (untaped's, or another plugin's) lacks the name. A case it
+doesn't cover keeps its traceback: a name the owner's own code misses, a
+class's own ``__getattr__``, a name the module lists in ``__all__`` and
+fails to give, a submodule the plugin never imported, a field read on its
+model class, a namespace package or a module right under ``untaped``
+(where nested plugins live), and a name of the plugin's own or of a
+library. The name is spelled by the module plugins import it from
 (:func:`~untaped.sdk._parameter_marks.public_name`).
 
-The error boundary (:func:`untaped.runtime.cli_run.report_errors`) and
-composition's import of a plugin's class read it.
+The words state facts, never a cause (:func:`lacks`): the installed owner,
+the plugin's requirement on it as declared, and both fixes.
 """
 
 from __future__ import annotations
@@ -42,7 +40,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk.errors import ErrorCategory, UntapedError
 
 if TYPE_CHECKING:
-    from pydantic import ValidationError
+    from collections.abc import Sequence
 
     from untaped.runtime.plugin_uses import Owner
     from untaped.runtime.registry import CompositionResult
@@ -53,7 +51,7 @@ class Missed:
     """A name the plugin's code reached that ``owner`` doesn't have."""
 
     owner: Owner
-    #: The name as plugins spell it: ``untaped_git.api.Prefetched.cat``, ``untaped.sdk.Row(x=)``.
+    #: The name as plugins spell it: ``untaped_git.api.Prefetched.cat``.
     spelled: str
     #: The module, file and line of the plugin's deepest frame.
     module: str
@@ -95,18 +93,15 @@ def missed(
     return Missed(owner, spelled, _module(frame), frame.f_code.co_filename, line)
 
 
-def explain(exc: BaseException) -> MissingNameError | str | None:
-    """What the error boundary says for ``exc``: an error, a line before its traceback, or nothing.
+def explain(exc: BaseException) -> MissingNameError | None:
+    """The error the boundary raises for ``exc``; ``None`` when it stays what it is.
 
-    A name that can have gone (a major lies between the plugin's floor on its
-    owner and the installed owner, or there is no floor) is the error, exit
-    4, its traceback under ``--verbose``. A name that can't have gone (a
-    typo, or a floor set too low) keeps the traceback, with the returned
-    line before it.
+    Exit 4, its traceback under ``--verbose``, whatever the plugin's
+    requirement on the owner says.
     """
     from untaped.runtime import plugin_frames  # noqa: PLC0415 - on an error only
     from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap runs the boundary
-    from untaped.runtime.plugin_uses import floor_rule, owners_of  # noqa: PLC0415
+    from untaped.runtime.plugin_uses import owners_of  # noqa: PLC0415
 
     result = attached()
     if result is None:
@@ -119,20 +114,38 @@ def explain(exc: BaseException) -> MissingNameError | str | None:
     plugin = None if found is None else plugin_frames.plugin_at(found.module, result)
     if found is None or plugin is None or _same(found.owner.distribution, plugin.distribution):
         return None
-    installed = _installed(found.owner, result)
-    rule = floor_rule(
+    facts, fix = lacks(
+        found,
+        installed=_installed(found.owner, result),
         distribution=plugin.distribution,
         requires_dist=plugin.requires_dist,
-        owner=found.owner.distribution,
-        installed=installed,
     )
-    have = f"{found.owner.distribution} {installed}".strip()
-    facts = f"it uses {found.spelled}, which {have} doesn't have{rule.clause}"
-    if not rule.removed:
-        return f"{plugin.name}: {facts}"
+    who = f"{plugin.distribution} {plugin.version}".strip()
     return MissingNameError(
-        f"{plugin.name} can't run this: {facts}", hint=f"{rule.fix} (--verbose shows where)"
+        f"{plugin.name} can't run this: {who} uses {facts}", hint=f"{fix} (--verbose shows where)"
     )
+
+
+def lacks(
+    found: Missed, *, installed: str, distribution: str, requires_dist: Sequence[str]
+) -> tuple[str, str]:
+    """``<name>, which <owner> <installed> doesn't have (<requirement>)``, and the fix.
+
+    ``distribution`` is the plugin's, ``requires_dist`` its ``Requires-Dist``
+    lines and ``installed`` the owner's installed version (``""`` when
+    unknown). The requirement is the plugin's on the owner as it declares it;
+    the fix names both ways out, since the facts don't say which one it is.
+    """
+    owner = found.owner.distribution
+    have = f"{owner} {installed}".strip()
+    declared = _declared(requires_dist, owner)
+    requirement = (
+        f"{distribution} requires {', '.join(declared)}"
+        if declared
+        else f"{distribution} declares no requirement on {owner}"
+    )
+    fix = f"upgrade {distribution} or {owner}, or remove {distribution}"
+    return f"{found.spelled}, which {have} doesn't have ({requirement})", fix
 
 
 def traceback_text(exc: BaseException) -> str:
@@ -142,10 +155,6 @@ def traceback_text(exc: BaseException) -> str:
 
 def _name(exc: BaseException, tail: list[FrameType]) -> tuple[str, str] | None:
     """The missing name's module and spelling, when the frames after the plugin's allow it."""
-    from pydantic import ValidationError  # noqa: PLC0415 - loaded already by any command
-
-    if isinstance(exc, ValidationError):
-        return _field(exc, tail)
     hooks = _hooks(exc)
     if not all(_machinery(frame, hooks) for frame in tail):
         return None
@@ -223,26 +232,6 @@ def _module_gone(name: str | None) -> tuple[str, str] | None:
     return name, name
 
 
-def _field(exc: ValidationError, tail: list[FrameType]) -> tuple[str, str] | None:
-    """A model's own fields the plugin passed its ``__init__`` that the model doesn't have."""
-    from pydantic import BaseModel  # noqa: PLC0415
-
-    from untaped.sdk._parameter_marks import public_name  # noqa: PLC0415 - on an error only
-
-    errors = exc.errors()
-    # A keyword the plugin wrote: a field of the model itself, not one nested in a value.
-    if not errors or any(
-        each["type"] != "extra_forbidden" or len(each["loc"]) != 1 for each in errors
-    ):
-        return None
-    if len(tail) != 1 or tail[0].f_code is not BaseModel.__init__.__code__:
-        return None
-    model = type(tail[0].f_locals.get("self"))
-    fields = sorted({str(each["loc"][0]) for each in errors})
-    spelled = ", ".join(f"{public_name(model)}({field}=)" for field in fields)
-    return model.__module__, spelled
-
-
 def _machinery(frame: FrameType, hooks: set[CodeType]) -> bool:
     """Whether ``frame`` only looks a name up: the import system, or one of ``hooks``."""
     module = _module(frame)
@@ -285,6 +274,27 @@ def _module(frame: FrameType) -> str:
     return str(frame.f_globals.get("__name__", ""))
 
 
+def _declared(requires_dist: Sequence[str], distribution: str) -> list[str]:
+    """The plugin's requirements on ``distribution`` that apply here, as declared: ``acme>=1.2``."""
+    from packaging.utils import canonicalize_name  # noqa: PLC0415
+
+    from untaped.runtime.requirements import applies, is_plain, parse_requirement  # noqa: PLC0415
+
+    wanted = canonicalize_name(distribution)
+    found: list[str] = []
+    for line in requires_dist:
+        parsed = parse_requirement(line)
+        if parsed is None or not is_plain(parsed) or canonicalize_name(parsed.name) != wanted:
+            continue
+        try:
+            if not applies(parsed):
+                continue
+        except Exception:  # a marker this Python can't evaluate: it doesn't apply
+            continue
+        found.append(f"{parsed.name}{parsed.specifier}")
+    return found
+
+
 def _same(one: str, other: str) -> bool:
     from packaging.utils import canonicalize_name  # noqa: PLC0415
 
@@ -310,4 +320,4 @@ def _installed(owner: Owner, result: CompositionResult) -> str:
     )
 
 
-__all__ = ["Missed", "MissingNameError", "explain", "missed", "traceback_text"]
+__all__ = ["Missed", "MissingNameError", "explain", "lacks", "missed", "traceback_text"]

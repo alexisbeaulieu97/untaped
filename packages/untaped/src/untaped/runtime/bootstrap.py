@@ -154,11 +154,9 @@ def _attach(run: Run, result: CompositionResult) -> None:
     """Attach the root composition ``result`` to the invocation's ``run``, and warn.
 
     Only the root composition warns about its quarantined plugins, one
-    warning each, and about each deprecated name a plugin uses that it found
-    composing, through the run's sink: a composition nested in a command
+    warning each, through the run's sink: a composition nested in a command
     (a plugin check, the surface walk, the testing kit's) is never attached
-    to a run, so it never warns again. A composition read from the kept
-    declaration found nothing, so a later start doesn't warn again.
+    to a run, so it never warns again.
     """
     from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
 
@@ -172,13 +170,9 @@ def _attach(run: Run, result: CompositionResult) -> None:
             f"plugin {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}"
         )
-    if result.found_uses:
-        from untaped.runtime.plugin_uses import notify_use  # noqa: PLC0415 - on a find only
+    from untaped.runtime.run_output import show_held  # noqa: PLC0415 - beside the attach
 
-        found = {candidate.name: candidate for candidate in result.candidates}
-        for plugin, use in result.found_uses:
-            candidate = found[plugin]
-            notify_use(plugin, candidate.distribution, candidate.distribution_version, use)
+    show_held()  # deprecations its plugins' modules raised while it was composed
 
 
 def compose_root(

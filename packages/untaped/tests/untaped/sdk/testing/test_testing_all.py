@@ -33,6 +33,7 @@ EXPECTED_ALL = [
     "check_plugin",
     "compose_with",
     "damage",
+    "deprecation_of",
     "drive_screen",
     "install",
     "invoke_cli",

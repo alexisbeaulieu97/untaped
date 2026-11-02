@@ -172,9 +172,9 @@ def test_a_star_import_of_untaped_or_another_plugin_is_a_violation(check: Check)
     )
     assert found == [
         "demo/cli/__init__.py:1::import-boundary::imports * from untaped.sdk; import each name, "
-        "so untaped can check it",
+        "so lint can check it",
         "demo/cli/__init__.py:2::import-boundary::imports * from other.api; import each name, "
-        "so untaped can check it",
+        "so lint can check it",
     ]
 
 

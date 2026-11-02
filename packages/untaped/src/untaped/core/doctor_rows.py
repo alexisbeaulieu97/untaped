@@ -582,19 +582,19 @@ def _uses_rows(
 ) -> list[dict[str, object]]:
     """``plugin-uses``: one row per plugin and owning distribution, each deprecated name it uses.
 
-    Read from the declaration, which kept what composition found the plugin
-    imports and fills, and from core's ``run_uses``, what it was seen calling
-    while a command ran (:mod:`untaped.core.run_uses`).
+    Read from the declaration, which keeps the deprecated contract methods
+    the plugin's providers fill, and from core's ``run_uses``, what it was
+    seen using while a command ran (:mod:`untaped.core.run_uses`).
     """
     from untaped.core.run_uses import recorded  # noqa: PLC0415 - doctor only
 
     found = {candidate.name: candidate for candidate in result.candidates}
-    called: dict[str, list[UseDecl]] = {}
+    used: dict[str, list[UseDecl]] = {}
     for row in recorded(result):
-        called.setdefault(row.plugin, []).append(row.use())
+        used.setdefault(row.plugin, []).append(row.use())
     rows: list[dict[str, object]] = []
     for plugin in result.mount.declaration.plugins:
-        uses = [*plugin.uses, *called.get(plugin.name, ())]
+        uses = [*plugin.uses, *used.get(plugin.name, ())]
         if not uses or (plugins is not None and plugin.name not in plugins):
             continue
         candidate = found.get(plugin.name)
@@ -602,9 +602,7 @@ def _uses_rows(
         version = "" if candidate is None else candidate.distribution_version
         owners: dict[str, list[str]] = {}
         for use in uses:
-            owners.setdefault(use.distribution, []).append(
-                use_line(plugin.name, distribution, version, use)
-            )
+            owners.setdefault(use.distribution, []).append(use_line(distribution, version, use))
         rows.extend(
             doctor_row("plugin-uses", plugin.name, WARN, "deprecated", "; ".join(lines))
             for lines in owners.values()

@@ -30,6 +30,7 @@ from untaped_lint.providers.conventions.messages import message_violations
 from untaped_lint.providers.conventions.store_format import store_format_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
 from untaped_lint.providers.conventions.terminal_boundary import terminal_boundary_violations
+from untaped_lint.providers.conventions.uses import uses_violations
 from untaped_lint.records import FileLocation, Finding, Rule, Severity, declared_kind
 
 KEY = "lint"
@@ -216,6 +217,7 @@ def file_lines(
             *blob_reader_violations(package, source_dir, files),
             *store_format_violations(plugin, source_dir, files),
             *import_boundary_violations(subject, source_dir, files, plugins=plugins),
+            *uses_violations(subject, source_dir, files, plugins=plugins),
         ]
     except UnreadableSourceError as exc:
         where = _relative(exc.path, source_dir.parent)

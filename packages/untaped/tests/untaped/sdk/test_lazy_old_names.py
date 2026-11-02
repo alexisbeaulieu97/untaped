@@ -1,16 +1,16 @@
 """Old names: a renamed SDK name keeps its old spelling, as the new object, until it goes.
 
 The root and each group resolve an old name on every lookup (never keeping it),
-warn through :func:`untaped.sdk.marks.notify_deprecation`, keep it out of
-``__all__``, and the surface lists it under the old name, deprecated.
+warn with an ``UntapedDeprecationWarning`` at the line that looked it up, keep
+it out of ``__all__``, and the surface lists it under the old name, deprecated.
 """
 
 from __future__ import annotations
 
 import sys
 import types
+import warnings
 from collections.abc import Iterator, Mapping
-from typing import Any
 
 import pytest
 
@@ -18,20 +18,7 @@ import untaped.sdk
 from untaped.core.surface._sdk import collect_exports, module_lines
 from untaped.sdk import size_text
 from untaped.sdk._lazy import OLD_NAMES_ATTR, lazy_names, old_names_of
-from untaped.sdk.marks import Deprecated, deprecated, old_names
-
-
-@pytest.fixture
-def notices(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """Each call reaching the warning path, in order."""
-    calls: list[dict[str, Any]] = []
-
-    def record(id: str, subject: str, **fields: Any) -> None:
-        calls.append({"id": id, "subject": subject, **fields})
-
-    monkeypatch.setattr("untaped.sdk.marks.notify_deprecation", record)
-    return calls
-
+from untaped.sdk.marks import Deprecated, UntapedDeprecationWarning, deprecated, old_names
 
 # --- the table ----------------------------------------------------------------------------
 
@@ -68,24 +55,24 @@ def root_renamed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("root_renamed")
-def test_a_root_old_name_is_the_new_object_and_warns_on_every_lookup(
-    notices: list[dict[str, Any]],
-) -> None:
-    assert untaped.sdk.size_words is size_text  # type: ignore[attr-defined]
-    assert notices == [
-        {
-            "id": "sdk untaped.sdk.size_words",
-            "subject": "`untaped.sdk.size_words`",
-            "removed_in": 14,
-            "replacement": "`size_text`",
-        }
-    ]
-    from untaped.sdk import size_words  # type: ignore[attr-defined]
+def test_a_root_old_name_is_the_new_object_and_warns_at_every_lookup() -> None:
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert untaped.sdk.size_words is size_text  # type: ignore[attr-defined]
+        from untaped.sdk import size_words  # type: ignore[attr-defined]
 
-    assert size_words is size_text
-    # a second plugin reaches the warning path too; notify_deprecation shows it once per run
-    assert len(notices) > 1
-    assert all(notice == notices[0] for notice in notices)
+        assert size_words is size_text
+    first = caught[0].message
+    assert isinstance(first, UntapedDeprecationWarning)
+    assert (first.id, str(first), first.removed_in, first.replacement) == (
+        "sdk untaped.sdk.size_words",
+        "`untaped.sdk.size_words` is deprecated and will be removed in 14.0; use `size_text`",
+        14,
+        "size_text",
+    )
+    # the attribute and the from-import each warn, at this file's lines
+    assert len(caught) >= 2
+    assert {each.filename for each in caught} == {__file__}
     assert "size_words" not in vars(untaped.sdk)
     assert "size_words" not in untaped.sdk.__all__
     assert "size_words" not in dir(untaped.sdk)
@@ -130,18 +117,21 @@ def test_a_group_builds_its_table_on_the_first_name_it_does_not_list() -> None:
     assert group.built == 0  # importing the group loads nothing
     assert group.getattr("size_text") is size_text
     assert group.built == 0
-    assert group.getattr("size_words") is size_text
-    assert group.getattr("size_words") is size_text
+    with pytest.warns(UntapedDeprecationWarning):
+        assert group.getattr("size_words") is size_text
+        assert group.getattr("size_words") is size_text
     assert group.built == 1
 
 
-def test_a_group_s_old_name_warns_on_every_lookup_and_is_never_kept(
-    notices: list[dict[str, Any]],
-) -> None:
+def test_a_group_s_old_name_warns_on_every_lookup_and_is_never_kept() -> None:
     group = _Group(old_names(size_words=deprecated(removed_in=14, replacement=size_text)))
-    group.getattr("size_words")
-    group.getattr("size_words")
-    assert [notice["id"] for notice in notices] == 2 * ["sdk untaped.sdk.sample.size_words"]
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        group.getattr("size_words")
+        group.getattr("size_words")
+    assert [getattr(each.message, "id", None) for each in caught] == 2 * [
+        "sdk untaped.sdk.sample.size_words"
+    ]
     assert "size_words" not in group.namespace
     assert "size_words" not in group.dir()
     with pytest.raises(AttributeError, match="has no attribute 'nope'"):
