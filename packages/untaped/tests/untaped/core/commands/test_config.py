@@ -22,7 +22,8 @@ from core_test_support.commands.support import (
     write_config,
 )
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.settings import FORMAT_VERSION, get_settings
+from untaped.runtime.config_read import FORMAT_VERSION
+from untaped.runtime.settings import get_settings
 from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")

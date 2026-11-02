@@ -14,7 +14,8 @@ from typing import Annotated, ClassVar
 import pytest
 from pydantic import BaseModel, Field, HttpUrl
 
-from untaped.runtime.settings import get_settings, register_profile_settings, section_model
+from untaped.runtime.section_models import section_model
+from untaped.runtime.settings import get_settings, register_profile_settings
 from untaped.sdk._home import config_path
 from untaped.sdk.health.marks import NeedsSetup
 from untaped.sdk.network.credentials import Credential, CredentialKey, bind_credentials

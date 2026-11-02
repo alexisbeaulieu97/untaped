@@ -309,7 +309,7 @@ def test_list_names_shows_a_value_an_old_spelling_sets(
 def test_env_var_setting_finds_the_deepest_variable_holding_a_leaf(
     monkeypatch: pytest.MonkeyPatch, value: str, found: bool
 ) -> None:
-    from untaped.runtime.settings import env_var_setting
+    from untaped.runtime.settings_env import env_var_setting
 
     monkeypatch.setenv("UNTAPED_UNTAPED__UI", value)
 

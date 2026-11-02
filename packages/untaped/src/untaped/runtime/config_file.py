@@ -22,14 +22,13 @@ from typing import Any
 
 from pydantic import SecretStr
 
-from untaped.runtime.settings import (
+from untaped.runtime.config_read import (
     FORMAT_VERSION,
     FormatVersionError,
-    get_settings,
     load_config_yaml,
     load_state_yaml,
-    resolve_config_path,
 )
+from untaped.runtime.settings import get_settings, resolve_config_path
 from untaped.runtime.yaml_roundtrip import KeyRename, plain_dump, render_preserving
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage._fs import atomic_write, locked_write
@@ -63,7 +62,7 @@ def write_config_dict(
     ``renames`` names keys that moved (``(old_path, new_path)``); a key renamed
     within its mapping keeps its position and comment.
     A ``data`` without ``format_version`` is written with
-    :data:`~untaped.runtime.settings.FORMAT_VERSION` first.
+    :data:`~untaped.runtime.config_read.FORMAT_VERSION` first.
     Creates parent directories if needed. The write goes through
     :func:`~untaped.sdk.storage._fs.atomic_write` with permissions ``0o600`` (so secrets
     are never world-readable, even briefly): it is durable, writes through a

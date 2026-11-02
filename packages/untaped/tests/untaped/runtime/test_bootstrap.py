@@ -724,7 +724,8 @@ class _ToolsProfile(BaseModel):
 def test_a_hyphenated_plugin_reads_its_overrides_with_underscores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from untaped.runtime.settings import env_var_name, get_config_section
+    from untaped.runtime.settings import get_config_section
+    from untaped.runtime.settings_env import env_var_name
 
     tools = make_plugin("acme-tools", settings=_ToolsProfile)
     bootstrap.compose_root(candidates=[plugin_candidate(tools)])

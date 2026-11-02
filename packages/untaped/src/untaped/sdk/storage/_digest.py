@@ -12,7 +12,7 @@ The digest is the first 16 hex digits of the sha256 of canonical JSON
   their current names after renames. Model defaults never count, so a release
   that adds a defaulted field moves nobody's data; a release whose changed
   default alters what a cache holds bumps that cache's ``version=``. The keys
-  the SDK injects into every section (:data:`~untaped.runtime.settings.RESERVED_SECTION_KEYS`:
+  the SDK injects into every section (:data:`~untaped.runtime.section_models.RESERVED_SECTION_KEYS`:
   cache max ages, extension ranks) and every secret are left out.
 - ``credentials``: for each credential the plugin declares, the step its
   ``get`` would use for this run's key: the variable's name, or ``stored``
@@ -33,11 +33,8 @@ from typing import Any
 
 from pydantic import BaseModel, SecretStr
 
-from untaped.runtime.settings import (
-    RESERVED_SECTION_KEYS,
-    load_settings_section,
-    registered_profile_model,
-)
+from untaped.runtime.section_models import RESERVED_SECTION_KEYS
+from untaped.runtime.settings import load_settings_section, registered_profile_model
 from untaped.sdk._schema import unwrap_optional
 from untaped.sdk.network.credentials import Credential, credential_key, declared_credentials
 

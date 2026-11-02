@@ -16,11 +16,8 @@ from untaped.runtime.config_file import (
     mutate_config,
     write_config_dict,
 )
-from untaped.runtime.settings import (
-    FORMAT_VERSION,
-    get_settings,
-    load_config_yaml,
-)
+from untaped.runtime.config_read import FORMAT_VERSION, load_config_yaml
+from untaped.runtime.settings import get_settings
 from untaped.sdk.errors import ConfigError
 
 

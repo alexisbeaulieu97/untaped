@@ -66,9 +66,9 @@ from untaped.runtime.settings import (
     profile_section_models,
     resolve_config_path,
     resolve_with_overlay,
-    retired_env_vars,
     section_stabilities,
 )
+from untaped.runtime.settings_env import retired_env_vars
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
 from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, Failed, UntapedError

@@ -24,7 +24,7 @@ from core_test_support.commands.support import (
 )
 from untaped.runtime import bootstrap
 from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.settings import FORMAT_VERSION
+from untaped.runtime.config_read import FORMAT_VERSION
 from untaped.runtime.theme import THEME_CHOICES
 from untaped.sdk.testing import CliInvoker, CliResult, ScriptedTerminal, invoke_cli
 

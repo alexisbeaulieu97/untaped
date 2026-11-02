@@ -27,20 +27,19 @@ from untaped.runtime.profile_resolver import (
     profile_path,
     write_target,
 )
+from untaped.runtime.section_models import model_sections
 from untaped.runtime.settings import (
     CorePart,
     Settings,
     active_settings_layout,
-    env_var_name,
-    env_var_setting,
     get_settings_model,
     load_core_part,
     load_settings_section,
-    model_sections,
     section_stabilities,
     validate_core_part,
     validate_settings_section,
 )
+from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig
 from untaped.runtime.yaml_roundtrip import KeyRename
 from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
