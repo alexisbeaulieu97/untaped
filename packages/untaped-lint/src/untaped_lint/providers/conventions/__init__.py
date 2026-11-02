@@ -55,7 +55,7 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("bad-replacement", "error", "A deprecation's replacement resolves and is not deprecated."),
     ("undated-deprecation", "error", "Every deprecation names the major that removes it."),
     ("untyped-deprecation", "error", "A deprecated SDK callable also carries warnings.deprecated."),
-    ("deprecation-text", "error", "An SDK callable's warnings.deprecated text is its mark's."),
+    ("deprecation-text", "error", "An SDK callable's warnings.deprecated is its mark's, typed."),
     ("exception-base", "error", "A plugin's exceptions derive from UntapedError."),
     ("exception-name", "error", "A plugin's exception classes end in Error."),
     ("error-system", "error", "A plugin's error classes name the system responsible."),
