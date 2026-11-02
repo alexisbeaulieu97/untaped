@@ -120,6 +120,22 @@ def test_a_literal_with_no_mark_over_it_carries_no_id() -> None:
     assert _fields(UntapedDeprecationWarning("nothing marks this")) == (None, None, None, None)
 
 
+def test_a_literal_two_callables_share_carries_no_id() -> None:
+    literal = "twin is deprecated and will be removed in 3.0"
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated(literal, category=UntapedDeprecationWarning)
+    def twin() -> None: ...
+
+    assert _fields(UntapedDeprecationWarning(literal))[0] is not None
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated(literal, category=UntapedDeprecationWarning)
+    def other() -> None: ...
+
+    assert _fields(UntapedDeprecationWarning(literal)) == (None, None, None, None)
+
+
 def _module(name: str, **names: object) -> types.ModuleType:
     module = types.ModuleType(name)
     vars(module).update(names)

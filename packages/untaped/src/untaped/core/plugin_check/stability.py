@@ -371,10 +371,10 @@ def _callable_violations(obj: object) -> Iterator[tuple[str, str]]:
                 "deprecation-text",
                 f"its warnings.deprecated text is not its mark's; use {decorator}",
             )
-        elif _literal_category(target) not in (None, UntapedDeprecationWarning):
+        elif not _warns_untaped(target):
             yield (
                 "deprecation-text",
-                f"its warnings.deprecated names no category={_CATEGORY}, so it never shows "
+                f"its warnings.deprecated warns no {_CATEGORY}, so it never shows "
                 f"while a command runs; use {decorator}",
             )
     if not isinstance(target, type):
@@ -411,20 +411,28 @@ def _parameter_violations(
 _CATEGORY = UntapedDeprecationWarning.__name__
 
 
-def _literal_category(target: object) -> object:
-    """The category a ``warnings.deprecated`` wrapper warns with; ``None`` when unreadable.
+def _warns_untaped(target: object) -> bool:
+    """Whether ``target``'s ``warnings.deprecated`` warns an ``UntapedDeprecationWarning``.
 
-    It is a variable the wrapper closes over: a function's own, a class's
-    ``__new__``'s.
+    The category is a variable its wrapper closes over: a function's own, a
+    class's ``__new__``'s. No wrapper at all is ``category=None``, which
+    never warns; a wrapper whose category can't be read (another decorator
+    in between) gets the benefit of the doubt.
     """
-    wrapper = vars(target).get("__new__") if isinstance(target, type) else target
-    wrapper = descriptor_function(wrapper)
+    if isinstance(target, type):
+        wrapper = descriptor_function(vars(target).get("__new__"))
+    else:
+        wrapper = target if hasattr(target, "__wrapped__") else None
+    if wrapper is None:
+        return False
     if not inspect.isfunction(wrapper):
-        return None
+        return True
     try:
-        return inspect.getclosurevars(wrapper).nonlocals.get("category")
+        found = inspect.getclosurevars(wrapper).nonlocals
     except TypeError, ValueError:
-        return None
+        return True
+    category = found.get("category", UntapedDeprecationWarning)
+    return isinstance(category, type) and issubclass(category, UntapedDeprecationWarning)
 
 
 def _literal(text: str) -> str:

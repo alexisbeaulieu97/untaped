@@ -101,8 +101,8 @@ line's identity: `sdk untaped_acme.api.fetch(retries=)` for a parameter),
 `UntapedDeprecationWarning` (a deprecated function, a marked parameter, a
 behaviour's `warn`) arrives as the same line while a command runs, though
 Python hides deprecation warnings outside `__main__`: untaped shows its own
-for the run unless a filter of yours (`-W`, `PYTHONWARNINGS`, a test
-harness's) covers them, which then decides. A function's id names it by the
+while a command runs, and a filter of yours that matches them (`-W`,
+`PYTHONWARNINGS`, a test harness's) still decides first. A function's id names it by the
 module plugins import it from (`sdk untaped_acme.api.fetch`).
 untaped's own deprecations name the version without a distribution.
 `config list` notes "use acme.mode, removed in untaped-acme 3.0" on a

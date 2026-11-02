@@ -76,44 +76,103 @@ def opened(output: RunOutput) -> Iterator[None]:
     ``pytest.warns``) is left to it.
 
     Python hides a ``DeprecationWarning`` raised outside ``__main__``, so
-    for the run untaped shows its own (:func:`_shown_deprecations`), each
-    once, unless a filter someone set decides; the filters are restored after.
+    while any run is open untaped shows its own (:func:`_show_deprecations`),
+    each once; a filter someone set still decides first.
     """
-    with warnings.catch_warnings():
-        _shown_deprecations()
-        shown = warnings.showwarning
-        warnings.showwarning = _WarningRoute(shown)
-        try:
-            yield
-        finally:
-            warnings.showwarning = shown
-            output.sink.close()
+    shown = warnings.showwarning
+    warnings.showwarning = _WarningRoute(shown)
+    _show_deprecations(opening=True)
+    try:
+        yield
+    finally:
+        _show_deprecations(opening=False)
+        warnings.showwarning = shown
+        output.sink.close()
 
 
-#: The filters Python installs at startup that cover a ``DeprecationWarning``, in their order
-#: (as ``(action, module)``; a module of ``None`` covers every module).
-_PYTHON_DEFAULTS = (("default", "__main__"), ("ignore", None))
+#: Python's startup filters for a ``DeprecationWarning``: shown in ``__main__``, then hidden.
+_PYTHON_SHOWS = ("default", None, DeprecationWarning, "__main__", 0)
+_PYTHON_HIDES = ("ignore", None, DeprecationWarning, None, 0)
 
 
-def _shown_deprecations() -> None:
-    """Show :class:`~untaped.sdk.marks.UntapedDeprecationWarning` for the run.
+class _ChangedFilters(Warning):
+    """Never raised: the category of the entry :func:`_filters_changed` adds and takes out."""
 
-    Only while the filters covering it are Python's startup defaults alone:
-    any other (a ``-W`` flag, ``PYTHONWARNINGS``, a test harness's or the
-    program's own, even one spelled like a default) decides instead.
+
+_SHOWING = threading.Lock()
+#: How many runs are open, and the filter entry untaped put in while any is.
+_open_runs = 0
+_shown_entry: tuple[object, ...] | None = None
+
+
+def _show_deprecations(*, opening: bool) -> None:
+    """Show :class:`~untaped.sdk.marks.UntapedDeprecationWarning` while any run is open.
+
+    The first run to open puts a ``default`` filter for it just before
+    Python's own startup filter hiding deprecations, so every filter set
+    before that one (a ``-W`` flag, ``PYTHONWARNINGS``, a test harness's,
+    the program's own) still decides first; the last run to close takes
+    out that entry alone. Without Python's filters in their startup order
+    (``-X dev``, filters reset, the same ``ignore`` set again: setting a
+    filter moves an equal one to the front) nothing is put in: whoever
+    changed them decides.
     """
+    global _open_runs, _shown_entry
+    with _SHOWING:
+        _open_runs += 1 if opening else -1
+        if opening and _open_runs == 1:
+            _shown_entry = _put_shown_entry()
+        elif not opening and _open_runs == 0 and _shown_entry is not None:
+            current = _current_filters()
+            for index, each in enumerate(current):
+                if each is _shown_entry:
+                    del current[index]
+                    _filters_changed()
+                    break
+            _shown_entry = None
+
+
+def _put_shown_entry() -> tuple[object, ...] | None:
     from untaped.sdk.marks import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
 
-    current = getattr(warnings, "_get_filters", lambda: warnings.filters)()
-    covering = tuple(
-        (action, getattr(module, "pattern", module))
-        if message is None and lineno == 0 and category is DeprecationWarning
-        else None
-        for action, message, category, module, lineno in current
-        if issubclass(UntapedDeprecationWarning, category)
+    current = _current_filters()
+    shows = [index for index, each in enumerate(current) if _spelled(each) == _PYTHON_SHOWS]
+    hides = [index for index, each in enumerate(current) if each == _PYTHON_HIDES]
+    if not shows or not hides or hides[-1] < shows[0]:
+        return None
+    entry = ("default", None, UntapedDeprecationWarning, None, 0)
+    current.insert(hides[-1], entry)
+    _filters_changed()
+    return entry
+
+
+def _spelled(entry: tuple[object, ...]) -> tuple[object, ...]:
+    """``entry`` with its message and module patterns as text."""
+    action, message, category, module, lineno = entry
+    return (
+        action,
+        getattr(message, "pattern", message),
+        category,
+        getattr(module, "pattern", module),
+        lineno,
     )
-    if covering == _PYTHON_DEFAULTS:
-        warnings.filterwarnings("default", category=UntapedDeprecationWarning)
+
+
+def _current_filters() -> list[tuple[object, ...]]:
+    """The filters warnings read now: the current context's, with context-aware warnings."""
+    read = getattr(warnings, "_get_filters", None)
+    return cast("list[tuple[object, ...]]", warnings.filters if read is None else read())
+
+
+def _filters_changed() -> None:
+    """Tell ``warnings`` its filters changed, so no place remembers being shown or hidden.
+
+    ``filterwarnings`` is the public way to say so; the entry it adds is taken out at once.
+    """
+    warnings.filterwarnings("ignore", category=_ChangedFilters)
+    current = _current_filters()
+    if current and current[0][2] is _ChangedFilters:
+        del current[0]
 
 
 #: How Python shows a warning when nothing records it; ``catch_warnings(record=True)``

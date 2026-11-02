@@ -11,10 +11,14 @@ import json
 import os
 import subprocess
 import sys
+import warnings
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
+
+from untaped.runtime.run_output import _current_filters, _show_deprecations
+from untaped.sdk import UntapedDeprecationWarning
 
 _LAMP = {
     "untaped_lamp/__init__.py": "",
@@ -98,7 +102,7 @@ sys.stdout.write(result.stderr)
 """
 
 
-def _run(tmp_path: Path, *flags: str) -> list[dict[str, object]]:
+def _run(tmp_path: Path, *flags: str, prelude: str = "") -> list[dict[str, object]]:
     for name, body in _LAMP.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -114,7 +118,7 @@ def _run(tmp_path: Path, *flags: str) -> list[dict[str, object]]:
         UNTAPED_HOME=str(tmp_path / "home"),
     )
     done = subprocess.run(
-        [sys.executable, *flags, "-c", _RUN],
+        [sys.executable, *flags, "-c", prelude + _RUN],
         capture_output=True,
         text=True,
         check=False,
@@ -140,10 +144,43 @@ def test_each_deprecated_kind_warns_once_under_python_s_own_filters(tmp_path: Pa
     )
 
 
+def _shown(lines: list[dict[str, object]]) -> int:
+    return len([line for line in lines if line["kind"] == "untaped.deprecation"])
+
+
 @pytest.mark.parametrize(
     ("flag", "shown"),
-    [("ignore::DeprecationWarning", 0), ("always::DeprecationWarning", 3)],
+    [
+        ("ignore::DeprecationWarning", 0),
+        ("always::DeprecationWarning", 3),
+        ("ignore::DeprecationWarning:json", 3),  # about another module only
+    ],
 )
-def test_a_filter_someone_set_decides_instead(tmp_path: Path, flag: str, shown: int) -> None:
-    lines = _run(tmp_path, "-W", flag)
-    assert len([line for line in lines if line["kind"] == "untaped.deprecation"]) == shown
+def test_a_filter_someone_set_decides_first(tmp_path: Path, flag: str, shown: int) -> None:
+    assert _shown(_run(tmp_path, "-W", flag)) == shown
+
+
+def test_a_filter_the_program_set_decides_first(tmp_path: Path) -> None:
+    prelude = (
+        "import warnings\n"
+        "from untaped.sdk import UntapedDeprecationWarning\n"
+        "warnings.filterwarnings('ignore', category=UntapedDeprecationWarning)\n"
+    )
+    assert _shown(_run(tmp_path, prelude=prelude)) == 0
+
+
+def test_the_entry_stays_while_any_run_is_open_and_goes_alone() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning, append=True)  # Python's own, last
+        before = list(_current_filters())
+        _show_deprecations(opening=True)
+        _show_deprecations(opening=True)  # another thread's run, or a nested one
+        added = [each for each in _current_filters() if each not in before]
+        assert added == [("default", None, UntapedDeprecationWarning, None, 0)]
+        place = _current_filters().index(added[0])
+        assert _current_filters()[place + 1] == ("ignore", None, DeprecationWarning, None, 0)
+        warnings.filterwarnings("error", category=UserWarning)  # set by a command meanwhile
+        _show_deprecations(opening=False)
+        assert added[0] in _current_filters()
+        _show_deprecations(opening=False)
+        assert _current_filters() == [("error", None, UserWarning, None, 0), *before]

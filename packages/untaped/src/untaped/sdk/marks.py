@@ -105,7 +105,8 @@ class Deprecated(_Marker):
         else:
             literal = getattr(marked, "__deprecated__", None)
         if isinstance(literal, str):
-            _LITERALS[literal] = marked
+            _LITERALS.setdefault(literal, []).append(marked)
+            _FIELDS.pop(literal, None)
         return super().__call__(target)
 
     def __post_init__(self) -> None:
@@ -254,9 +255,9 @@ def removal_text(removed_in: int | None, owner: str | None) -> str | None:
     return f"{removed_in}.0" if owner is None else f"{owner} {removed_in}.0"
 
 
-# A ``warnings.deprecated`` literal → the callable it decorates, recorded by the
-# ``deprecated`` mark put over it.
-_LITERALS: dict[str, object] = {}
+# A ``warnings.deprecated`` literal → the callables it decorates, recorded by the
+# ``deprecated`` mark put over each.
+_LITERALS: dict[str, list[object]] = {}
 
 
 class UntapedDeprecationWarning(DeprecationWarning):
@@ -269,8 +270,9 @@ class UntapedDeprecationWarning(DeprecationWarning):
     Built from its message alone, as
     ``@warnings.deprecated("<literal>", category=UntapedDeprecationWarning)``
     builds it, it reads them from the callable whose literal the message
-    is, when untaped's ``deprecated`` mark sits over that decorator; ``id``
-    stays ``None`` otherwise.
+    is, when untaped's ``deprecated`` mark sits over that decorator and no
+    other marked callable has the same literal; ``id`` stays ``None``
+    otherwise, and the warning shows as a plain warning line.
 
     First consumer: the 12 to 13 transition.
     """
@@ -303,9 +305,10 @@ def _literal_fields(message: str) -> tuple[str, int | None, str | None, str | No
     """The record fields of the callable whose ``warnings.deprecated`` literal ``message`` is."""
     if message in _FIELDS:
         return _FIELDS[message]
-    target = _LITERALS.get(message)
-    if target is None:
-        return None
+    targets = _LITERALS.get(message, [])
+    if len(targets) != 1:
+        return None  # two callables spelled alike: a record could name the wrong one
+    (target,) = targets
     mark = class_mark(target) if isinstance(target, type) else function_mark(target)
     if not isinstance(mark, Deprecated):
         return None

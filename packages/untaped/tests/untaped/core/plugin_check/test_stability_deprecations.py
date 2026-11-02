@@ -28,6 +28,8 @@ _API = '''
         "optional",
         "param",
         "typed",
+        "silent",
+        "subclassed",
         "uncategorized",
         "undated",
         "warned",
@@ -41,6 +43,27 @@ _API = '''
     )
     def clean() -> None:
         """Gone at 3.0."""
+
+
+    class AcmeDeprecation(UntapedDeprecationWarning):
+        """Acme's own, still untaped's."""
+
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated(
+        "subclassed is deprecated and will be removed in untaped-acme 3.0",
+        category=AcmeDeprecation,
+    )
+    def subclassed() -> None:
+        """Warns a subclass, which untaped shows."""
+
+
+    @deprecated(removed_in=3)
+    @warnings.deprecated(
+        "silent is deprecated and will be removed in untaped-acme 3.0", category=None
+    )
+    def silent() -> None:
+        """Never warns."""
 
 
     @deprecated(removed_in=3)
@@ -220,11 +243,15 @@ def test_each_rule_reads_a_plugin_s_api_and_its_marks(install: Install) -> None:
         "dates it",
         f"untaped_acme.api.optional::unwarned-parameter::x= {unwarned} to the function",
         f"untaped_acme.api.param::unwarned-parameter::x= {unwarned} to the function",
+        "untaped_acme.api.silent::deprecation-text::its warnings.deprecated warns no "
+        "UntapedDeprecationWarning, so it never shows while a command runs; use "
+        '@warnings.deprecated("silent is deprecated and will be removed in untaped-acme '
+        '3.0", category=UntapedDeprecationWarning)',
         "untaped_acme.api.typed::untyped-deprecation::untaped's mark alone is invisible to type "
         'checkers; add @warnings.deprecated("typed is deprecated and will be removed in '
         'untaped-acme 3.0", category=UntapedDeprecationWarning) under it',
-        "untaped_acme.api.uncategorized::deprecation-text::its warnings.deprecated names no "
-        "category=UntapedDeprecationWarning, so it never shows while a command runs; use "
+        "untaped_acme.api.uncategorized::deprecation-text::its warnings.deprecated warns no "
+        "UntapedDeprecationWarning, so it never shows while a command runs; use "
         '@warnings.deprecated("uncategorized is deprecated and will be removed in untaped-acme '
         '3.0", category=UntapedDeprecationWarning)',
         f"untaped_acme.api.undated::undated-deprecation::{undated}",
