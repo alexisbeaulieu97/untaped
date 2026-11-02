@@ -59,8 +59,8 @@ class Run(WorkspaceCommand):
     UNTAPED_WORKSPACE, UNTAPED_REPO (the display name), UNTAPED_BRANCH
     (empty for a read-only repo), UNTAPED_BASE and UNTAPED_READ_ONLY (`1` or
     `0`) in its environment. Background processes it starts keep running
-    after it exits, unless they still hold its output: those are stopped two
-    seconds after it exits. There is no preview.
+    after it exits, unless they still hold its output and stay in its process
+    group: those are stopped two seconds after it exits. There is no preview.
 
     Only writable repos run, unless --include-read-only: without it, naming
     a read-only repo with --repo exits 2, and --stdin drops read-only repos,
@@ -78,6 +78,9 @@ class Run(WorkspaceCommand):
     then its stderr, and a summary follows on stderr; other formats print
     `workspace.run_outcome` records only (json one object per line, yaml one
     document per row).
+
+    Ctrl-C, SIGTERM and SIGHUP are passed on to every running command's
+    process tree, SIGKILL follows two seconds later, and no more repos start.
 
     Examples
     --------
@@ -115,7 +118,7 @@ class Run(WorkspaceCommand):
         600.0,
         gt=0,
         allow_inf_nan=False,
-        description="Seconds allowed per repo before it is killed.",
+        description="Seconds allowed per repo before it is stopped.",
     )
     parallel: Parallel = WORKERS
     output: Output[RunOutcome] = Output(stream=True, render={"table": _block})

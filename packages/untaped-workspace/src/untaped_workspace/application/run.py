@@ -19,6 +19,9 @@ from untaped_workspace.records import RunAction, RunOutcome
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import CommandRunner
 
+_SLICE_S = 0.5
+"""The longest single wait for a finished run, so a signal never waits on one."""
+
 
 @dataclass(frozen=True)
 class RunTarget:
@@ -71,6 +74,7 @@ class RunInRepos:
             # groups, so stop them; each run ends its own group within two seconds.
             pool.shutdown(wait=False, cancel_futures=True)
             self._runner.cancel()
+            pool.shutdown(wait=True)
             raise
         pool.shutdown()
         yield from (_skipped(target) for target in queue)
@@ -82,14 +86,19 @@ class RunInRepos:
         *,
         block: bool,
     ) -> bool:
-        """Record every finished run (waiting for one when ``block``); whether to stop."""
-        timeout = None if block else 0
+        """Record every finished run (waiting for one when ``block``); whether to stop.
+
+        The wait runs in short slices: a signal that lands just as the main
+        thread starts an endless wait can go unhandled until the wait ends.
+        """
         stop = False
         while pending:
-            done, _ = wait(pending, timeout=timeout, return_when=FIRST_COMPLETED)
+            done, _ = wait(pending, timeout=_SLICE_S if block else 0, return_when=FIRST_COMPLETED)
             if not done:
+                if block:
+                    continue
                 break
-            timeout = 0
+            block = False
             for future in done:
                 target = pending.pop(future)
                 stop = self._finish(finished, self._row(target, future.result())) or stop

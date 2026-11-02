@@ -19,9 +19,10 @@ class SubprocessRunner:
     """:class:`CommandRunner` on ``untaped.sdk.process``; stdin is ``/dev/null``.
 
     Each command runs in its own process group, stopped as a whole on a
-    timeout, an interrupt or :meth:`cancel`: SIGTERM, then SIGKILL two seconds
-    later. What a command leaves behind keeps running after it exits, unless
-    it still holds the command's output: that is stopped two seconds after the
+    timeout or :meth:`cancel` (SIGTERM, then SIGKILL two seconds later) or
+    when untaped is interrupted (the interrupt's own signal, then SIGKILL).
+    What a command leaves behind keeps running after it exits, unless it
+    still holds the command's output: that is stopped two seconds after the
     command exits. After :meth:`cancel` the runner starts nothing new.
     """
 
