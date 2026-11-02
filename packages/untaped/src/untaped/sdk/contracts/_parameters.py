@@ -27,7 +27,11 @@ def parameter_problem(provider: Callable[..., Any], contract: Callable[..., Any]
     declared = {
         parameter.name for parameter in _parameters(contract) if parameter.kind not in _VARIADIC
     }
-    for parameter in _parameters(provider):
+    params = _parameters(provider)
+    keywords = any(parameter.kind is parameter.VAR_KEYWORD for parameter in params)
+    for parameter in params:
+        if parameter.kind is parameter.VAR_POSITIONAL and not keywords:
+            return f"takes *{parameter.name} without **kwargs, and every argument is passed by name"
         if parameter.kind in _VARIADIC:
             continue
         if parameter.kind is parameter.POSITIONAL_ONLY:
@@ -53,18 +57,14 @@ def adapted[F: Callable[..., Any]](provider: F, contract: Callable[..., Any]) ->
 
     @functools.wraps(provider)
     def adapter(*args: Any, **kwargs: Any) -> Any:
+        # a contract method has no variadic or positional-only parameter (_declare refuses them)
         bound = signature.bind(*args, **kwargs)
         bound.apply_defaults()
-        self, *_ = bound.args
-        arguments: dict[str, Any] = {}
-        for parameter in list(signature.parameters.values())[1:]:
-            if parameter.kind is parameter.VAR_KEYWORD:
-                arguments.update(bound.arguments.get(parameter.name, {}))
-            elif parameter.kind is not parameter.VAR_POSITIONAL:
-                arguments[parameter.name] = bound.arguments[parameter.name]
+        self, *arguments = bound.arguments.items()
+        passed = dict(arguments)
         if not everything:
-            arguments = {name: arguments[name] for name in names}
-        return provider(self, **arguments)
+            passed = {name: passed[name] for name in names}
+        return provider(self[1], **passed)
 
     adapter.__signature__ = signature  # type: ignore[attr-defined]  # read by inspect
     return adapter  # type: ignore[return-value]  # called as contract is

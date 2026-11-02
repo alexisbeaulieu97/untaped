@@ -51,11 +51,6 @@ class DeprecatedMark:
                 f"a deprecated mark's replacement is one line without {_SEPARATOR!r}: {use!r}"
             )
 
-    @property
-    def dated(self) -> bool:
-        """Whether the mark names its removal version, which only format 2 can write."""
-        return self.removed_in is not None
-
     def __str__(self) -> str:
         text = "deprecated"
         if self.removed_in is not None:
@@ -205,33 +200,48 @@ def _split_optional(line: Line) -> list[Line]:
     required: list[str] = []
     optional: list[Line] = []
     star = False
-    for part in _top_level(found["params"]):
-        name, _, rest = part.partition(": ")
-        token, has_default, default = rest.partition(" = ")
+    position = 0
+    for part in _parameters(found["params"]):
         if part == "*":
             star = True
-        elif has_default:
-            subject = f"{found['subject']}({name}=)"
+            continue
+        name, _, rest = part.partition(": ")
+        token, has_default, default = rest.partition(" = ")
+        if not star:
+            position += 1
+        if has_default:
+            spelled = name if star else f"{name}@{position}"
+            subject = f"{found['subject']}({spelled}=)"
             optional.append(Line(f"contract {subject} {token} default={default}", line.mark))
-        else:
-            if star and "*" not in required:
-                required.append("*")
-            required.append(part)
+            continue
+        if star and "*" not in required:
+            required.append("*")
+        required.append(part)
     text = f"contract {found['subject']}({', '.join(required)}) -> {found['returns']}"
     return [Line(text, line.mark), *optional]
 
 
-def _top_level(params: str) -> list[str]:
-    """``params`` split on its commas outside brackets: a type may hold ``,`` in ``(...)``."""
+_NEXT_PARAMETER = re.compile(r", (?=\w+: |\*(?:, |$))")
+
+
+def _parameters(params: str) -> list[str]:
+    """A format-2 parameter list's parts: ``name: type[ = default]`` or ``*``.
+
+    A part ends at a ``, `` that starts another one; a JSON-quoted default may
+    hold ``, `` or brackets, so quoted text is skipped.
+    """
     parts: list[str] = []
-    depth, start = 0, 0
-    for index, char in enumerate(params):
-        if char in "([{":
-            depth += 1
-        elif char in ")]}":
-            depth -= 1
-        elif char == "," and depth == 0:
-            parts.append(params[start:index].strip())
-            start = index + 1
-    tail = params[start:].strip()
+    start = index = 0
+    while index < len(params):
+        char = params[index]
+        if char == '"':
+            index += 1
+            while index < len(params) and params[index] != '"':
+                index += 2 if params[index] == "\\" else 1
+        elif _NEXT_PARAMETER.match(params, index):
+            parts.append(params[start:index])
+            start = index + 2
+            index += 1
+        index += 1
+    tail = params[start:]
     return [*parts, tail] if tail else parts

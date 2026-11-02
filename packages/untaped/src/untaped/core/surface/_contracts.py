@@ -177,16 +177,23 @@ def _signature(function: Any, hints: Mapping[str, Any]) -> tuple[str, list[tuple
 
     An optional parameter has a line of its own (name, type, default), so an
     owner that adds one with a default adds a line, and one that adds a
-    required parameter respells the owner line.
+    required parameter respells the owner line. One a caller may pass by
+    position carries it, as caller-shaped ``sdk`` lines do (``limit@2=``), so
+    moving it still respells its line.
     """
     parameters = list(inspect.signature(function).parameters.values())[1:]
     parts: list[str] = []
     optional: list[tuple[str, str, str]] = []
     star = False
+    position = 0
     for parameter in parameters:
         token = type_token(hints[parameter.name]).token
+        name = parameter.name
+        if parameter.kind is not parameter.KEYWORD_ONLY:
+            position += 1
+            name = f"{name}@{position}"
         if parameter.default is not parameter.empty:
-            optional.append((parameter.name, token, default_text(parameter.default)))
+            optional.append((name, token, default_text(parameter.default)))
             continue
         if parameter.kind is parameter.KEYWORD_ONLY and not star:
             parts.append("*")

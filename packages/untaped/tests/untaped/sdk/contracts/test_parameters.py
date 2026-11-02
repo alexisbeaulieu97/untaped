@@ -25,9 +25,10 @@ from core_test_support.contracts.support import (
     shelf_plugin,
     shop_plugin,
 )
+from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer
 from untaped.sdk import Issued, Record
-from untaped.sdk.contracts import Contract, Ok, Provider, cached, gather
+from untaped.sdk.contracts import Contract, Errored, Ok, Provider, cached, gather
 from untaped.sdk.contracts._declare import contract_of, parameter_problems
 
 
@@ -153,19 +154,62 @@ class Positional(BookSource, Provider):
 def test_a_parameter_the_contract_cannot_pass_quarantines_that_provider_alone(
     provider: type, problem: str
 ) -> None:
-    compose(shelf_plugin(), shop_plugin(), plugin("reader", fills=(provider,), module=__name__))
+    compose(
+        shelf_plugin(),
+        shop_plugin(),
+        plugin("tagger", offers=(TagSource,), records=(Tag,), module=__name__),
+        plugin("reader", fills=(provider, OldTags), module=__name__),
+    )
     [quarantined] = [entry for entry in every_offer() if isinstance(entry, Quarantined)]
     assert (quarantined.plugin, quarantined.reason) == ("reader", "uses-missing")
     assert quarantined.detail == (
-        f"{problem} (BookSource.lookup takes title); untaped-reader may need a newer "
-        "untaped-shelf than it declares: upgrade untaped-shelf, or upgrade untaped-reader"
+        f"{problem} (BookSource.lookup takes title): untaped-reader may need a newer "
+        "untaped-shelf than it declares"
     )
+    assert quarantined.fix == "upgrade untaped-shelf, or upgrade untaped-reader"
     Shop.rows = [Book(title="Dune")]
     answers = {answer.plugin: answer for answer in gather(BookSource.books)()}
     assert isinstance(answers["shop"], Ok)
     assert "reader" not in answers or not isinstance(answers["reader"], Ok)
-    rows = [(row.plugin, row.status, row.title) for row in doctor_rows()]
-    assert ("reader", "warn", "uses-missing") in rows
+    [tags] = gather(TagSource.tags)("x-")  # the plugin's other provider still answers
+    assert isinstance(tags, Ok) and tags.plugin == "reader"
+    assert "reader" in [each.name for each in bootstrap.composition().plugins]
+    [row] = [row for row in doctor_rows() if row.title == "uses-missing"]
+    assert row.detail.endswith(
+        "untaped-shelf than it declares; upgrade untaped-shelf, or upgrade untaped-reader"
+    )
+
+
+def test_a_ranked_provider_set_aside_names_the_fix(monkeypatch: pytest.MonkeyPatch) -> None:
+    compose(shelf_plugin(), shop_plugin(), plugin("reader", fills=(Renamed,), module=__name__))
+    monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("reader",))
+    answer = {each.plugin: each for each in gather(BookSource.books)()}["reader"]
+    assert isinstance(answer, Errored) and answer.reason == "uses-missing"
+    assert answer.error.hint == "upgrade untaped-shelf, or upgrade untaped-reader"
+
+
+def test_a_provider_taking_only_positional_extras_is_refused() -> None:
+    """``*args`` would get nothing: every argument is passed by name."""
+
+    class Delegating(BookSource, Provider):
+        def books(self) -> list[Book]:
+            return []
+
+        def lookup(self, *args: str) -> list[Book]:
+            return []
+
+    class Forwarding(BookSource, Provider):
+        def books(self) -> list[Book]:
+            return []
+
+        def lookup(self, *args: str, **kwargs: str) -> list[Book]:
+            return []
+
+    contract = contract_of(BookSource)
+    assert contract is not None
+    [problem] = parameter_problems(Delegating, contract)
+    assert "lookup takes *args without **kwargs, and every argument is passed by name" in problem
+    assert parameter_problems(Forwarding, contract) == []
 
 
 def test_a_subclass_that_fills_the_method_again_answers_for_itself() -> None:
@@ -182,7 +226,7 @@ def test_a_subclass_that_fills_the_method_again_answers_for_itself() -> None:
     ]
 
 
-def test_a_mixin_s_method_is_checked_as_the_provider_s() -> None:
+def test_a_mixin_s_method_is_named_where_its_code_is() -> None:
     class Lookups:
         def lookup(self, _title: str) -> list[Book]:
             return []
@@ -195,7 +239,7 @@ def test_a_mixin_s_method_is_checked_as_the_provider_s() -> None:
     assert contract is not None
     [problem] = parameter_problems(Mixed, contract)
     assert problem.endswith(
-        "Mixed.lookup takes '_title', which the contract method doesn't declare "
+        "Lookups.lookup takes '_title', which the contract method doesn't declare "
         "(BookSource.lookup takes title)"
     )
 
@@ -205,9 +249,9 @@ class Tag(Issued):
 
 
 class TagSource[T: Record = Tag](Contract):
-    """Tags, from an owner that added optional parameters later."""
+    """Tags, from an owner that added an optional parameter later."""
 
-    def to_tag(self, item: T, *, loud: bool = False) -> Tag:
+    def to_tag(self, item: T) -> Tag:
         raise NotImplementedError
 
     @cached(max_age=timedelta(hours=1), label="tags")
@@ -216,19 +260,21 @@ class TagSource[T: Record = Tag](Contract):
 
 
 class OldTags(TagSource, Provider):
-    """Released when neither ``loud`` nor ``limit`` existed."""
+    """Released before ``limit``; its bridge takes the item by name only."""
 
     calls: ClassVar[int] = 0
 
-    def to_tag(self, item: Tag) -> Tag:
+    def to_tag(self, *, item: Tag) -> Tag:
         return item
 
     def tags(self, prefix: str) -> list[Tag]:
         type(self).calls += 1
-        return [self.to_tag(Tag(title=f"{prefix}tag"))]
+        return [self.to_tag(Tag(title=f"{prefix}tag"))]  # type: ignore[call-arg]  # as called
 
 
 def test_the_adapter_stacks_with_a_bridge_and_a_cache() -> None:
+    contract = contract_of(TagSource)
+    assert contract is not None and contract.methods["to_tag"].bridge
     compose(
         plugin("tagger", offers=(TagSource,), records=(Tag,), module=__name__),
         plugin("old", fills=(OldTags,), module=__name__),

@@ -16,8 +16,11 @@ every dropped item comes back as an optional line of the same subject, at its
 old position or under its name. ``NAME`` becoming ``NAME...`` still takes one
 value, so it counts as the same positional; the reverse does not. An
 implementer-shaped owner (a ``contract`` line, or an ``sdk`` class plugins
-implement, written ``implement=``) is never relaxed: a provider's signature
-must match exactly.
+implement, written ``implement=``) is never relaxed. A contract method's
+owner line holds its required parameters and each optional one has a line of
+its own, since a provider may take fewer parameters than the contract: an
+added optional parameter adds a line, an added required one respells the
+owner line.
 """
 
 from __future__ import annotations

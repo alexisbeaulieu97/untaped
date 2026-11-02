@@ -235,7 +235,7 @@ def test_assert_surface_writes_the_file_then_keeps_it(tmp_path: Path) -> None:
     for line in (
         "contract items.item_source abstract=items",
         "contract items.item_source.items() -> Item[]",
-        'contract items.item_source.items(prefix=) string default=""',
+        'contract items.item_source.items(prefix@1=) string default=""',
         "contract items.item_source.to_item(item: Item) -> Item",
         "contract items.Item(name)",
         "contract items.Item.size integer default=0",
@@ -315,6 +315,22 @@ def test_an_optional_parameter_a_contract_adds_only_adds_a_line(tmp_path: Path) 
     assert "contract items.item_source.items(limit=) integer default=5\n" in path.read_text(
         encoding="utf-8"
     )
+
+
+def test_moving_an_optional_positional_parameter_fails(tmp_path: Path) -> None:
+    """``gather(method)(*args)`` passes it by position, so its place is a promise."""
+
+    class ItemSource[T: Record = Item](Contract):
+        def to_item(self, item: T) -> Item:
+            raise NotImplementedError
+
+        @abstractmethod
+        def items(self, limit: int = 5, prefix: str = "") -> list[Item]: ...
+
+    path = tmp_path / "surface.txt"
+    assert_surface(_owner(_contract("v1")), path)
+    with pytest.raises(AssertionError, match=r"items\(prefix@1=\)"):
+        assert_surface(_owner(ItemSource), path)
 
 
 def test_a_required_parameter_a_contract_adds_fails(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg shelf.caches.book_source_books.max_age_seconds integer(minimum=0) default=3600
 cfg shelf.extensions.book_source.rank.books string[] default=[]  [experimental]
 cfg shelf.extensions.book_source.rank.to_book string[] default=[]  [experimental]
@@ -62,6 +62,4 @@ sdk untaped_shelf.api.Book.pages
 sdk untaped_shelf.api.Book.title
 sdk untaped_shelf.api.BookSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_shelf.api.BookSource implement=books  [experimental]
-sdk untaped_shelf.api.BookSource.books() -> Book[]  [experimental]
-sdk untaped_shelf.api.BookSource.to_book(item)  [experimental]
 sdk untaped_shelf.testing.conformance(provider)

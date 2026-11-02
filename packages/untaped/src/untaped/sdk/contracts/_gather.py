@@ -251,7 +251,9 @@ def gather[C: Contract, **P, R](
                 continue
             rank = order.index(entry.plugin) if entry.plugin in order else None
             if isinstance(entry, Quarantined):
-                answers[entry.plugin] = _excluded(entry.plugin, entry.reason, entry.detail, rank)
+                answers[entry.plugin] = _excluded(
+                    entry.plugin, entry.reason, entry.detail, rank, entry.fix
+                )
                 reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.detail}")
                 quarantined[entry.plugin] = entry.reason
                 continue
@@ -342,15 +344,19 @@ def _plugin_of(provider: type) -> str | None:
 
 
 def _excluded[R](
-    plugin: str, reason: QuarantineReason | ErrorReason, detail: str, rank: int | None
+    plugin: str,
+    reason: QuarantineReason | ErrorReason,
+    detail: str,
+    rank: int | None,
+    fix: str = "",
 ) -> Answer[R]:
     """A provider the SDK set aside: skipped when unranked, failed when ranked.
 
-    The failure hints at upgrading ``plugin``.
+    The failure hints at ``fix``, else at upgrading ``plugin``.
     """
     if rank is None:
         return Skipped(plugin, cast("SkipReason", reason), detail, rank)
-    error = ConfigError(detail, system=plugin, hint=upgrade_hint(plugin))
+    error = ConfigError(detail, system=plugin, hint=fix or upgrade_hint(plugin))
     return Errored(plugin, error, rank, reason)
 
 

@@ -1,4 +1,4 @@
-# untaped surface 1
+# untaped surface 3
 cfg hello.caches.motd.max_age_seconds integer(minimum=0) default=3600
 cfg hello.greeting string default="hello from untaped-hello"
 cfg hello.motd_path string(format=path)? default=unset

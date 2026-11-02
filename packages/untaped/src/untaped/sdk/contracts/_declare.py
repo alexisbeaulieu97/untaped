@@ -562,7 +562,7 @@ def _rewrap(cls: type[Contract]) -> None:
             continue
         problem = parameter_problem(value, method.function)
         if problem is not None:
-            problems[name] = problem
+            problems[name] = f"{value.__qualname__} {problem}"  # where its code is, a mixin's too
         wrapped = value if problem is not None else adapted(value, method.function)
         if method.bridge:
             wrapped = _bridged(wrapped)
@@ -586,8 +586,8 @@ def parameter_problems(provider: type[Contract], contract: ContractInfo) -> list
         if problem is not None:
             declared = list(inspect.signature(contract.methods[name].function).parameters)[1:]
             found.append(
-                f"{holder.__qualname__}.{name} {problem} "
-                f"({contract.cls.__qualname__}.{name} takes {', '.join(declared) or 'none'})"
+                f"{problem} ({contract.cls.__qualname__}.{name} takes "
+                f"{', '.join(declared) or 'nothing'})"
             )
     return found
 

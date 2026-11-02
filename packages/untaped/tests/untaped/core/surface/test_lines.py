@@ -65,15 +65,19 @@ def test_render_writes_every_mark_whole() -> None:
 def test_an_older_file_splits_optional_contract_parameters_off(old: int) -> None:
     text = (
         f"# untaped surface {old}\n"
-        "contract o.c.find(name: string, *, limit: integer = 5, tags: string(pattern=a,b)[] "
-        "= []) -> Item[]  [experimental]\n"
+        'contract o.c.find(name: string, sep: string = ", ", open: string = "(", *, '
+        "limit: integer = 5, tags: string(pattern=a,b)[] = [], mode: string = x) "
+        "-> Item[]  [experimental]\n"
         "contract o.c.first(*, deep: boolean) -> Item\n"
         "contract o.Item(name)\n"
     )
     assert [str(line) for line in parse(text)] == [
         "contract o.c.find(name: string) -> Item[]  [experimental]",
+        'contract o.c.find(sep@2=) string default=", "  [experimental]',
+        'contract o.c.find(open@3=) string default="("  [experimental]',
         "contract o.c.find(limit=) integer default=5  [experimental]",
         "contract o.c.find(tags=) string(pattern=a,b)[] default=[]  [experimental]",
+        "contract o.c.find(mode=) string default=x  [experimental]",
         "contract o.c.first(*, deep: boolean) -> Item",
         "contract o.Item(name)",
     ]

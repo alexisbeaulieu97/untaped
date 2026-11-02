@@ -74,6 +74,8 @@ class Quarantined:
     detail: str
     #: The contract it would fill; ``None`` when its whole group failed to load.
     contract: type[Contract] | None = None
+    #: What to do about it; empty: upgrade the plugin, as for any defect in its offer.
+    fix: str = ""
 
 
 @dataclass(frozen=True)
@@ -239,10 +241,15 @@ def _load(
         detail = f"{type(exc).__name__}: {exc}"
         return whole(Reason.bad_provider, f"{plugin.name}'s providers for {owner} raised {detail}")
     owned = {cls for cls, name in _owners(state).items() if name == owner}
+    owner_distribution = next(
+        (each.plugin_ref.distribution for each in _plugins(state) if each.name == owner), owner
+    )
     entries: list[BoundProvider | Quarantined] = []
     seen: dict[type[Contract], int] = {}
     for value in values:
-        entry = _check(plugin, owner, owned, value, state.profile, _kinds(state))
+        entry = _check(
+            plugin, owner, owned, value, state.profile, _kinds(state), owner_distribution
+        )
         if isinstance(entry, BoundProvider):
             contract = entry.binding.contract.cls
             if contract in seen:
@@ -274,6 +281,7 @@ def _check(
     value: object,
     profile: str,
     kinds: Callable[[type[BaseModel]], str],
+    owner_distribution: str,
 ) -> BoundProvider | Quarantined:
     def quarantined(
         reason: QuarantineReason, detail: str, contract: type[Contract] | None = None
@@ -295,7 +303,8 @@ def _check(
     provider = type(value)
     problems = parameter_problems(provider, info)
     if problems:
-        return quarantined(Reason.uses_missing, _uses_missing(plugin, owner, problems), info.cls)
+        detail, fix = _uses_missing(plugin, owner_distribution, problems)
+        return Quarantined(plugin.name, owner, Reason.uses_missing, detail, info.cls, fix)
     try:
         item = item_type(provider, info)
     except ContractError as exc:
@@ -341,20 +350,16 @@ def _check(
     return BoundProvider(value, binding)
 
 
-def _uses_missing(plugin: ComposedPlugin, owner: str, problems: list[str]) -> str:
-    """A provider's parameters its contract can't pass, and the fix.
+def _uses_missing(plugin: ComposedPlugin, owner: str, problems: list[str]) -> tuple[str, str]:
+    """Why a provider's parameters can't be passed by name, and the fix.
 
     Usually a parameter of a newer owner than the plugin declares, so
-    upgrading the owner fixes it; else the plugin renamed one.
+    upgrading the owner fixes it; else the plugin renamed one. ``owner`` is
+    the owner's distribution.
     """
-    composition = _state().composition
-    owners = [each for each in composition.plugins if each.name == owner]
-    owner_dist = owners[0].plugin_ref.distribution if owners else owner
     dist = plugin.plugin_ref.distribution
-    return (
-        f"{'; '.join(problems)}; {dist} may need a newer {owner_dist} than it declares: "
-        f"upgrade {owner_dist}, or upgrade {dist}"
-    )
+    detail = f"{'; '.join(problems)}: {dist} may need a newer {owner} than it declares"
+    return detail, f"upgrade {owner}, or upgrade {dist}"
 
 
 def owned_contracts() -> dict[str, list[ContractInfo]]:
@@ -497,7 +502,7 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     upgrade = upgrade_hint(entry.plugin)
     if isinstance(entry, Quarantined):
         name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
-        detail = f"{entry.owner}{name}: {entry.detail}; {upgrade}"
+        detail = f"{entry.owner}{name}: {entry.detail}; {entry.fix or upgrade}"
         return DoctorRow("contract-provider", entry.plugin, "warn", entry.reason, detail)
     info = entry.binding.contract
     what = f"{entry.binding.owner}.{info.name}"

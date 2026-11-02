@@ -109,9 +109,9 @@ class Library(Plugin):
   method, and core passes it only the ones it declares, by name, with the
   contract's defaults applied. That only tolerates an older provider; when
   your provider reads a new parameter, raise your floor on the owner. A
-  parameter the contract doesn't declare, or one taken positional-only
-  (`def lookup(self, _title)`), can't be passed by name, so that provider is
-  quarantined (`uses-missing`).
+  parameter the contract doesn't declare (`def lookup(self, _title)` for
+  `title`), one taken positional-only, or `*args` without `**kwargs` can't
+  be passed by name, so that provider is quarantined (`uses-missing`).
 - **Asking.** `gather(method, plugins=, refresh=, progress=)(*args)` returns
   one `Ok`, `Errored` or `Skipped` per provider that fills the method (only
   those `plugins` when given: provider classes where the code holds one,
@@ -279,8 +279,8 @@ def test_shelf_keeps_its_surface() -> None:
   A new optional method, optional method parameter (a provider may take
   fewer), optional payload field or Literal value, a new command or
   optional flag, and anything removed while experimental are compatible
-  and rewrite the file, as does a file an older untaped wrote. To accept a breaking change in a major release,
-  delete the file. Commit it. With `version=` (your distribution's
+  and rewrite the file, as does a file an older untaped wrote. To accept a
+  breaking change in a major release, delete the file. Commit it. With `version=` (your distribution's
   version) it also fails an undated deprecation and anything still marked
   removed in that version's major or earlier
   ([Deprecating something](./reference/deprecation.md#the-checks)). A stable contract method that reaches a model
