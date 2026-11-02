@@ -216,8 +216,8 @@ untaped config set untaped.ui.symbols.success ✓
 untaped config edit
 ```
 
-Each plugin cache's `<plugin>.caches.<cache>.max_age_seconds` ([config reference](./reference/config.md))
-is how long its data is used before checking upstream again (`0`: every time).
+Each plugin cache's `<plugin>.caches.<cache>.max_age_seconds` is how long its
+data is used before checking upstream (`0`: every time; [reference](./reference/config.md)).
 
 `config list` prints stable settings first, then experimental ones under an
 `Experimental` heading. A deprecated setting appears under `Deprecated` once
@@ -235,7 +235,7 @@ parsing it as YAML:
 - mapping and list settings take the whole value as JSON or YAML, or a map
   one entry at a time (`untaped.ui.symbols.success`); a value under a missing
   entry creates it, `config unset` removes an entry but keeps one it empties,
-  and a name not in `[a-z0-9_-]` (a capital, a dot) needs the whole map;
+  and other names (a capital, a dot, a leading `-`) need the whole map;
 - for an optional non-string setting, the literal `null` stores an explicit
   null; `config unset` removes the key instead;
 - an invalid value is rejected before anything is written.

@@ -427,7 +427,13 @@ def test_a_name_starting_with_a_hyphen_is_refused_saying_so() -> None:
 def test_a_dotted_name_in_a_map_of_values_points_to_the_whole_map() -> None:
     result = _config("set", "untaped.ui.symbols.check.fail", "x")
     assert result.exit_code == 1, result.output
-    assert "config set untaped.ui.symbols VALUE" in result.stderr
+    assert "reached only through the map untaped.ui.symbols" in result.stderr
+
+
+def test_a_dotted_name_in_a_map_of_maps_points_to_the_deepest_map() -> None:
+    result = _config("get", "shelf.groups.ops.a.b")
+    assert result.exit_code == 1, result.output
+    assert "through the map shelf.groups.ops" in result.stderr
 
 
 def test_a_dir_placed_at_a_map_entry_is_refused() -> None:
@@ -453,3 +459,44 @@ def test_only_a_union_is_looked_into_for_a_model() -> None:
     assert model_in(Server | None) is Server
     assert model_in(list[Server]) is None
     assert model_in(dict[str, Server]) is None
+
+
+def test_an_empty_map_in_one_layer_leaves_the_source_to_the_entries(
+    _isolated_config: Path,
+) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nshelf: {groups: {}}\n"
+        "profiles:\n  work: {shelf: {groups: {ops: {lead: x}}}}\n",
+    )
+    result = _config("--profile", "work", "get", "shelf.groups", "-f", "json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["source"] == "profile:work"
+
+
+def test_unsetting_a_missing_entry_leaves_a_renamed_map_alone(_isolated_config: Path) -> None:
+    text = "format_version: 2\nshelf: {old_groups: {ops: {lead: ana}}}\n"
+    write_config(_isolated_config, text)
+    result = _config("unset", "shelf.groups.nope")
+    assert result.exit_code == 0, result.output
+    assert _isolated_config.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.usefixtures("home_run")
+def test_a_setting_inside_a_map_a_project_may_not_hold_is_refused_before_writing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = make_project(tmp_path / "PROJ-1").root
+    monkeypatch.chdir(root)
+    forget_folder_layer()
+    try:
+        app = bootstrap.build_root_app(
+            candidates=[plugin_candidate(make_plugin("shelf", settings=ShelfSettings))]
+        ).meta
+        args = ["config", "set", "shelf.servers.main.url", "https://x.example.com", "--project"]
+        result = invoke_cli(app, args)
+    finally:
+        forget_folder_layer()
+    assert result.exit_code == 4, result.output
+    assert "leave out --project" in result.stderr
+    assert not (root / ".untaped" / "config.yml").exists()

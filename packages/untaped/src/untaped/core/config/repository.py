@@ -130,23 +130,13 @@ class SettingsFileRepository:
             known = [d.key for d in descriptors if d.key.partition(".")[0] == section] or sorted(
                 {d.key.partition(".")[0] for d in descriptors}
             )
-            parts = tuple(key.split("."))
-            # Past a map of plain values, only a name with a dot in it can be meant.
-            maps = [
-                d.key
-                for d in descriptors
-                if parts[: len(d.path)] == d.path
-                and len(parts) > len(d.path) + 1
-                and model_in(map_value_type(d.annotation)) is None
-                and map_value_type(d.annotation) is not None
-            ]
+            whole = _plain_map_above(descriptors, key)
             raise ConfigError(
                 not_found("setting", key, known=known),
                 category="not_found",
-                hint=f"an entry whose name holds a dot is set with the whole map: "
-                f"config set {maps[0]} VALUE"
-                if maps
-                else None,
+                hint=None
+                if whole is None
+                else f"an entry whose name holds a dot is reached only through the map {whole}",
             )
         return descriptor
 
@@ -412,12 +402,19 @@ class SettingsFileRepository:
         return self._own(self.profile_data(name) or {}, descriptor)
 
     def _carry_old_map(
-        self, data: dict[str, Any], descriptor: FieldDescriptor, report: SpellingRemoved | None
+        self,
+        data: dict[str, Any],
+        descriptor: FieldDescriptor,
+        report: SpellingRemoved | None,
+        *,
+        only_if_set: bool = False,
     ) -> None:
         """Move a map still under an old spelling to its name before one of its entries changes.
 
         Otherwise the entry would land under the new name, which wins over the
         old one, and the map's other entries would stop being read.
+        ``only_if_set`` (an unset) leaves the map where it is unless it holds
+        ``descriptor``, so removing nothing changes nothing.
         """
         declared = self._declared(descriptor)
         if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
@@ -426,6 +423,8 @@ class SettingsFileRepository:
             value = _at_path(data, old)
             if value is None:
                 continue
+            if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
+                return
             unset_at_path(data, old)
             set_at_path(data, declared.path, value)
             if report is not None:
@@ -464,7 +463,7 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = self._write_target(data, profile)
-            self._carry_old_map(target_data, descriptor, on_spelling_removed)
+            self._carry_old_map(target_data, descriptor, on_spelling_removed, only_if_set=True)
             own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
             olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
             if not (own or olds):
@@ -587,7 +586,8 @@ class SettingsFileRepository:
         Only writing is refused: ``config unset`` still removes such a value.
         """
         if self._project is not None:
-            why = folder_refusal(descriptor)
+            # Its map's refusal too: a project's file is refused the whole map when it reads.
+            why = folder_refusal(descriptor) or folder_refusal(self._declared(descriptor))
             if why is not None:
                 raise ConfigError(
                     f"{descriptor.key} can't be set in {self.written_file()}: {why}",
@@ -614,6 +614,23 @@ def _core_part(path: tuple[str, ...]) -> CorePart | None:
 def _relative(descriptor: FieldDescriptor) -> str:
     """``descriptor``'s key within its section (``sweep.parallel``)."""
     return ".".join(descriptor.path[1:])
+
+
+def _plain_map_above(descriptors: list[FieldDescriptor], key: str) -> str | None:
+    """The deepest map of plain values ``key`` goes past by more than one entry name, if any.
+
+    Past such a map, only an entry whose name holds a dot can be meant.
+    """
+    parts = key.split(".")
+    for depth in range(len(parts) - 2, 0, -1):
+        try:
+            found = find_descriptor(descriptors, ".".join(parts[:depth]))
+        except EntryNameError:
+            continue
+        value = None if found is None else map_value_type(found.annotation)
+        if value is not None and model_in(value) is None:
+            return ".".join(parts[:depth])
+    return None
 
 
 def _child(value: Any, name: str) -> Any:
