@@ -271,6 +271,11 @@ class Run(_SuiteCommand):
 
     def run(self) -> Iterator[CaseResult]:
         from untaped_awx.application import RunAction, WatchJob  # noqa: PLC0415
+        from untaped_awx.application.suites.collaborators import (  # noqa: PLC0415
+            SuiteLaunching,
+            SuiteOptions,
+            SuiteReading,
+        )
         from untaped_awx.application.suites.preflight import PreflightLaunch  # noqa: PLC0415
         from untaped_awx.application.suites.resolver import ResolveCasePayload  # noqa: PLC0415
         from untaped_awx.application.suites.runner import RunTestSuite  # noqa: PLC0415
@@ -315,7 +320,7 @@ class Run(_SuiteCommand):
                 if temp.templates:
                     provisioning = copies.provisioned(ctx, sets, temp, plan, keep=self.keep)
                 scm_branch = source.sha
-            runner = RunTestSuite(
+            launching = SuiteLaunching(
                 resolver=ResolveCasePayload(
                     ctx.fk,
                     catalog=ctx.catalog,
@@ -325,24 +330,29 @@ class Run(_SuiteCommand):
                 launcher=RunAction(ctx.repo),
                 watcher=WatchJob(ctx.repo, sleep=ctx.pause),
                 specs=ctx.catalog.get,
-                node_reader=ctx.jobs.workflow_nodes,
-                approver=ctx.jobs.decide_approval,
                 fk_prefetcher=ctx.fk,
+                approver=ctx.jobs.decide_approval,
+                preflight=preflight,
+                canceller=ctx.jobs.cancel if self.cancel else None,
                 jt_scope=default_scope,
                 stop=ctx.stop,
-                canceller=ctx.jobs.cancel if self.cancel else None,
+            )
+            reading = SuiteReading(
                 job_reader=ctx.monitor,
-                preflight=preflight,
                 log_reader=ctx.monitor.fetch_stdout,
                 event_reader=ctx.monitor.stream_events,
                 tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
-                job_url=partial(job_ui_url, ctx.settings),
                 host_reader=ctx.jobs.host_summaries,
+                node_reader=ctx.jobs.workflow_nodes,
+                job_url=partial(job_ui_url, ctx.settings),
+            )
+            options = SuiteOptions(
+                report=lambda item, failure: diag.failure(failure, item=item),
                 # Evidence and host summaries are hidden in the table and raw views.
                 evidence=results.show_logs or structured,
                 hosts=structured,
-                report=lambda item, failure: diag.failure(failure, item=item),
             )
+            runner = RunTestSuite(launching, reading, options)
             try:
                 with provisioning as bindings:
                     outcome = runner(
