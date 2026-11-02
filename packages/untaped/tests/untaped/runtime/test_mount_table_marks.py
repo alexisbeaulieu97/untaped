@@ -28,7 +28,7 @@ from untaped.sdk import (
     key,
     now,
 )
-from untaped.sdk.fields import status_roles, table_row, table_rows
+from untaped.sdk._table import status_roles, table_row, table_rows
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]

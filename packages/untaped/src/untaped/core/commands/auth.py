@@ -32,10 +32,12 @@ from untaped.runtime.profile_resolver import (
 from untaped.runtime.registry import CompositionResult, settings_model
 from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import load_settings_section
+from untaped.sdk._confirm import Confirm
+from untaped.sdk._output import Output
 from untaped.sdk._stdin import read_stdin_line
 from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
-from untaped.sdk.fields import Confirm, Output, Positional
+from untaped.sdk.fields import Positional
 from untaped.sdk.network._credential_store import (
     INDEX,
     CredentialRow,

@@ -45,10 +45,11 @@ from untaped.runtime.run_output import (
     current_sink,
 )
 from untaped.runtime.sink import DIAGNOSTICS_ENV
+from untaped.sdk._confirm import Confirm
 from untaped.sdk._run import is_verbose
+from untaped.sdk._table import table_row
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ErrorCategory, Failed, System, UntapedError
-from untaped.sdk.fields import Confirm, table_row
 from untaped.sdk.words import (
     command_argv,
     command_line,

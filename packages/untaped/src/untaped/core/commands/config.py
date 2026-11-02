@@ -46,9 +46,12 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.stability_help import show_deprecated
 from untaped.sdk._cli import echo, emit
+from untaped.sdk._confirm import DryRun
 from untaped.sdk._keys import key
+from untaped.sdk._output import Output
+from untaped.sdk._table import default_columns
 from untaped.sdk.errors import ConfigError, UsageError
-from untaped.sdk.fields import DryRun, Output, Positional, default_columns
+from untaped.sdk.fields import Positional
 from untaped.sdk.health.deprecated_keys import (
     NO_KEY_MAPPINGS,
     KeyMappings,

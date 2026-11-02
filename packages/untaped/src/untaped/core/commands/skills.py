@@ -41,9 +41,12 @@ from untaped.core.skills import (
 from untaped.runtime.registry import CompositionResult
 from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import SkillsSettings, load_core_part
+from untaped.sdk._confirm import Confirm, DryRun
+from untaped.sdk._input_blocks import Stdin
+from untaped.sdk._output import Output
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import ConfigError, Matched, UntapedError, UsageError
-from untaped.sdk.fields import Confirm, DryRun, Output, Positional, Stdin
+from untaped.sdk.fields import Positional
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.words import not_found, plural, run_hint, shown_path
 

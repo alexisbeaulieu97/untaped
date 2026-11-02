@@ -755,7 +755,7 @@ def _emit(
     schema = _model_schema(records)
     rows = [_as_row(item) for item in items]
     if fmt == "table":
-        from untaped.sdk.fields import table_rows  # noqa: PLC0415 - fields import this module
+        from untaped.sdk._table import table_rows  # noqa: PLC0415 - fields import this module
 
         rows, table_columns, spread = table_rows(items, rows, table_columns)
         # the keys a command named are its columns (a key no row has is an empty
@@ -837,7 +837,7 @@ def _model_fields(model: type[BaseModel]) -> list[str]:
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:
     """The default ``table`` columns every record's type declares (``None``: no shared ones)."""
-    from untaped.sdk.fields import default_columns  # noqa: PLC0415 - fields import this module
+    from untaped.sdk._table import default_columns  # noqa: PLC0415 - fields import this module
 
     declared = {
         default_columns(type(item)) if isinstance(item, BaseModel) else () for item in items
