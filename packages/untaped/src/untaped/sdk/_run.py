@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import BaseModel
 
+from untaped.sdk._keys import SettingKey
+
 if TYPE_CHECKING:
     from rich.text import Text
 
@@ -545,6 +547,18 @@ def settings_of[M: BaseModel](model: type[M]) -> M:
     if not isinstance(section, model):
         raise TypeError(f"the run picked {type(section).__qualname__} for {model.__qualname__}")
     return section
+
+
+def setting_name(setting: SettingKey) -> str:
+    """``setting`` as its full config key in this run.
+
+    ``key(HelloSettings).greeting`` is ``hello.greeting``: the section is the
+    name the plugin owning the key's model runs under, so a message or record
+    naming the setting follows a renamed plugin. A model no composed plugin
+    owns is a :class:`LookupError`.
+    """
+    section = current_run().composition.owner_of_settings(SettingKey.model_of(setting))
+    return ".".join((section, *SettingKey.path_of(setting)))
 
 
 @dataclass(frozen=True)

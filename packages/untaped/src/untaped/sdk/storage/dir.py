@@ -159,6 +159,7 @@ class Dir(OwnedBlock):
         """The ``at=`` setting's folder, else ``plugins/<plugin>/<name>`` under the home."""
         from untaped.sdk._run import (  # noqa: PLC0415 - the run imports the SDK
             current_run,
+            setting_name,
             settings_of,
         )
 
@@ -175,7 +176,7 @@ class Dir(OwnedBlock):
             return default  # an optional setting left unset
         folder = Path(value).expanduser() if isinstance(value, str | Path) and value else None
         if folder is None or not folder.is_absolute() or not folder.name:
-            setting = ".".join((run.composition.owner_of_settings(model), *path))
+            setting = setting_name(self.at)
             raise ConfigError(
                 f"{self._label}: the setting {setting} holds {str(value)!r}, not an absolute "
                 "path to a folder",

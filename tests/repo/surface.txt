@@ -8335,6 +8335,7 @@ sdk untaped.sdk.run_git(stdin=) default=None
 sdk untaped.sdk.run_hint(command)
 sdk untaped.sdk.safe_path_segment(value)
 sdk untaped.sdk.same_origin(url, base)
+sdk untaped.sdk.setting_name(setting)
 sdk untaped.sdk.settings_of(model)
 sdk untaped.sdk.shown_path(path)
 sdk untaped.sdk.size_text(size)
