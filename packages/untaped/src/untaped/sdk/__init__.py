@@ -27,23 +27,34 @@ else:
 
     globals()["__untaped_old_names__"] = _old_names  # the name _lazy.OLD_NAMES_ATTR reads
 
+    def _resolve(name: str) -> object:
+        """``name``'s object from the table, an old name's replacement included; kept nowhere."""
+        exports = _importlib.import_module("untaped.sdk._exports")
+        if name in exports.__all__ or name == "__all__":
+            return getattr(exports, name)
+        mark = None if name.startswith("__") else exports.OLD_NAMES.get(name)
+        if mark is None:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+        return mark.replacement
+
+    globals()["__untaped_resolve__"] = _resolve  # the name _lazy.RESOLVE_ATTR reads
+
     def __getattr__(name: str) -> object:
         """Resolve a name from the table on first use and keep it.
 
-        An old name (``_exports.OLD_NAMES``) resolves to its replacement on
-        every lookup, with a warning, and is never kept.
+        An old name (``_exports.OLD_NAMES``) or a name marked deprecated
+        warns at the lookup and is never kept, so every lookup warns
+        (:func:`untaped.sdk._lazy.looked_up`).
         """
+        value = _resolve(name)
         exports = _importlib.import_module("untaped.sdk._exports")
-        if name != "__all__" and name not in exports.__all__:
-            mark = None if name.startswith("__") else exports.OLD_NAMES.get(name)
-            if mark is None:
-                raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-            from untaped.sdk._lazy import resolve_old  # noqa: PLC0415
+        if name == "__all__":
+            globals()[name] = value
+            return value
+        from untaped.sdk._lazy import looked_up  # noqa: PLC0415
 
-            return resolve_old(__name__, name, mark)
-        value = getattr(exports, name)
-        globals()[name] = value
-        return value
+        old = None if name in exports.__all__ else exports.OLD_NAMES.get(name)
+        return looked_up(globals(), __name__, name, value, old)
 
     def __dir__() -> list[str]:
         exports = _importlib.import_module("untaped.sdk._exports")

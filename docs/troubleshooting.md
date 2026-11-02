@@ -13,6 +13,7 @@ explains them.
 | A token is rejected (HTTP 401) or not found | Where tokens come from and in what order: [Tokens](./configuration.md#tokens). |
 | A certificate error on a self-hosted service | A CA bundle rather than disabling checks: [TLS](./configuration.md#tls-and-shared-ui-settings). |
 | `config.yml` or a `state.yml` is refused as newer or as 11.x | Written by another `untaped`: [File format](./configuration.md#file-format). |
+| `KEY can't be set in profile NAME`, or `doctor` shows `untaped.home-only` | Only the base sets that setting; the hint's `config unset` fixes it: [Profiles](./configuration.md#profiles). |
 | A setting is ignored, or `doctor` shows `untaped.unknown-keys` | A section at the wrong level: [File and layout](./configuration.md#file-and-layout). |
 | After upgrading, ansible's index is empty or recipe lists no installed packs | 12.0 moves no older data: refresh each ansible source (`untaped ansible source refresh NAME`); for 10.x data run 11.1's `setup migrate-dirs` before upgrading, as the [changelog](../CHANGELOG.md)'s 12.0 Upgrading section says. |
 | `doctor` warns about an install that is not reachable or a folder of a plugin not installed here | `untaped setup prune --dry-run` lists what it would remove: [Who holds a layout, and cleanup](./caches.md#who-holds-a-layout-and-cleanup). |

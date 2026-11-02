@@ -148,15 +148,16 @@ def test_a_due_parameter_goes_only_with_its_callable() -> None:
     assert broken([Line("sdk m.f(x)", _due(13)), gone], [], major=13) == []
 
 
-@pytest.mark.parametrize("extra", ["forbid", "allow"])
-def test_a_due_field_goes_from_a_model_that_says_so(extra: str) -> None:
-    model = [Line("sdk m.Item(*, name)"), Line(f"sdk m.Item extra={extra}")]
+def test_a_due_field_goes_from_a_model_that_keeps_extras() -> None:
+    model = [Line("sdk m.Item(*, name)"), Line("sdk m.Item extra=allow")]
     gone = [Line("sdk m.Item(old=) default=0", _due(13)), Line("sdk m.Item.old", _due(13))]
     assert broken([*model, *gone], model, major=13) == []
 
 
-def test_a_due_field_stays_on_a_model_that_says_nothing() -> None:
-    model = [Line("sdk m.Item(*, name)")]  # a dataclass: a passed field is a TypeError
+@pytest.mark.parametrize("extra", ["forbid", None], ids=["forbid", "says-nothing"])
+def test_a_due_field_stays_while_its_model_does(extra: str | None) -> None:
+    # forbid: a passed field is pydantic's validation error; a dataclass: a TypeError
+    model = [Line("sdk m.Item(*, name)"), *([Line(f"sdk m.Item extra={extra}")] if extra else [])]
     gone = [Line("sdk m.Item(old=) default=0", _due(13)), Line("sdk m.Item.old", _due(13))]
     assert len(broken([*model, *gone], model, major=13)) == 1
 

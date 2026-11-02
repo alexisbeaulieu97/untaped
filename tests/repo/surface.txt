@@ -7713,6 +7713,7 @@ sdk untaped.sdk.testing.compose_with()
 sdk untaped.sdk.testing.compose_with(*plugins)
 sdk untaped.sdk.testing.damage(cache, key)  [experimental]
 sdk untaped.sdk.testing.damage(partition=) default=None  [experimental]
+sdk untaped.sdk.testing.deprecation_of(module, name)  [experimental]
 sdk untaped.sdk.testing.drive_screen(commands=) default=sync callback(0)  [experimental]
 sdk untaped.sdk.testing.drive_screen(keys@2=) default=[]  [experimental]
 sdk untaped.sdk.testing.drive_screen(screen)  [experimental]

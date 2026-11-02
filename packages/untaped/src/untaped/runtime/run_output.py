@@ -51,7 +51,9 @@ from untaped.sdk.records import OutcomeRecord
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from untaped.runtime.plugin_frames import PluginAt
     from untaped.sdk._run import Run
+    from untaped.sdk.marks import UntapedDeprecationWarning
 
 #: Where a line off every run goes: before the root opens one, or from a bare thread.
 _DEFAULT = RunSink(None)
@@ -91,6 +93,7 @@ def opened(output: RunOutput) -> Iterator[None]:
     try:
         yield
     finally:
+        _show_held(output)  # a run whose composition never attached: shown as they are
         _show_deprecations(opening=False)
         warnings.showwarning = shown
         output.sink.close()
@@ -227,30 +230,77 @@ class _WarningRoute:
 def _show_warning(
     message: Warning | str, category: type[Warning], filename: str, lineno: int
 ) -> None:
-    """A shown Python warning as a diagnostic on the sink."""
-    from untaped.sdk.marks import (  # noqa: PLC0415 - avoids a cycle
-        UntapedDeprecationWarning,
-        first_notice,
-    )
+    """A shown Python warning as a diagnostic on the sink.
+
+    A deprecation raised while the run's composition is built (a plugin's
+    module imported then) is held until the composition is attached
+    (:func:`show_held`), so it can name its plugin and be recorded.
+    """
+    from untaped.sdk.marks import UntapedDeprecationWarning  # noqa: PLC0415 - avoids a cycle
 
     if isinstance(message, UntapedDeprecationWarning) and message.id is not None:
-        from untaped.core.run_uses import note  # noqa: PLC0415 - on a deprecation only
-
-        note(message, filename)
-        if not first_notice(message.id):
+        output, run = _output(), run_or_none()
+        if output is not None and run is not None and not run.attached:
+            output.held.append((message, filename))
             return
-        current_sink().emit(
-            Deprecation(
-                message=str(message),
-                id=message.id,
-                removed_in=message.removed_in,
-                distribution=message.distribution,
-                replacement=message.replacement,
-            )
-        )
+        _show_deprecation(message, filename)
         return
     text = f"{category.__name__}: {message} ({filename}:{lineno})"
     current_sink().emit(Message(level="warning", message=text))
+
+
+def show_held() -> None:
+    """Show the deprecations held while the current run's composition was built."""
+    output = _output()
+    if output is not None:
+        _show_held(output)
+
+
+def _show_held(output: RunOutput) -> None:
+    held, output.held = output.held, []
+    for message, filename in held:
+        _show_deprecation(message, filename)
+
+
+def _show_deprecation(message: UntapedDeprecationWarning, filename: str) -> None:
+    """``message`` as its ``untaped.deprecation`` record, once per process for each plugin and name.
+
+    A deprecation raised from a composed plugin's code names that plugin
+    (``untaped-acme 1.0.0 uses `untaped.sdk.human_size`, which is
+    deprecated...``); the recorder (:func:`untaped.core.run_uses.note`)
+    keeps the use.
+    """
+    from untaped.core.run_uses import note  # noqa: PLC0415 - on a deprecation only
+    from untaped.sdk.marks import first_notice  # noqa: PLC0415 - avoids a cycle
+
+    plugin = note(message, filename)
+    if not first_notice(str(message.id) if plugin is None else f"{plugin.name} {message.id}"):
+        return
+    current_sink().emit(
+        Deprecation(
+            message=str(message) if plugin is None else _used_by(plugin, message),
+            id=str(message.id),
+            removed_in=message.removed_in,
+            distribution=message.distribution,
+            replacement=message.replacement,
+            plugin=None if plugin is None else plugin.name,
+        )
+    )
+
+
+def _used_by(plugin: PluginAt, warning: UntapedDeprecationWarning) -> str:
+    """The sentence naming ``plugin``'s distribution and version, the name and its mark."""
+    from untaped.sdk.marks import removal_text  # noqa: PLC0415 - on a deprecation only
+    from untaped.sdk.words import deprecated_message  # noqa: PLC0415
+
+    name = str(warning.id).partition(" ")[2]
+    who = f"{plugin.distribution} {plugin.version}".strip()
+    replacement = None if warning.replacement is None else f"`{warning.replacement}`"
+    return deprecated_message(
+        f"{who} uses `{name}`, which",
+        replacement,
+        removal_text(warning.removed_in, warning.distribution),
+    )
 
 
 def count_row_failures(rows: Iterable[object]) -> None:
@@ -494,6 +544,8 @@ class RunOutput(Diagnostics):
         self._lock = threading.Lock()
         self._worst: int = ExitCode.OK
         self.sink = RunSink(self)
+        #: Deprecations raised before the run's composition was attached, with their files.
+        self.held: list[tuple[UntapedDeprecationWarning, str]] = []
 
     def bind(self, run: Run) -> None:
         """Make ``run`` the run whose policy the sink follows; once."""

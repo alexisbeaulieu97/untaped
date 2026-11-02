@@ -168,6 +168,9 @@ class BlockDecl(_Frozen):
     layout: int | None = None
     #: Whether a ``Dir`` declares ``items=``: things holders (projects) hold.
     items: bool = False
+    #: A ``Dir``'s ``at=`` setting, its key inside the plugin's section (``store_dir``):
+    #: the setting that places it, which only the home's base sets.
+    at: str | None = None
     #: The target of the command marked ``removes =`` these state rows, if one is.
     removed_by: str | None = None
     #: The remover's flag taking the row's key (``--id``); ``None``: its positional does.
@@ -275,13 +278,13 @@ class FillDecl(_Frozen):
 
 
 class UseDecl(_Frozen):
-    """A deprecated name a plugin uses: an import or a method it fills, found when it composed,
-    or a call seen while a command ran."""
+    """A deprecated name a plugin uses: a contract method it fills, read when it composed, or a
+    name its code looked up or called while a command ran."""
 
     #: The name's surface identity: ``sdk untaped.sdk.human_size``,
     #: ``contract acme.item_source.items``.
     id: str
-    how: Literal["imports", "fills", "calls"]
+    how: Literal["fills", "uses"]
     #: The distribution whose major removes it.
     distribution: str
     #: Core's own name: its removal is a bare major (``14.0``).
@@ -289,8 +292,8 @@ class UseDecl(_Frozen):
     removed_in: int | None = None
     #: What to use instead, as the deprecation names it.
     replacement: str | None = None
-    #: Where the plugin uses it: ``acme/report.py:12``, the provider method's target, or
-    #: the command that called it (``untaped acme report``).
+    #: Where the plugin uses it: the provider method's target, or the command that used it
+    #: (``untaped acme report``).
     where: str = ""
 
 
@@ -318,10 +321,10 @@ class PluginDecl(_Frozen):
     blocks: tuple[BlockDecl, ...] = ()
     #: Its commands mount at the root (core's): ``untaped plugin``, not ``untaped untaped plugin``.
     root: bool = False
-    #: The deprecated names it imports or fills, found when it composed.
+    #: The deprecated contract methods it fills, read when it composed.
     uses: tuple[UseDecl, ...] = ()
-    #: Released with what it uses (untaped's own, or every requirement pinned to its version):
-    #: what it imports is never read, nor what it calls recorded.
+    #: Released and tested with what it uses (untaped's own, or every requirement pinned to its
+    #: version): neither its fills nor what it uses while a command runs are recorded.
     lockstep: bool = False
 
     def command_words(self) -> set[str]:

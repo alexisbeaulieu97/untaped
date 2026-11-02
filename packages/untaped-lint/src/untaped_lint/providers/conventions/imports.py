@@ -10,8 +10,8 @@ comes from every installed plugin's record, quarantined ones included. Its
 own package is always allowed; third-party libraries are not this rule's
 business. Every import counts, including function-level and
 ``TYPE_CHECKING`` ones. A star import of untaped or another plugin is
-flagged too: untaped checks each name a plugin imports, and can't tell what
-a star binds. Violations are
+flagged too: lint checks each name a plugin imports (``uses-deprecated``),
+and can't tell what a star binds. Violations are
 ``<file>:<line>::import-boundary::<detail>``;
 ``# untaped: allow import-boundary`` on the import line waives one.
 """
@@ -106,7 +106,7 @@ def _star(node: ast.Import | ast.ImportFrom, package: str, roots: frozenset[str]
         return None
     if not any(_is_within(node.module, root) for root in roots):
         return None
-    return f"imports * from {node.module}; import each name, so untaped can check it"
+    return f"imports * from {node.module}; import each name, so lint can check it"
 
 
 def import_boundary_violations(

@@ -2,7 +2,7 @@
 
 A plugin owns the modules under its entry point's package; where packages
 nest or share a namespace, the deepest one wins (:func:`untaped.runtime.plugin_uses.owner_of`,
-the rule doctor's import uses follow). Core's own plugin and plugins released
+the rule the owner of a name follows too). Core's own plugin and plugins released
 with what they use (``PluginDecl.lockstep``) own nothing here: what they
 call is untaped's own business. The recorder of run-time uses
 (:mod:`untaped.core.run_uses`) and the error boundary's translations
@@ -27,7 +27,7 @@ class PluginAt:
     name: str
     distribution: str
     version: str
-    #: Its ``Requires-Dist`` lines, which the floor rule reads.
+    #: Its ``Requires-Dist`` lines, whose requirement on an owner a missing name states.
     requires_dist: tuple[str, ...]
 
 

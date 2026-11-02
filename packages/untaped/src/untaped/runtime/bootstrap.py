@@ -62,6 +62,7 @@ from untaped.sdk._behaviours import bind_behaviours
 from untaped.sdk._process_groups import install as install_signal_handlers
 from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
+from untaped.sdk._schema import place_home_only
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.marks import bind_owners
 from untaped.sdk.network.credentials import bind_credentials
@@ -104,7 +105,8 @@ def _register_sections(result: CompositionResult) -> None:
     removals name untaped's own major), and its listed behaviours as its own
     (read only when one of them first warns). The root's behaviours are the
     SDK's to list (:func:`untaped.sdk._behaviours.behaviour_owner` reads one nobody
-    lists as core's), so asking who lists one never imports core's class.
+    lists as core's), so asking who lists one never imports core's class. The
+    setting each ``Dir(at=...)`` names is marked home-only in its section.
     """
     bind_owners(
         {
@@ -121,6 +123,9 @@ def _register_sections(result: CompositionResult) -> None:
         {plugin.name: _credentials(plugin) for plugin in result.plugins if plugin.credential_names}
     )
     for plugin in result.plugins:
+        # a Dir's at= setting is home-only, read from the declaration: no class is imported
+        placed = (tuple(block.at.split(".")) for block in plugin.decl.blocks if block.at)
+        place_home_only(plugin.settings, placed)
         register_profile_settings(plugin.name, section_settings(plugin), plugin.stability)
 
 
@@ -154,11 +159,9 @@ def _attach(run: Run, result: CompositionResult) -> None:
     """Attach the root composition ``result`` to the invocation's ``run``, and warn.
 
     Only the root composition warns about its quarantined plugins, one
-    warning each, and about each deprecated name a plugin uses that it found
-    composing, through the run's sink: a composition nested in a command
+    warning each, through the run's sink: a composition nested in a command
     (a plugin check, the surface walk, the testing kit's) is never attached
-    to a run, so it never warns again. A composition read from the kept
-    declaration found nothing, so a later start doesn't warn again.
+    to a run, so it never warns again.
     """
     from untaped.runtime.run import composition_of  # noqa: PLC0415 - a start runs no command
 
@@ -172,13 +175,9 @@ def _attach(run: Run, result: CompositionResult) -> None:
             f"plugin {record.name!r} from {record.distribution!r} quarantined "
             f"[{record.reason}]: {record.detail}"
         )
-    if result.found_uses:
-        from untaped.runtime.plugin_uses import notify_use  # noqa: PLC0415 - on a find only
+    from untaped.runtime.run_output import show_held  # noqa: PLC0415 - beside the attach
 
-        found = {candidate.name: candidate for candidate in result.candidates}
-        for plugin, use in result.found_uses:
-            candidate = found[plugin]
-            notify_use(plugin, candidate.distribution, candidate.distribution_version, use)
+    show_held()  # deprecations its plugins' modules raised while it was composed
 
 
 def compose_root(
@@ -655,7 +654,7 @@ def _invocation(tokens: Sequence[str], result: CompositionResult, root: App) -> 
 
 
 def _record_uses(ran: Sequence[Dispatched]) -> None:
-    """Record what the command was seen calling, once the recorder is loaded (core's own
+    """Record what the command was seen using, once the recorder is loaded (core's own
     commands load it; a plugin's only when a warning did)."""
     recorder = sys.modules.get("untaped.core.run_uses")
     result = attached()

@@ -8,8 +8,10 @@ such a line removes it, so it needs a deprecation first. Within those rules:
 
 - a parameter goes only with its callable, since a caller still passing it
   gets a ``TypeError`` core can't name; a field of a pydantic model that says
-  ``extra=forbid`` or ``extra=allow`` may go when due, since the caller gets a
-  clear error or keeps the value as an extra;
+  ``extra=allow`` may go when due, since the caller keeps the value as an
+  extra. On an ``extra=forbid`` model it goes only with its model, as a
+  parameter does: a caller still passing it gets pydantic's validation
+  error, which untaped can't tell from a user's mistyped key;
 - an experimental line may go without warning, but never change shape under
   the same name: a plugin then meets a missing name rather than a value it
   misreads.
@@ -26,8 +28,8 @@ from collections.abc import Collection, Sequence
 from untaped.core.surface._guard import removed
 from untaped.core.surface._lines import Line
 
-#: Model settings that let a deprecated field go at its major.
-_FIELDS_MAY_GO = ("extra=forbid", "extra=allow")
+#: Model settings that let a deprecated field go at its major: the caller keeps the value.
+_FIELDS_MAY_GO = ("extra=allow",)
 
 
 def broken(
@@ -110,7 +112,7 @@ def _gone(
         if f"{line.area} {callable_}" not in owners:
             continue  # it went with its callable
         if any(f"{line.area} {callable_} {extra}" in texts for extra in _FIELDS_MAY_GO):
-            continue  # a model field: the caller gets a clear error, or keeps the value
+            continue  # a model field: the caller keeps the value as an extra
         found.append(
             f"{line}: {callable_} stays, so a plugin still passing {name} gets a TypeError; "
             "a parameter goes only with its callable (deprecate the callable for a new one)"

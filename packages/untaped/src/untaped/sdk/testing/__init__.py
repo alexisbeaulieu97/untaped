@@ -95,6 +95,7 @@ from untaped.sdk.storage.holds import (
 from untaped.sdk.storage.holds import release_ask as _release_ask
 from untaped.sdk.storage.state import StateRows
 from untaped.sdk.testing.contracts import assert_fills, compose_with, piped_through
+from untaped.sdk.testing.deprecations import deprecation_of
 from untaped.sdk.testing.fixtures import MemoryCredentials, ScriptedTerminal
 from untaped.sdk.testing.schema import assert_schema_pinned
 from untaped.sdk.testing.screens import ScreenKeys, ScreenRun, drive_screen
@@ -129,6 +130,7 @@ __all__ = [
     "check_plugin",
     "compose_with",
     "damage",
+    "deprecation_of",
     "drive_screen",
     "install",
     "invoke_cli",

@@ -1,9 +1,10 @@
-"""What plugins were seen calling while a command ran: deprecated names the startup check can't see.
+"""What plugins were seen using while a command ran: the deprecated names their code reached.
 
-A name reached on an object a plugin got back (``store.prefetched(...).cat``)
-is no import, so composition never finds it; its
-:class:`~untaped.sdk.marks.UntapedDeprecationWarning` does, while the
-command runs. :func:`note` takes each one the run's warning route shows,
+untaped reads no plugin's code to guess what it uses; a deprecated name
+looked up or called while a command runs raises its
+:class:`~untaped.sdk.marks.UntapedDeprecationWarning`, wherever the plugin
+reached it (an import, ``store.prefetched(...).cat``). :func:`note` takes
+each one the run's warning route shows,
 maps the warning's file to its module and the module to the composed plugin
 whose package it is in, and keeps the use once per command; a plugin
 released with what it uses (``PluginDecl.lockstep``), core's own code and
@@ -30,12 +31,13 @@ from untaped.sdk.fields import Key
 from untaped.sdk.storage.state import StateRows
 
 if TYPE_CHECKING:
+    from untaped.runtime.plugin_frames import PluginAt
     from untaped.runtime.registry import CompositionResult
     from untaped.sdk.marks import UntapedDeprecationWarning
 
 
 class RunUse(BaseModel):
-    """One deprecated name a plugin version was seen calling, and the command that called it."""
+    """One deprecated name a plugin version was seen using, and the command that used it."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -49,13 +51,13 @@ class RunUse(BaseModel):
     owner: str | None = Field(description="The distribution removing it; none for untaped's own.")
     removed_in: int | None = None
     replacement: str | None = None
-    command: str = Field(description="The command that called it: `untaped acme report`.")
+    command: str = Field(description="The command that used it: `untaped acme report`.")
 
     def use(self) -> UseDecl:
         """This row as the use doctor's words read."""
         return UseDecl(
             id=self.id,
-            how="calls",
+            how="uses",
             distribution=self.owner or "untaped",
             core=self.owner is None,
             removed_in=self.removed_in,
@@ -64,7 +66,7 @@ class RunUse(BaseModel):
         )
 
 
-#: Core's ``run_uses``: each deprecated name a plugin version was seen calling.
+#: Core's ``run_uses``: each deprecated name a plugin version was seen using.
 RUN_USES = StateRows[RunUse]()._bound_to(NAME, "run_uses")
 
 #: Uses seen since the last command ended, by the calling plugin and the name's id.
@@ -73,24 +75,25 @@ _PENDING: dict[tuple[str, str], tuple[str, str, str, UntapedDeprecationWarning]]
 _WRITTEN: set[str] = set()
 
 
-def note(warning: UntapedDeprecationWarning, filename: str) -> None:
-    """Keep ``warning``'s use when ``filename`` is a composed plugin's own code."""
+def note(warning: UntapedDeprecationWarning, filename: str) -> PluginAt | None:
+    """Keep ``warning``'s use when ``filename`` is a composed plugin's own code; that plugin."""
     from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap imports this lazily
 
     result = attached()
     module = plugin_frames.module_of(filename)
     if result is None or module is None or warning.id is None:
-        return
+        return None
     plugin = plugin_frames.plugin_at(module, result)
     if plugin is None:
-        return
+        return None
     _PENDING.setdefault(
         (plugin.name, warning.id), (plugin.name, plugin.distribution, plugin.version, warning)
     )
+    return plugin
 
 
 def flush(command: str) -> None:
-    """Add the uses ``command`` was seen calling to the rows; never raise, never wait."""
+    """Add the uses ``command`` was seen making to the rows; never raise, never wait."""
     from untaped.runtime.bootstrap import attached  # noqa: PLC0415 - bootstrap imports this lazily
 
     pending = list(_PENDING.values())

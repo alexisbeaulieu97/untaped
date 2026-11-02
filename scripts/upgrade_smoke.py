@@ -7,11 +7,12 @@ without it, and ``examples/untaped-library`` as 1.0 calling it, then checks
 what a user sees:
 
 1. with shelf 1.0, ``untaped shelf list`` lists the library's books and
-   warns that the library imports ``book_titled``; ``untaped doctor`` has
-   the library's ``plugin-uses`` rows: the import, which the removal turns
-   into a disabled plugin, and the call ``shelf list`` was seen making;
-2. upgraded to shelf 3.0, the library is disabled as out of date
-   (``uses-missing``), and shelf still composes and runs: ``shelf list``
+   warns that the library uses ``book_titled``, as the call runs;
+   ``untaped doctor`` has the library's ``plugin-uses`` row naming the
+   command that was seen using it, and none from reading its imports;
+2. upgraded to shelf 3.0, the library is disabled (``uses-missing``) with
+   the facts: the name, the shelf version that lacks it, what the library
+   requires and both fixes; shelf still composes and runs: ``shelf list``
    says no provider is ready and exits 4, as with no provider installed.
 
 Every failure prints one line on stderr and exits 1.
@@ -179,16 +180,16 @@ def run(core: Path, work: Path) -> None:
         [row.get("title") for row in _rows(listed, "shelf list")] == ["Dune"],
         f"shelf list printed {listed.stdout!r}",
     )
-    # Composition's warning about the import, not the call's own warning while the command ran.
+    # The call's warning while the command ran, naming the plugin that made it.
     warned = [
         line
         for line in _lines(listed.stderr)
         if line.get("kind") == "untaped.deprecation"
         and line.get("plugin") == "library"
-        and "untaped_shelf.api.book_titled" in str(line.get("message"))
-        and "imports at" in str(line.get("message"))
+        and "untaped-library 1.0" in str(line.get("message"))
+        and "uses `untaped_shelf.api.book_titled`" in str(line.get("message"))
     ]
-    _expect(bool(warned), f"no warning that the library imports book_titled: {listed.stderr!r}")
+    _expect(bool(warned), f"no warning that the library uses book_titled: {listed.stderr!r}")
 
     doctor = _untaped(untaped, env, "doctor", "--format", "json")
     details = " ".join(
@@ -196,12 +197,9 @@ def run(core: Path, work: Path) -> None:
         for row in _rows(doctor, "doctor")
         if row.get("check") == "plugin-uses" and row.get("plugin") == "library"
     )
-    for wanted in (
-        "imports untaped_shelf.api.book_titled",  # read from the import, before the code runs
-        "disables library",
-        "calls untaped_shelf.api.book_titled (in `untaped shelf list`)",  # seen while it ran
-    ):
-        _expect(wanted in details, f"doctor's plugin-uses rows lack {wanted!r}: {details!r}")
+    wanted = "uses untaped_shelf.api.book_titled (in `untaped shelf list`)"  # seen while it ran
+    _expect(wanted in details, f"doctor's plugin-uses rows lack {wanted!r}: {details!r}")
+    _expect("imports" not in details, f"doctor read the library's imports: {details!r}")
 
     _call(["uv", "pip", "install", "-q", "--python", str(python), *_wheels(wheels, "shelf-3")])
     upgraded = _untaped(untaped, env, "shelf", "list", "--format", "json")
@@ -209,8 +207,9 @@ def run(core: Path, work: Path) -> None:
     _expect(
         "'library'" in words
         and "[uses-missing]" in words
-        and "untaped-library is out of date" in words,
-        f"the library isn't disabled as out of date: {upgraded.stderr!r}",
+        and "untaped_shelf.api.book_titled, which untaped-shelf 3." in words
+        and "upgrade untaped-library or untaped-shelf, or remove untaped-library" in words,
+        f"the library isn't disabled with the facts: {upgraded.stderr!r}",
     )
     # shelf runs: with its only provider disabled it says none is ready, as with none installed.
     _expect(

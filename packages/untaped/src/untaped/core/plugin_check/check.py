@@ -99,12 +99,12 @@ def _conventions(name: str, candidates: Sequence[PluginCandidate], row: _Row) ->
 
 
 def _uses(name: str, result: CompositionResult, row: _Row) -> list[PluginCheck]:
-    """A ``uses-deprecated`` warning per deprecated name the plugin imports or fills.
+    """A ``uses-deprecated`` warning per deprecated contract method the plugin's providers fill.
 
-    Composition found them reading the plugin's imports and its providers;
-    the declaration keeps them.
+    Composition read them from its providers; the declaration keeps them.
+    Lint reads the deprecated names the plugin's source imports.
     """
-    from untaped.runtime.plugin_uses import use_name  # noqa: PLC0415 - beside the lookup
+    from untaped.runtime.plugin_uses import use_name  # noqa: PLC0415 - beside the fills
     from untaped.sdk.marks import removal_text  # noqa: PLC0415
 
     rows: list[PluginCheck] = []

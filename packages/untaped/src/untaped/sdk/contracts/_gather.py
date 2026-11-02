@@ -419,9 +419,18 @@ def _unexpected(plugin: str, method: Method, exc: BaseException) -> UntapedError
     """``exc``, a provider bug rather than an untaped error, as its answer's error.
 
     The answer keeps the message only, so the traceback goes to the debug log.
+    A name of untaped or another plugin that the provider's owner no longer
+    has is said as the command's error boundary says it
+    (:func:`untaped.runtime.missing_names.translated`).
     """
+    from untaped.runtime.missing_names import translated  # noqa: PLC0415 - on a failure only
+
     _LOG.debug("%s's %s raised %s", plugin, method.name, type(exc).__name__, exc_info=exc)
-    return UntapedError(f"{type(exc).__name__}: {exc}", system=plugin)
+    explained = translated(exc)
+    if explained is None:
+        return UntapedError(f"{type(exc).__name__}: {exc}", system=plugin)
+    explained.system = plugin  # the provider's answer, whatever it failed on
+    return explained
 
 
 def validate(binding: Binding, method: Method, value: Any) -> tuple[Any, tuple[str, ...]]:

@@ -246,7 +246,7 @@ def test_a_write_drops_the_rows_of_versions_no_longer_installed(site: Site) -> N
     assert [row["version"] for row in _rows(site)] == ["1.0"]
 
 
-def test_doctor_names_the_command_a_removal_would_break(site: Site) -> None:
+def test_doctor_names_the_command_that_used_it(site: Site) -> None:
     found = _install(site)
     assert _invoke(found, "acme", "report").exit_code == 0
     result = _invoke(found, "doctor", "--format", "json")
@@ -255,9 +255,8 @@ def test_doctor_names_the_command_a_removal_would_break(site: Site) -> None:
         (
             "acme",
             "warn",
-            "untaped-acme 1.0 calls untaped_shelf.api.Bulb.dim (in `untaped acme report`), "
-            "removed in untaped-shelf 5.0: upgrading untaped-shelf to 5.0 makes "
-            "`untaped acme report` fail unless a newer untaped-acme stops using it",
+            "untaped-acme 1.0 uses untaped_shelf.api.Bulb.dim (in `untaped acme report`), "
+            "removed in untaped-shelf 5.0: upgrade untaped-acme once a release stops using it",
         )
     ]
 

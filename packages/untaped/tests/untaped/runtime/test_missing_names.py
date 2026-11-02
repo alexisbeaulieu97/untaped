@@ -2,9 +2,8 @@
 
 The plugins are real installs: ``untaped-shelf`` exports ``Bulb`` (defined in
 a private module) and ``Shade`` (a model that forbids extra fields) from its
-``api``; ``untaped-acme``'s ``poke`` command runs what each test writes, out
-of the startup check's sight (a name on a returned object, a lookup by
-``getattr`` or ``import_module``).
+``api``; ``untaped-acme``'s ``poke`` command runs what each test writes (a
+name on a returned object, a lookup by ``getattr`` or ``import_module``).
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
+from textwrap import dedent
 from typing import Any
 
 import pytest
@@ -142,9 +142,8 @@ def _invoke(found: list[PluginCandidate], *argv: str) -> Any:
     return CliInvoker().invoke(root, list(argv))
 
 
-_OUT_OF_DATE = (
-    "untaped-shelf 4.0 doesn't have: untaped-acme is out of date (built for untaped-shelf 3.0)"
-)
+_FACTS = "untaped-shelf 4.0 doesn't have (untaped-acme requires untaped-shelf>=3.0)"
+_FIX = "upgrade untaped-acme or untaped-shelf, or remove untaped-acme"
 
 
 def test_a_member_gone_from_a_returned_object_names_it_by_its_public_module(site: Site) -> None:
@@ -152,8 +151,9 @@ def test_a_member_gone_from_a_returned_object_names_it_by_its_public_module(site
     result = _invoke(found, "acme", "poke")
     assert result.exit_code == 4, result.output
     assert result.stderr.splitlines() == [
-        f"error: acme can't run this: it uses untaped_shelf.api.Bulb.dim, which {_OUT_OF_DATE}",
-        "hint: upgrade untaped-acme, or remove it (--verbose shows where)",
+        "error: acme can't run this: untaped-acme 1.0 uses untaped_shelf.api.Bulb.dim, which "
+        f"{_FACTS}",
+        f"hint: {_FIX} (--verbose shows where)",
     ]
 
 
@@ -182,15 +182,11 @@ def test_verbose_shows_the_traceback(site: Site) -> None:
             "untaped_shelf.api.lamp",
         ),
         (
-            "from untaped_shelf.api import Shade\n\ndef poke():\n    Shade(tint='red', hue=3)\n",
-            "untaped_shelf.api.Shade(hue=)",
-        ),
-        (
             "from untaped_shelf.api import Shade\n\ndef poke():\n    Shade.from_hex('fff')\n",
             "untaped_shelf.api.Shade.from_hex",
         ),
     ],
-    ids=["module-attribute", "missing-module", "from-import", "extra-field", "model-class"],
+    ids=["module-attribute", "missing-module", "from-import", "model-class"],
 )
 def test_each_kind_of_missing_name_says_what_it_is(site: Site, poke: str, spelled: str) -> None:
     found = _install(site, poke)
@@ -198,19 +194,32 @@ def test_each_kind_of_missing_name_says_what_it_is(site: Site, poke: str, spelle
     (acme / "late.py").write_text("from untaped_shelf.api import lamp\n", encoding="utf-8")
     result = _invoke(found, "acme", "poke")
     assert result.exit_code == 4, result.output
-    assert f"it uses {spelled}, which {_OUT_OF_DATE}" in result.stderr
+    assert f"untaped-acme 1.0 uses {spelled}, which {_FACTS}" in result.stderr
 
 
-def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site: Site) -> None:
+@pytest.mark.parametrize(
+    ("module", "spelled"),
+    [("untaped.sdk", "untaped.sdk.gone"), ("untaped.sdk.storage", "untaped.sdk.storage.gone")],
+    ids=["root", "group"],
+)
+def test_a_name_the_sdk_s_lazy_modules_lack_says_what_it_is(
+    site: Site, module: str, spelled: str
+) -> None:
+    found = _install(site, f"import {module} as sdk\n\ndef poke():\n    sdk.gone\n")
+    result = _invoke(found, "acme", "poke")
+    assert result.exit_code == 4, result.output
+    assert f"untaped-acme 1.0 uses {spelled}, which untaped " in result.stderr
+
+
+def test_with_no_major_since_the_floor_it_is_the_same_error(site: Site) -> None:
     found = _install(
         site, "from untaped_shelf.api import bulb\n\ndef poke():\n    bulb().dim()\n", shelf="3.2"
     )
     result = _invoke(found, "acme", "poke")
-    assert isinstance(result.exception, AttributeError)
-    assert result.stderr.count("warning: acme:") == 1  # the root's boundary and the mount's
+    assert result.exit_code == 4, result.output
     assert result.stderr.splitlines()[0] == (
-        "warning: acme: it uses untaped_shelf.api.Bulb.dim, which untaped-shelf 3.2 doesn't have: "
-        "untaped-acme may need a newer untaped-shelf than it declares"
+        "error: acme can't run this: untaped-acme 1.0 uses untaped_shelf.api.Bulb.dim, which "
+        "untaped-shelf 3.2 doesn't have (untaped-acme requires untaped-shelf>=3.0)"
     )
 
 
@@ -221,6 +230,7 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "import json\n\ndef poke():\n    json.gone()\n",
         "from untaped_shelf.api import Shade\n\n"
         "def poke():\n    Shade.model_validate({'hue': 3})\n",
+        "from untaped_shelf.api import Shade\n\ndef poke():\n    Shade(tint='red', hue=3)\n",
         "def poke():\n    None.spin()\n",
         "from untaped_shelf.api import Knob\n\ndef poke():\n    Knob().twist\n",
         "from untaped.sdk import key\nfrom untaped_acme.plugin import AcmeSettings\n\n"
@@ -238,6 +248,7 @@ def test_no_major_since_the_floor_keeps_the_traceback_with_a_line_before_it(site
         "own-object",
         "library",
         "user-data",
+        "extra-field",
         "none",
         "class-hook",
         "setting-key",
@@ -261,7 +272,7 @@ def test_anything_else_stays_the_error_it_is(site: Site, poke: str) -> None:
     assert "can't run this" not in result.stderr, result.stderr
 
 
-def test_a_name_gone_while_the_plugin_loads_disables_it_as_out_of_date(site: Site) -> None:
+def test_a_name_missing_while_the_plugin_loads_disables_it(site: Site) -> None:
     found = _install(site, "def poke():\n    pass\n")
     plugin = site.root / "untaped-acme" / "untaped_acme" / "plugin.py"
     plugin.write_text(
@@ -273,7 +284,7 @@ def test_a_name_gone_while_the_plugin_loads_disables_it_as_out_of_date(site: Sit
     assert result.exit_code == 4
     assert (
         "quarantined [uses-missing]: untaped-acme 1.0: untaped_acme/plugin.py:3 uses "
-        f"untaped_shelf.lamps, which {_OUT_OF_DATE}; upgrade untaped-acme, or remove it"
+        f"untaped_shelf.lamps, which {_FACTS}; {_FIX}"
     ) in " ".join(result.stderr.split())
 
 
@@ -281,3 +292,84 @@ def test_a_run_of_another_composition_is_judged_by_nothing(site: Site) -> None:
     found = _install(site, "def poke():\n    pass\n")
     assert _invoke(found, "acme", "poke").exit_code == 0
     assert bootstrap.attached() is None  # outside the root's run: the testing kit's, a check's
+
+
+_LAMPS = {
+    "untaped_shelf/lamps.py": '''
+        """Shelf's contract, and the command asking it."""
+
+        from abc import abstractmethod
+
+        from untaped.sdk import Command
+        from untaped.sdk.contracts import Contract, gather
+
+
+        class Lamps(Contract):
+            """Who lights lamps."""
+
+            @abstractmethod
+            def glow(self) -> str:
+                """How it glows."""
+
+
+        class Glow(Command):
+            """Ask every provider how it glows."""
+
+            def run(self) -> None:
+                for errored in gather(Lamps.glow)().errored:
+                    self.ctx.diag.failure(errored.error, item=errored.plugin)
+        ''',
+}
+
+_GLOWING = '''
+    """``acme``, a provider of shelf's ``Lamps`` whose answer dims a bulb."""
+
+    from pydantic import BaseModel, ConfigDict
+
+    from untaped.sdk import Plugin
+    from untaped.sdk.contracts import Provider
+    from untaped_shelf.api import bulb
+    from untaped_shelf.lamps import Lamps
+
+
+    class AcmeSettings(BaseModel):
+        model_config = ConfigDict(frozen=True)
+
+
+    class AcmeLamps(Lamps, Provider[AcmeSettings]):
+        def glow(self) -> str:
+            return bulb().dim()
+
+
+    class Acme(Plugin):
+        """Lights lamps."""
+
+        settings = AcmeSettings
+        fills = (AcmeLamps,)
+    '''
+
+
+def test_a_provider_s_answer_says_it_as_a_command_does(site: Site) -> None:
+    shelf_plugin = dedent(_SHELF["untaped_shelf/plugin.py"]).replace(
+        "from untaped.sdk import Plugin\n",
+        "from untaped.sdk import Plugin\nfrom untaped_shelf.lamps import Glow, Lamps\n",
+    )
+    shelf_plugin = shelf_plugin.replace(
+        "settings = ShelfSettings\n",
+        "settings = ShelfSettings\n    commands = (Glow,)\n    offers = (Lamps,)\n",
+    )
+    shelf = site.install(
+        "untaped-shelf",
+        {**_SHELF, **_LAMPS, "untaped_shelf/plugin.py": shelf_plugin},
+        at="4.0",
+    )
+    acme = site.install(
+        "untaped-acme",
+        {"untaped_acme/__init__.py": "", "untaped_acme/plugin.py": _GLOWING},
+        requires=("untaped-shelf>=3.0",),
+    )
+    result = _invoke([acme, shelf], "shelf", "glow")
+    assert result.exit_code != 0
+    assert (
+        f"acme can't run this: untaped-acme 1.0 uses untaped_shelf.api.Bulb.dim, which {_FACTS}"
+    ) in " ".join(result.stderr.split()), result.stderr
