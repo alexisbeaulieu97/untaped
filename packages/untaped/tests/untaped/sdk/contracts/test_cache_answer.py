@@ -34,6 +34,7 @@ from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.contracts._gather import Answers
 from untaped.sdk.diagnostic import Diagnostic, Failure, Message, Progress, Stale
 from untaped.sdk.errors import HttpTransportError, UntapedError
+from untaped.sdk.storage._cache_files import CacheFiles
 from untaped.sdk.storage.cache import RETRY_AFTER, Cache, Filled
 from untaped.sdk.testing import CacheClock, ProgressClock, cache_clock, progress_clock
 
@@ -341,15 +342,15 @@ def test_an_entry_another_process_replaces_after_the_read_serves_what_was_read(
     configure(LIBRARY_CONFIG)
     gather(BookSource.books)()
     [entry] = _entries()
-    load = Cache._load
+    load = CacheFiles.load
 
-    def load_then_replaced(self: Cache[Any], *args: Any, **kwargs: Any) -> Any:
+    def load_then_replaced(self: CacheFiles, *args: Any, **kwargs: Any) -> Any:
         kept = load(self, *args, **kwargs)
         head = entry.read_text().splitlines()[0]
         entry.write_text(head + "\n" + json.dumps([{"title": "Other"}]) + "\n")
         return kept
 
-    monkeypatch.setattr(Cache, "_load", load_then_replaced)
+    monkeypatch.setattr(CacheFiles, "load", load_then_replaced)
     answer = _library_provider().instance.books()  # type: ignore[attr-defined]
     assert [book.title for book in answer] == ["Dune", "Emma"]
     assert Library.calls == 1

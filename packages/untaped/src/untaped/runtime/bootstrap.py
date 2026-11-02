@@ -65,7 +65,7 @@ from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import bind_owners
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage._refs import refresh
-from untaped.sdk.storage.cache import current_call
+from untaped.sdk.storage._serve_scope import current_call
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin

@@ -30,7 +30,7 @@ from untaped.sdk._run import (
     run_scope,
 )
 from untaped.sdk.network.http import HttpClient, RetryPolicy
-from untaped.sdk.storage import cache as cache_module
+from untaped.sdk.storage import _cache_files
 from untaped.sdk.testing import (
     ManualClock,
     cache_clock,
@@ -81,7 +81,7 @@ def test_an_installed_clock_wins_over_any_run_and_restores_in_order(tmp_path: Pa
             raise RuntimeError
         assert run_clock() is outer
         with cache_clock(datetime(2000, 1, 1)):
-            assert cache_module._utcnow() == datetime(2000, 1, 1, tzinfo=UTC)
+            assert _cache_files.utcnow() == datetime(2000, 1, 1, tzinfo=UTC)
 
 
 def test_a_worker_reads_the_installed_clock_and_the_runs(tmp_path: Path) -> None:
@@ -150,9 +150,9 @@ def test_http_back_off_sleeps_on_the_clock_and_reads_retry_after_from_it() -> No
 
 def test_caches_read_their_ages_from_the_clock() -> None:
     with manual_clock(START) as clock:
-        assert cache_module._utcnow() == START
+        assert _cache_files.utcnow() == START
         clock.advance(hours=2)
-        assert cache_module._utcnow() == START + timedelta(hours=2)
+        assert _cache_files.utcnow() == START + timedelta(hours=2)
 
 
 def test_the_older_clocks_leave_the_rest_of_the_clock_alone() -> None:
