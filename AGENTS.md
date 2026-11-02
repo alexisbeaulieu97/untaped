@@ -22,9 +22,11 @@ bug often says something about the design, and so does a change that only fits
 by being bolted on. The task is why we're in the code, not the limit of what
 we notice.
 
-Everything untaped does can run unattended, so scripts and agents can drive
-it: what a command asks at a terminal can come from a flag, an environment
-variable or configuration, or another command does the job without asking.
+Everything untaped does can run unattended, so scripts and agents can drive it:
+what a command asks at a terminal can come from a flag, an environment variable
+or configuration, or another command does the job without asking. untaped
+treats people and agents alike: a step states only facts about itself, such as
+that it asks for a secret or needs admin rights, never who should take it.
 
 Core and each plugin care only about what comes in and what goes out, and know
 one another only through public interfaces, never how the other is built. A
@@ -41,12 +43,12 @@ with the user's rights and could get around any guard, so we add no guards that
 only look like protection.
 
 untaped is made of building blocks. A mechanic several features need, such as
-caching or state, is solved once by its owner (core unless something narrower
-owns it) behind a typed pydantic interface that is robust and simple to use.
-Any plugin can use it, and its owner does too, never a private copy. For
-example, the SDK provides output formats and commands pick those they support.
-Core provides mechanics, not models of a plugin's domain; each plugin models
-its own.
+caching or state, is solved once by its owner behind a typed pydantic interface
+that is robust and simple to use. Core holds only what every plugin needs; any
+other shared mechanic lives in a plugin that the others depend on. Any plugin
+can use a block, and its owner does too, never a private copy. For example, the
+SDK provides output formats and commands pick those they support. Core provides
+mechanics, not models of a plugin's domain; each plugin models its own.
 
 ## Agent-only notes
 
