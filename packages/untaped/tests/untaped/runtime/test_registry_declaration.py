@@ -186,7 +186,7 @@ class Toy(Plugin):
 
 def test_a_second_start_reads_a_plugins_credentials_when_first_asked(toys: Path) -> None:
     """The section knows the credential's name from the declaration, so the class waits."""
-    from untaped.runtime.settings import _CREDENTIAL_NAMES
+    from untaped.runtime.section_models import CREDENTIAL_NAMES
     from untaped.sdk.network.credentials import declared_credentials
 
     toy = _package(toys, "toyplug", KEYED)
@@ -197,7 +197,7 @@ def test_a_second_start_reads_a_plugins_credentials_when_first_asked(toys: Path)
         assert "toyplug.plugin" not in sys.modules
         section = section_settings(again.plugins[1])
         assert section is not None
-        assert _CREDENTIAL_NAMES[section] == {"token"}
+        assert CREDENTIAL_NAMES[section] == {"token"}
         assert "toyplug.plugin" not in sys.modules
         assert [each.name for each in declared_credentials("toy")] == ["token"]
         assert "toyplug.plugin" in sys.modules

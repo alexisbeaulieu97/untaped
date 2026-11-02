@@ -35,7 +35,7 @@ from untaped.sdk.records import Record, record_model
 from untaped.sdk.words import not_found, run_hint
 
 if TYPE_CHECKING:
-    from untaped.runtime.settings import ExtensionSettings
+    from untaped.runtime.section_models import ExtensionSettings
     from untaped.sdk._run import Diag
     from untaped.sdk.contracts._declare import ContractInfo
 

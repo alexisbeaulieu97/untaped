@@ -8,15 +8,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 from untaped.runtime.config_file import read_config_text, replace_config_text
-from untaped.runtime.run_output import Diagnostics
-from untaped.runtime.settings import (
+from untaped.runtime.config_read import (
     FORMAT_VERSION,
     NewerFormatError,
     OlderFormatError,
     check_config_text,
-    resolve_config_path,
-    validate_config_file,
 )
+from untaped.runtime.run_output import Diagnostics
+from untaped.runtime.settings import resolve_config_path, validate_config_file
 from untaped.sdk._cli import report_errors
 from untaped.sdk.errors import ConfigError, attribution
 from untaped.sdk.prompt.editor import run_editor

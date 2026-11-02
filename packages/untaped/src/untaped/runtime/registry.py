@@ -42,13 +42,8 @@ from untaped.runtime.declaration import (
     Problem,
     Quarantined,
 )
-from untaped.runtime.settings import (
-    PLUGIN_NAME_PATTERN,
-    RESERVED_SECTIONS,
-    plugins_root,
-    reserved_section_keys,
-    section_model,
-)
+from untaped.runtime.section_models import PLUGIN_NAME_PATTERN, reserved_section_keys, section_model
+from untaped.runtime.settings import RESERVED_SECTIONS, plugins_root
 from untaped.sdk._home import HOME_ENV
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import mapping_errors
@@ -101,7 +96,7 @@ def section_settings(plugin: ComposedPlugin, *, extensions: bool = True) -> type
 
     The section of a contract owner, or of a plugin that declares caches,
     always exists: it carries the keys the SDK injects, ``extensions`` and
-    ``caches`` (:func:`untaped.runtime.settings.section_model`). So does the
+    ``caches`` (:func:`untaped.runtime.section_models.section_model`). So does the
     section of a plugin declaring credentials, whose ``UNTAPED_<SECTION>__<NAME>``
     overrides one. ``extensions=False`` leaves ``extensions`` out (the config
     reference documents it elsewhere).

@@ -10,7 +10,8 @@ from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime.bootstrap import build_root_app, composition
 from untaped.runtime.registry import settings_model
-from untaped.runtime.settings import Settings, model_sections
+from untaped.runtime.section_models import model_sections
+from untaped.runtime.settings import Settings
 
 
 def _core_violations() -> list[str]:

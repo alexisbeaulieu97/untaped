@@ -35,11 +35,12 @@ from core_test_support.commands.support import (
 from core_test_support.runtime.plugin_harness import make_candidate
 from untaped.core.commands.doctor import collect_doctor_rows
 from untaped.runtime import bootstrap, mount
+from untaped.runtime.config_read import FORMAT_VERSION
 from untaped.runtime.registry import (
     PluginCandidate,
     named_plugin_dir,
 )
-from untaped.runtime.settings import FORMAT_VERSION, get_settings
+from untaped.runtime.settings import get_settings
 from untaped.sdk import Command, Key, Plugin
 from untaped.sdk.fields import Positional
 from untaped.sdk.network._credential_store import INDEX, CredentialRow

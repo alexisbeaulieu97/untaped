@@ -36,12 +36,8 @@ from untaped.runtime.profile_resolver import (
     selected_profile,
 )
 from untaped.runtime.redaction import redact_credentials
-from untaped.runtime.settings import (
-    HttpSettings,
-    active_settings_layout,
-    env_sets_key,
-    load_core_part,
-)
+from untaped.runtime.settings import HttpSettings, active_settings_layout, load_core_part
+from untaped.runtime.settings_env import env_sets_key
 from untaped.sdk._run import run_clock
 from untaped.sdk.errors import (
     ConfigError,
