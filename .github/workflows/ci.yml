@@ -37,7 +37,7 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p "$RUNNER_TEMP/fakehome"
-          export HOME="$RUNNER_TEMP/fakehome" USERPROFILE="$(cygpath -w "$RUNNER_TEMP/fakehome")"
+          true
           uv run pytest -n auto -q --no-cov -o addopts="--import-mode=importlib" -rfE 2>&1 > pytest.log 2>&1; tail -3 pytest.log
       - name: Failure summary
         if: always()

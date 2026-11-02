@@ -72,6 +72,7 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
             if key.startswith(("UNTAPED_", "GIT_CONFIG_")) or ambient:
                 patch.delenv(key)
         patch.setenv("HOME", str(home))
+        patch.setenv("USERPROFILE", str(home))  # probe: Path.home() on Windows
         patch.setenv("UV_CACHE_DIR", uv_cache)
         # A fresh HOME hides uv's managed interpreters. Use the test runner's
         # Python for real hook workers instead of downloading it for each test.
