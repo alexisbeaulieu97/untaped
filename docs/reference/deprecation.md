@@ -20,7 +20,7 @@ a hand-typed one as `lint.hand-typed-deprecation`.
 | A cache setting's old key | `Cache(..., renamed_from=("stale_after_seconds",), removed_in=3)` |
 | A function or method of your Python API | `@deprecated(removed_in=3, replacement=new_api)` over `@warnings.deprecated("<its sentence>")`, under any `@classmethod`, `@staticmethod` or `@property` |
 | A parameter of your Python API | `kind: Annotated[str \| None, deprecated(removed_in=3, replacement="records on the plugin class")] = None` on a function under `@deprecated_parameters`, itself under any `@classmethod` or `@staticmethod` |
-| A renamed contract method | the old method stays on the contract with both marks of a method, `@deprecated(removed_in=3, replacement=new_method)` first; a provider still filling the old name fills the new one, and the owner calls only the new one |
+| A renamed contract method | the old method stays on the contract with both marks of a method, `@deprecated(removed_in=3, replacement=new_method)` first; a provider still filling the old name fills the new one, and `gather` or `Stdin(via=)` given the old name asks the new one |
 | A renamed name of `untaped.sdk` or a group (core) | `size_words=deprecated(removed_in=14, replacement=size_text)` in `old_names(...)`: the root's `OLD_NAMES` in `sdk/_exports.py`, or the group's `lazy_names(..., old=...)`; plus `size_words = size_text` in the module's `TYPE_CHECKING` block |
 | A field of a model in your Python API | `old: Annotated[int, deprecated(removed_in=4, replacement="name")] = 0` on a model with `extra="forbid"` or `"allow"` |
 | A behaviour | `row_kind = DeprecatedBehaviour(removed_in=3, replacement="records on the plugin class")` on the plugin class |

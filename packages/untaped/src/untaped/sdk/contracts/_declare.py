@@ -501,6 +501,8 @@ def method_contract(method: Callable[..., Any]) -> tuple[ContractInfo, Method]:
         raise TypeError(
             f"{method!r} is not a contract method: pass it as Contract.method (RepoSource.repos)"
         )
+    # a renamed method's old spelling asks the new one, as the owner does
+    name = _renamed_to(name, info.methods[name].function, info.methods) or name
     return info, info.methods[name]
 
 
@@ -555,6 +557,7 @@ def _rewrap(cls: type[Contract]) -> None:
                     f"{klass.__qualname__}.{name}: only the contract decides what is @cached"
                 )
     _bind_renamed(cls, info)
+    renamed = _renamed(info)
     problems: dict[str, str] = {}
     for name, method in info.methods.items():
         holder = next(klass for klass in cls.__mro__ if name in vars(klass))
@@ -567,8 +570,8 @@ def _rewrap(cls: type[Contract]) -> None:
         if problem is not None:
             problems[name] = f"{value.__qualname__} {problem}"  # where its code is, a mixin's too
         wrapped = value if problem is not None else adapted(value, method.function)
-        if method.bridge:
-            wrapped = _bridged(wrapped)
+        if method.bridge or (name in renamed and info.methods[renamed[name]].bridge):
+            wrapped = _bridged(wrapped)  # a provider's own call of the old spelling, too
         if method.cache is not None:
             wrapped = _served(wrapped, method.cache, name)
         if wrapped is not value or problem is not None:
@@ -576,18 +579,29 @@ def _rewrap(cls: type[Contract]) -> None:
     setattr(cls, _PARAMETERS, types.MappingProxyType(problems))
 
 
+#: The new names a provider class filled through their old spelling (:func:`_bind_renamed`).
+_BOUND_FROM_OLD = "__untaped_bound_from_old__"
+
+
 def _bind_renamed(cls: type[Contract], info: ContractInfo) -> None:
     """A provider filling a renamed method by its old name fills the new one with it.
 
     The owner calls only the new name, so the provider keeps answering until
-    the old name goes. The class nearest ``cls`` decides: an old name it
-    defines below (or beside none of) the new one is the provider's answer,
-    so a subclass overriding the old name still answers.
+    the old name goes. A subclass overriding the old name answers instead
+    when its base filled the new name this way too; a base that defines the
+    new name itself keeps it, so ``def items(self): return self.all_items()``
+    stays a shim.
     """
     for old, new in _renamed(info).items():
         old_at, new_at = _holder_at(cls, old), _holder_at(cls, new)
-        if old_at < new_at and cls.__mro__[old_at] not in info.cls.__mro__:
-            setattr(cls, new, vars(cls.__mro__[old_at])[old])
+        old_holder, new_holder = cls.__mro__[old_at], cls.__mro__[new_at]
+        if old_holder in info.cls.__mro__:
+            continue  # the provider doesn't fill the old name
+        if new_holder in info.cls.__mro__ or (
+            old_at < new_at and new in vars(new_holder).get(_BOUND_FROM_OLD, ())
+        ):
+            setattr(cls, new, vars(old_holder)[old])
+            setattr(cls, _BOUND_FROM_OLD, frozenset({*vars(cls).get(_BOUND_FROM_OLD, ()), new}))
 
 
 def _renamed(info: ContractInfo) -> dict[str, str]:
@@ -649,6 +663,11 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
     item = _item_default(where, item_param)
     methods: dict[str, Method] = {}
     bridges: list[str] = []
+    public = {
+        name
+        for name, value in vars(cls).items()
+        if not name.startswith("_") and inspect.isfunction(value)
+    }
     for name, value in vars(cls).items():
         if name.startswith("_") or not inspect.isfunction(value):
             continue
@@ -671,7 +690,7 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
         # an old spelling is never asked: the new method is the bridge
-        is_bridge = _renamed_to(name, value, vars(cls)) is None and _is_bridge(
+        is_bridge = _renamed_to(name, value, public) is None and _is_bridge(
             value, hints, item_param, item
         )
         if is_bridge:

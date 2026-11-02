@@ -12,7 +12,7 @@ from abc import abstractmethod
 from core_test_support.contracts.support import compose, plugin
 from untaped.sdk import Issued, Record
 from untaped.sdk.contracts import Contract, Ok, Provider, gather
-from untaped.sdk.contracts._declare import contract_of
+from untaped.sdk.contracts._declare import contract_of, method_contract
 from untaped.sdk.marks import deprecated
 
 
@@ -61,16 +61,11 @@ class SubShop(OldShop):
         return [Item(name="sub")]
 
 
-class MovedBase(ItemSource, Provider):
-    def all_items(self) -> list[Item]:
-        return [Item(name="base")]
-
-
-class OldSub(MovedBase):
-    """Written before its base moved to the new name: it still overrides the old one."""
+class Compat(NewShop):
+    """Moved to the new name and keeps the old one as a shim calling it."""
 
     def items(self) -> list[Item]:
-        return [Item(name="old-sub")]
+        return self.all_items()
 
 
 def _answers(*providers: type) -> dict[str, list[str]]:
@@ -95,8 +90,21 @@ def test_a_provider_filling_the_old_name_answers_the_new_one() -> None:
     }
 
 
-def test_a_subclass_overriding_the_old_name_is_the_answer() -> None:
-    assert _answers(SubShop, OldSub) == {"p0": ["sub"], "p1": ["old-sub"]}
+def test_a_subclass_overriding_the_old_name_its_base_filled_is_the_answer() -> None:
+    assert _answers(SubShop) == {"p0": ["sub"]}
+
+
+def test_a_base_defining_the_new_name_keeps_it_beside_an_old_name_shim() -> None:
+    assert _answers(Compat) == {"p0": ["new"]}
+
+
+def test_a_consumer_asking_the_old_name_asks_the_new_one() -> None:
+    compose(
+        plugin("owner", offers=(ItemSource,), records=(Item,), module=__name__),
+        plugin("p0", fills=(NewShop,), module=__name__),
+    )
+    [answer] = gather(ItemSource.items)()
+    assert isinstance(answer, Ok) and [item.name for item in answer.value] == ["new"]
 
 
 # --- a renamed bridge ----------------------------------------------------------------------
@@ -132,7 +140,7 @@ class OldTags(TagSource[Raw], Provider):
         return Tag(title=item.label)
 
     def tags(self) -> list[Tag]:
-        return [self.to_tag(Raw(label="x"))]
+        return [self.as_tag(Raw(label="x"))]  # its own spelling, as released
 
 
 def test_a_renamed_bridge_is_one_bridge_and_its_old_name_fills_it() -> None:
@@ -146,3 +154,5 @@ def test_a_renamed_bridge_is_one_bridge_and_its_old_name_fills_it() -> None:
     [answer] = gather(TagSource.tags)()
     assert isinstance(answer, Ok)
     assert [tag.title for tag in answer.value] == ["x"]
+    assert answer.value[0].source is not None and answer.value[0].source.plugin == "old"
+    assert method_contract(TagSource.as_tag)[1].name == "to_tag"  # Stdin(via=) takes it too
