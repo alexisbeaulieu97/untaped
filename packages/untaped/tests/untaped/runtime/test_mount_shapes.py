@@ -69,13 +69,15 @@ Right = derive(Word, "Right", doc="Print right.", word="right")
 class AGroup(Group):
     """Group a."""
 
-    commands = (derive(Word, "List", doc="List a.", word="a"),)
+    List = derive(Word, "List", doc="List a.", word="a", qualname="AGroup.List")
+    commands = (List,)
 
 
 class BGroup(Group):
     """Group b."""
 
-    commands = (derive(Word, "List", doc="List b.", word="b"),)
+    List = derive(Word, "List", doc="List b.", word="b", qualname="BGroup.List")
+    commands = (List,)
 
 
 class Count(Command):

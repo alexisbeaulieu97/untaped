@@ -219,6 +219,16 @@ def test_derive_makes_a_group_with_its_commands() -> None:
     assert Hosts.__doc__ == "Manage hosts."
 
 
+def test_derive_binds_a_class_where_its_qualname_says() -> None:
+    Hosts = derive(Group, "Hosts", doc="Manage hosts.", qualname="HOSTS", commands=(List,))
+    Plain = derive(List, "Plain", qualname="HOSTS.Plain")
+    assert (Hosts.__name__, Hosts.__qualname__, Hosts.__module__) == ("Hosts", "HOSTS", __name__)
+    assert (Plain.__qualname__, Plain.__module__) == ("HOSTS.Plain", __name__)
+    assert derive(List, "Elsewhere", qualname="X", module="acme.cli").__module__ == "acme.cli"
+    with pytest.raises(TypeError, match="module= names where qualname= is"):
+        derive(List, "Nowhere", module="acme.cli")
+
+
 def test_derive_takes_only_commands_and_groups() -> None:
     with pytest.raises(TypeError, match="Command or Group"):
         derive(int, "Nope")  # type: ignore[type-var]

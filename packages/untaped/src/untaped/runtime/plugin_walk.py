@@ -220,6 +220,8 @@ class PluginWalk:
         #: The plugin offering each contract class composed with this one.
         self.offering = offering
         self.problems: list[Problem] = []
+        #: Each command class by its ``module:qualname``, and the first path it is mounted at.
+        self.targets: dict[str, tuple[type, tuple[str, ...]]] = {}
         self.kinds: dict[type, str] = {}
         #: Providers' own records no command of the plugin reaches: a clash refuses
         #: nothing (see the settling in :mod:`untaped.runtime.composition`).
@@ -657,6 +659,7 @@ class PluginWalk:
             if name.endswith("Group") and len(name) > len("Group"):
                 name = name[: -len("Group")]
             group_path = (*path, kebab(name))
+            self._unique_target(node, group_path)
             summary, doc = prose(node)
             if not summary:
                 self.problem(
@@ -689,8 +692,27 @@ class PluginWalk:
         return None
 
     def _command(self, cls: type[Command[Any]], path: tuple[str, ...]) -> CommandDecl | None:
+        self._unique_target(cls, path)
         walk = CommandWalk(self, cls, path)
         return walk.decl()
+
+    def _unique_target(self, cls: type, path: tuple[str, ...]) -> None:
+        """Refuse a second command or group class at one ``module:qualname``.
+
+        A hint, or a deprecation judged by target, would name the wrong one.
+        One class mounted at two paths is one command; a class derived without
+        ``qualname=`` keeps its base's target, so the second one derived from
+        that base is refused.
+        """
+        target = target_of(cls)
+        first = self.targets.setdefault(target, (cls, path))
+        if first[0] is not cls:
+            self.problem(
+                "duplicate-target",
+                cls.__qualname__,
+                f"`{' '.join(first[1])}` and `{' '.join(path)}` are both {target}: "
+                "derive each with its own qualname=",
+            )
 
 
 def _tuple(walk: PluginWalk, cls: type[Plugin], name: str) -> tuple[object, ...]:

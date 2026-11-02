@@ -12,6 +12,7 @@ instead of failing an import.
 from __future__ import annotations
 
 import copy
+import sys
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, create_model, model_validator
@@ -239,6 +240,8 @@ def derive[C: Command[Any] | Group](
     *,
     doc: str | None = None,
     omit: Iterable[str] = (),
+    qualname: str | None = None,
+    module: str | None = None,
     **fields: object,
 ) -> type[C]:
     """A subclass of a command or group with fields replaced or dropped, for generated classes.
@@ -250,14 +253,32 @@ def derive[C: Command[Any] | Group](
     For a group, keywords set class attributes (``commands=(...)``). The one
     place a class name is data, because a generated class has no source to
     take it from.
+
+    ``qualname`` is where the class is bound, in ``module`` (by default the
+    caller's): ``PATCH_PROJECT = derive(Patch, "Patch", qualname="PATCH_PROJECT", ...)``.
+    Composition names a command by ``module:qualname``, so two commands
+    derived from one base each need theirs; without it the class keeps its
+    base's, and composition refuses a second one (``duplicate-target``).
     """
+    if module is not None and qualname is None:
+        raise TypeError(f"derive({base.__name__}, {name!r}): module= names where qualname= is")
+    where: dict[str, Any] = {}
+    if qualname is not None:
+        where = {"__qualname__": qualname, "__module__": module or _caller_module()}
     if isinstance(base, type) and issubclass(base, Group):
-        return type(
-            name, (base,), {"__doc__": doc or base.__doc__, "__module__": base.__module__, **fields}
-        )
+        attributes = {"__doc__": doc or base.__doc__, "__module__": base.__module__, **fields}
+        return type(name, (base,), {**attributes, **where})
     if not (isinstance(base, type) and issubclass(base, Command)):
         raise TypeError(f"derive() takes a Command or Group class, not {base!r}")
-    return _derive_command(base, name, doc=doc, omit=tuple(omit), fields=fields)  # type: ignore[return-value]
+    sub = _derive_command(base, name, doc=doc, omit=tuple(omit), fields=fields)
+    for attribute, value in where.items():
+        setattr(sub, attribute, value)
+    return sub  # type: ignore[return-value]
+
+
+def _caller_module() -> str:
+    """The module that called :func:`derive`."""
+    return str(sys._getframe(2).f_globals.get("__name__", "?"))
 
 
 def _derive_command(

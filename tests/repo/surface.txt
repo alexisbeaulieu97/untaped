@@ -7984,7 +7984,9 @@ sdk untaped.sdk.deprecated_parameters(function, /)
 sdk untaped.sdk.derive(**fields)
 sdk untaped.sdk.derive(base, name)
 sdk untaped.sdk.derive(doc=) default=None
+sdk untaped.sdk.derive(module=) default=None
 sdk untaped.sdk.derive(omit=) default=[]
+sdk untaped.sdk.derive(qualname=) default=None
 sdk untaped.sdk.dir_bytes(path)
 sdk untaped.sdk.experimental
 sdk untaped.sdk.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)

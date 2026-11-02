@@ -14,7 +14,7 @@ from typing import Any
 
 from untaped.sdk import experimental
 from untaped_awx.domain.launch_prompts import PROMPT_FLAGS
-from untaped_awx.domain.lint.fixes import PATCH_GROUPS, patch_fix
+from untaped_awx.domain.lint.fixes import PATCHED_KINDS, patch_fix
 from untaped_awx.domain.lint.resources import Linted, Resources
 from untaped_awx.domain.lint.rules._support import described, is_set, referenced, report
 from untaped_awx.domain.lint.views import (
@@ -114,7 +114,7 @@ def _judged(
             f"only its survey's variables are accepted while {flag} is false"
         )
     fix = None
-    if item.origin == "controller" and template.resource.kind in PATCH_GROUPS:
+    if item.origin == "controller" and template.resource.kind in PATCHED_KINDS:
         fix = patch_fix(template, f"{flag}=true")
     yield report(
         ignored_launch_field,

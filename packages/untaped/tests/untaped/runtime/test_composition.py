@@ -14,7 +14,15 @@ from pydantic import BaseModel, Field
 from core_test_support.contracts.support import BOOKS, Book, BookSource, Shop
 from untaped.runtime.command_walk import bundle_panel
 from untaped.runtime.composition import PluginEntry, compose
-from untaped.runtime.declaration import AliasDecl, CommandDecl, Declaration, GroupDecl, Problem
+from untaped.runtime.declaration import (
+    AliasDecl,
+    CommandDecl,
+    Declaration,
+    GroupDecl,
+    Problem,
+    target_of,
+)
+from untaped.runtime.registry import resolve_target
 from untaped.runtime.run import build_run, entered
 from untaped.sdk import (
     Cache,
@@ -43,6 +51,7 @@ from untaped.sdk import (
     TextOrStdin,
     Written,
     deprecated,
+    derive,
     experimental,
     key,
 )
@@ -123,6 +132,13 @@ class ProfileGroup(Group):
 
     commands = (Version,)
     runs = Version
+
+
+class Three(Group):
+    """Three: a command derived where its qualname says, so its target imports back to it."""
+
+    Show = derive(Version, "Show", qualname="Three.Show")
+    commands = (Show,)
 
 
 class Hello(Plugin):
@@ -481,6 +497,39 @@ def test_two_commands_with_one_name() -> None:
         commands = (Version, Version)
 
     assert _rules(_plugin_with(Other)) == [("duplicate-command", "Other.commands")]
+
+
+def test_two_commands_derived_from_one_base_need_their_own_qualname() -> None:
+    class One(Group):
+        """One."""
+
+        commands = (derive(Version, "Show"),)
+
+    class Two(Group):
+        """Two."""
+
+        commands = (derive(Version, "Show"),)
+
+    assert _rules(_plugin_with(One, Two)) == [("duplicate-target", "Show")]
+    [problem] = _problems(_plugin_with(One, Two))
+    assert problem.detail.startswith("`hello one show` and `hello two show` are both ")
+
+    assert resolve_target(target_of(Three.Show)) is Three.Show
+    assert compose([_entry(_plugin_with(One, Three))]).plugins
+
+
+def test_two_groups_derived_with_one_name_need_their_own_qualname() -> None:
+    class Left(Group):
+        """Left."""
+
+        commands = (derive(Group, "Members", doc="Members.", commands=(Version,)),)
+
+    class Right(Group):
+        """Right."""
+
+        commands = (derive(Group, "Members", doc="Members.", commands=(Version,)),)
+
+    assert _rules(_plugin_with(Left, Right)) == [("duplicate-target", "Members")]
 
 
 def test_a_command_reads_its_plugins_settings_only() -> None:
