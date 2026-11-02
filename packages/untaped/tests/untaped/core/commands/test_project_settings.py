@@ -361,3 +361,13 @@ def test_only_a_single_value_the_file_sets_is_its_own_error() -> None:
     assert not _sets(node, ())  # a check of the whole section may rest on the home's values
     assert not _sets(node, ("pair",))
     assert not _sets(node, ("pair", "lo"))  # missing here: the home may supply it
+    assert _sets(node, ("pair",), "string_type")  # a mapping where a value belongs
+
+
+def test_doctor_blames_a_list_where_the_project_needs_a_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
+) -> None:
+    _isolated_config.write_text(HOME + "untaped: {http: {timeout_seconds: abc}}\n")
+    get_settings.cache_clear()
+    _project(tmp_path, monkeypatch, "untaped: {http: {proxy: [1]}}\n")
+    assert _doctor()[0]["status"] == "fail"

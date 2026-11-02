@@ -899,7 +899,7 @@ def _check_project_values(layer: FolderLayer) -> None:
         try:
             models[section].model_validate(node or {})
         except ValidationError as exc:
-            if any(_sets(node, error["loc"]) for error in exc.errors()):
+            if any(_sets(node, error["loc"], error["type"]) for error in exc.errors()):
                 where = section if part is None else f"{section}.{part}"
                 raise ConfigError(
                     f"invalid config section {where!r} in {shown_path(layer.file)}: "
@@ -917,11 +917,13 @@ def _check_project_values(layer: FolderLayer) -> None:
             raise ConfigError(why)
 
 
-def _sets(node: object, loc: tuple[int | str, ...]) -> bool:
-    """Whether ``node`` holds a single value at ``loc``: the file's own error.
+def _sets(node: object, loc: tuple[int | str, ...], kind: str = "value_error") -> bool:
+    """Whether the error of ``kind`` at ``loc`` is the file's own: ``node`` sets a value there.
 
-    A missing field, or a check of a whole model or list (which may rest on
-    values the home supplies), is left to the check with the home.
+    The file's when it holds a single value there, or any value of the wrong
+    type (``kind`` ``*_type``). A missing field, or a check of a whole model
+    or list (which may rest on values the home supplies), is left to the
+    check with the home.
     """
     for step in loc:
         held = (isinstance(node, dict) and step in node) or (
@@ -930,7 +932,7 @@ def _sets(node: object, loc: tuple[int | str, ...]) -> bool:
         if not held:
             return False
         node = node[step]  # type: ignore[index]
-    return not isinstance(node, (dict, list))
+    return kind.endswith("_type") or not isinstance(node, (dict, list))
 
 
 def _section_error(
