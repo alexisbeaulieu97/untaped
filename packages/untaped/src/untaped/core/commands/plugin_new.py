@@ -223,10 +223,11 @@ class _Scaffold:
             Fill the methods in `src/{self.package}/providers/{self.owner_module}.py` and add
             samples to `tests/{self.package}/providers/test_{self.owner_module}.py`. Then test
             on the lowest versions this package declares, and on the newest untaped and
-            {self.owner.distribution}, whose deprecations `untaped lint` and mypy report:
+            `{self.owner.distribution}`, whose deprecations `untaped lint` and mypy report:
 
             ```sh
-            uv sync --resolution lowest-direct && uv run pytest && uv run untaped lint
+            uv sync --resolution lowest-direct && uv run --no-sync pytest \\
+              && uv run --no-sync untaped lint
             uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy
             ```
             """

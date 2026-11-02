@@ -83,10 +83,11 @@ version, any other by presence. One that isn't met disables that plugin alone
 (`unmet-requirement`) with the fix, and so does requiring a plugin that is
 disabled. Running one of its commands exits 4 with the reason. A floor that is
 too low shows up in your own CI if one job installs the lowest versions you
-declare, and a name a new release deprecates if another installs the newest:
+declare (`--no-sync` keeps `uv run` from installing the newest again), and a
+name a new release deprecates is reported by another that installs the newest:
 
 ```bash
-uv sync --resolution lowest-direct && uv run pytest && uv run untaped lint
+uv sync --resolution lowest-direct && uv run --no-sync pytest && uv run --no-sync untaped lint
 uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy
 ```
 

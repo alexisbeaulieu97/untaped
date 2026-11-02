@@ -133,7 +133,7 @@ Declare a shared field block instead of a flag of your own:
 |---|---|
 | `output: Output[R]` | `-f/--format` (default `table`, or the user's `UNTAPED_FORMAT`/`untaped.ui.format`; the formats its `Output(formats=)` names, the first the default) and `-c/--columns` |
 | `confirm: Confirm` | `-y/--yes`, which skips only the prompt, and `--dry-run`, which still wins |
-| `dry_run: DryRun` | `--dry-run`: preview, then exit 0 |
+| `dry_run: DryRun` | `--dry-run`: preview, then exit 0, for a command that writes without asking |
 | `stdin: Stdin[R]` | `--stdin` |
 | `refresh: Refresh` | `--refresh` and `--cached` |
 | `parallel: Parallel` | `-j/--parallel N`: N >= 1, clamped to its `cap` |
@@ -164,8 +164,7 @@ Command names are kebab-case; use plural nouns for collections.
   `self.confirm(question, preview=...)`: `--yes` answers it, `--dry-run`
   previews only, and a run with no terminal exits 2 naming `--yes`.
 - When stdin carries piped data, prompts read from the controlling terminal
-  (`/dev/tty`). If there is no terminal, the command exits 2 and names
-  `--yes`. In tests, `untaped.sdk.testing.invoke_cli(..., terminal=True,
+  (`/dev/tty`). In tests, `untaped.sdk.testing.invoke_cli(..., terminal=True,
   prompt_backend=...)` simulates that terminal; without `terminal=True` there
   is none.
 - Read stdin only through a `Stdin[R]` field ([Piping](#piping)), never
@@ -236,7 +235,8 @@ and in [Depending on another plugin](#depending-on-another-plugin);
 `terminal-boundary` bars `prompt_toolkit` (build [screens](../screens.md)); `blob-reader`
 keeps repo store blob reads on `store.prefetched(...).run()`; `store-format` opens a database in the plugin's folder through a [store](../caches.md#stores); the stability rules check [marks](../plugins.md#experimental-and-deprecated-commands).
 A help panel (`Group`) of your own takes a `sort_key` below 100 and no core panel's name (`unkeyed-panel`, `reserved-panel`).
-`# untaped: allow <rule>` on the flagged node's first line allows one violation, except the stability rules, the settings rules, and the command, option and panel rules.
+`# untaped: allow <rule>` on the flagged node's first line allows one violation,
+except the stability rules, the settings rules, and the command, option and panel rules.
 
 ## Depending on another plugin
 
@@ -393,8 +393,8 @@ public; any other name of these modules, or of a plugin's `api` and
 ## What a plugin author keeps
 
 untaped acts only on what a plugin declares and on what happens while it runs,
-so its author declares [floors](../plugins.md#plugin-package) on each plugin
-it imports or fills, `untaped` included, changes its own names only by
+so its author declares [floors](../plugins.md#plugin-package) on `untaped` and
+each plugin it imports or fills, changes its own names only by
 [deprecation](deprecation.md), runs `untaped lint` and the type checker's
-deprecation report, and [tests](../plugins.md#validation-and-checks) on the
+[deprecation report](../plugins.md#validation-and-checks), and tests on the
 lowest versions it declares and the newest.

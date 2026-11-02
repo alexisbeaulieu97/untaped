@@ -89,7 +89,8 @@ def test_the_scaffold_composes_passes_lint_and_fills_its_contract(
     }
     assert pyproject["tool"]["mypy"]["enable_error_code"] == ["deprecated"]
     readme = (root / "README.md").read_text(encoding="utf-8")
-    assert "uv sync --resolution lowest-direct && uv run pytest && uv run untaped lint" in readme
+    lowest = "uv sync --resolution lowest-direct && uv run --no-sync pytest \\\n"
+    assert f"{lowest}  && uv run --no-sync untaped lint" in readme
     assert "uv sync --upgrade && uv run pytest && uv run untaped lint && uv run mypy" in readme
     assert plugin_violations("gitlab", candidates=[_RACK, gitlab]) == []
     # Its own tests import untaped[lint]; core's own run (no plugin installed) stops here.
