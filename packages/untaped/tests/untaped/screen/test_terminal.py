@@ -54,6 +54,7 @@ class Typing:
         self, *, layout: str = "full", extra: Callable[[Model, object], object] | None = None
     ) -> None:
         self.seen: list[object] = []
+        self.seen_at: list[float] = []
         self.threads: list[str] = []
         self._extra = extra
         self.screen: Screen[Model, str] = Screen(
@@ -68,6 +69,7 @@ class Typing:
 
     def _update(self, model: Model, message: object) -> tuple[Model, Sequence[Cmd]]:
         self.seen.append(message)
+        self.seen_at.append(time.monotonic())
         self.threads.append(threading.current_thread().name)
         if self._extra is not None:
             handled = self._extra(model, message)
@@ -220,14 +222,24 @@ def test_the_escape_timeout_is_short() -> None:
 
 
 def _reaction_time(typing: Typing, keys: str) -> tuple[float, list[object]]:
-    """Seconds from sending ``keys`` (no closing) to the screen ending, and how it ended."""
+    """Seconds from sending ``keys`` (no closing) to the screen seeing the key, and how it ended.
+
+    The time stops when the key reaches the screen's update, so a slow teardown on a
+    loaded machine never counts: only a key held back waiting for a sequence does.
+    """
     recorder = Recorder()
     with _threaded(typing, recorder.output) as (pipe, thread, outcome):
         _wait_for(lambda: "typed:" in recorder.text(), what="the first frame")
         started = time.monotonic()
         pipe.send_text(keys)
         thread.join(timeout=5)
-        return time.monotonic() - started, outcome
+    pressed = [
+        at
+        for message, at in zip(typing.seen, typing.seen_at, strict=True)
+        if isinstance(message, KeyPress) and at >= started
+    ]
+    assert pressed, "the key never reached the screen"
+    return pressed[0] - started, outcome
 
 
 def test_an_unhandled_escape_cancels_at_once() -> None:
