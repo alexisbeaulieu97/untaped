@@ -167,7 +167,6 @@ class RepoStore:
         self._url = url
         self._plugin = plugin
         self._layout = layout_for(plugin, plain=plain_clone)
-        self._plain = plain_clone
         self._error = error
         self._map_error = map_error
         self._resolved: tuple[HostAuth | None] | None = None
@@ -441,14 +440,14 @@ class RepoStore:
         for key, value in POLICY.items():
             if current.get(key.lower()) != [value]:
                 self._git(["config", "--local", "--replace-all", key, value])
+        if self._layout.plain:
+            plain_clone.claim(self)
         if "remote.origin.fetch" in current:
             # A 10.x repo's shared refspec: each worktree carries its own now.
             self._git(["config", "--local", "--unset-all", "remote.origin.fetch"])
             if worktree_entries(self._path):
                 worktree_config.enable_worktree_config(self)
                 worktree_config.repair_worktrees(self, stripped=True)
-        if self._plain:
-            plain_clone.claim(self)
         return created
 
     # ── release ────────────────────────────────────────────────────────────
@@ -505,7 +504,7 @@ class RepoStore:
         if not refs:
             return
         with self._locked():
-            if self._plain and self.exists():
+            if self._layout.plain and self.exists():
                 plain_clone.claim(self, record=False)
             self._delete(refs)
 
@@ -548,7 +547,7 @@ class RepoStore:
                 stderr = self._fetch_listed(
                     branches, tags, prune=prune, before=before, progress=progress
                 )
-            if self._plain:
+            if self._layout.plain:
                 self._write_origin_head(branches, tags)
             after = self._namespace()
             delta = diff_refs(before, after)
@@ -947,7 +946,7 @@ class RepoStore:
                 argv = ["--detach", str(path), ref]
             self._git(["worktree", "add", "--quiet", *argv], env=_NO_LAZY)
             worktree_config.write_owner_config(self, path)
-            if branch is not None and ref.startswith("refs/remotes/origin/") and self._plain:
+            if branch is not None and ref.startswith("refs/remotes/origin/") and self._layout.plain:
                 # The refspec that makes origin/<x> a tracking ref exists only now.
                 self._git(["branch", "--quiet", f"--set-upstream-to={ref}"], cwd=path)
             if lock_reason is not None:
@@ -1005,7 +1004,7 @@ class RepoStore:
     def write_worktree_config(self, worktree: Path) -> None:
         """Write the worktree's own config: owner, refspec, filter, URL and credential helper.
 
-        Workspace calls it at create and on every ``status --fetch``: a
+        A consumer calls it after adding a worktree and after each fetch: a
         user's ``git fetch``/``push`` there uses this handle's URL
         (``insteadOf`` over the store's label) and, for https, asks
         ``untaped git credential`` after the user's own helpers (instead of

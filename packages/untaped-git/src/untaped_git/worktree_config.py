@@ -102,7 +102,9 @@ def write_owner_config(store: RepoStore, worktree: Path, *, owner: str | None = 
     entry = _entry_of(store, worktree)
     if entry is not None:
         (entry.admin / OWNER_MARK).write_text(f"{owner}\n", encoding="utf-8")
-    _write_fetch_config(store, worktree, plain=plain_clone.holder(store) == owner)
+    # The handle's own declaration for its worktrees, the repo's record for another owner's.
+    plain = store._layout.plain if owner == store._plugin else plain_clone.holder(store) == owner
+    _write_fetch_config(store, worktree, plain=plain)
 
 
 def _write_fetch_config(store: RepoStore, worktree: Path, *, plain: bool) -> None:
