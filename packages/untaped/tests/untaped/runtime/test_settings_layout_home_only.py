@@ -240,6 +240,32 @@ def test_doctor_inside_a_project_picking_the_profile_shows_every_row(
     assert any(row["check"] == "untaped.home-only" for row in rows)
 
 
+def test_doctor_lists_every_key_a_profile_sets(_isolated_config: Path, tmp_path: Path) -> None:
+    _home(
+        _isolated_config,
+        f"profiles:\n  work: {{acme: {{data_dir: {tmp_path}, machine: laptop}}}}\n",
+    )
+
+    rows = json.loads(_untaped("doctor", "-f", "json").stdout)
+
+    [row] = [row for row in rows if row["check"] == "untaped.home-only"]
+    assert "acme.data_dir (profile work), acme.machine (profile work)" in row["detail"]
+
+
+def test_doctor_with_a_failing_project_and_a_refused_flag_pick_shows_every_row(
+    work: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = _project(tmp_path / "api", monkeypatch, "default")
+    file.write_text(f"acme: {{data_dir: {tmp_path}}}\n", encoding="utf-8")
+
+    result = _untaped("--profile", "work", "doctor", "-f", "json")
+
+    rows = json.loads(result.stdout)
+    failed = [row["check"] for row in rows if row["status"] == "fail"][:2]
+    assert failed == ["config", "profile"], result.stderr
+    assert any(row["check"] == "untaped.home-only" for row in rows)
+
+
 # --- writing and fixing ----------------------------------------------------------
 
 
@@ -297,3 +323,12 @@ def test_a_section_the_copy_leaves_empty_is_left_out(work: Path) -> None:
 
     assert created.exit_code == 0, created.stderr
     assert "fresh: {}" in work.read_text(encoding="utf-8")
+
+
+def test_a_copy_keeps_a_section_that_was_already_empty(_isolated_config: Path) -> None:
+    _home(_isolated_config, "acme: {}\n")
+
+    created = _untaped("profile", "create", "fresh", "--copy-from", "default")
+
+    assert created.exit_code == 0, created.stderr
+    assert "  fresh:\n    acme: {}\n" in _isolated_config.read_text(encoding="utf-8")

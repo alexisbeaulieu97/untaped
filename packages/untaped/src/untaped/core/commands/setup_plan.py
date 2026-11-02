@@ -27,7 +27,7 @@ from untaped.core.commands.setup_state import (
     service_marks,
     service_states,
 )
-from untaped.core.doctor_rows import selected_check_rows
+from untaped.core.doctor_rows import picked_profiles_row, selected_check_rows
 from untaped.core.settings import NAME
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
@@ -55,7 +55,9 @@ def plan_rows(
 ) -> list[Row]:
     """Every setup step for ``services`` in ``profile``, in the order to run them."""
     exists = profile_exists(profile)
-    rows = [_install_row(profile), _profile_row(profile, exists=exists)]
+    with child_run(profiles=profile if exists else DEFAULT_PROFILE, folder=False):
+        refused = picked_profiles_row()
+    rows = [_install_row(profile), _refused_row(refused) or _profile_row(profile, exists=exists)]
     states = service_states(services, profile, read_config_dict())
     ready: list[str] = []
     for name, plugin in services.items():
@@ -126,6 +128,16 @@ def _install_row(profile: str) -> Row:
         return _row("install", NAME, "done", f"registered: {ref.describe()}")
     detail = f"register this install ({shown_path(env)}) so cleanup keeps the store layouts it uses"
     return _row("install", NAME, "todo", detail, command_argv(Register.spelled(), profile=profile))
+
+
+def _refused_row(refused: Row | None) -> Row | None:
+    """The profile step failed: the profile sets what only the base sets, so runs refuse it."""
+    if refused is None:
+        return None
+    fix = refused.get("fix")
+    return _row(
+        "profile", NAME, "failed", str(refused["detail"]), fix if isinstance(fix, list) else None
+    )
 
 
 def _profile_row(profile: str, *, exists: bool) -> Row:

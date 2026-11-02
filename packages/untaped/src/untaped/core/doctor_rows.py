@@ -9,6 +9,7 @@ the checks that contact a service (:func:`online_probe_rows`);
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -111,7 +112,10 @@ def collect_doctor_rows(
     """
     project_row = project_config_row()
     folder_fails = project_row is not None and project_row["status"] == FAIL
-    pick_row = None if folder_fails else _picked_profiles_row()
+    with child_run(folder=False) if folder_fails else nullcontext():
+        pick_row = picked_profiles_row()  # the variable's and the flag's picks still count
+    if pick_row is not None:
+        pick_row["detail"] = f"{pick_row['detail']} (the rows below read the base alone)"
     lead = [row for row in (project_row, pick_row) if row is not None]
     if not folder_fails and pick_row is None:
         return [*lead, *_collect_rows(result, online=online, plugins=plugins)]
@@ -123,7 +127,7 @@ def collect_doctor_rows(
         return [*lead, *_collect_rows(result, online=online, plugins=plugins)]
 
 
-def _picked_profiles_row() -> dict[str, object] | None:
+def picked_profiles_row() -> dict[str, object] | None:
     """A failed row when a picked profile sets what only the base sets; ``None`` otherwise.
 
     Any other problem with the file or the pick is the config and profile rows' to report.
@@ -140,7 +144,7 @@ def _picked_profiles_row() -> dict[str, object] | None:
         NAME,
         FAIL,
         "resolve picked profiles",
-        f"{refusal} (the rows below read the base alone)",
+        str(refusal),
         command_argv(f"config unset {key}", profile=str(profile)),
     )
 
@@ -203,8 +207,15 @@ def selected_check_rows(
     profile: str,
     selected: frozenset[str],
 ) -> list[dict[str, object]]:
-    """``selected`` plugins' doctor rows for ``profile``, online checks included."""
+    """``selected`` plugins' doctor rows for ``profile``, online checks included.
+
+    When ``profile`` sets what only the base sets, the one row saying so: a
+    run under it is refused, so nothing read over the base speaks for it.
+    """
     with child_run(profiles=profile, folder=False):
+        pick_row = picked_profiles_row()
+        if pick_row is not None:
+            return [pick_row]
         rows = collect_doctor_rows(result, online=True, plugins=selected)
     # Old keys concern every plugin's settings, so setup shows them too.
     return [

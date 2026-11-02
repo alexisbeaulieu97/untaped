@@ -29,10 +29,11 @@ from core_test_support.commands.support import (
 )
 from untaped.core.commands import setup_plan
 from untaped.runtime import bootstrap
-from untaped.sdk import Plugin
+from untaped.sdk import Plugin, key
 from untaped.sdk.health import Suggest
 from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.network import Credential, CredentialKey
+from untaped.sdk.storage import Dir
 from untaped.sdk.testing import (
     CliResult,
     ScreenKeys,
@@ -109,6 +110,31 @@ def _configure(path: Path, wiz: str) -> None:
     write_config(path, f"format_version: 2\nwiz: {json.dumps(data)}\n")
     if command:
         WIZ_TOKEN.store(WizServer(url=HttpUrl(data["server"]["url"])), command=command)
+
+
+class DataProfile(BaseModel):
+    """Where ``data`` keeps its files: a folder only the home's base sets."""
+
+    data_dir: Path | None = None
+
+
+def test_a_profile_setting_what_only_the_base_sets_fails_its_profile_step(
+    _isolated_config: Path, tmp_path: Path
+) -> None:
+    data = make_plugin("data", settings=DataProfile, files=Dir(at=key(DataProfile).data_dir))
+    _configure(_isolated_config, '{server: {url: "https://wiz.example"}}')
+    with _isolated_config.open("a", encoding="utf-8") as file:
+        file.write(f"profiles:\n  work: {{data: {{data_dir: {tmp_path}}}}}\n")
+
+    result = _cli(
+        "--profile", "work", "setup", "plan", "--check", "-f", "json", specs=(_wiz(), data)
+    )
+
+    step = _step(json.loads(result.stdout), "profile")
+    assert result.exit_code != 0
+    assert step["state"] == "failed"
+    assert "data.data_dir can't be set in profile work" in step["detail"]
+    assert step["run"] == ["--profile", "work", "config", "unset", "data.data_dir"]
 
 
 def test_an_empty_config_lists_every_step_with_its_command() -> None:
