@@ -18,7 +18,7 @@ from typing import Any
 from pydantic import AliasPath, BaseModel, ConfigDict, Field, ValidationError
 
 from untaped.sdk import ErrorCategory, first_validation_error
-from untaped_awx.domain.suites.suite import Baseline, CaseStatus
+from untaped_awx.domain.suites.results import Baseline, CaseStatus
 
 
 class _SavedRow(BaseModel):

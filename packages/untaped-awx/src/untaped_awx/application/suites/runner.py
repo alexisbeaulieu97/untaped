@@ -109,22 +109,26 @@ from untaped_awx.domain.suites.case_failure import (
 from untaped_awx.domain.suites.case_failure import (
     failure as make_failure,
 )
-from untaped_awx.domain.suites.suite import (
-    WORKFLOW_TEMPLATE,
-    Approvals,
-    Baseline,
-    Case,
-    CaseResult,
+from untaped_awx.domain.suites.expectations import (
     ExecutionChecks,
     Expectation,
     ExpectationResult,
     NodeExpectation,
-    RefSentinel,
-    Suite,
+)
+from untaped_awx.domain.suites.results import (
+    Baseline,
+    CaseResult,
     SuiteRunOutcome,
-    TemplateBinding,
     idempotence,
     outranks_failure,
+)
+from untaped_awx.domain.suites.suite import (
+    WORKFLOW_TEMPLATE,
+    Approvals,
+    Case,
+    RefSentinel,
+    Suite,
+    TemplateBinding,
     select_cases,
 )
 from untaped_awx.domain.suites.suite_baseline import saved_baselines

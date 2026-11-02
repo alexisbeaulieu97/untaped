@@ -37,14 +37,9 @@ from untaped_awx.application.suites.resolver import (
 from untaped_awx.commands import suite_options as guides
 from untaped_awx.commands.test import TestGroup as SuiteGroup
 from untaped_awx.document import Document
-from untaped_awx.domain.suites.suite import (
-    Approvals,
-    CaseResult,
-    CaseStatus,
-    Change,
-    NodeStatus,
-    Suite,
-)
+from untaped_awx.domain.suites.expectations import NodeStatus
+from untaped_awx.domain.suites.results import CaseResult, CaseStatus, Change
+from untaped_awx.domain.suites.suite import Approvals, Suite
 from untaped_awx.domain.suites.temporary_set import TemporaryCopyOutcome
 from untaped_awx.domain.workflow_graph import WorkflowNodeSpec
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
