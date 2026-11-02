@@ -73,3 +73,24 @@ def test_replacing_a_pack_from_another_url_releases_the_old_one(tmp_path: Path) 
     assert replaced.exit_code == 0, replaced.output
     assert not _store_repo(old.url).exists()
     assert _store_repo(new.url).is_dir()
+
+
+def test_a_pack_that_fails_to_install_leaves_nothing_in_the_store(tmp_path: Path) -> None:
+    remote = git_remote(tmp_path, "acme/broken")
+    remote.commit("pyproject.toml", "not = [toml\n")
+
+    added = run(["packs", "add", remote.url])
+
+    assert added.exit_code != 0
+    assert not _store_repo(remote.url).exists()
+
+
+def test_removing_a_pack_that_no_longer_loads_releases_its_url(tmp_path: Path) -> None:
+    remote = _pack_remote(tmp_path)
+    assert run(["packs", "add", remote.url]).exit_code == 0
+    (library_dir() / "packs" / "alpha" / "pyproject.toml").write_text("not = [toml\n")
+
+    removed = run(["packs", "remove", "alpha", "--yes"])
+
+    assert removed.exit_code == 0, removed.output
+    assert not _store_repo(remote.url).exists()

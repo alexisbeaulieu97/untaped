@@ -380,6 +380,10 @@ class PackLibrary:
         self._load_errors = load_errors
         return installed
 
+    def sources(self) -> dict[str, str]:
+        """Return ``{pack name: recorded source}`` from ``packs.toml``, broken packs included."""
+        return {name: entry.source for name, entry in self._read_index().items()}
+
     def load_errors(self) -> dict[str, str]:
         """Return ``{pack name: error}`` for installed packs that failed to load."""
         self.packs()

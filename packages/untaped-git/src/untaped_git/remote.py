@@ -36,7 +36,9 @@ def ls_remote(
     ``HEAD`` is included (with no patterns, or when one asks for it), and an
     annotated tag maps to the commit it points at, not to the tag object.
     """
-    result = _ls_remote(url, ["--", url, *patterns], root=root, auth=auth)
+    # An exact pattern matches no ``<tag>^{}`` line: ask for each peeled line by name.
+    peeling = [f"{pattern}^{{}}" for pattern in patterns if not pattern.endswith("^{}")]
+    result = _ls_remote(url, ["--", url, *patterns, *peeling], root=root, auth=auth)
     refs: dict[str, str] = {}
     peeled: dict[str, str] = {}
     for line in result.splitlines():

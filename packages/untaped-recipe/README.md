@@ -66,8 +66,7 @@ untaped recipe packs sync --all --dry-run
 
 A git pack is fetched through the
 [git plugin](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-git/README.md)'s
-repo store, so a private pack works wherever a host's plugin supplies
-credentials; removing the last pack from a URL releases it.
+repo store.
 
 Installing a pack installs code: its hooks run as you, with no sandbox.
 Inspect a pack with `packs get` and `validate` (which never imports hooks)

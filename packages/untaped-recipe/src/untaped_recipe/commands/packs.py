@@ -45,6 +45,7 @@ from untaped_recipe.infrastructure.pack_sources import (
     release_unused_sources,
 )
 from untaped_recipe.infrastructure.pack_store import (
+    AddResult,
     PackLibrary,
     changed_hook_files,
     local_edits_message,
@@ -152,10 +153,11 @@ class Add(RecipeCommand):
 
     --name sets the installed name, the pack's identity everywhere. A local
     source is recorded as an absolute path; a git source records the
-    requested --rev (a branch, tag or commit; the default branch without it)
-    and the commit it resolved to. A git source is fetched through the repo
-    store (`untaped git store`), with the credentials a host's plugin supplies.
-    A git fetch that times out exits 5. Installing a pack installs code that
+    requested --rev (a branch, a tag, or a commit one of them reaches; the
+    default branch without it) and the commit it resolved to. A git source is
+    fetched through the repo store (`untaped git store`), with the credentials
+    a host's plugin supplies. A rev the remote lacks exits 3; a git fetch that
+    times out exits 5. Installing a pack installs code that
     runs as you: `untaped docs recipe guides hooks`.
 
     Examples
@@ -181,38 +183,21 @@ class Add(RecipeCommand):
         # Record where the pack came from, not where the shell happened to be.
         source = self.source if git else str(Path(self.source).expanduser().absolute())
         with recipe_errors(), tempfile.TemporaryDirectory() as temp_root:
-            source_dir = Path(temp_root) / "pack" if git else Path(source)
-            commit = (
-                fetch_pack_source(source, rev=self.rev, dest=source_dir, plugin=self.ctx.plugin)
-                if git
-                else None
-            )
-            manifest = read_pack_manifest(source_dir)
-            # Validate before the pack summary: error output leads, and the
-            # summary follows only on a pack that will actually install.
-            validate_pack(source_dir, manifest)
-            installed_name = self.name or manifest.name
             library = self.library()
-            edited = self.force and library.local_edits(installed_name)
-            if edited and not self.discard_edits:
-                raise LocalChangesError(local_edits_message(installed_name))
-            self._summary(installed_name, manifest, local_edits=edited)
-            previous = library.find_pack(installed_name)
-            added = library.add(
-                source_dir,
-                source=source,
-                rev=self.rev,
-                commit=commit,
-                name=self.name,
-                force=self.force,
-                discard_edits=self.discard_edits,
-            )
-            if previous is not None:
-                release_unused_sources(
-                    [previous.source],
-                    [pack.source for pack in library.packs()],
-                    plugin=self.ctx.plugin,
+            previous = library.sources()
+            try:
+                source_dir = Path(temp_root) / "pack" if git else Path(source)
+                commit = (
+                    fetch_pack_source(source, rev=self.rev, dest=source_dir, plugin=self.ctx.plugin)
+                    if git
+                    else None
                 )
+                installed_name, added = self._install(library, source, source_dir, commit)
+            except Exception:
+                # Nothing was installed: the URL's store repo stays only for a pack using it.
+                _release_unused(library, [source], plugin=self.ctx.plugin)
+                raise
+            _release_unused(library, [previous.get(installed_name, "")], plugin=self.ctx.plugin)
         return AddOutcome(
             name=installed_name,
             action="updated" if added.replaced else "created",
@@ -220,6 +205,30 @@ class Add(RecipeCommand):
             rev=self.rev,
             commit=commit,
         )
+
+    def _install(
+        self, library: PackLibrary, source: str, source_dir: Path, commit: str | None
+    ) -> tuple[str, AddResult]:
+        """Validate the fetched or local pack in ``source_dir`` and install it."""
+        manifest = read_pack_manifest(source_dir)
+        # Validate before the pack summary: error output leads, and the
+        # summary follows only on a pack that will actually install.
+        validate_pack(source_dir, manifest)
+        installed_name = self.name or manifest.name
+        edited = self.force and library.local_edits(installed_name)
+        if edited and not self.discard_edits:
+            raise LocalChangesError(local_edits_message(installed_name))
+        self._summary(installed_name, manifest, local_edits=edited)
+        added = library.add(
+            source_dir,
+            source=source,
+            rev=self.rev,
+            commit=commit,
+            name=self.name,
+            force=self.force,
+            discard_edits=self.discard_edits,
+        )
+        return installed_name, added
 
     def _summary(self, name: str, manifest: PackManifest, *, local_edits: bool) -> None:
         diag = self.ctx.diag
@@ -364,6 +373,7 @@ class Remove(RecipeCommand):
             library = self.library()
             selected = self.stdin.identifiers(self.names)
             installed = {pack.name: pack for pack in library.packs()}
+            sources = library.sources()
             # A removal that stopped partway leaves a name only reconcile() still sees.
             known = set(installed) | set(library.load_errors()) | set(library.reconcile())
             for name in selected:
@@ -400,15 +410,23 @@ class Remove(RecipeCommand):
                     rows.append(
                         _outcome(RemoveOutcome, name, installed.get(name), action="removed")
                     )
-            removed = [
-                installed[row.name].source
-                for row in rows
-                if row.action == "removed" and row.name in installed
-            ]
-            release_unused_sources(
-                removed, [pack.source for pack in library.packs()], plugin=self.ctx.plugin
-            )
+            left = library.sources()
+            gone = [source for name, source in sources.items() if name not in left]
+            _release_unused(library, gone, plugin=self.ctx.plugin)
         return iter(rows)
+
+
+def _release_unused(library: PackLibrary, released: list[str], *, plugin: object) -> None:
+    """Release the store repos of ``released`` git URLs no pack in ``packs.toml`` uses.
+
+    An index that cannot be read releases nothing: a repo kept is refetched,
+    one released while a pack uses it is not.
+    """
+    try:
+        installed = list(library.sources().values())
+    except ValueError, OSError:
+        return
+    release_unused_sources(released, installed, plugin=plugin)
 
 
 def _fetch(

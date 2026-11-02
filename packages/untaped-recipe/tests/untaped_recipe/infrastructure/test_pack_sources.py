@@ -12,6 +12,7 @@ from untaped.sdk import ErrorCategory, UsageError
 from untaped_git.api import RepoStore
 from untaped_git.testing import GitRemote, git_remote
 from untaped_recipe.errors import PackFetchError
+from untaped_recipe.infrastructure import pack_sources
 from untaped_recipe.infrastructure.pack_sources import (
     fetch_pack_source,
     is_git_url,
@@ -28,8 +29,19 @@ def remote(tmp_path: Path) -> GitRemote:
     return remote
 
 
-def _store(url: str) -> RepoStore:
-    return RepoStore.for_url(url, plugin="recipe", error=PackFetchError)
+def _store(url: str, plugin: str = "recipe") -> RepoStore:
+    return RepoStore.for_url(url, plugin=plugin, error=PackFetchError)
+
+
+def _commit_by_hand(remote: GitRemote, *paths: str) -> None:
+    """Commit ``paths`` of the remote's work tree as they are on disk, and push."""
+    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    for args in (
+        ["add", *paths],
+        ["commit", "--quiet", "-m", "by hand"],
+        ["push", "--quiet", "origin", "HEAD:refs/heads/main"],
+    ):
+        subprocess.run(["git", *author, *args], cwd=remote.work, check=True)
 
 
 @pytest.mark.parametrize(
@@ -100,11 +112,77 @@ def test_a_commit_id_rev_resolves_from_the_remotes_history(
     assert not (tmp_path / "pack" / "later.txt").exists()
 
 
-def test_an_unknown_rev_is_not_found(remote: GitRemote, tmp_path: Path) -> None:
-    with pytest.raises(PackFetchError, match="no branch, tag or commit 'nope'") as raised:
-        fetch_pack_source(remote.url, rev="nope", dest=tmp_path / "pack", plugin="recipe")
+def test_a_short_commit_id_resolves(remote: GitRemote, tmp_path: Path) -> None:
+    first = remote.oid("main")
+    remote.commit("later.txt", "later\n")
+
+    commit = fetch_pack_source(remote.url, rev=first[:10], dest=tmp_path / "pack", plugin="recipe")
+
+    assert commit == first
+
+
+def test_a_branch_wins_over_a_tag_of_the_same_name(remote: GitRemote, tmp_path: Path) -> None:
+    remote.tag("same")
+    tip = remote.commit("branch.txt", "b\n", branch="same")
+
+    commit = fetch_pack_source(remote.url, rev="same", dest=tmp_path / "pack", plugin="recipe")
+
+    assert commit == tip
+
+
+def test_a_commit_only_another_plugin_fetched_is_not_found(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    gone = remote.commit("gone.txt", "gone\n", branch="gone")
+    other = _store(remote.url, plugin="workspace")
+    other.fetch(branches=["gone"])
+    other.write_private()
+    subprocess.run(
+        ["git", f"--git-dir={remote.path}", "update-ref", "-d", "refs/heads/gone"], check=True
+    )
+
+    with pytest.raises(PackFetchError, match="no branch, tag or commit") as raised:
+        fetch_pack_source(remote.url, rev=gone, dest=tmp_path / "pack", plugin="recipe")
 
     assert raised.value.category is ErrorCategory.NOT_FOUND
+
+
+def test_a_remote_with_no_default_branch_needs_a_rev(remote: GitRemote, tmp_path: Path) -> None:
+    subprocess.run(
+        ["git", f"--git-dir={remote.path}", "symbolic-ref", "HEAD", "refs/heads/none"], check=True
+    )
+
+    with pytest.raises(PackFetchError, match="no default branch; pass --rev") as raised:
+        fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
+
+    assert raised.value.category is ErrorCategory.NOT_FOUND
+
+
+@pytest.mark.parametrize("rev", ["nope", "a..b", "abc"])
+def test_an_unknown_rev_is_not_found(remote: GitRemote, tmp_path: Path, rev: str) -> None:
+    with pytest.raises(PackFetchError, match=f"no branch, tag or commit '{rev}'") as raised:
+        fetch_pack_source(remote.url, rev=rev, dest=tmp_path / "pack", plugin="recipe")
+
+    assert raised.value.category is ErrorCategory.NOT_FOUND
+
+
+def test_the_tree_is_written_as_committed(remote: GitRemote, tmp_path: Path) -> None:
+    (remote.work / ".gitattributes").write_text(
+        "ignored.txt export-ignore\nsubst.txt export-subst\n"
+    )
+    (remote.work / "ignored.txt").write_text("kept\n")
+    (remote.work / "subst.txt").write_text("$Format:%H$\n")
+    (remote.work / "run.sh").write_text("#!/bin/sh\n")
+    (remote.work / "run.sh").chmod(0o755)
+    _commit_by_hand(remote, ".gitattributes", "ignored.txt", "subst.txt", "run.sh")
+    dest = tmp_path / "pack"
+
+    fetch_pack_source(remote.url, rev=None, dest=dest, plugin="recipe")
+
+    assert (dest / "ignored.txt").read_text() == "kept\n"
+    assert (dest / "subst.txt").read_text() == "$Format:%H$\n"
+    assert os.access(dest / "run.sh", os.X_OK)
+    assert not os.access(dest / "pyproject.toml", os.X_OK)
 
 
 def test_an_option_like_rev_is_refused_before_any_git(remote: GitRemote, tmp_path: Path) -> None:
@@ -118,13 +196,7 @@ def test_an_option_like_rev_is_refused_before_any_git(remote: GitRemote, tmp_pat
 
 def test_a_link_in_the_pack_is_refused(remote: GitRemote, tmp_path: Path) -> None:
     os.symlink("/etc/passwd", remote.work / "leak")
-    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
-    for args in (
-        ["add", "leak"],
-        ["commit", "--quiet", "-m", "link"],
-        ["push", "--quiet", "origin", "HEAD:refs/heads/main"],
-    ):
-        subprocess.run(["git", *author, *args], cwd=remote.work, check=True)
+    _commit_by_hand(remote, "leak")
 
     with pytest.raises(ValueError, match="pack must not contain symlinks: leak"):
         fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
@@ -142,3 +214,20 @@ def test_a_url_no_installed_pack_uses_is_released(tmp_path: Path) -> None:
 
     assert _store(kept.url).exists()
     assert not _store(gone.url).exists()
+
+
+def test_a_failed_release_is_a_warning(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
+    warnings: list[str] = []
+
+    def refuse(self: RepoStore, **_: object) -> None:
+        raise PackFetchError("repo is locked")
+
+    monkeypatch.setattr(RepoStore, "release", refuse)
+    monkeypatch.setattr(pack_sources._diag, "warning", warnings.append)
+
+    release_unused_sources([remote.url], [], plugin="recipe")
+
+    assert warnings == [f"could not release the repo store's copy of {remote.url}: repo is locked"]
