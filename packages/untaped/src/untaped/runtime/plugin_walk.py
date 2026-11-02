@@ -38,6 +38,7 @@ from untaped.runtime.describe import (
     prose,
 )
 from untaped.sdk._block import Block, OwnedBlock
+from untaped.sdk._keys import SettingKey
 from untaped.sdk._names import kebab, snake
 from untaped.sdk._replacement import COMMAND_TEXT
 from untaped.sdk.marks import class_mark, stability_refusal
@@ -609,6 +610,7 @@ class PluginWalk:
                 continue
             for problem in value.problems():
                 self.problem("block-shape", where, problem)
+            at = self._placed_at(value, where)
             blocks.append(
                 BlockDecl(
                     block=value.block_kind,
@@ -618,9 +620,30 @@ class PluginWalk:
                     cache=cache_setting(value) if isinstance(value, Cache) else None,
                     layout=value.layout if isinstance(value, Dir) else None,
                     items=isinstance(value, Dir) and value.item_type is not None,
+                    at=at,
                 )
             )
         return tuple(blocks)
+
+    def _placed_at(self, value: Block, where: str) -> str | None:
+        """A ``Dir``'s ``at=`` key inside the plugin's section; a problem when it isn't one.
+
+        A ``Dir`` is a place of the plugin's own, so its setting is the
+        plugin's own too: core marks it home-only in that section.
+        """
+        if not isinstance(value, Dir) or value.at is None:
+            return None
+        model = SettingKey.model_of(value.at)
+        if self.settings is None or not issubclass(self.settings, model):
+            ours = self.settings.__qualname__ if self.settings else "not declared"
+            self.problem(
+                "block-shape",
+                where,
+                f"places its folder at a setting of {model.__qualname__}; a Dir's at= names "
+                f"one of the plugin's own settings, and its settings model is {ours}",
+            )
+            return None
+        return ".".join(SettingKey.path_of(value.at))
 
     # --- groups and commands ------------------------------------------------------
 

@@ -21,7 +21,8 @@ from untaped.runtime.profile_resolver import (
     explicit_pick,
     pick_names,
 )
-from untaped.runtime.settings import active_settings_layout
+from untaped.runtime.settings import active_settings_layout, profile_section_models
+from untaped.runtime.settings_layout import leave_out_home_only
 from untaped.sdk.errors import ConfigError, UntapedError
 
 if TYPE_CHECKING:
@@ -72,6 +73,10 @@ class ProfileFileRepository:
         Empty if nothing sets anything. Renamed keys show under their current names.
         """
         return active_settings_layout().effective(read_config_dict(), profile=name)
+
+    def leave_out_home_only(self, data: dict[str, Any]) -> tuple[str, ...]:
+        """Remove what only the base sets from a profile's ``data``; the keys removed."""
+        return leave_out_home_only(data, profile_section_models())
 
     def write(self, name: str, data: dict[str, Any]) -> None:
         def _apply(config: dict[str, Any]) -> None:

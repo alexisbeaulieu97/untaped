@@ -10,7 +10,7 @@ from typing import Annotated, ClassVar, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from untaped.sdk import Key, installed_code, key
-from untaped.sdk.health import HomeOnly, Retired
+from untaped.sdk.health import Retired
 from untaped.sdk.storage import Cache, Dir, StateRows
 
 DEFAULT_DEPENDENCY_PATHS = (
@@ -77,7 +77,7 @@ class AnsibleSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    index_dir: Annotated[Path | None, HomeOnly()] = Field(
+    index_dir: Path | None = Field(
         default=None,
         description=(
             "Folder of the SQLite index of refreshed source data, an absolute path; the "

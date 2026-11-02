@@ -1,9 +1,10 @@
-"""Every first-party setting that locates data shared by every project is marked HomeOnly().
+"""Every first-party setting that locates data shared by every project is home-only.
 
-A project's ``.untaped/config.yml`` that set one would split that data (a
-second repo store, an index of its own), so the mark makes the layer refuse
-it. A new path setting decides: marked, or listed here with why a project
-may set it.
+A project's ``.untaped/config.yml`` or a profile that set one would split that
+data (a second repo store, an index of its own), so the layer refuses it. A
+setting a ``Dir(at=...)`` places is home-only without a mark. A new path
+setting decides: placed by a ``Dir`` or marked ``HomeOnly()``, or listed here
+with why a project may set it.
 """
 
 from __future__ import annotations
@@ -52,6 +53,6 @@ def test_every_shared_folder_setting_is_home_only(
         if isinstance(d.annotation, type) and issubclass(d.annotation, PurePath)
     }
     assert paths - HOME_ONLY == set(PROJECT_PATHS), (
-        "a new path setting: mark it Annotated[Path | None, HomeOnly()] when it locates data "
-        "every project shares, or list it in PROJECT_PATHS with why a project may set it"
+        "a new path setting: place a Dir(at=) with it, or mark it HomeOnly(), when it locates "
+        "data every project shares, or list it in PROJECT_PATHS with why a project may set it"
     )
