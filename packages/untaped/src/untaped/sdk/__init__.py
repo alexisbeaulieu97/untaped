@@ -1,8 +1,8 @@
 """The untaped SDK: what plugin code (first- or third-party) imports from core.
 
 The public surface is the names ``untaped.sdk`` exports and those of its
-groups (``storage``, ``network``, ``health``, ``git``, ``projects``,
-``prompt``, ``contracts`` and ``testing``); a ``_``-prefixed module or name
+groups (``storage``, ``network``, ``health``, ``git``, ``process``,
+``projects``, ``prompt``, ``contracts`` and ``testing``); a ``_``-prefixed module or name
 is never public. Each name has one spelling: a group's names are imported
 from the group, and the root exports none of them. Additions are backwards
 compatible; removals or signature breaks are a major release.

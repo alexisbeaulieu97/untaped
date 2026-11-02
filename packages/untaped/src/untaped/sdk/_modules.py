@@ -11,6 +11,7 @@ SDK_MODULES = (
     "untaped.sdk.git",
     "untaped.sdk.health",
     "untaped.sdk.network",
+    "untaped.sdk.process",
     "untaped.sdk.projects",
     "untaped.sdk.prompt",
     "untaped.sdk.storage",

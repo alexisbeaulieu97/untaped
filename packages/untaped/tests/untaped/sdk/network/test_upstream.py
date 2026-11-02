@@ -6,7 +6,6 @@ keeps every call capped. The back-off waits on the test's clock, so retries run 
 
 from __future__ import annotations
 
-import subprocess
 import threading
 from typing import Any
 
@@ -20,6 +19,7 @@ from untaped.sdk.errors import HttpStatusError, HttpTransportError
 from untaped.sdk.git import GitCommandError, run_git
 from untaped.sdk.network.http import HttpClient, RetryPolicy
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, fail_fast, full_retries, quick_probe
+from untaped.sdk.process import ProcessResult
 from untaped.sdk.testing import ManualClock
 
 
@@ -165,9 +165,11 @@ def test_full_retries_steps_out_of_fail_fast_but_not_out_of_quick_probe() -> Non
 
 
 def _git(calls: list[dict[str, Any]], *, returncode: int = 0, stderr: bytes = b"") -> Any:
-    def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(args: list[str], **kwargs: Any) -> ProcessResult:
         calls.append({"args": args, **kwargs})
-        return subprocess.CompletedProcess(args, returncode, stdout=b"", stderr=stderr)
+        return ProcessResult(
+            ended="exited", returncode=returncode, stdout=b"", stderr=stderr, duration_s=0
+        )
 
     return fake_run
 
@@ -176,7 +178,7 @@ def test_run_git_caps_a_network_command_and_never_retries_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(git, "_run_process", _git(calls, returncode=128, stderr=b"early EOF"))
+    monkeypatch.setattr(git, "run_process", _git(calls, returncode=128, stderr=b"early EOF"))
 
     with fail_fast(), pytest.raises(GitCommandError):
         run_git(["ls-remote", "origin"], timeout=120, retry_transient=True, sleep=lambda _s: None)
@@ -189,7 +191,7 @@ def test_run_git_leaves_a_local_command_alone_and_its_success_lifts_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[dict[str, Any]] = []
-    monkeypatch.setattr(git, "_run_process", _git(calls))
+    monkeypatch.setattr(git, "run_process", _git(calls))
 
     with fail_fast():
         run_git(["rev-parse", "HEAD"], timeout=120)

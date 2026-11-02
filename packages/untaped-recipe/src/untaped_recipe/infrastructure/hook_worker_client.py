@@ -447,7 +447,7 @@ class UvHookWorker:
         pid = getattr(self._process, "pid", None)
         if pid is not None and hasattr(os, "getpgid") and hasattr(os, "killpg"):
             try:
-                os.killpg(os.getpgid(pid), sig)
+                os.killpg(os.getpgid(pid), sig)  # untaped: allow process-group (#579)
                 return
             except ProcessLookupError:
                 return
@@ -466,7 +466,7 @@ class UvHookWorker:
         env = uv_environment()
         env["PYTHONPATH"] = str(self._project_root / "src")
         try:
-            return subprocess.Popen(
+            return subprocess.Popen(  # untaped: allow process-group (#579)
                 [
                     "uv",
                     "run",

@@ -14,16 +14,13 @@ Copilot CLI set ``safe.bareRepository=explicit``, which refuses that discovery.
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import hashlib
 import logging
 import os
 import re
-import signal
 import subprocess
 import tempfile
-import threading
 import time
 import unicodedata
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -33,6 +30,7 @@ from pathlib import Path
 
 from untaped.sdk.errors import ErrorCategory, System, UntapedError
 from untaped.sdk.network.upstream import PROBE_TIMEOUT, capped, succeeded
+from untaped.sdk.process import run_process
 
 # Lowercased stderr fragments of transport failures that a later identical
 # fetch can plausibly survive (dropped TLS/TCP streams, proxy/5xx hiccups).
@@ -73,20 +71,6 @@ _BATCH_SSH_COMMAND = "ssh -o BatchMode=yes"
 # Subcommands that reach a remote: the ones the upstream budget caps (untaped.sdk.network.upstream).
 _NETWORK_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull"})
 _GIST_LIMIT = 300
-# Seconds a timed-out git gets, after SIGTERM, to remove its lock files.
-_TERM_GRACE_S = 2.0
-# Process groups of the git commands running now, for forward_signals().
-_LIVE_GROUPS: dict[int, None] = {}
-# Signals forward_signals() passed on, for a group registered just after one.
-_FORWARDED: list[int] = []
-# Threads forking a git not yet in _LIVE_GROUPS, for a signal that ends untaped.
-# Dict set and pop are atomic, so neither a lock nor an interrupt can wedge it.
-# An interrupt can leave the main thread's own mark behind; that is harmless
-# only because the handler never waits on its own thread. A signal handled on
-# the main thread while it is itself mid-spawn still misses that git (#579).
-_SPAWNING: dict[int, None] = {}
-# How long a signal that ends untaped waits for those to register.
-_SPAWN_WAIT_S = 1.0
 _REDACTED = "<redacted>"
 _LOG = logging.getLogger("untaped.git")
 # ``scheme://user[:password]@``: the whole userinfo can be a token.
@@ -94,14 +78,16 @@ _URL_USERINFO = re.compile(r"(?P<scheme>[A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s]+@")
 
 
 class GitCommandError(UntapedError):
-    """A git subprocess could not run, timed out, or exited non-zero.
+    """A git subprocess could not run, timed out, was stopped, or exited non-zero.
 
     ``returncode`` is ``None`` when git never produced an exit status
-    (binary missing, launch failure, timeout); ``timed_out`` marks the
-    timeout case. ``stderr`` is the full (auth-redacted) stderr text.
-    Its category is ``failed`` in ``git``; a timeout or a transient transport
-    failure is ``unavailable``, and a remote refusing the credentials is
-    ``auth`` (``permission`` for HTTP 403), with a hint.
+    (binary missing, launch failure, timeout, stopped because untaped is
+    stopping); ``timed_out`` marks the timeout case. ``stderr`` is the full
+    (auth-redacted) stderr text. Its category is ``failed`` in ``git``; a
+    timeout or a transient transport failure is ``unavailable``, a run
+    stopped by untaped's own interrupt is ``interrupted``, and a remote
+    refusing the credentials is ``auth`` (``permission`` for HTTP 403), with
+    a hint.
     """
 
     system = System.GIT
@@ -360,7 +346,8 @@ def run_git(
     stdout is captured only with ``capture`` (otherwise discarded so git
     chatter never reaches the CLI's own output); stderr is always captured.
     Raises :class:`GitCommandError` when git is missing, cannot start, times
-    out, or (with ``check``) exits non-zero. ``git_dir`` names the repository
+    out, is stopped because untaped is stopping (category ``interrupted``),
+    or (with ``check``) exits non-zero. ``git_dir`` names the repository
     with ``--git-dir`` (required for a bare one; see the module docstring).
     ``retry_transient`` retries transport failures up to ``attempts`` times
     with 1s, 2s, ... backoff; use it only for idempotent network commands
@@ -408,27 +395,27 @@ def run_git(
         for attempt in range(1, max(attempts, 1) + 1):
             started = time.monotonic()
             try:
-                completed = _run_process(
+                completed = run_process(
                     [git_path, *_git_dir_option(git_dir), *argv],
                     cwd=cwd,
                     env=process_env,
-                    # With no payload, close stdin so git never reads the terminal.
-                    stdin=subprocess.DEVNULL if payload is None else None,
-                    input=payload,
-                    stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
+                    input=payload,  # none: stdin is /dev/null, so git never reads the terminal
                     timeout=timeout,
                 )
-            except subprocess.TimeoutExpired as exc:
-                raise GitCommandError(
-                    f"{label} timed out after {timeout:g}s", timed_out=True
-                ) from exc
             except OSError as exc:
                 raise GitCommandError(f"{label} could not run: {exc}") from exc
+            if completed.ended == "timed_out":
+                raise GitCommandError(f"{label} timed out after {timeout:g}s", timed_out=True)
+            if completed.ended == "stopped":
+                raise GitCommandError(
+                    f"{label} was stopped: untaped is stopping",
+                    category=ErrorCategory.INTERRUPTED,
+                )
+            assert completed.returncode is not None
             result = GitResult(
                 returncode=completed.returncode,
-                stdout=_as_bytes(completed.stdout) if capture else b"",
-                stderr=redact(_as_bytes(completed.stderr).decode(errors="replace"), secrets),
+                stdout=completed.stdout if capture else b"",
+                stderr=redact(completed.stderr.decode(errors="replace"), secrets),
             )
             _log_run(argv, cwd, result.returncode, started, secrets)
             if result.returncode == 0:
@@ -449,128 +436,6 @@ def run_git(
                 hint=_failure_hint(result.stderr),
             )
     raise AssertionError("unreachable")  # pragma: no cover
-
-
-def _run_process(
-    cmd: list[str],
-    *,
-    cwd: Path | None,
-    env: Mapping[str, str],
-    stdin: int | None,
-    input: bytes | None,
-    stdout: int,
-    stderr: int,
-    timeout: float,
-) -> subprocess.CompletedProcess[bytes]:
-    """``subprocess.run`` for git, except that a timeout stops git's whole process group.
-
-    Git runs in a new session, so the helpers it starts (``remote-http``,
-    ``fetch-pack``, ``index-pack``) share its process group and nothing it
-    starts can prompt on the terminal. On a timeout or an interrupt the group
-    gets SIGTERM, so git removes its lock files, then SIGKILL after
-    :data:`_TERM_GRACE_S`, so no helper outlives the call. Signals sent to
-    untaped's own process group reach git only through :func:`forward_signals`.
-    """
-    forwarded = len(_FORWARDED)
-    spawner = threading.get_ident()
-    _SPAWNING[spawner] = None
-    try:
-        process = subprocess.Popen(
-            cmd,
-            cwd=cwd,
-            env=env,
-            stdin=subprocess.PIPE if input is not None else stdin,
-            stdout=stdout,
-            stderr=stderr,
-            start_new_session=True,
-        )
-    except BaseException:
-        _SPAWNING.pop(spawner, None)
-        raise
-    with process:
-        try:
-            # Register before clearing the mark: a dying untaped signals the
-            # groups again once no other thread is mid-spawn.
-            _LIVE_GROUPS[process.pid] = None
-            _SPAWNING.pop(spawner, None)
-            # A signal forwarded between Popen and registration missed this group.
-            for sig in _FORWARDED[forwarded:]:
-                _signal_group(process.pid, sig)
-            out, err = process.communicate(input, timeout=timeout)
-        except BaseException:
-            _stop_group(process)
-            raise
-        finally:
-            _SPAWNING.pop(spawner, None)
-            _LIVE_GROUPS.pop(process.pid, None)
-    return subprocess.CompletedProcess(cmd, process.returncode, out, err)
-
-
-def _stop_group(process: subprocess.Popen[bytes]) -> None:
-    """SIGTERM the process group led by ``process``, wait for it to empty, then SIGKILL it."""
-    if not hasattr(os, "killpg"):  # no process groups (Windows)
-        process.kill()
-        return
-    deadline = time.monotonic() + _TERM_GRACE_S
-    alive = _signal_group(process.pid, signal.SIGTERM)
-    try:
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            process.wait(timeout=_TERM_GRACE_S)
-        # Helpers can outlive git: give them the rest of the grace period too.
-        while alive and time.monotonic() < deadline:
-            alive = _signal_group(process.pid, 0)
-            if alive:
-                time.sleep(0.02)
-    finally:  # a second interrupt during the grace period must not skip the kill
-        if alive:
-            _signal_group(process.pid, signal.SIGKILL)
-
-
-def _signal_group(pgid: int, sig: int) -> bool:
-    """Send ``sig`` to process group ``pgid``; ``False`` when no process is left in it."""
-    try:
-        os.killpg(pgid, sig)
-    except ProcessLookupError, PermissionError:  # macOS: EPERM for a group of zombies
-        return False
-    return True
-
-
-def forward_signals() -> None:
-    """Pass SIGINT, SIGTERM and SIGHUP on to the git commands running when they arrive.
-
-    Git runs in its own session (see :func:`_run_process`), so a signal sent
-    to untaped's process group (Ctrl-C, a closed terminal, ``timeout``, a
-    cancelled CI job) no longer reaches it, and git started by a worker
-    thread would run on until its own timeout. The CLI entry point calls this
-    once, from the main thread; the previous handler then runs as before, and
-    a signal untaped ignores stays ignored.
-    """
-    if not hasattr(os, "killpg"):
-        return  # no process groups (Windows)
-    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
-        previous = signal.getsignal(sig)
-        if previous is None or previous == signal.SIG_IGN:
-            continue
-        signal.signal(sig, functools.partial(_forward_signal, previous))
-
-
-def _forward_signal(previous: Callable[..., object] | int, signum: int, frame: object) -> None:
-    _FORWARDED.append(signum)
-    for pgid in list(_LIVE_GROUPS):
-        _signal_group(pgid, signum)
-    if callable(previous):
-        previous(signum, frame)
-    else:  # SIG_DFL: die of the signal, as untaped did before
-        # A git another thread is starting would outlive untaped: let it register.
-        deadline = time.monotonic() + _SPAWN_WAIT_S
-        me = threading.get_ident()  # a spawn on this thread cannot finish meanwhile
-        while any(t != me for t in list(_SPAWNING)) and time.monotonic() < deadline:
-            time.sleep(0.01)
-        for pgid in list(_LIVE_GROUPS):
-            _signal_group(pgid, signum)
-        signal.signal(signum, signal.SIG_DFL)
-        os.kill(os.getpid(), signum)
-        os._exit(128 + signum)  # still here: PID 1 ignores its own default signals
 
 
 def git_toplevel(path: Path, *, git: str = "git", timeout: float = 30.0) -> Path | None:
@@ -654,12 +519,6 @@ def _sanitize(value: str) -> str:
     return "".join(char if char.isalnum() or char in "._-" else "_" for char in value)
 
 
-def _as_bytes(value: bytes | str | None) -> bytes:
-    if value is None:
-        return b""
-    return value.encode() if isinstance(value, str) else value
-
-
 def _is_trace_variable(name: str) -> bool:
     return name.startswith("GIT_TRACE") or name == "GIT_CURL_VERBOSE"
 
@@ -705,7 +564,7 @@ def _core_ssh_command_set(
     probe runs in the command's ``cwd`` (the process cwd when there is none)
     and names ``git_dir`` when given, so it reads that repository's config,
     never one inherited ``GIT_DIR`` points at. It uses ``Popen`` directly so
-    it stays out of the :func:`_run_process` path that callers and tests observe.
+    it stays out of the :func:`run_process` path that callers and tests observe.
     """
     if git_path is None:
         return False

@@ -48,7 +48,7 @@ uv lock --check                                 # lock file is current
   experimental `screen/` kit:
   - `sdk/` is what a plugin may import. Its groups are subpackages
     (`storage/`, `contracts/`, `network/`, `health/`, `prompt/`, `testing/`,
-    and the `git` and `projects` modules). A plugin imports `untaped.sdk`, its
+    and the `git`, `process` and `projects` modules). A plugin imports `untaped.sdk`, its
     groups and `untaped.core.api`
     ([SDK stability](docs/reference/conventions.md#sdk-stability)), and a
     `_`-prefixed module or name is never public. `sdk/` is moving off
@@ -149,7 +149,8 @@ or becomes an SDK helper that every plugin can use. Declare a
   budgets them); `# noqa: PLC0415` only where Ruff flags it.
 - **Git through `run_git` and `git_toplevel`**, and advisory file locks
   through `file_lock`, all exported by `untaped.sdk`; never hand-rolled
-  `subprocess` git plumbing.
+  `subprocess` git plumbing. A child in its own process group starts through
+  `untaped.sdk.process`, which stops it when untaped is interrupted.
 - **Module docstrings.** Every module opens with a docstring saying what it
   owns (re-export stubs are exempt; `house.module-docstring` checks source
   modules). Rationale that protects code goes there.
