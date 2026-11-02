@@ -33,15 +33,16 @@ def warnings() -> list[str]:
 
 @pytest.fixture
 def store_for(tmp_path: Path, remote: GitRemote, warnings: list[str]) -> StoreFor:
-    """``store_for(plugin, url=None)``: a store handle on ``remote`` under a temp root."""
+    """``store_for(plugin, url=None, plain_clone=False)``: a handle on ``remote``, temp root."""
     root = tmp_path / "store"
 
-    def build(plugin: str, *, url: str | None = None) -> RepoStore:
+    def build(plugin: str, *, url: str | None = None, plain_clone: bool = False) -> RepoStore:
         return RepoStore._open(
             root / "git.example" / "app.git",
             url=url or remote.url,
             plugin=plugin,
             error=StoreError,
+            plain_clone=plain_clone,
             warn=warnings.append,
             sleep=lambda _seconds: None,
         )

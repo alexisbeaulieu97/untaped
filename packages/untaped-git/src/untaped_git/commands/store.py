@@ -29,7 +29,8 @@ class Store(Command[GitSettings]):
     a repo stays while another plugin, a hand-added worktree, a branch or a
     stash holds it, and untaped never deletes those branches or stashes.
     Never edit a repo under the store by hand: other plugins' refs and
-    worktrees share it. Their refs live under `refs/untaped/` and show in
+    worktrees share it. Their refs live under `refs/untaped/` (one plugin per
+    repo may keep a clone's `origin/*` and tags instead) and show in
     `git log --all` from an untaped worktree.
 
     The store needs Git 2.29 or newer; `untaped doctor` checks the version

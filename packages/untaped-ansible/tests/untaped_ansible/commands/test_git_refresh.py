@@ -214,7 +214,9 @@ def test_a_repo_shared_with_workspace_keeps_workspaces_refs_and_worktree(
     tmp_path: Path, store_root: Path
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
+    workspace = RepoStore.for_url(
+        site.url, plugin="workspace", error=RepoStoreError, plain_clone=True
+    )
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     worktree = tmp_path / "ws" / "site"
     workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
@@ -378,7 +380,9 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
     tmp_path: Path, store_root: Path
 ) -> None:
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
+    workspace = RepoStore.for_url(
+        site.url, plugin="workspace", error=RepoStoreError, plain_clone=True
+    )
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     worktree = tmp_path / "ws" / "site"
     workspace.worktree_add(worktree, "refs/remotes/origin/main", branch="fix")
@@ -399,7 +403,9 @@ def test_removing_a_source_releases_a_repo_workspace_holds(
 def test_removing_a_source_leaves_a_repo_it_never_fetched(tmp_path: Path, store_root: Path) -> None:
     """The source selects the repo, but no ref matched: ansible has no part in it to release."""
     site = _remote(tmp_path, "site", {_REQS: "- src: https://github.com/acme/base\n"})
-    workspace = RepoStore.for_url(site.url, plugin="workspace", error=RepoStoreError)
+    workspace = RepoStore.for_url(
+        site.url, plugin="workspace", error=RepoStoreError, plain_clone=True
+    )
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     _save_sources("a")
     _refresh(tmp_path, "site", source_key="source:a", ref_patterns=["nomatch-*"])

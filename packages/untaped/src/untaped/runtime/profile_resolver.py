@@ -342,7 +342,9 @@ def _layer(
     """Deep-merge ``src`` into ``dst`` and record per-leaf provenance.
 
     Lists and other non-dict values replace the corresponding key wholesale
-    (no list-element merging). Nested dicts recurse.
+    (no list-element merging). Nested dicts recurse; one that is still empty
+    once merged is a leaf of its own (a map entry that holds nothing still sets
+    the entry).
     """
     for key, value in src.items():
         leaf_path = (*path, key)
@@ -351,6 +353,10 @@ def _layer(
             child = existing if isinstance(existing, dict) else {}
             dst[key] = child
             _layer(value, profile, child, provenance, leaf_path)
+            if child:
+                provenance.pop(leaf_path, None)  # its entries say where they come from
+            else:
+                provenance[leaf_path] = profile
         else:
             dst[key] = value
             provenance[leaf_path] = profile

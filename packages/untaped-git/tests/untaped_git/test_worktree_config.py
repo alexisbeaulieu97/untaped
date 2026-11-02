@@ -15,7 +15,7 @@ from untaped_git.testing import GitRemote, global_config
 def test_a_new_url_spelling_replaces_the_old_rewrite(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path
 ) -> None:
-    old = store_for("workspace")
+    old = store_for("workspace", plain_clone=True)
     old.fetch(branches=["main"])
     tree = tmp_path / "ws" / "app"
     old.worktree_add(tree, "refs/remotes/origin/main", branch="fix")
@@ -23,7 +23,7 @@ def test_a_new_url_spelling_replaces_the_old_rewrite(
 
     new_url = "https://git.example/APP.git"
     global_config(f"url.file://{remote.path}.insteadOf", new_url, add=True)
-    store_for("workspace", url=new_url).write_worktree_config(tree)
+    store_for("workspace", plain_clone=True, url=new_url).write_worktree_config(tree)
 
     assert git(tree, "remote", "get-url", "origin", bare=False).strip() == f"file://{remote.path}"
     rewrites = git(tree, "config", "--worktree", "--get-regexp", r"^url\.", bare=False)
@@ -32,7 +32,7 @@ def test_a_new_url_spelling_replaces_the_old_rewrite(
 
 
 def test_a_foreign_path_is_refused(remote: GitRemote, store_for: StoreFor, tmp_path: Path) -> None:
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     store.fetch(branches=["main"])
     clone = tmp_path / "mine"
     subprocess.run(["git", "clone", "--quiet", str(remote.path), str(clone)], check=True)
@@ -58,7 +58,7 @@ def test_an_interrupted_creation_heals(remote: GitRemote, store_for: StoreFor) -
 
 
 def test_delete_refs_guards_the_symref(store_for: StoreFor) -> None:
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     store.fetch(branches=["main"])
     before = all_refs(store.path)
 
@@ -99,7 +99,7 @@ def test_stripping_a_shared_refspec_repairs_every_sibling_worktree(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path
 ) -> None:
     """S35: a 10.x repo's shared refspec goes; each worktree keeps an upstream, none is stamped."""
-    workspace = store_for("workspace")
+    workspace = store_for("workspace", plain_clone=True)
     workspace.fetch(branches=["*"], tags=["*"], prune=True)
     owned = tmp_path / "ws" / "owned"
     workspace.worktree_add(owned, "refs/remotes/origin/main", branch="owned")

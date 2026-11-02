@@ -49,7 +49,7 @@ def test_explicit_names(remote: GitRemote, store_for: StoreFor) -> None:
 
 def test_plain_clone_layout(remote: GitRemote, store_for: StoreFor) -> None:
     first = _remote_with_old_and_tag(remote)
-    store = store_for("workspace")
+    store = store_for("workspace", plain_clone=True)
     assert dict(store.fetch(branches=["*"], tags=["*"]).added) == first
 
     moved = remote.commit("a.txt", "a\n")

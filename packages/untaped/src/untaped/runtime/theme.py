@@ -208,7 +208,8 @@ class UiSettings(BaseModel):
         """Refuse a name outside a field's :class:`Choices`, on write only.
 
         Loading stays lenient (doctor reports a stray). With a written key in
-        the context, a mapping is checked only when it is that key, so a stray
+        the context, a mapping is checked only when it is that key (an entry of
+        it: only that entry's name), so a stray
         name already on disk never blocks writing another ``ui`` key. A
         single value is always checked: a stray theme breaks every themed
         command, so a write that keeps it would fail after saving.
@@ -218,8 +219,12 @@ class UiSettings(BaseModel):
         if choices is None or not (isinstance(context, dict) and context.get(CONFIG_WRITE_CONTEXT)):
             return value
         written = context.get(CONFIG_WRITTEN_KEY_CONTEXT)
-        if isinstance(value, Mapping) and written not in (None, f"untaped.ui.{info.field_name}"):
-            return value
+        key = f"untaped.ui.{info.field_name}"
+        if isinstance(value, Mapping) and written is not None and written != key:
+            name = str(written).removeprefix(f"{key}.")
+            if name == written or name not in value:
+                return value  # another key, or the entry is being removed
+            value = {name: value[name]}  # one entry: only its name is checked
         refusal = choices.refusal(value)
         if refusal is not None:
             raise ValueError(refusal)

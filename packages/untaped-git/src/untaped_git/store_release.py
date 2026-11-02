@@ -16,7 +16,15 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import ErrorCategory, System, shown_path
 from untaped.sdk.storage import dir_bytes
-from untaped_git.namespace import ORIGIN_HEAD, check_names, is_glob, layout_for
+from untaped_git import plain_clone
+from untaped_git.namespace import (
+    ORIGIN_HEAD,
+    PLAIN_HEADS,
+    PLAIN_TAGS,
+    check_names,
+    is_glob,
+    layout_for,
+)
 from untaped_git.release import Released, Removed
 from untaped_git.repo_files import (
     WorktreeEntry,
@@ -74,12 +82,16 @@ def release(
 
 
 def finish_release(store: RepoStore, plugin: str, branches: Sequence[str]) -> None:
-    """Delete ``plugin``'s refs, private file and worktrees, and ``branches``."""
-    layout = layout_for(plugin)
-    refs = store._git(
-        ["for-each-ref", "--format=%(refname)", *layout.roots], capture=True
-    ).text.split()
-    if layout.heads == "refs/remotes/origin/":
+    """Delete ``plugin``'s refs, private file and worktrees, and ``branches``.
+
+    Its own namespace's refs always, and the plain-clone layout's when the repo
+    records ``plugin`` as their holder; the record goes last, so an interrupted
+    release still knows whose they are.
+    """
+    plain = plain_clone.holder(store) == plugin
+    roots = [*layout_for(plugin).roots, *((PLAIN_HEADS, PLAIN_TAGS) if plain else ())]
+    refs = store._git(["for-each-ref", "--format=%(refname)", *roots], capture=True).text.split()
+    if plain:
         refs.append(ORIGIN_HEAD)
     store._delete(dict.fromkeys([*refs, *branches]))
     private_file(store._path, plugin).unlink(missing_ok=True)
@@ -87,6 +99,7 @@ def finish_release(store: RepoStore, plugin: str, branches: Sequence[str]) -> No
         if entry.owner == plugin:
             remove_worktree(store, entry)
     store._git(["worktree", "prune"], check=False)
+    plain_clone.free(store, plugin)
 
 
 def remove_worktree(store: RepoStore, entry: WorktreeEntry) -> None:
@@ -127,14 +140,17 @@ def _holders(store: RepoStore) -> Released | None:
         ["for-each-ref", "--format=%(refname)", *_HELD_ROOTS], capture=True
     ).text.split()
     plugins: dict[str, int] = dict.fromkeys(private_files(store._path), 0)
-    branches, stash = [], False
+    plain = plain_clone.holder(store)
+    branches, other, stash = [], [], False
     for ref in refs:
         if ref == ORIGIN_HEAD:
             continue
         if ref.startswith("refs/untaped/"):
             plugins.setdefault(ref.split("/")[2], 0)
+        elif ref.startswith((PLAIN_HEADS, PLAIN_TAGS)) and plain is not None:
+            plugins.setdefault(plain, 0)
         elif ref.startswith(("refs/remotes/", "refs/tags/")):
-            plugins.setdefault("workspace", 0)
+            other.append(ref)
         elif ref.startswith("refs/heads/"):
             branches.append(ref.removeprefix("refs/heads/"))
         elif ref == "refs/stash":
@@ -145,12 +161,13 @@ def _holders(store: RepoStore) -> Released | None:
             foreign.append(shown_path(entry.path) if entry.path else str(entry.admin))
         else:
             plugins[entry.owner] = plugins.get(entry.owner, 0) + 1
-    if not plugins and not foreign and not branches and not stash:
+    if not plugins and not foreign and not branches and not other and not stash:
         return None
     return Released(
         plugins=dict(sorted(plugins.items())),
         foreign_worktrees=tuple(foreign),
         branches=tuple(branches),
+        refs=tuple(other),
         stash=stash,
     )
 
