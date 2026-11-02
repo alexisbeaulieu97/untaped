@@ -57,7 +57,7 @@ def test_behaviours_are_listed() -> None:
     assert not missing, (
         "a behaviour named where it is declared gets its surface line, and so its date check, "
         "only once listed: hold it on the plugin class instead, or list core's in "
-        "sdk/marks.py's _core_behaviours, then regenerate with scripts/gen_surface.py:\n"
+        "sdk/_behaviours.py's _core_behaviours, then regenerate with scripts/gen_surface.py:\n"
         + "\n".join(f"  {line}" for line in missing)
     )
 

@@ -32,9 +32,10 @@ if TYPE_CHECKING:
 
     from untaped.runtime.declaration import BlockDecl, CacheDecl, PluginDecl
     from untaped.runtime.mount import Mount
+    from untaped.sdk._behaviours import DeprecatedBehaviour
     from untaped.sdk.contracts import Contract
     from untaped.sdk.health.doctor import DoctorCheck
-    from untaped.sdk.marks import DeprecatedBehaviour, Stability
+    from untaped.sdk.marks import Stability
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.storage.holds import ItemStore
     from untaped.sdk.storage.store import Store

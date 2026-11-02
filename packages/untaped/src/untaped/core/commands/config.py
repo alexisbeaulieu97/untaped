@@ -44,6 +44,7 @@ from untaped.runtime.settings import (
     active_settings_layout,
     notify_config_key,
 )
+from untaped.runtime.stability_help import show_deprecated
 from untaped.sdk._cli import echo, emit
 from untaped.sdk._keys import key
 from untaped.sdk.errors import ConfigError, UsageError
@@ -55,7 +56,6 @@ from untaped.sdk.health.deprecated_keys import (
     key_mappings,
     notify_use,
 )
-from untaped.sdk.marks import show_deprecated
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import current_project
 from untaped.sdk.words import plural, run_hint, shown_path

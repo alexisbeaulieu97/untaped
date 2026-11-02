@@ -15,8 +15,9 @@ from pydantic import BaseModel, Field
 from core_test_support.commands.support import ExtProfile, make_plugin
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.runtime import bootstrap
+from untaped.runtime.stability_marks import Mark, marks
 from untaped.sdk import Command, Group, Plugin
-from untaped.sdk.marks import Deprecated, Experimental, Mark, deprecated, experimental, marks
+from untaped.sdk.marks import Deprecated, Experimental, deprecated, experimental
 from untaped.sdk.testing import plugin_candidate
 
 

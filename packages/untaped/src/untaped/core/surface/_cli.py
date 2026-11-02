@@ -1,6 +1,6 @@
 """``cli`` lines: every command, positional and option of a composed root app.
 
-The walk goes through :func:`untaped.sdk.marks.children` without resolving
+The walk goes through :func:`untaped.sdk._replacement.children` without resolving
 aliases, so a deprecated spelling is seen as an alias. A command's owner line
 carries what a caller must pass (required positionals in order, then required
 options sorted); every optional positional, option, alias, negative flag and
@@ -25,13 +25,9 @@ from untaped.core.surface._lists import WRITTEN_OUTSIDE
 from untaped.core.surface._sdk import line_mark
 from untaped.core.surface._types import choice_text, default_text
 from untaped.runtime.mount import DeclaredDefault
-from untaped.sdk.marks import (
-    children,
-    deprecated_aliases,
-    mark_of,
-    marked_options,
-    option_name,
-)
+from untaped.runtime.stability_help import mark_of, marked_options, option_name
+from untaped.runtime.stability_marks import deprecated_aliases
+from untaped.sdk._replacement import children
 
 ROOT = "untaped"
 _POSITIONAL = (

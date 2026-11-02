@@ -11,21 +11,17 @@ import pytest
 from cyclopts import App
 from pydantic import BaseModel
 
-import untaped.sdk.marks as mark_module
+import untaped.sdk._behaviours as behaviour_module
 from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.run import run_owning
 from untaped.core.plugin_check.stability import stability_violations
 from untaped.core.surface import DeprecatedMark, Line, plugin_lines
 from untaped.runtime import bootstrap
+from untaped.runtime.stability_marks import marks
 from untaped.sdk import Command, Plugin
+from untaped.sdk._behaviours import DeprecatedBehaviour
 from untaped.sdk._run import run_scope
-from untaped.sdk.marks import (
-    DeprecatedBehaviour,
-    UntapedDeprecationWarning,
-    deprecated,
-    forget_notices,
-    marks,
-)
+from untaped.sdk.marks import UntapedDeprecationWarning, deprecated, forget_notices
 from untaped.sdk.testing import install, invoke_cli, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
@@ -37,7 +33,7 @@ CORE = DeprecatedBehaviour("old-login", deprecated(removed_in=12, replacement="u
 @pytest.fixture
 def _core_behaviour(monkeypatch: pytest.MonkeyPatch) -> None:
     """Core lists :data:`CORE` as its own behaviour."""
-    monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (CORE,))
+    monkeypatch.setattr(behaviour_module, "_core_behaviours", lambda: (CORE,))
 
 
 def _svc(stability: object = None, **behaviours: DeprecatedBehaviour) -> type[Plugin]:
@@ -276,7 +272,7 @@ def test_core_s_behaviours_are_checked_with_core(monkeypatch: pytest.MonkeyPatch
     gone = DeprecatedBehaviour(
         "gone", deprecated(removed_in=12, replacement="untaped auth nowhere")
     )
-    monkeypatch.setattr(mark_module, "_core_behaviours", lambda: (gone,))
+    monkeypatch.setattr(behaviour_module, "_core_behaviours", lambda: (gone,))
     root = _compose()
     found = stability_violations(root, bootstrap.composition(), [], sections=["untaped"])
     assert found == [

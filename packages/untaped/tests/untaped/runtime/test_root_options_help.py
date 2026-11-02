@@ -10,9 +10,10 @@ from core_test_support.commands.support import make_plugin
 from core_test_support.runtime.run import started_line
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.runtime.stability_help import show_deprecated
 from untaped.sdk import Command, Plugin
 from untaped.sdk._run import is_verbose
-from untaped.sdk.marks import deprecated, show_deprecated
+from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import CliInvoker, plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")

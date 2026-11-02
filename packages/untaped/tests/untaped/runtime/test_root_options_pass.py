@@ -19,11 +19,11 @@ from untaped.runtime.declaration import CommandDecl, Declaration, GroupDecl, Opt
 from untaped.runtime.profile_resolver import flag_pick
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.root_options import _table_default
+from untaped.runtime.stability_help import show_deprecated
 from untaped.sdk import Command, Plugin
 from untaped.sdk._cli import _table_default_format
 from untaped.sdk._run import current_run, is_verbose
 from untaped.sdk.fields import AllowHyphen, Positional, Short
-from untaped.sdk.marks import show_deprecated
 from untaped.sdk.testing import CliInvoker
 
 

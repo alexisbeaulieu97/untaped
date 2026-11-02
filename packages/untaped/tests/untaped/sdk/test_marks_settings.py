@@ -12,16 +12,10 @@ from pydantic import BaseModel, Field
 from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.settings_names import settings_name_violations
 from untaped.runtime import bootstrap
+from untaped.runtime.stability_marks import field_marks, mark_errors, pydantic_deprecated_fields
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health.deprecated_keys import DeprecatedKey, key_mappings, mapping_errors
-from untaped.sdk.marks import (
-    Deprecated,
-    deprecated,
-    experimental,
-    field_marks,
-    mark_errors,
-    pydantic_deprecated_fields,
-)
+from untaped.sdk.marks import Deprecated, deprecated, experimental
 from untaped.sdk.testing import plugin_candidate
 
 pytestmark = pytest.mark.usefixtures("fresh_composition")
