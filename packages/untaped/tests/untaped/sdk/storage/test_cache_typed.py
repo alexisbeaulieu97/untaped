@@ -7,7 +7,7 @@ import json
 import stat
 import threading
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,7 @@ from untaped.sdk.contracts import cached
 from untaped.sdk.diagnostic import Diagnostic, Stale
 from untaped.sdk.errors import ConfigError, HttpTransportError
 from untaped.sdk.progress import ProgressHandle
-from untaped.sdk.storage import data_file
+from untaped.sdk.storage import _cache_serve, data_file
 from untaped.sdk.storage._digest import settings_digest
 from untaped.sdk.storage.cache import Cache, Filled, Freshness, NeverRefreshed
 from untaped.sdk.testing import CacheClock, cache_clock, damage, keep_value
@@ -159,9 +159,10 @@ def test_a_failed_refresh_rewrites_the_first_line_and_keeps_the_values_bytes(
 def test_a_damaged_file_is_missing_and_refilled(clock: CacheClock, up: Controller) -> None:
     _serve(up)
     damage(SNAPSHOTS, KEY)
-    kept = SNAPSHOTS._load(SNAPSHOTS._paths(KEY), KEY, "1", SNAPSHOTS._typing())
+    files = replace(SNAPSHOTS._files(), version="1")
+    kept = files.load(files.paths(KEY), KEY)
     assert (kept.freshness, kept.damaged) == (Freshness(), True)
-    assert SNAPSHOTS._task_text("c.example", kept, timedelta(hours=1)) == (
+    assert _cache_serve._task_text("c.example", kept, timedelta(hours=1)) == (
         "Refreshing c.example (the kept copy could not be read)"
     )
     served, _ = _serve(up)
@@ -340,7 +341,7 @@ def _sibling(name: str, *keys: str) -> Path:
     sibling = own.parent / name
     sibling.mkdir()
     for key in keys:
-        stem = SNAPSHOTS._paths(key).stem
+        stem = SNAPSHOTS._files().paths(key).stem
         for file in own.glob(f"{stem}*"):
             file.rename(sibling / file.name)
     return sibling
@@ -371,7 +372,7 @@ def test_a_fill_sweeps_the_key_from_sibling_settings_folders_past_the_horizon(
 def test_a_busy_sibling_lock_keeps_its_file(clock: CacheClock, up: Controller) -> None:
     keep_value(SNAPSHOTS, KEY, Snapshot(items=["old"]), refreshed_at=START)
     sibling = _sibling("0000000000000000", KEY)
-    lock = sibling / f"{SNAPSHOTS._paths(KEY).stem}.lock"
+    lock = sibling / f"{SNAPSHOTS._files().paths(KEY).stem}.lock"
     held, release = threading.Event(), threading.Event()
 
     def hold() -> None:
@@ -500,6 +501,22 @@ def test_cached_peeks_at_the_kept_value_and_forget_drops_every_version(
 
     assert _files() == []
     assert SNAPSHOTS.cached(KEY) is None
+
+
+def test_forget_needs_neither_the_version_nor_the_model(
+    clock: CacheClock, up: Controller, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A key's paths need no version: a cache whose code can't be found is still forgotten."""
+    _serve(up)
+
+    def broken() -> str:
+        raise ConfigError("installed_code: no module named 'gone'")
+
+    monkeypatch.setattr(SNAPSHOTS, "version", broken)
+    monkeypatch.setattr(SNAPSHOTS, "_resolved", None)
+    monkeypatch.setattr(SNAPSHOTS, "model", lambda: dict)  # not a pydantic model
+    SNAPSHOTS.forget(KEY)
+    assert _files() == []
 
 
 def test_forget_leaves_a_key_whose_name_reads_like_a_version_of_another(

@@ -197,15 +197,15 @@ def test_an_unregistered_section_digests_as_empty() -> None:
 
 def test_a_settings_cache_folder_is_named_by_it(monkeypatch: pytest.MonkeyPatch) -> None:
     _config(default=_SERVER, work=_SERVER)
-    folder = ITEMS._paths("k").dir
+    folder = ITEMS._files().paths("k").dir
     assert folder.name == _digest(monkeypatch)
-    assert ITEMS._paths("k").dir == folder
+    assert ITEMS._files().paths("k").dir == folder
     monkeypatch.setenv("UNTAPED_PROFILE", "work")
-    assert ITEMS._paths("k").dir == folder
+    assert ITEMS._files().paths("k").dir == folder
     shared = Cache(label="shared", max_age=timedelta(hours=1), split="none")._spelled_as(
         "toy", "shared"
     )
-    assert shared._paths("k").dir.name == "shared"
+    assert shared._files().paths("k").dir.name == "shared"
 
 
 def test_a_section_blob_is_named_as_the_variable_it_is(monkeypatch: pytest.MonkeyPatch) -> None:

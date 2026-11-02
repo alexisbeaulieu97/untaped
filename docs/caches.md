@@ -149,37 +149,32 @@ version of the code that fills the cache with `version=`, a function
 called each time the cache is read (never at import):
 
 ```python
-from untaped.sdk import Plugin
-from untaped.sdk.storage import Cache, code_version
+from untaped.sdk import Plugin, installed_code
+from untaped.sdk.storage import Cache
 
 class Acme(Plugin):
     index = Cache(
         label="source data",
         max_age=timedelta(days=1),
-        version=lambda: code_version("acme.domain.parser", distributions=("PyYAML",)),
+        version=installed_code("acme.domain.parser", "acme.domain.identity"),
     )
 ```
 
-`code_version(module, distributions=, extra=)` hashes the bytes of the
-module's file (found without importing it), the installed version of each
-distribution, and each `extra` string, once per process: editing the parser
-or upgrading PyYAML changes it, and nothing needs bumping by hand. It reads
-that one file, so name the libraries it relies on, and keep first-party code
-that shapes the data in that module or hash its modules too
-(`extra=(code_version("acme.domain.identity"),)`). A `version` that raises
-fails every read of the cache, `--cached` included.
-
-A 12.0 plugin class names the code instead:
-`version=installed_code(acme.domain.parser)` hashes every file of that
-module or package (a module or its dotted name; neither is imported to find
-it), and `version=installed_code()` versions by the whole install: untaped
-and every plugin distribution, by version, `RECORD` and, for an editable
-install, the modification times and sizes under its source folder (hidden
-and editor files, `node_modules` and virtual environments left out). A
-`setup.py develop` install counts by its version alone, and files a plugin
+`installed_code(*modules)` hashes every file of each module or package (a
+module or its dotted name; neither is imported to find it), once per
+process: editing the parser changes it, and nothing needs bumping by hand.
+Name every module that shapes the data, and the packages of the libraries
+whose behaviour it relies on (`installed_code("acme.domain.parser",
+"yaml")`); a named module that is not installed raises, so leave an optional
+library out. `installed_code()` with no module versions by the whole install:
+untaped and every plugin distribution, by version, `RECORD` and, for an
+editable install, the modification times and sizes under its source folder
+(hidden and editor files, `node_modules` and virtual environments left out).
+A `setup.py develop` install counts by its version alone, and files a plugin
 reads from outside its source folder never count. A named top-level package
 an import hook installs (a setuptools editable finder) is found once
-imported.
+imported. A `version` that raises fails every read of the cache, `--cached`
+included.
 
 Each key's file keeps the version it was filled at. A key filled at
 another version is *outdated*: due the way a key past its max age is (auto
@@ -205,8 +200,8 @@ ran.
 
 A default is not part of the settings digest, so a release that changes a
 default leaves every folder where it is. When that changed default alters
-what a cache holds, bump the cache's `version=` in the same release (a
-`code_version` that hashes the module declaring the default does it by
+what a cache holds, bump the cache's `version=` in the same release (an
+`installed_code` that hashes the module declaring the default does it by
 itself), or keys filled under the old default are served as if they were
 current.
 

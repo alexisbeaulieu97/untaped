@@ -55,6 +55,7 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk.plugin_records",
         "untaped.sdk.projects",
         "untaped.sdk.prompt.prompts",
+        "untaped.sdk.storage._cache_serve",
         "untaped.sdk.storage._digest",
         "untaped.sdk.storage._refs",
         "untaped.sdk.storage.cache",
@@ -140,6 +141,20 @@ def test_the_sdk_imports_neither_the_runtime_nor_core() -> None:
     )
     gone = sorted(STILL_IMPORTS_THE_RUN - importing)
     assert not gone, f"{gone} no longer import the run: drop them from STILL_IMPORTS_THE_RUN"
+
+
+def test_the_cache_s_parts_never_import_the_cache() -> None:
+    """``Cache`` composes its files and its serving; neither part knows the class."""
+    storage = SRC / "untaped" / "sdk" / "storage"
+    reaching = [
+        name
+        for name in ("_cache_files", "_cache_serve", "_serve_scope")
+        if "untaped.sdk.storage.cache" in _imports(storage / f"{name}.py")
+    ]
+    assert not reaching, (
+        f"{reaching} import untaped.sdk.storage.cache: the class builds on its parts, "
+        "so what a part needs of a cache comes in as CacheFacts or CacheFiles"
+    )
 
 
 def test_importing_the_sdk_loads_nothing_else() -> None:

@@ -7,15 +7,12 @@ moves the progress clock from inside the fill.
 
 from __future__ import annotations
 
-import importlib.metadata
 import json
 import stat
-import sys
 import threading
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Annotated, Any
 
 import pytest
@@ -31,9 +28,9 @@ from untaped.sdk.diagnostic import Failure, Progress, Stale
 from untaped.sdk.errors import ConfigError, ErrorCategory, HttpTransportError, UntapedError
 from untaped.sdk.network.upstream import PROBE_TIMEOUT
 from untaped.sdk.progress import ProgressHandle
-from untaped.sdk.storage import cache as cache_module
-from untaped.sdk.storage import data_file
+from untaped.sdk.storage import _cache_files, data_file
 from untaped.sdk.storage._digest import settings_digest
+from untaped.sdk.storage._serve_scope import call_state, refresh_scope
 from untaped.sdk.storage.cache import (
     RETRY_AFTER,
     Cache,
@@ -41,9 +38,6 @@ from untaped.sdk.storage.cache import (
     Freshness,
     FreshnessRecord,
     NeverRefreshed,
-    call_state,
-    code_version,
-    refresh_scope,
 )
 from untaped.sdk.storage.data_file import written_by
 from untaped.sdk.testing import (
@@ -139,13 +133,13 @@ def _refreshed(clock: CacheClock, *keys: str, ago: timedelta) -> None:
 
 def _sidecar(key: str, cache: Cache = TOY) -> dict[str, Any]:
     """The stamp on the key's file's first line."""
-    line = cache._paths(key).file().read_text(encoding="utf-8").splitlines()[0]
+    line = cache._files().paths(key).file().read_text(encoding="utf-8").splitlines()[0]
     stamp: dict[str, Any] = json.loads(line)["untaped"]
     return stamp
 
 
 def _write_sidecar(key: str, stamp: dict[str, Any], cache: Cache = TOY) -> None:
-    file = cache._paths(key).file()
+    file = cache._files().paths(key).file()
     file.write_text(json.dumps({"untaped": stamp}) + "\n", encoding="utf-8")
 
 
@@ -219,7 +213,7 @@ def test_first_use_fills_then_a_fresh_read_is_silent(clock: CacheClock) -> None:
 
 def test_the_sidecar_holds_the_freshness_under_the_settings_digest(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
-    paths = TOY._paths("a")
+    paths = TOY._files().paths("a")
     assert paths.file().parent.name == settings_digest("toy")
     assert paths.file().parent.parent.name == "items"
     assert paths.file().parent.parent.parent.name == "cached"
@@ -573,7 +567,7 @@ def _hold(key: str, *, seconds: float, then: Callable[[], None] = lambda: None) 
     taken = threading.Event()
 
     def hold() -> None:
-        with TOY._held(TOY._paths(key), timeout=0.0, label=key):
+        with TOY._files().held(TOY._files().paths(key), timeout=0.0, label=key):
             taken.set()
             threading.Event().wait(seconds)
             then()
@@ -604,7 +598,7 @@ def test_a_refresh_waits_for_the_lock_and_says_so(clock: CacheClock) -> None:
 def test_an_own_task_shows_the_wait_as_its_text_then_clears_it(clock: CacheClock) -> None:
     task = _Parent()
     holder = _hold("a", seconds=0.2)
-    with TOY._lock(TOY._paths("a"), "toy a", task):
+    with TOY._files().locked(TOY._files().paths("a"), "toy a", task):
         assert task.messages == ["waiting for another untaped process", None]
         assert task.phases == [None, None]  # an own task's label is not a phase
     holder.join(5)
@@ -618,7 +612,7 @@ def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> 
     def other_process_fills() -> None:
         fills.append(1)  # each of its fills at a later time
         fresh = Freshness(refreshed_at=START + timedelta(seconds=len(fills)))
-        TOY._write(TOY._paths("a").file(), "a", fresh, None, None)
+        TOY._files().write(TOY._files().paths("a").file(), "a", fresh, None)
         UP.held["a"] = ["a9"]
 
     for args in (["a"], ["a", "--refresh"]):
@@ -632,7 +626,7 @@ def test_a_waiter_serves_what_the_other_process_refreshed(clock: CacheClock) -> 
 def test_a_lock_that_never_comes_exits_5(
     clock: CacheClock, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(cache_module, "_LOCK_TIMEOUT", 0.1)
+    monkeypatch.setattr(_cache_files, "_LOCK_TIMEOUT", 0.1)
     holder = _hold("a", seconds=1.0)
     result = _show("a")
     holder.join(5)
@@ -640,7 +634,7 @@ def test_a_lock_that_never_comes_exits_5(
     assert result.exit_code == 5
     assert "another untaped process is still refreshing toy a" in result.stderr
     assert UP.fills == []
-    assert not TOY._paths("a").file().exists()
+    assert not TOY._files().paths("a").file().exists()
 
 
 def test_a_fill_never_serves_its_own_cache(clock: CacheClock) -> None:
@@ -689,7 +683,7 @@ def test_ctrl_c_is_remembered_said_once_and_exits_130(clock: CacheClock) -> None
     assert sidecar["refreshed_at"] == "2026-10-12T07:00:00Z"
     assert sidecar["attempted_at"] == "2026-10-12T09:00:00Z"
     assert sidecar["error"]["category"] == "interrupted"
-    with TOY._held(TOY._paths("a"), timeout=0.0, label="a"):
+    with TOY._files().held(TOY._files().paths("a"), timeout=0.0, label="a"):
         pass  # released
 
     clock.advance(timedelta(minutes=1))
@@ -710,11 +704,11 @@ def test_a_url_key_and_keys_that_sanitize_alike_keep_their_own_sidecars(
     for key in keys:
         UP.items[key] = [key]
     assert _show(*keys).exit_code == 0
-    sidecars = {TOY._paths(key).file() for key in keys}
+    sidecars = {TOY._files().paths(key).file() for key in keys}
     assert len(sidecars) == 3
     assert all(path.exists() for path in sidecars)
-    assert TOY._paths("a_b").file().name == "a_b.json"
-    assert TOY._paths("a/b").file().name.startswith("a_b~")
+    assert TOY._files().paths("a_b").file().name == "a_b.json"
+    assert TOY._files().paths("a/b").file().name.startswith("a_b~")
 
 
 def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
@@ -724,20 +718,20 @@ def test_a_long_key_and_keys_differing_in_case_keep_their_own_sidecars(
     for key in keys:
         UP.items[key] = [key]
     assert _show(*keys).exit_code == 0
-    names = {TOY._paths(key).file().name.lower() for key in keys}
+    names = {TOY._files().paths(key).file().name.lower() for key in keys}
     assert len(names) == 4  # apart on a case-insensitive filesystem too
     assert all(len(name.encode()) < 120 for name in names)  # bytes: every filesystem's limit
-    assert TOY._paths("abc").file().name == "abc.json"
+    assert TOY._files().paths("abc").file().name == "abc.json"
 
 
 def test_values_that_sanitize_alike_keep_their_own_segments() -> None:
-    segments = {cache_module._segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
+    segments = {_cache_files.segment(name).lower() for name in ("a/b", "a_b", "Prod", "prod")}
     assert len(segments) == 4
 
 
 def test_a_complete_fill_sweeps_the_key_from_old_settings_folders(clock: CacheClock) -> None:
     _refreshed(clock, "a", "b", ago=timedelta(days=31))
-    own = TOY._paths("a").dir
+    own = TOY._files().paths("a").dir
     old = own.parent / "0000000000000000"
     own.rename(old)
     _refreshed(clock, "a", ago=timedelta(days=1))
@@ -755,7 +749,7 @@ def test_a_complete_fill_sweeps_the_key_from_old_settings_folders(clock: CacheCl
 def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheClock) -> None:
     """A newer untaped's error: the data stays, the attempt it describes cannot be told."""
     _refreshed(clock, "a", ago=timedelta(minutes=5))
-    TOY._paths("a")
+    TOY._files().paths("a")
     data = _sidecar("a")
     data.update(
         error={"message": "x", "from_a_newer_untaped": True},
@@ -771,7 +765,7 @@ def test_an_unreadable_error_keeps_the_data_and_drops_the_attempt(clock: CacheCl
 
 def test_a_sidecar_for_another_key_reads_as_never_refreshed(clock: CacheClock) -> None:
     assert _show("a").exit_code == 0
-    TOY._paths("a")
+    TOY._files().paths("a")
     _write_sidecar("a", {**_sidecar("a"), "key": "z"})
     assert TOY.freshness("a") == Freshness()
 
@@ -1018,18 +1012,18 @@ def test_a_waiter_served_another_version_s_fill_says_so_without_cached(
     clock.advance(timedelta(minutes=1))
     code["version"] = "2"
 
-    real_load = Cache._load
+    real_load = _cache_files.CacheFiles.load
     loads: list[int] = []
 
-    def load(self: Cache, paths: Any, key: str, version: str | None, typing: Any) -> Any:
+    def load(self: _cache_files.CacheFiles, paths: Any, key: str, *, check: bool = True) -> Any:
         loads.append(1)
         if len(loads) == 2:  # the reload under the lock: the other install just filled it
             fresh = Freshness(refreshed_at=clock.now, version="1")
-            self._write(paths.file(), key, fresh, None, None)
-        return real_load(self, paths, key, version, typing)
+            self.write(paths.file(), key, fresh, None)
+        return real_load(self, paths, key, check=check)
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(Cache, "_load", load)
+        patch.setattr(_cache_files.CacheFiles, "load", load)
         result = _versioned("a")
 
     assert (result.exit_code, UP.fills) == (0, ["a"])  # served the other fill, no fill of its own
@@ -1060,68 +1054,6 @@ def test_an_outdated_key_s_status_row_is_stale() -> None:
     assert (fields["stale"], fields["outdated"]) == (True, True)
     assert state.due(None, max_age=_HOUR, now=START)
     assert not state.due(False, max_age=_HOUR, now=START)
-
-
-# ---- code_version ----------------------------------------------------------------
-
-
-@pytest.fixture
-def module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    package = tmp_path / "toy_code_version"
-    package.mkdir()
-    (package / "__init__.py").write_text("")
-    source = package / "parser.py"
-    source.write_text("RULES = 1\n")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    cache_module._code_version.cache_clear()
-    yield source
-    cache_module._code_version.cache_clear()
-    sys.modules.pop("toy_code_version", None)
-
-
-def test_code_version_follows_the_module_s_bytes(module: Path) -> None:
-    first = code_version("toy_code_version.parser")
-    assert code_version("toy_code_version.parser") == first
-    assert "toy_code_version.parser" not in sys.modules  # found, never imported
-
-    module.write_text("RULES = 2\n")
-    cache_module._code_version.cache_clear()
-    assert code_version("toy_code_version.parser") != first
-
-
-def test_code_version_follows_distributions_and_extra(
-    module: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    installed = {"PyYAML": "6.0.2"}
-
-    def version(name: str) -> str:
-        if name not in installed:
-            raise importlib.metadata.PackageNotFoundError(name)
-        return installed[name]
-
-    monkeypatch.setattr(importlib.metadata, "version", version)
-    base = code_version("toy_code_version.parser", distributions=("PyYAML",))
-    cache_module._code_version.cache_clear()
-    assert code_version("toy_code_version.parser", distributions=("PyYAML",)) == base
-
-    installed["PyYAML"] = "6.0.3"
-    cache_module._code_version.cache_clear()
-    upgraded = code_version("toy_code_version.parser", distributions=("PyYAML",))
-    assert upgraded != base
-
-    absent = code_version("toy_code_version.parser", distributions=("nope",))
-    plain = code_version("toy_code_version.parser")
-    assert len({upgraded, absent, plain}) == 3
-    assert code_version("toy_code_version.parser", extra=("libyaml",)) != plain
-
-
-def test_code_version_refuses_a_module_without_a_file_and_a_bare_string(module: Path) -> None:
-    with pytest.raises(ConfigError, match="no source file"):
-        code_version("toy_code_version.missing")
-    with pytest.raises(ConfigError, match="no source file"):
-        code_version("no_such_package_here.parser")
-    with pytest.raises(TypeError, match="not one string"):
-        code_version("toy_code_version.parser", distributions="PyYAML")
 
 
 # ---- the status row ------------------------------------------------------------
@@ -1222,9 +1154,11 @@ def test_probes_that_fail_inside_the_budget_are_the_fill_s_partial_failures(
 def test_a_key_named_like_a_version_is_found_by_its_stamp(clock: CacheClock) -> None:
     UP.items["x.vdeadbeef"] = ["x1"]
     assert _show("x.vdeadbeef").exit_code == 0
-    folder = TOY._paths("x.vdeadbeef").dir
-    [(entry, stem, refreshed)] = TOY._key_files(
-        folder, "x.vdeadbeef", cache_module._VERSIONED, cache_module._PLAIN
+    folder = TOY._files().paths("x.vdeadbeef").dir
+    [(entry, stem, refreshed)] = _cache_files.key_files(
+        folder, "x.vdeadbeef", _cache_files.VERSIONED, _cache_files._PLAIN
     )
     assert (entry.name, stem, refreshed) == ("x.vdeadbeef.json", "x.vdeadbeef", START)
-    assert list(TOY._key_files(folder, "x", cache_module._VERSIONED, cache_module._PLAIN)) == []
+    assert (
+        list(_cache_files.key_files(folder, "x", _cache_files.VERSIONED, _cache_files._PLAIN)) == []
+    )

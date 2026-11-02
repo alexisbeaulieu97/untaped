@@ -13,7 +13,7 @@ written for another shape of either model is a miss, never an error. A cache
 that can't be written never costs the live answer.
 
 :meth:`Cache.serve` decides when to call the provider, from the ``refresh``
-directive ``gather`` opens (``untaped.sdk.storage.cache.call_state``), and holds the key's
+directive ``gather`` opens (``untaped.sdk.storage._serve_scope.call_state``), and holds the key's
 lock across the call. ``gather`` reads back what the call served: the oldest
 ``refreshed_at`` and, for a stale answer, why (the live call's error, or the
 one an earlier attempt left). The ``untaped.stale`` line waits on the call
@@ -39,18 +39,10 @@ from untaped.runtime.run_output import current_sink
 from untaped.sdk.contracts._declare import Binding, Contract, binding_of
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.progress import ProgressHandle
+from untaped.sdk.storage._cache_serve import serve_with
 from untaped.sdk.storage._digest import settings_digest
-from untaped.sdk.storage.cache import (
-    Cache,
-    CallState,
-    Filled,
-    Freshness,
-    ValueTyping,
-    answering,
-    call_state,
-    current_call,
-    value_typing,
-)
+from untaped.sdk.storage._serve_scope import CallState, answering, call_state, current_call
+from untaped.sdk.storage.cache import Cache, Filled, Freshness, ValueTyping, value_typing
 
 #: The entries this context is filling, as ``(cache, key)``.
 _FILLING: ContextVar[frozenset[tuple[str, str]]] = ContextVar(
@@ -123,10 +115,10 @@ def _answering(provider: str, cache: Cache[Any], caller: str) -> Iterator[CallSt
     """
     outer = current_call()
     if outer is not None:
-        with answering(cache, provider):
+        with answering(cache.qualified, provider):
             yield outer
         return
-    with call_state(None, caller=caller) as state, answering(cache, provider):
+    with call_state(None, caller=caller) as state, answering(cache.qualified, provider):
         yield state
     for line in state.stale_lines:
         current_sink().emit(line)
@@ -191,11 +183,14 @@ def call(
     caller = f"{binding.plugin}'s {binding.contract.cls.__name__}.{name}"
     with _answering(binding.plugin, cache, caller) as state:
         try:
-            served = cache._serve_with(
+            max_age = cache.max_age()
+            served = serve_with(
+                cache._facts(),
+                cache._files(_typing(binding, return_type(binding, name))),
                 {key: binding.plugin},
                 refresh=None,
                 fill=answer.fill,
-                typing=_typing(binding, return_type(binding, name)),
+                max_age=max_age,
                 partition=settings_digest(binding.plugin),
             )
         except _ProviderBug as exc:

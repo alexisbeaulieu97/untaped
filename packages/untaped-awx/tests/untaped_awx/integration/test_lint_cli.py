@@ -294,7 +294,7 @@ def test_an_outdated_snapshot_under_cached_warns_without_the_token(
 
 
 @pytest.mark.usefixtures("composed")
-def test_a_code_version_change_reads_the_controller_again(
+def test_another_version_of_the_loader_reads_the_controller_again(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """S22: a snapshot another version of the loader filled is read again."""

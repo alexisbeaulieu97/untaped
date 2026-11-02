@@ -80,7 +80,7 @@ from untaped.sdk.prompt.prompts import (
 )
 from untaped.sdk.storage._refs import PROJECT, AnchorId, RefHolder, RefTarget
 from untaped.sdk.storage._refs import write_reference as _write_reference
-from untaped.sdk.storage.cache import Cache, versioned
+from untaped.sdk.storage.cache import Cache
 from untaped.sdk.storage.holds import (
     HolderState,
     HolderView,
@@ -309,14 +309,13 @@ def keep_value[M](
     typing = cache._typing()
     if typing is None:
         raise ConfigError(f"keep_value: cache {cache.qualified} has no model= to keep a value of")
-    filled_at = cache._version_now() if version is None else version
-    paths = cache._paths(key, partition)
+    files = cache._files_at(cache._version_now() if version is None else version, typing)
+    paths = files.paths(key, partition)
     paths.dir.mkdir(parents=True, exist_ok=True)
-    cache._write_file(
-        paths.file(versioned(typing, filled_at)),
+    files.write_file(
+        files.own(paths),
         key,
-        Freshness(refreshed_at=refreshed_at, version=filled_at),
-        typing,
+        Freshness(refreshed_at=refreshed_at, version=files.version),
         typing.adapter.dump_json(value, by_alias=True, round_trip=True),
     )
 
@@ -340,8 +339,8 @@ def damage(cache: Cache[Any] | StateRows[Any], key: str, *, partition: str | Non
         )
         return
     typing = cache._typing()
-    paths = cache._paths(key, partition)
-    file = paths.file(None if typing is None else versioned(typing, cache._version_now()))
+    files = cache._files_at(None if typing is None else cache._version_now(), typing)
+    file = files.own(files.paths(key, partition))
     file.parent.mkdir(parents=True, exist_ok=True)
     file.write_text("{not json\n", encoding="utf-8")
 

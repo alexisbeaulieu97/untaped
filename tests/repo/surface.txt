@@ -7580,9 +7580,6 @@ sdk untaped.sdk.storage.atomic_write(encoding=) default=utf-8
 sdk untaped.sdk.storage.atomic_write(mode=) default=None
 sdk untaped.sdk.storage.atomic_write(newline=) default=""
 sdk untaped.sdk.storage.atomic_write(path, content)
-sdk untaped.sdk.storage.code_version(distributions=) default=[]
-sdk untaped.sdk.storage.code_version(extra=) default=[]
-sdk untaped.sdk.storage.code_version(module)
 sdk untaped.sdk.storage.dir_bytes(path)
 sdk untaped.sdk.storage.file_lock(path, *, timeout, error, busy, failed) callback(error, 1)
 sdk untaped.sdk.storage.read_structured_file(flag=) default=None
