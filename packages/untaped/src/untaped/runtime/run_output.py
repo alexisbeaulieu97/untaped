@@ -117,8 +117,8 @@ def _show_deprecations(*, opening: bool) -> None:
     out that entry alone, from the filters it went into. Without Python's
     filters in their startup order (filters reset, the same ``ignore`` set
     again: setting a filter moves an equal one to the front) nothing is put
-    in: whoever changed them decides. A filter equal to that entry, set
-    while a run is open, is that entry, and goes with it.
+    in: whoever changed them decides. A program's own filter equal to that
+    entry is its own tuple and stays.
     """
     global _open_runs, _shown_entry, _shown_in
     with _SHOWING:
@@ -127,11 +127,13 @@ def _show_deprecations(*, opening: bool) -> None:
             _shown_in = _current_filters()
             _shown_entry = _put_shown_entry(_shown_in)
         elif not opening and _open_runs == 0 and _shown_entry is not None:
-            for index, each in enumerate(_shown_in):
-                if each is _shown_entry:
-                    del _shown_in[index]
-                    _filters_changed()
-                    break
+            # From the list it went into, and from a copy of it the closing thread reads now.
+            for filters in {id(each): each for each in (_shown_in, _current_filters())}.values():
+                for index, each in enumerate(filters):
+                    if each is _shown_entry:
+                        del filters[index]
+                        break
+            _filters_changed()
             _shown_entry, _shown_in = None, []
 
 

@@ -219,3 +219,21 @@ def test_the_entry_goes_from_the_filters_it_went_into() -> None:
             if not closed:
                 first.__exit__(None, None, None)
         assert _current_filters() == before
+
+
+def test_a_copy_made_while_a_run_was_open_loses_the_entry_at_the_last_close() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning, append=True)
+        first = _open_run()
+        first.__enter__()
+        closed = False
+        try:
+            with warnings.catch_warnings():  # a copy holding the entry
+                first.__exit__(None, None, None)
+                closed = True
+                with _open_run():
+                    pass
+                assert _ENTRY not in _current_filters()
+        finally:
+            if not closed:
+                first.__exit__(None, None, None)
