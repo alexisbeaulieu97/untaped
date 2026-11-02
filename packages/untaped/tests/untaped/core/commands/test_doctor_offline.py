@@ -197,4 +197,9 @@ def test_executable_check_warns_when_missing(monkeypatch: pytest.MonkeyPatch) ->
 def test_core_s_own_checks_are_rows_of_its_class(_isolated_config: Path) -> None:
     write_config(_isolated_config, "format_version: 2\n")
     checks = [r["check"] for r in _rows() if r["check"].startswith("untaped.")]
-    assert checks == ["untaped.config-permissions", "untaped.unknown-keys", "untaped.token-store"]
+    assert checks == [
+        "untaped.config-permissions",
+        "untaped.unknown-keys",
+        "untaped.home-only",
+        "untaped.token-store",
+    ]

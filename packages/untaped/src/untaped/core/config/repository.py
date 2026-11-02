@@ -27,6 +27,7 @@ from untaped.runtime.config_file import (
 from untaped.runtime.config_read import load_config_yaml, load_project_config
 from untaped.runtime.folder_layer import project_config_path
 from untaped.runtime.profile_resolver import (
+    DEFAULT_PROFILE,
     profile_entries,
     profile_path,
     write_target,
@@ -45,7 +46,7 @@ from untaped.runtime.settings import (
     validate_settings_section,
 )
 from untaped.runtime.settings_env import env_var_name, env_var_setting
-from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal
+from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
 from untaped.runtime.yaml_roundtrip import KeyRename
 from untaped.sdk._schema import FieldDescriptor, find_descriptor, walk_settings
@@ -321,7 +322,7 @@ class SettingsFileRepository:
         resolved: str | None = None
 
         for descriptor in descriptors.values():
-            self._check_writable(descriptor)
+            self._check_writable(descriptor, profile)
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
@@ -515,13 +516,26 @@ class SettingsFileRepository:
             effective, descriptor.path[0], self._profile_model(), written_key=written
         )
 
-    def _check_writable(self, descriptor: FieldDescriptor) -> None:
-        """Refuse (exit 4) writing a setting a project's file may not set into one."""
-        why = None if self._project is None else folder_refusal(descriptor)
+    def _check_writable(self, descriptor: FieldDescriptor, profile: str | None) -> None:
+        """Refuse (exit 4) writing a setting where it may not be set: a project's file, a profile.
+
+        Only writing is refused: ``config unset`` still removes such a value.
+        """
+        if self._project is not None:
+            why = folder_refusal(descriptor)
+            if why is not None:
+                raise ConfigError(
+                    f"{descriptor.key} can't be set in {self.written_file()}: {why}",
+                    hint="leave out --project to set it in the home's config.yml",
+                )
+            return
+        target = profile or write_target()
+        why = None if target == DEFAULT_PROFILE else profile_refusal(descriptor)
         if why is not None:
             raise ConfigError(
-                f"{descriptor.key} can't be set in {self.written_file()}: {why}",
-                hint="leave out --project to set it in the home's config.yml",
+                f"{descriptor.key} can't be set in profile {target}: {why}",
+                hint="leave out --profile to set it in the base",
+                details={"key": descriptor.key, "profile": target},
             )
 
 

@@ -186,6 +186,12 @@ and go anywhere before `--` (`untaped github --profile work whoami`).
   keys with `config unset`. Other profiles must exist before a write targets
   them, and `profile create` and `rename` take only names `--profile` can
   pick.
+- A setting only the home's base sets (a plugin's shared folder, such as
+  `git.store_dir`) is never read from a profile. A run whose pick sets one
+  exits 4 naming it, `config set --profile` refuses it, and
+  `untaped --profile NAME config unset KEY` removes it; `profile create
+  --copy-from` leaves it out, and doctor's `untaped.home-only` row names one
+  in a profile nobody picks. Its `UNTAPED_*` variable still applies.
 - `profile create`, `delete` and `rename` accept `--dry-run`, which checks the
   change and writes nothing. `profile delete` asks first; pass `--yes` when
   not interactive.

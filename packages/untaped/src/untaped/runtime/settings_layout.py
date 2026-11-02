@@ -5,7 +5,8 @@ over the base (``config.yml``'s top level) and is the SDK's only layout:
 every plugin resolves through it. Resolving the run's own pick, it also
 layers the project's ``.untaped/config.yml`` (:mod:`untaped.runtime.folder_layer`):
 renamed keys read as in a profile, a relative path read from the project's
-folder, and a setting a project may not set refused (exit 4).
+folder, and a setting a project may not set refused (exit 4). A picked profile
+that sets a setting only the home's base sets is refused there too.
 """
 
 from __future__ import annotations
@@ -34,8 +35,8 @@ from untaped.runtime.profile_resolver import (
 )
 from untaped.sdk._schema import FieldDescriptor, walk_settings
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.health.deprecated_keys import KeyUse, rename_keys
-from untaped.sdk.words import hint, not_found
+from untaped.sdk.health.deprecated_keys import KeyUse, old_spellings, rename_keys
+from untaped.sdk.words import command_line, hint, not_found, run_hint, shown_path
 
 if TYPE_CHECKING:
     from untaped.runtime.folder_layer import FolderLayer
@@ -94,7 +95,8 @@ class ProfilesSettingsLayout:
         ``profile`` layers that one profile over the base instead of the
         run's pick, and leaves the project's file out: a command acting on a
         profile by name reads that profile alone. ``sections`` overrides the
-        constructor's section models.
+        constructor's section models. A profile the run picks that sets a
+        setting of ``sections`` only the home's base sets is refused (exit 4).
         """
         models = sections if sections is not None else self._sections_now()
         if profile:
@@ -103,6 +105,7 @@ class ProfilesSettingsLayout:
         else:
             layers, layer = run_layers()
             picks = tuple(pick.name for pick in layers)
+            _refuse_picked_home_settings(raw, models, layers, layer)
             folder = None if layer is None else _folder_values(layer, layers, models)
         renamed, uses = _rename_profiles(raw, models, picks)
         if folder is not None:
@@ -228,6 +231,90 @@ def _folder_values(
     return FolderValues(at=at, source=layer.source, sections=sections), uses
 
 
+def _refuse_picked_home_settings(
+    raw: dict[str, Any],
+    models: SectionModels,
+    picks: Sequence[Picked],
+    layer: FolderLayer | None,
+) -> None:
+    """Raise :class:`ConfigError` (exit 4) for the first home-only setting a pick sets.
+
+    Read as the profile spells it, an old key name included. A profile no
+    run picks is never read here (doctor names it).
+    """
+    profiles = raw.get("profiles")
+    if not picks or not models or not isinstance(profiles, dict):
+        return  # ``resolve_profiles`` reports a malformed ``profiles``
+    for pick in picks:
+        data = profiles.get(pick.name)
+        if not isinstance(data, dict):
+            continue
+        for section, model in models.items():
+            section_data = data.get(section)
+            if not isinstance(section_data, dict):
+                continue
+            key = home_only_set(section, model, section_data)
+            if key is not None:
+                raise ConfigError(
+                    f"{key} can't be set in profile {pick.name} "
+                    f"(picked by {_picker(pick, layer)}): {PROFILE_REFUSAL}",
+                    hint=f"{run_hint(f'--profile {pick.name} config unset {key}')}, then "
+                    f"`{command_line(f'config set {key} VALUE')}` if the base should hold it",
+                    details={"key": key, "profile": pick.name},
+                )
+
+
+#: Why a profile may not set a home-only setting: what the refusals say.
+PROFILE_REFUSAL = "only the home's base sets it, so every run on this machine reads the same value"
+
+
+def home_only_set(section: str, model: type[BaseModel], data: dict[str, Any]) -> str | None:
+    """The first home-only setting ``data`` (one profile's ``section``) sets, as ``section.key``.
+
+    ``None`` when it sets none. An old spelling counts as the key it names.
+    """
+    renamed, _ = rename_keys(model, data)
+    for descriptor in walk_settings(model, include_collections=True):
+        if (
+            profile_refusal(descriptor) is not None
+            and _at(renamed, descriptor.path) is not _MISSING
+        ):
+            return f"{section}.{descriptor.key}"
+    return None
+
+
+def leave_out_home_only(sections: dict[str, Any], models: SectionModels) -> tuple[str, ...]:
+    """Remove from one profile's ``sections`` every setting only the base sets; each, as a key.
+
+    An old spelling goes with the key it names. What ``profile create
+    --copy-from`` leaves behind, so the new profile is one a run can pick.
+    """
+    from untaped.runtime.config_file import unset_at_path  # noqa: PLC0415 - it imports settings
+
+    left: list[str] = []
+    for section, model in models.items():
+        data = sections.get(section)
+        if not isinstance(data, dict):
+            continue
+        for descriptor in walk_settings(model, include_collections=True):
+            if profile_refusal(descriptor) is None:
+                continue
+            olds = [tuple(old.split(".")) for old in old_spellings(model, descriptor.key)]
+            removed = [path for path in (descriptor.path, *olds) if unset_at_path(data, path)]
+            if removed:
+                left.append(f"{section}.{descriptor.key}")
+        if not data:
+            del sections[section]
+    return tuple(left)
+
+
+def _picker(pick: Picked, layer: FolderLayer | None) -> str:
+    """What picked ``pick``, as a refusal names it."""
+    if pick.source == "project" and layer is not None:
+        return shown_path(layer.file)
+    return {"project": "the project", "env": "UNTAPED_PROFILE", "flag": "--profile"}[pick.source]
+
+
 def folder_refusal(descriptor: FieldDescriptor) -> str | None:
     """Why a project's file may not set ``descriptor``'s setting, or ``None`` when it may.
 
@@ -239,8 +326,18 @@ def folder_refusal(descriptor: FieldDescriptor) -> str | None:
     if descriptor.argv:
         return "it is a command untaped runs, which only the home's config.yml sets"
     if descriptor.home_only:
-        return "it locates data every project shares, so only the home's config.yml sets it"
+        return "every project shares it, so only the home's config.yml sets it"
     return None
+
+
+def profile_refusal(descriptor: FieldDescriptor) -> str | None:
+    """Why a named profile may not set ``descriptor``'s setting, or ``None`` when it may.
+
+    A setting marked ``HomeOnly()``, or one a ``Dir(at=...)`` places: a
+    profile picked by the folder a command runs in would split what the home
+    shares.
+    """
+    return PROFILE_REFUSAL if descriptor.home_only else None
 
 
 def _refuse_home_settings(

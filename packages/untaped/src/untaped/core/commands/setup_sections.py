@@ -57,6 +57,7 @@ from untaped.core.config.use_cases import (
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE
 from untaped.runtime.run import child_run
 from untaped.runtime.settings import section_stabilities
+from untaped.runtime.settings_layout import profile_refusal
 from untaped.screen.components.draw import note_lines, option_row, role_style
 from untaped.screen.components.fields import Field
 from untaped.screen.components.lists import ListEditor, MapEditor
@@ -191,7 +192,15 @@ def read_listing(profile: str, services: Mapping[str, ComposedPlugin]) -> Listin
             # Read only for a shape that shows it; a missing profile owns nothing.
             mine = partial(repo.own_value, entry.key, profile=profile)
             shown_as = None if raw else summary(descriptor, mine)
-            row = _row(entry, descriptor, variable, own=own, raw=raw, summary=shown_as)
+            row = _row(
+                entry,
+                descriptor,
+                variable,
+                own=own,
+                raw=raw,
+                summary=shown_as,
+                named=profile != DEFAULT_PROFILE,
+            )
             rows.setdefault(section, []).append(row)
     shown = {name: tuple(each) for name, each in rows.items()}
     return Listing(exists, shown, listing.errors, read_states(dict(services), profile))
@@ -211,6 +220,7 @@ def _row(
     own: bool,
     raw: bool,
     summary: str | None = None,
+    named: bool = False,
 ) -> SettingRow:
     shown = setting_entry_row(entry, human=True)
     help: list[str] = []
@@ -224,11 +234,15 @@ def _row(
         help.append(_variable_wins(entry.source.variable))
     if shown.note:
         help.append(shown.note)
-    editable = shown.stability != "deprecated"
+    # ``named``: a profile is open, which may not hold a setting only the base sets
+    base_only = named and profile_refusal(descriptor) is not None
+    editable = shown.stability != "deprecated" and not base_only
     if not editable:
         command = command_line(Set.spelled(entry.key))
+        why = "deprecated" if shown.stability == "deprecated" else "only the home's base sets it"
         help.append(
-            f"Read-only here (deprecated); `{command}` sets it"
+            f"Read-only here ({why}); `{command}` sets it"
+            + (" in the base" if base_only else "")
             + (", delete unsets it." if own else ".")
         )
     value = summary if summary is not None else "" if shown.value is None else str(shown.value)

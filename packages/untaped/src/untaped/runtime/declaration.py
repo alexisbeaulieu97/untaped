@@ -168,6 +168,9 @@ class BlockDecl(_Frozen):
     layout: int | None = None
     #: Whether a ``Dir`` declares ``items=``: things holders (projects) hold.
     items: bool = False
+    #: A ``Dir``'s ``at=`` setting, its key inside the plugin's section (``store_dir``):
+    #: the setting that places it, which only the home's base sets.
+    at: str | None = None
     #: The target of the command marked ``removes =`` these state rows, if one is.
     removed_by: str | None = None
     #: The remover's flag taking the row's key (``--id``); ``None``: its positional does.

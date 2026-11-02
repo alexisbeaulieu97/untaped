@@ -342,7 +342,7 @@ file's stamp and lock, so never read or write the state file directly.
 
 A file in the plugin's folder an older release could not open is a
 [store](../caches.md#stores), a `Dir(layout=N)` opened through its `open()`,
-and its path setting is [`HomeOnly()`](../plugins.md#settings-and-the-plugin-class). Files
+and the path setting its `at=` names is [home-only](../plugins.md#settings-and-the-plugin-class). Files
 people commit under `.untaped/` go through [the handle's `committed`](../projects.md#a-plugins-files-in-untaped),
 and items projects hold go in an [item store](../projects.md#holding-a-plugins-items).
 

@@ -40,6 +40,7 @@ from untaped.screen.core import Frame, Paste, Screen
 from untaped.screen.runtime import Runtime
 from untaped.sdk import Plugin
 from untaped.sdk._schema import Argv, Choices, FieldDescriptor, walk_settings
+from untaped.sdk.health import HomeOnly
 from untaped.sdk.health.deprecated_keys import Renamed
 from untaped.sdk.marks import deprecated, experimental
 from untaped.sdk.testing import drive_screen
@@ -371,6 +372,30 @@ def test_a_deprecated_setting_is_read_only_but_unsets(_isolated_config: Path) ->
     assert "Read-only here (deprecated)" in shown.frame
     assert "legacy" not in [label for label, _, _ in _rows(run.model)]
     assert _knobs_data(_isolated_config, "default") is None
+
+
+class VaultProfile(BaseModel):
+    """A plugin double with a setting only the home's base sets (section ``vault``)."""
+
+    store_dir: Annotated[Path | None, HomeOnly()] = Field(default=None, description="Its store.")
+    label: str | None = None
+
+
+@pytest.mark.parametrize(("profile", "editable"), [("default", True), ("work", False)])
+def test_a_home_only_setting_is_read_only_in_a_named_profile(
+    _isolated_config: Path, profile: str, editable: bool
+) -> None:
+    write_config(_isolated_config, "format_version: 2\nprofiles:\n  work: {}\n")
+    vault = make_plugin("vault", settings=VaultProfile)
+
+    shown = drive_screen(
+        _build(vault, profile=profile), _to("vault", vault, profile=profile), size=(140, 30)
+    )
+
+    row = shown.model.panes["vault"].rows[0]
+    assert row.label == "store_dir"
+    assert (row.descriptor is not None) is editable
+    assert ("Read-only here (only the home's base sets it)" in shown.frame) is not editable
 
 
 def test_an_invalid_section_is_repaired_from_its_rows(_isolated_config: Path) -> None:
