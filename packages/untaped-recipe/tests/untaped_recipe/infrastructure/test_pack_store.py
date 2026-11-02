@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
+import sys
 import threading
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -560,37 +564,63 @@ def test_checkout_commit_reports_a_non_git_directory(tmp_path: Path) -> None:
         checkout_commit(tmp_path)
 
 
+def _fake_git(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, status: int = 0, stderr: str = ""
+) -> Path:
+    """Put a ``git`` first on ``PATH`` that records each run (argv, env) and exits ``status``.
+
+    Its ``config`` probe (the ssh command lookup) finds nothing and is not recorded.
+    """
+    calls = tmp_path / "git-calls.jsonl"
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    script = bin_dir / "git"
+    script.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "if sys.argv[1:2] == ['config']:\n    sys.exit(1)\n"
+        f"with open({str(calls)!r}, 'a') as f:\n"
+        "    f.write(json.dumps({'argv': sys.argv[1:], 'env': dict(os.environ),"
+        " 'stdin': sys.stdin.read()}) + '\\n')\n"
+        f"sys.stderr.write({stderr!r})\n"
+        f"sys.exit({status})\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return calls
+
+
+def _git_calls(calls: Path) -> list[dict[str, Any]]:
+    if not calls.exists():
+        return []
+    return [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
+
+
 def test_fetch_pack_source_rejects_option_like_rev(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[list[str]] = []
-    monkeypatch.setattr("untaped.sdk.git._run_process", lambda args, **kwargs: calls.append(args))
+    calls = _fake_git(tmp_path, monkeypatch)
 
     with pytest.raises(UsageError, match="rev"):
         fetch_pack_source(
             "https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d"
         )
-    assert calls == []
+    assert _git_calls(calls) == []
 
 
 def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[list[str]] = []
-
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        calls.append(args)
-        return subprocess.CompletedProcess(
-            args, 128, stdout="", stderr="fatal: Authentication failed for 'https://x/'"
-        )
-
-    monkeypatch.setattr("untaped.sdk.git._run_process", fake_run)
+    calls = _fake_git(
+        tmp_path, monkeypatch, status=128, stderr="fatal: Authentication failed for 'https://x/'"
+    )
 
     with pytest.raises(PackFetchError, match="Authentication failed"):
         fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
-    assert len(calls) == 1
+    assert len(_git_calls(calls)) == 1
 
 
 def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
@@ -629,24 +659,17 @@ def test_fetch_pack_source_runs_git_non_interactive_in_c_locale(
 ) -> None:
     monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
     monkeypatch.setenv("LANGUAGE", "fr")
-    seen: list[dict[str, object]] = []
-
-    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        seen.append(kwargs)
-        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
-
-    monkeypatch.setattr("untaped.sdk.git._run_process", fake_run)
+    calls = _fake_git(tmp_path, monkeypatch)
 
     fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
 
-    assert len(seen) == 1
-    env = seen[0]["env"]
-    assert isinstance(env, dict)
+    (seen,) = _git_calls(calls)
+    env = seen["env"]
     assert env["LC_ALL"] == "C"
     assert env["LANGUAGE"] == "C"
     assert env["GIT_TERMINAL_PROMPT"] == "0"
     assert env["GCM_INTERACTIVE"] == "never"
-    assert seen[0]["stdin"] is subprocess.DEVNULL
+    assert seen["stdin"] == ""  # /dev/null, never the terminal
 
 
 def test_pack_library_force_replace_keeps_retired_pack_when_swap_and_rollback_fail(

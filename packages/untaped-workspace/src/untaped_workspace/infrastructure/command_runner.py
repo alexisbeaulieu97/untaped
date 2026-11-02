@@ -27,19 +27,19 @@ def _text(data: bytes | str | None) -> str:
 
 def _signal_group(proc: subprocess.Popen[bytes], sig: int) -> None:
     with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(proc.pid, sig)
+        os.killpg(proc.pid, sig)  # untaped: allow process-group (#579)
 
 
 def _stop_group(proc: subprocess.Popen[bytes]) -> None:
     """Stop what is left of an exited command's group: SIGTERM, a short wait, SIGKILL."""
     try:
-        os.killpg(proc.pid, signal.SIGTERM)
+        os.killpg(proc.pid, signal.SIGTERM)  # untaped: allow process-group (#579)
     except ProcessLookupError, PermissionError:
         return  # nothing left: the usual case
     try:
         deadline = time.monotonic() + _TERM_WAIT_S
         while time.monotonic() < deadline:
-            os.killpg(proc.pid, 0)
+            os.killpg(proc.pid, 0)  # untaped: allow process-group (#579)
             time.sleep(0.02)
     except ProcessLookupError, PermissionError:
         pass
@@ -101,7 +101,7 @@ class SubprocessRunner:
         try:
             if not argv:
                 raise ValueError("empty command")
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # untaped: allow process-group (#579)
                 list(argv),
                 cwd=cwd,
                 env={**os.environ, **env},

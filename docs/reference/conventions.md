@@ -153,8 +153,7 @@ Rules for fields, which composition checks:
   field order, and none follows an optional or a list one.
 - Every field has help text: `Field(description=...)`.
 - A boolean that defaults to true, or a `bool | None`, turns off with
-  `--no-*`; no other option has a negative. A list option takes one value
-  per flag.
+  `--no-*`; no other option has a negative. A list option takes one value per flag.
 - An argument can't be deprecated: deprecate an option, or the command.
 
 To rename a command, keep the old spelling as a hidden alias on its class,
@@ -268,12 +267,13 @@ The sections above name the helper for each rule. Beyond those:
   the run reads them with `settings_of(Model)`, which validates only that
   section. A test reads them inside `install(Plugin).running()`.
 - For a service, hold its server in one `NeedsSetup`-marked `CredentialKey`
-  setting and declare each secret as a `Credential` on the plugin class,
-  and build its client with
-  `self.ctx.http.client(self.settings, base_url=…, bearer=…)`; see
-  [Credentials](../credentials.md).
+  setting and declare each secret as a `Credential` on the plugin class, and
+  build its client with `self.ctx.http.client(self.settings, base_url=…,
+  bearer=…)`; see [Credentials](../credentials.md).
 - For a domain-specific HTTP or filesystem adapter the API does not export,
   use your own dependency rather than an `untaped` internal.
+- Start a child process through `untaped.sdk.process`: it stops its whole
+  group on a timeout or interrupt (`process-group`, `signal-handler`).
 - To keep a repository, use `RepoStore.for_url(url, plugin=..., error=...)`
   from `untaped_git.api`, not a bare repo or a root setting of your own:
   `plugin=` takes your plugin's name or what names it (a command's
@@ -391,10 +391,10 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 A plugin imports from `untaped` only `untaped.sdk`, its groups
 ([`untaped.sdk.contracts`](../contracts.md), `untaped.sdk.git`,
-`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.projects`,
-`untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`,
-`untaped.sdk.testing.git`) and `untaped.core.api`, core's commands for a hint
-(`Login.spelled()`); `import-boundary` flags any other. A `_` name is never
-public; any other name of these modules, or of a plugin's `api` and
-`testing`, goes only two majors after its deprecation
+`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.process`,
+`untaped.sdk.projects`, `untaped.sdk.prompt`, `untaped.sdk.storage`,
+`untaped.sdk.testing`, `untaped.sdk.testing.git`) and `untaped.core.api`,
+core's commands for a hint (`Login.spelled()`); `import-boundary` flags any
+other. A `_` name is never public; any other name of these modules, or of a
+plugin's `api` and `testing`, goes only two majors after its deprecation
 ([Names plugins use](../versioning.md#names-plugins-use)).

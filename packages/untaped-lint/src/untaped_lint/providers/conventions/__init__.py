@@ -27,6 +27,7 @@ from untaped_lint.providers.conventions.deprecations import deprecation_violatio
 from untaped_lint.providers.conventions.imports import import_boundary_violations
 from untaped_lint.providers.conventions.layering import layering_violations
 from untaped_lint.providers.conventions.messages import message_violations
+from untaped_lint.providers.conventions.process_boundary import process_boundary_violations
 from untaped_lint.providers.conventions.store_format import store_format_violations
 from untaped_lint.providers.conventions.structure import structure_source_violations
 from untaped_lint.providers.conventions.terminal_boundary import terminal_boundary_violations
@@ -87,6 +88,8 @@ _TABLE: tuple[tuple[str, Severity, str], ...] = (
     ("settings", "error", "domain/, application/ and infrastructure/ resolve no settings."),
     ("import-boundary", "error", "A plugin imports core and other plugins only by public modules."),
     ("terminal-boundary", "error", "No prompt_toolkit import: build screens with the SDK."),
+    ("process-group", "error", "A child gets its own process group only via untaped.sdk.process."),
+    ("signal-handler", "error", "No signal handlers: untaped's entry point owns the signals."),
     ("blob-reader", "error", "Repo store blobs are read through store.prefetched(...).run()."),
     ("store-format", "error", "A database in the plugin's folder is a numbered Dir."),
     ("unreadable-file", "error", "Every file a rule reads is UTF-8; a plugin's Python parses."),
@@ -213,6 +216,7 @@ def file_lines(
             *structure_source_violations(package, source_dir, tests_dir=tests_dir),
             *layering_violations(package, source_dir, files),
             *terminal_boundary_violations(source_dir, files),
+            *process_boundary_violations(source_dir, files),
             *blob_reader_violations(package, source_dir, files),
             *store_format_violations(plugin, source_dir, files),
             *import_boundary_violations(subject, source_dir, files, plugins=plugins),

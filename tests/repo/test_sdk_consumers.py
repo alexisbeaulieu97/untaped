@@ -27,6 +27,7 @@ SDK_GROUPS = (
     "untaped.sdk.network",
     "untaped.sdk.health",
     "untaped.sdk.git",
+    "untaped.sdk.process",
     "untaped.sdk.projects",
     "untaped.sdk.prompt",
     "untaped.sdk.contracts",

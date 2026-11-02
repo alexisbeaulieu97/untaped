@@ -59,10 +59,10 @@ from untaped.runtime.settings import (
 )
 from untaped.runtime.stability_help import apply_marks, docs_footer, mark_app, panel_for
 from untaped.sdk._behaviours import bind_behaviours
+from untaped.sdk._process_groups import install as install_signal_handlers
 from untaped.sdk._replacement import children
 from untaped.sdk._run import Run, current_run, run_or_none, run_scope
 from untaped.sdk.errors import ConfigError
-from untaped.sdk.git import forward_signals
 from untaped.sdk.marks import bind_owners
 from untaped.sdk.network.credentials import bind_credentials
 from untaped.sdk.storage._refs import refresh
@@ -763,8 +763,12 @@ def run_root(
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    """Console-script entry point for the ``untaped`` command line."""
-    forward_signals()
+    """Console-script entry point for the ``untaped`` command line.
+
+    It installs untaped's SIGINT, SIGTERM and SIGHUP handling first, which
+    passes them on to every child process (:mod:`untaped.sdk.process`).
+    """
+    install_signal_handlers()
     run_root(argv)
 
 

@@ -26,6 +26,8 @@ from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.screen import terminal
 from untaped.screen.core import Cancel, Cmd, Frame, KeyPress, Paste, Quit, Resize, Screen
 from untaped.screen.terminal import TerminalHost, build_application, run_terminal_screen
+from untaped.sdk import _process_groups
+from untaped.sdk.process import ProcessResult, run_process
 
 THEME = BUILTIN_THEMES["default"]
 ENTER = "\r"
@@ -251,6 +253,27 @@ def test_an_unhandled_escape_cancels_at_once() -> None:
 
 def test_an_unhandled_ctrl_c_key_cancels_as_an_interrupt() -> None:
     assert _run(Typing(), "\x03") == Cancel(interrupted=True)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
+def test_ctrl_c_at_a_screen_reaches_child_processes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # prompt_toolkit replaces untaped's signal handling while a screen runs: the
+    # screen hands the interrupt on, so a child that ignores SIGINT is still stopped.
+    monkeypatch.setattr(_process_groups, "GRACE_S", 0.3)
+    ignores = "import signal, time; signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(60)"
+    results: list[ProcessResult] = []
+    worker = threading.Thread(
+        target=lambda: results.append(run_process([sys.executable, "-c", ignores], timeout=60))
+    )
+    worker.start()
+    deadline = time.monotonic() + 10
+    while not _process_groups._S.groups and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    assert _run(Typing(), "\x03") == Cancel(interrupted=True)
+    worker.join(timeout=10)
+
+    assert [result.ended for result in results] == ["stopped"]
 
 
 def test_a_named_key_is_not_held_back_waiting_for_a_longer_sequence() -> None:
