@@ -125,10 +125,13 @@ def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) ->
 
 
 def test_a_provider_whose_parameters_cannot_be_passed_names_the_fix(
-    contract_plugins_site: Path, monkeypatch: pytest.MonkeyPatch
+    contract_plugins_site: Path,
 ) -> None:
-    problem = {"named": "BinSource.named takes '_name', which the contract method doesn't declare"}
-    monkeypatch.setattr(_bin(), "__untaped_parameter_problems__", problem, raising=False)
+    rack = contract_plugins_site / "untaped_bin" / "providers" / "rack.py"
+    source = rack.read_text(encoding="utf-8")
+    renamed = source.replace("def named(self, name: str", "def named(self, _name: str")
+    assert renamed != source
+    rack.write_text(renamed, encoding="utf-8")
     [row] = [row for row in _check() if row.check == "registration"]
     assert row.status == "fail"
     assert row.detail.startswith("uses-missing: BinSource.named takes '_name'")
