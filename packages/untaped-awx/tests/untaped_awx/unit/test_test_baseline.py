@@ -22,7 +22,8 @@ _SYSTEMS = {
 def _failure(
     category: ErrorCategory = ErrorCategory.FAILED, system: str | None = None
 ) -> CaseFailure:
-    return failure(system or _SYSTEMS[category], category, "boom")
+    # Built at collection, outside any run: a hint of its own spells no command.
+    return failure(system or _SYSTEMS[category], category, "boom", hint="look")
 
 
 def _row(case: str, result: str, **fields: Any) -> CaseResult:

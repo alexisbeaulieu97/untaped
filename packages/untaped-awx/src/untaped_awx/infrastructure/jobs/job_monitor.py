@@ -50,9 +50,12 @@ class PollingJobMonitor:
         poll_interval: float = 2.0,
         timeout: float | None = None,
         warn: Callable[[str], None] | None = None,
+        log_command: Callable[[Job], str] | None = None,
     ) -> None:
         self._client = client
         self._warn = warn
+        self._log_command = log_command
+        """The command line that prints a job's whole log, for a warning to point at."""
         self._sleep = sleep
         self._interval = poll_interval
         self._timeout = timeout
@@ -196,10 +199,14 @@ class PollingJobMonitor:
             current = self.fetch(current)
             yield from self._read_into(current, cursor, params)
         if _unsaved(current) and self._warn:
+            later = (
+                f"run `{self._log_command(current)}` later"
+                if self._log_command
+                else "read it again later"
+            )
             self._warn(
                 f"{current.kind} {current.id}: AWX is still saving its events; the log "
-                f"(and its PLAY RECAP) may be cut short; see `jobs logs {current.id} --kind "
-                f"{current.kind}` later"
+                f"(and its PLAY RECAP) may be cut short; {later}"
             )
         held, missing = cursor.release()
         yield from held

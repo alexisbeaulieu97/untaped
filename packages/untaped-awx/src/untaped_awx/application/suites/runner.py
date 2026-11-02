@@ -55,6 +55,7 @@ from untaped.sdk import (
     ErrorCategory,
     UntapedError,
     bounded_map,
+    command_line,
 )
 from untaped_awx.application.jobs.abandon_jobs import AbandonJobs
 from untaped_awx.application.jobs.ports import Canceller
@@ -586,9 +587,13 @@ class RunTestSuite:
         if not isinstance(error, PendingApprovalError):
             return request_failure(error, message=f"{error}; {fate}")
         if not self._abandon.cancels:
+            # Lazy: the hint spells awx's command, and the commands import this module.
+            from untaped_awx.commands.job_actions import Cancel  # noqa: PLC0415
+
+            cancel = command_line(Cancel.spelled(job.id, "--kind", job.kind))
             fate += (
                 f": approve or deny workflow approval {error.approval_id} in AWX, or cancel it "
-                f"with `untaped awx jobs cancel {job.id} --kind {job.kind}`"
+                f"with `{cancel}`"
             )
         found = request_failure(error, message=f"{error}; {fate}")
         return found.model_copy(update={"evidence": FailureEvidence(node=error.node)})

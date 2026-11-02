@@ -13,8 +13,8 @@ import threading
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UsageError
-from untaped_awx.domain import ResourceSpec
+from untaped.sdk import UsageError, command_line
+from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.errors import WaitCancelledError
 from untaped_awx.infrastructure import AwxClient, AwxResourceCatalog
 from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
@@ -52,7 +52,7 @@ class AwxContext:
         self.strategies = StaticStrategyResolver()
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
         self.stop = threading.Event()
-        self.monitor = PollingJobMonitor(self.repo, sleep=self.pause, warn=self._warn)
+        self.monitor = self._monitor(timeout=None)
         self.jobs = JobRecordRepository(self.repo)
         self.ujts = HttpUnifiedTemplateRepository(self.repo)
         self.workflow_nodes = HttpWorkflowNodeRepository(self.repo)
@@ -60,6 +60,15 @@ class AwxContext:
 
     def _warn(self, message: str) -> None:
         self.diag.warning(message)
+
+    def _monitor(self, *, timeout: float | None) -> PollingJobMonitor:
+        return PollingJobMonitor(
+            self.repo,
+            sleep=self.pause,
+            timeout=timeout,
+            warn=self._warn,
+            log_command=_log_command,
+        )
 
     def pause(self, seconds: float) -> None:
         """Poll-interval sleep that ends early (raising) once :attr:`stop` is set."""
@@ -70,7 +79,7 @@ class AwxContext:
         """The job monitor; with ``timeout`` each follow loop stops after that many seconds."""
         if timeout is None:
             return self.monitor
-        return PollingJobMonitor(self.repo, sleep=self.pause, timeout=timeout, warn=self._warn)
+        return self._monitor(timeout=timeout)
 
     def terminal(self) -> Terminal:
         """The terminal, for prompts and screens."""
@@ -147,3 +156,11 @@ def scope_for_spec(
         if org:
             scope["organization"] = org
     return scope or None
+
+
+def _log_command(job: Job) -> str:
+    """The command line that prints ``job``'s whole log."""
+    # Lazy: the jobs commands open this context.
+    from untaped_awx.commands.jobs import Logs  # noqa: PLC0415
+
+    return command_line(Logs.spelled(job.id, "--kind", job.kind))
