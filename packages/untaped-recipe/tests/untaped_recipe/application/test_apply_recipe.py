@@ -44,6 +44,9 @@ class InlineWorkers:
             raise ValueError(str(response["error"]))
         return HookWorkerCallResult(result=response["result"], diagnostics="")
 
+    def close(self) -> None:
+        return None
+
 
 def _planner(tmp_path: Path):
     planner = ApplyRecipe(

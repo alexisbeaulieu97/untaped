@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import time
 from collections.abc import Callable
@@ -232,7 +233,8 @@ class UvHookWorker:
 
     The worker runs in its own process group through ``untaped.sdk.process``:
     untaped's Ctrl-C, SIGTERM and SIGHUP reach it and whatever its hooks
-    started, and :meth:`close` stops the whole group.
+    started (``uv run`` passes the signal on too, so a hook may see it twice),
+    and :meth:`close` stops the whole group, what hooks left running included.
     """
 
     def __init__(
@@ -499,14 +501,19 @@ def _is_stale_lock_failure(diagnostics: str) -> bool:
 
 
 def _drain_stderr(stream: IO[bytes], queue: Queue[str]) -> None:
-    with stream:
-        for line in stream:
-            queue.put(line.decode("utf-8", errors="replace"))
+    with _text(stream) as text:
+        for line in text:
+            queue.put(line)
 
 
 def _drain_stdout(stream: IO[bytes], queue: Queue[str | None]) -> None:
     """Queue each line, then ``None`` at end of file."""
-    with stream:
-        while line := stream.readline():
-            queue.put(line.decode("utf-8", errors="replace"))
+    with _text(stream) as text:
+        while line := text.readline():
+            queue.put(line)
     queue.put(None)
+
+
+def _text(stream: IO[bytes]) -> io.TextIOWrapper:
+    """``stream`` read as UTF-8 text with universal newlines; closing it closes ``stream``."""
+    return io.TextIOWrapper(stream, encoding="utf-8", errors="replace")

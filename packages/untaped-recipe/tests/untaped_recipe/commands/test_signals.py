@@ -19,7 +19,8 @@ import os, pathlib, signal, subprocess, sys, time
 
 
 def validate(*, inputs, target, args, helpers):
-    marks = pathlib.Path(args["marks"])
+    marks = pathlib.Path(args["marks"]) / pathlib.Path(target).name
+    marks.mkdir()
 
     def note(signum, frame):  # records each soft signal and runs on
         with (marks / "signals").open("a") as signals:
@@ -48,9 +49,13 @@ def _gone(pid: int) -> bool:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX process groups (#1013)")
-@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM], ids=["sigint", "sigterm"])
+@pytest.mark.parametrize(
+    ("sig", "parallel"),
+    [(signal.SIGINT, 1), (signal.SIGTERM, 1), (signal.SIGINT, 2)],
+    ids=["sigint", "sigterm", "sigint-parallel"],
+)
 def test_a_signal_to_untaped_reaches_the_hook_and_what_it_started(
-    tmp_path: Path, sig: signal.Signals
+    tmp_path: Path, sig: signal.Signals, parallel: int
 ) -> None:
     if sig == signal.SIGINT and signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
         pytest.skip("SIGINT is ignored here (a background job), so untaped inherits that")
@@ -62,23 +67,28 @@ def test_a_signal_to_untaped_reaches_the_hook_and_what_it_started(
         f"version: 1\nsteps:\n  - type: validate\n    hook: hang\n    args:\n      marks: {marks}\n"
     )
     write_hook_project(recipe_dir, public_name="hang", module_name="hang", code=_HOOK)
-    target = tmp_path / "target"
-    target.mkdir()
+    targets = [tmp_path / f"target{i}" for i in range(parallel)]
+    for target in targets:
+        target.mkdir()
     untaped = subprocess.Popen(
-        [sys.executable, "-m", "untaped", "recipe", "apply", str(recipe_dir), str(target), "--yes"],
+        [sys.executable, "-m", "untaped", "recipe", "apply", str(recipe_dir)]
+        + [str(target) for target in targets]
+        + ["--yes", "--parallel", str(parallel)],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
+    pid_files = [marks / target.name / "pids" for target in targets]
     pids: list[int] = []
     try:
         deadline = time.monotonic() + 120  # uv builds the pack's environment first
-        while not (marks / "pids").exists():
+        while not all(pid_file.exists() for pid_file in pid_files):
             assert untaped.poll() is None, untaped.communicate()[1]
-            assert time.monotonic() < deadline, "the hook did not start"
+            assert time.monotonic() < deadline, "the hooks did not start"
             time.sleep(0.05)
-        pids = [int(pid) for pid in (marks / "pids").read_text().split()]
+        pids = [int(pid) for pid_file in pid_files for pid in pid_file.read_text().split()]
         untaped.send_signal(sig)
+        # Well inside the hook timeout (60 s): the hooks are stopped, not waited out.
         _, stderr = untaped.communicate(timeout=15)
         deadline = time.monotonic() + 5
         while not all(_gone(pid) for pid in pids):
@@ -91,6 +101,7 @@ def test_a_signal_to_untaped_reaches_the_hook_and_what_it_started(
                 os.kill(pid, signal.SIGKILL)
     # uv passes the signal on to the worker as well, so it may come twice; it
     # is the only soft signal (no SIGTERM after a Ctrl-C), and SIGKILL follows.
-    assert set((marks / "signals").read_text().split()) == {sig.name}
+    for target in targets:
+        assert set((marks / target.name / "signals").read_text().split()) == {sig.name}
     exit_status = 130 if sig == signal.SIGINT else -sig  # Ctrl-C's status; else dies of it
     assert (untaped.returncode, "Traceback" in stderr) == (exit_status, False), stderr

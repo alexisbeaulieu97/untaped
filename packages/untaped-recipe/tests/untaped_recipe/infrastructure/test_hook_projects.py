@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Buffer, Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import suppress
@@ -290,10 +291,7 @@ def test_uv_hook_worker_reports_missing_uv(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def fail_start(*args: object, **kwargs: object) -> object:
-        raise FileNotFoundError("uv")
-
-    monkeypatch.setattr(worker_client, "start_process", fail_start)
+    monkeypatch.setenv("PATH", str(tmp_path))  # no uv on it
 
     with pytest.raises(UvMissingError, match="uv executable not found"):
         UvHookWorker(tmp_path)
@@ -545,6 +543,22 @@ def test_uv_hook_worker_discards_success_diagnostics_before_failure(
     assert "success diagnostic" not in message
 
 
+def test_uv_hook_worker_splits_stderr_on_carriage_returns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A progress bar's \r updates are lines of their own, so the bound keeps the latest.
+    fake = _FakeProcess(stdout=_OK_LINE, stderr="10%\r50%\r100%\r\ndone\r\n")
+    monkeypatch.setattr(worker_client, "start_process", lambda *args, **kwargs: fake)
+    worker = UvHookWorker(tmp_path)
+
+    result = worker.request(
+        {"kind": "transform", "module": "hooks.sample"}, diagnostic_limit=10, settle_seconds=0.05
+    )
+
+    assert result.diagnostics == "100%\ndone"
+
+
 def test_uv_hook_worker_survives_non_utf8_stderr(tmp_path: Path) -> None:
     _write_hook_project(
         tmp_path,
@@ -662,6 +676,9 @@ class _CannedWorkers:
     ) -> HookWorkerCallResult:
         self.payloads.append(payload)
         return self.reply
+
+    def close(self) -> None:
+        return None
 
 
 def test_hook_executor_dispatches_builtin_without_worker(tmp_path: Path) -> None:
@@ -869,8 +886,11 @@ class _BrokenStdin:
         return None
 
 
-class _SlowStdout:
-    """Ready arrives after ``ready_delay`` (never if not ``ready``), then ``lines``, then stalls."""
+class _SlowStdout(io.RawIOBase):
+    """Ready arrives after ``ready_delay`` (never if not ``ready``), then ``lines``, then stalls.
+
+    One line per read, as from a pipe; end of file once the stall is over.
+    """
 
     def __init__(self, delay: float, *, ready: bool, ready_delay: float, lines: list[str]) -> None:
         self._delay = delay
@@ -878,7 +898,16 @@ class _SlowStdout:
         self._ready_delay = ready_delay
         self._lines = list(lines)
 
-    def readline(self) -> bytes:
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Buffer) -> int:
+        line = self._next()
+        view = memoryview(buffer).cast("B")
+        view[: len(line)] = line
+        return len(line)
+
+    def _next(self) -> bytes:
         if self._ready_pending:
             self._ready_pending = False
             time.sleep(self._ready_delay)
@@ -887,12 +916,6 @@ class _SlowStdout:
             return self._lines.pop(0).encode()
         time.sleep(self._delay)
         return b""
-
-    def __enter__(self) -> _SlowStdout:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
 
 
 class _SlowProcess:
@@ -905,7 +928,9 @@ class _SlowProcess:
         lines: list[str] | None = None,
     ) -> None:
         self.stdin = BytesIO()
-        self.stdout = _SlowStdout(delay, ready=ready, ready_delay=ready_delay, lines=lines or [])
+        self.stdout = io.BufferedReader(
+            _SlowStdout(delay, ready=ready, ready_delay=ready_delay, lines=lines or [])
+        )
         self.stderr = BytesIO()
         self.killed = False
 
