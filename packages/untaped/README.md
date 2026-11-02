@@ -8,7 +8,7 @@ commands. It is the only package that ships the `untaped` command.
 Plugins are extras of this package:
 
 ```bash
-uv tool install 'untaped[all]'   # or 'untaped[github]', 'untaped[awx]', ...
+uv tool install --compile-bytecode 'untaped[all]'   # or 'untaped[github]', 'untaped[awx]', ...
 pip install 'untaped[all]'
 ```
 
