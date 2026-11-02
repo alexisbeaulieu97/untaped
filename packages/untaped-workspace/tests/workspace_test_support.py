@@ -24,6 +24,8 @@ from untaped.sdk.testing import Ran, Running, install
 from untaped.sdk.testing.git import GitRemote
 from untaped_git.api import Credential, GitHost, store_key
 from untaped_workspace.api import Repo, RepoSource
+from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
+from untaped_workspace.infrastructure import ProjectWorkspaceStore
 from untaped_workspace.plugin import WorkspacePlugin
 
 type Providers = Mapping[str, Sequence[type]]
@@ -206,3 +208,29 @@ def rank(*plugins: str) -> None:
         f"      rank:\n        repos: [{', '.join(plugins)}]\n",
         encoding="utf-8",
     )
+
+
+def stored(name: str) -> WorkspaceRecord | None:
+    """The active workspace ``name``, as its project keeps it; ``None`` without one."""
+    found = [r for r in ProjectWorkspaceStore().all() if r.name == name and not r.archived]
+    assert len(found) <= 1, found
+    return found[0] if found else None
+
+
+def archived_records() -> list[WorkspaceRecord]:
+    """Every archived workspace, by name."""
+    return [record for record in ProjectWorkspaceStore().all() if record.archived]
+
+
+def new_workspace(name: str, *repos: RepoSpec) -> WorkspaceRecord:
+    """``workspace create NAME`` with no repo, then ``repos`` held and their rows written."""
+    created = run(["create", name, "--empty"])
+    assert created.exit == 0, err(created)
+    record = stored(name)
+    assert record is not None
+    if repos:
+        store = ProjectWorkspaceStore()
+        for spec in repos:
+            store.hold(record, spec.url)
+        record = store.put_repos(record, repos)
+    return record

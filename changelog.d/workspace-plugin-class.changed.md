@@ -1,16 +1,12 @@
 **Breaking (users):** `untaped workspace` is now built on a 12.0 plugin class,
 `WorkspacePlugin`. `workspace status` writes `workspace.repo_status` (was
-`workspace.status`); the other kinds keep their names. Active workspaces are
-kept as the `workspace.workspaces` rows (was `workspace.active`), and a
-workspace's lock lives under `plugins/workspace/checkouts.locks/` in the
-untaped home, so two homes sharing one `workspaces_dir`, or two names that
-differ only in case on a case-insensitive disk, no longer wait for each other.
-The workspace lifecycle guide is on `untaped workspace --help` and
-`untaped docs workspace`. `workspace run --stdin` reads whole records only, so
-a piped row missing a field is refused before anything runs. Retired settings
+`workspace.status`); the other kinds keep their names. The workspace
+lifecycle guide is on `untaped workspace --help` and `untaped docs
+workspace`. `workspace run --stdin` reads whole records only, so a piped row
+missing a field is refused before anything runs. Retired settings
 `workspace.cache_dir` and `workspace.protocol` are no longer recognised. The
-credential helper line a worktree's git config gets names no profile:
-`UNTAPED_PROFILE` picks it. `workspace create` and
-`workspace add` print their rows only: the workspace's path is no longer the
-last stdout line, so `cd "$(untaped -q workspace create ...)"` no longer
-works.
+credential helper line a worktree's git config gets names no profile: the
+folder's project picks it (its `profile:`), and `UNTAPED_PROFILE`.
+`workspace create` and `workspace add` print their rows only: the
+workspace's path is no longer the last stdout line, so `cd "$(untaped -q
+workspace create ...)"` no longer works.

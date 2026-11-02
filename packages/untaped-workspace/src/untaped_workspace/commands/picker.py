@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from untaped.sdk import Terminal, UntapedError, UsageError, command_line, q
 from untaped.sdk.prompt import PickCatalog, PickItem, PickRequest, PickResult, PickSetting
+from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore
 from untaped_workspace.application.provision import refuse_occupied
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
@@ -110,21 +111,29 @@ def repo_args(result: PickResult) -> list[RepoArg]:
 def name_validator(store: WorkspaceStore, root: Path) -> Callable[[str], str | None]:
     """Checks a typed workspace name; returns why ``create`` would refuse it, else ``None``.
 
-    Invalid, already active, or a non-empty directory under ``root`` (the
-    workspaces dir): caught in the picker, so the selection is not lost.
+    Invalid, already an active workspace, or a non-empty folder that is no
+    project under ``root`` (the workspaces dir): caught in the picker, so the
+    selection is not lost. An archived workspace's name is fine: ``create``
+    resumes it.
     """
 
     def check(name: str) -> str | None:
         try:
-            validate_workspace_name(name)
+            name = validate_workspace_name(name)
         except UsageError as exc:
             return str(exc)
-        if store.get(name) is not None:
-            return f"workspace {q(name)} already exists"
+        folder = workspace_root(root, name)
         try:
-            refuse_occupied(store, root, name)
-        except UntapedError as exc:
+            existing = store.at(folder)
+        except UntapedError as exc:  # a copy there
             return str(exc)
+        if existing is not None and existing.meta is not None and not existing.archived:
+            return f"workspace {q(name)} already exists"
+        if existing is None:
+            try:
+                refuse_occupied(folder)
+            except UntapedError as exc:
+                return str(exc)
         return None
 
     return check

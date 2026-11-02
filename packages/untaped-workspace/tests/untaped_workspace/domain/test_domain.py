@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import UsageError
-from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord, WorktreeStatus
+from untaped_workspace.domain.models import RepoSpec, WorkspaceMeta, WorktreeStatus
 from untaped_workspace.domain.naming import (
     assign_dirs,
     branch_for,
@@ -161,12 +161,12 @@ def test_hints_combine_once_per_kind() -> None:
 
 
 def test_records_round_trip() -> None:
-    record = WorkspaceRecord(
-        name="w",
-        created_at=datetime(2026, 10, 1, tzinfo=UTC),
-        repos=(_spec("acme/api", "api"),),
+    meta = WorkspaceMeta(
+        name="w", project="p1", created_by="workspace", created_at=datetime(2026, 10, 1, tzinfo=UTC)
     )
-    assert WorkspaceRecord.model_validate(record.model_dump(mode="json")) == record
+    assert WorkspaceMeta.model_validate(meta.model_dump(mode="json")) == meta
+    spec = _spec("acme/api", "api")
+    assert RepoSpec.model_validate(spec.model_dump(mode="json")) == spec
     row = RepoStatus(
         workspace="w",
         repo="acme/api",

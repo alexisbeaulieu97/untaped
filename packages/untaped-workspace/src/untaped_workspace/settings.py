@@ -22,9 +22,9 @@ class WorkspaceSettings(BaseModel):
     workspaces_dir: Annotated[Path | None, HomeOnly()] = Field(
         default=None,
         description=(
-            "Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one "
-            "untaped home, which holds its workspaces' locks. An absolute path; unset: "
-            "`plugins/workspace/checkouts/` under the home."
+            "Where `workspace create NAME` makes its project (`<workspaces_dir>/NAME`); "
+            "a workspace added to another project stays where that project is. An absolute "
+            "path; unset: `plugins/workspace/checkouts/` under the home."
         ),
     )
     parallel: int | None = Field(

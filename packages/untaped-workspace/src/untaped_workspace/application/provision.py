@@ -1,9 +1,10 @@
 """Provision repos into a workspace: resolve, check out in parallel, record the successes.
 
 Lock order: ``create``, ``add``, ``archive`` and ``remove`` take the
-per-workspace lock first, then each repo store call takes that repo's lock
-inside it. Never take them the other way: a process holding a repo lock while
-it waits for a workspace lock can deadlock with one doing the opposite.
+project's lock first, then a hold takes workspace's item store lock, then
+each repo store call takes that repo's lock inside it. Never take them the
+other way: a process holding a repo lock while it waits for a project's lock
+can deadlock with one doing the opposite.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError, UsageError, bounded_map, q
 from untaped.sdk.storage import NO_PROGRESS
-from untaped_workspace.application.locate import active_workspace, workspace_root
+from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.application.status import resumes
 from untaped_workspace.domain.models import (
     Checkout,
@@ -93,6 +94,9 @@ class ProvisionRepos:
     ) -> list[RepoOutcome]:
         """Create workspace ``name`` and check out ``repos`` into it (none: an empty workspace).
 
+        The workspace is the project ``<workspaces_dir>/NAME``, made as
+        ``untaped project init`` makes one. An archived workspace there is
+        resumed: its repos are checked out again, then ``repos``.
         ``on_done(row, done, total)`` runs (on the calling thread) as each
         checkout finishes; ``total`` counts the checkouts started (repos
         already present or requested twice are not). ``progress`` counts the
@@ -100,12 +104,20 @@ class ProvisionRepos:
         """
         name = validate_workspace_name(name)
         resolved = self._resolve(repos, progress)
-        with self._store.locked(name):
-            refuse_occupied(self._store, self._workspaces_dir, name)
-            record = WorkspaceRecord(name=name, created_at=self._now())
-            self._store.create(record)
-            workspace_root(self._workspaces_dir, name).mkdir(parents=True, exist_ok=True)
-            return self._provision(record, repos, resolved, on_done)
+        root = workspace_root(self._workspaces_dir, name)
+        existing = self._store.at(root)
+        if existing is not None and existing.meta is not None and not existing.archived:
+            from untaped_workspace.commands.create import Add  # noqa: PLC0415 - import cycle
+
+            raise WorkspaceError(
+                f"workspace {q(name)} already exists",
+                category="conflict",
+                hint=Add.spelled(name, "--repo", "REPO"),
+            )
+        if existing is None:
+            refuse_occupied(root)
+            existing = self._store.start(root, name, at=self._now())
+        return self._into(existing, repos, resolved, on_done)
 
     def add(
         self,
@@ -115,20 +127,35 @@ class ProvisionRepos:
         on_done: Callable[[RepoOutcome, int, int], None] | None = None,
         progress: ProgressHandle = NO_PROGRESS,
     ) -> list[RepoOutcome]:
-        """Check out ``repos`` into the existing workspace ``record``.
+        """Check out ``repos`` into the workspace ``record`` (an archived one resumes first).
 
-        The record is read again under the workspace lock: an ``archive`` that
-        ran meanwhile makes this fail as not found instead of adding worktrees.
-        ``on_done`` and ``progress`` are as for :meth:`create`.
+        Any project takes repos: the first ``add`` makes it a workspace. The
+        record is read again under the project's lock. ``on_done`` and
+        ``progress`` are as for :meth:`create`.
         """
-        if not repos:
+        if not repos and not record.archived:
             from untaped_workspace.commands.create import Add  # noqa: PLC0415 - import cycle
 
             raise UsageError("no repos given", hint=Add.spelled(record.name, "--repo", "REPO"))
         resolved = self._resolve(repos, progress)
-        with self._store.locked(record.name):
-            current = active_workspace(self._store, record.name)
-            workspace_root(self._workspaces_dir, current.name).mkdir(parents=True, exist_ok=True)
+        return self._into(record, repos, resolved, on_done)
+
+    def _into(
+        self,
+        record: WorkspaceRecord,
+        repos: Sequence[RepoArg],
+        resolved: Sequence[Repo],
+        on_done: Callable[[RepoOutcome, int, int], None] | None,
+    ) -> list[RepoOutcome]:
+        """Under the project's lock: make it a workspace, resume it if archived, check out."""
+        with self._store.locked(record) as current:
+            current = self._store.adopt(current, at=self._now())
+            if current.archived:  # its recorded repos are checked out again, then the new ones
+                recorded = [_again(spec) for spec in current.repos]
+                repos = [*recorded, *repos]
+                resolved = [*(arg.repo for arg in recorded if arg.repo is not None), *resolved]
+                current = self._store.set_archived(current, None)
+            current.root.mkdir(parents=True, exist_ok=True)
             return self._provision(current, repos, resolved, on_done)
 
     def _resolve(self, repos: Sequence[RepoArg], progress: ProgressHandle) -> list[Repo]:
@@ -147,17 +174,24 @@ class ProvisionRepos:
         resolved: Sequence[Repo],
         on_done: Callable[[RepoOutcome, int, int], None] | None,
     ) -> list[RepoOutcome]:
-        workspace_dir = workspace_root(self._workspaces_dir, record.name)
-        rows, fresh = _partition(record, repos, resolved, workspace_dir)
-        jobs = self._jobs(record, fresh)
+        workspace_dir = record.root
+        rows, fresh, again = _partition(record, repos, resolved, workspace_dir)
+        jobs = [*self._jobs(record, fresh), *again]
         specs: dict[int, RepoSpec] = {}
         finished = 0
+        lock = f"untaped project {record.project.id}"
+        for job in jobs:  # hold, then use: on this thread, which holds the project's lock
+            self._store.hold(record, job.resolved.url)
 
         def _run(job: _Job) -> Checkout | UntapedError:
             base = job.arg.base or job.resolved.default_branch
             try:
                 return self._git.checkout(
-                    job.resolved.url, workspace_dir / job.dir, branch=job.branch, base=base
+                    job.resolved.url,
+                    workspace_dir / job.dir,
+                    branch=job.branch,
+                    base=base,
+                    lock=lock,
                 )
             except UntapedError as exc:
                 return exc
@@ -185,7 +219,7 @@ class ProvisionRepos:
             bounded_map(_run, jobs, concurrency=self._parallel, on_each=_collect)
         finally:
             if specs:
-                self._store.add_repos(record.name, [specs[i] for i in sorted(specs)])
+                self._store.put_repos(record, [specs[i] for i in sorted(specs)])
         return [rows[i] for i in sorted(rows)]
 
     def _jobs(
@@ -228,21 +262,25 @@ class ProvisionRepos:
         )
 
 
-def refuse_occupied(store: WorkspaceStore, workspaces_dir: Path, name: str) -> None:
-    """Refuse a new workspace whose directory already holds files (an old workspace?).
-
-    An active workspace of that name is left for the store to report.
-    """
-    path = workspace_root(workspaces_dir, name)
-    if store.get(name) is None and path.is_dir() and any(path.iterdir()):
+def refuse_occupied(path: Path) -> None:
+    """Refuse a new workspace whose folder already holds files and is no project."""
+    if path.is_dir() and any(path.iterdir()):
         raise WorkspaceError(
             f"workspace directory {q(str(path))} already exists and is not empty",
             category="conflict",
             hint=(
-                "a directory with that name already exists (perhaps an old workspace); "
-                "move it aside or pick another name"
+                "a directory with that name already exists; move it aside or pick another "
+                f"name, or make it a project (`untaped project init {path}`) and add repos to it"
             ),
         )
+
+
+def _again(spec: RepoSpec) -> RepoArg:
+    """A recorded repo, to check out again where it was (a resumed workspace)."""
+    repo = Repo.model_construct(**{name: getattr(spec, name) for name in Repo.model_fields})
+    return RepoArg(
+        ident=spec.name, read_only=spec.read_only, branch=spec.branch, base=spec.base, repo=repo
+    )
 
 
 def _partition(
@@ -250,21 +288,31 @@ def _partition(
     repos: Sequence[RepoArg],
     resolved: Sequence[Repo],
     workspace_dir: Path,
-) -> tuple[dict[int, RepoOutcome], list[tuple[int, RepoArg, Repo]]]:
-    """Split requested repos into ``unchanged`` rows (already present) and new ones.
+) -> tuple[dict[int, RepoOutcome], list[tuple[int, RepoArg, Repo]], list[_Job]]:
+    """Split requested repos into ``unchanged`` rows, new repos, and recorded ones to check out
+    again (their worktree is gone: a resumed workspace, a folder deleted by hand).
 
-    Both are keyed by request position; a repo requested twice counts once.
+    All are keyed by request position; a repo requested twice counts once.
     """
     rows: dict[int, RepoOutcome] = {}
     present = {repo_key(spec.url): spec for spec in record.repos}
     fresh: list[tuple[int, RepoArg, Repo]] = []
+    again: list[_Job] = []
     seen: set[tuple[str, ...]] = set()
     for index, (arg, repo) in enumerate(zip(repos, resolved, strict=True)):
         key = repo_key(repo.url)
         if key in seen:
             continue
         seen.add(key)
-        if (spec := present.get(key)) is not None:
+        spec = present.get(key)
+        if spec is None:
+            fresh.append((index, arg, repo))
+        elif not (workspace_dir / spec.dir).exists():
+            base = arg.base or spec.base
+            again.append(
+                _Job(index, arg.model_copy(update={"base": base}), repo, spec.dir, spec.branch)
+            )
+        else:
             rows[index] = RepoOutcome(
                 workspace=record.name,
                 repo=spec.name,
@@ -275,6 +323,4 @@ def _partition(
                 read_only=spec.read_only,
                 target_path=workspace_dir / spec.dir,
             )
-        else:
-            fresh.append((index, arg, repo))
-    return rows, fresh
+    return rows, fresh, again

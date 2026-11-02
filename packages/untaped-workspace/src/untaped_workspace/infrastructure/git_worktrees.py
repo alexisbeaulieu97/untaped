@@ -26,7 +26,7 @@ the last workspace of a URL. The repo store lock is always the inner lock (see
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
@@ -83,11 +83,15 @@ class LocalGitWorktrees:
 
     # -- public port -------------------------------------------------------
 
-    def checkout(self, url: str, dest: Path, *, branch: str | None, base: str | None) -> Checkout:
+    def checkout(
+        self, url: str, dest: Path, *, branch: str | None, base: str | None, lock: str | None = None
+    ) -> Checkout:
         """Add a worktree at ``dest``: on ``branch``, or detached at the base when ``None``.
 
-        The history backfill runs last; when it stops, the checkout still
-        succeeds and :attr:`Checkout.backfill_error` says why.
+        With ``lock``, it is added locked, ``lock`` saying why, so ``git worktree prune`` keeps
+        its entry while the project is moved or its drive is away. The history
+        backfill runs last; when it stops, the checkout still succeeds and
+        :attr:`Checkout.backfill_error` says why.
         """
         store = self._store(url)
         target = dest.absolute()
@@ -96,14 +100,15 @@ class LocalGitWorktrees:
         picked = base if base is not None else self._default_branch(store, url)
         refs = self._refs(store, branch, picked)
         start = _base_ref(picked, refs, url)
+        self._forget_gone(store, target)
         store.run(["worktree", "prune"])
         if branch is None:
-            store.worktree_add(target, start.ref)
+            store.worktree_add(target, start.ref, lock_reason=lock)
             checkout = Checkout(
                 action="checked_out", base=picked, detail=f"read-only at {start.label}"
             )
         else:
-            checkout = self._add_writable(store, target, branch, start, refs)
+            checkout = self._add_writable(store, target, branch, start, refs, lock=lock)
             self._set_upstream(store, branch)
         store.write_worktree_config(target)
         failure = self._backfill(store, delta, history)
@@ -204,6 +209,8 @@ class LocalGitWorktrees:
             if not force:
                 self._recheck(store, dest, base)
             self._remove_worktree(store, dest, force=force)
+        else:
+            self._forget_gone(store, dest.absolute())
         store.run(["worktree", "prune"])
 
     def store_use(self, url: str, *, bases: Collection[str]) -> StoreUse | None:
@@ -269,6 +276,55 @@ class LocalGitWorktrees:
             freed_bytes=outcome.freed_bytes,
         )
 
+    def drop_worktrees(
+        self, url: str, under: Path, *, checked: Mapping[Path, str] | None, force: bool
+    ) -> list[Path]:
+        """Remove workspace's worktrees of ``url``'s store repo at or under ``under``.
+
+        Read from the repo's entries, so a project folder that was moved away
+        or is out of reach still loses its entries. ``checked`` maps the
+        worktrees the caller checked to their base: only those go (``None``:
+        every one under ``under``, for a project whose folder is not here).
+        Unforced, each is checked again right before it goes and work that
+        appeared since refuses (:class:`GitError`, ``conflict``), leaving the
+        ones not yet removed. Returns the worktrees removed.
+        """
+        store = self._store(url)
+        if not store.exists():
+            return []
+        found = store.worktrees_under(under)
+        bases = None if checked is None else {path.absolute(): b for path, b in checked.items()}
+        if bases is not None:
+            found = [worktree for worktree in found if worktree.absolute() in bases]
+        removed: list[Path] = []
+        for worktree in found:
+            if not worktree.exists():  # its release was asked for: even a deleted project's goes
+                store.run(["worktree", "unlock", str(worktree)], check=False)
+                removed.append(worktree)
+                continue
+            if not force and bases is not None:
+                self._recheck(store, worktree, bases[worktree.absolute()])
+            # unlocked first: forced remove takes a locked one too, and a refusal relocks it
+            self._remove_worktree(store, worktree, force=True)
+            removed.append(worktree)
+        store.run(["worktree", "prune"])
+        return removed
+
+    def repair(self, url: str, worktree: Path) -> bool:
+        """Reconnect a worktree a project's move carried to ``worktree``; ``False``: none there."""
+        store = self._store(url)
+        if not store.exists() or not worktree.is_dir():
+            return False
+        store.repair_worktree(worktree)
+        return True
+
+    def stored_url(self, ident: str) -> str | None:
+        """The URL the store repo keyed ``ident`` (``host/owner/name``) was fetched from."""
+        for repo in self.stored_repos():
+            if repo.ident == ident:
+                return repo.origin
+        return None
+
     # -- removal -----------------------------------------------------------
 
     def _recheck(self, store: RepoStore, dest: Path, base: str) -> None:
@@ -294,7 +350,7 @@ class LocalGitWorktrees:
             raise GitError(
                 f"{dest}: {', '.join(blockers)}; nothing removed",
                 category="conflict",
-                hint="the repo changed since the check; run status and archive again",
+                hint="the repo changed since the check; run status, then the command again",
             )
 
     def _remove_worktree(self, store: RepoStore, dest: Path, *, force: bool) -> None:
@@ -306,12 +362,30 @@ class LocalGitWorktrees:
         directly.
         """
         flags = ["--force", "--force"] if force else []
+        reason = None if force else _lock_reason(store, dest.absolute())
+        if reason is not None:  # workspace locks its worktrees; its own remove lets go of the lock
+            store.run(["worktree", "unlock", str(dest.absolute())], check=False)
         try:
             store.run(["worktree", "remove", *flags, str(dest.absolute())])
         except GitError:
             if not force:
+                if reason is not None:  # still there: locked again, as it was
+                    store.lock_worktree(dest.absolute(), reason=reason)
                 raise
             _delete_tree(dest)
+            store.run(["worktree", "unlock", str(dest.absolute())], check=False)  # prune drops it
+
+    def _forget_gone(self, store: RepoStore, worktree: Path) -> None:
+        """Unlock workspace's entry for a worktree whose folder is gone, so prune drops it.
+
+        For a resume or a ``remove`` of one worktree, only when the folder is
+        truly absent: a folder whose parent is gone too may be on a drive
+        that is away, and its entry stays. A release unlocks without asking
+        (:meth:`drop_worktrees`).
+        """
+        if worktree.exists() or not worktree.parent.exists():
+            return
+        store.run(["worktree", "unlock", str(worktree)], check=False)
 
     def _stash_branches(self, store: RepoStore) -> set[str]:
         """Branches stash entries were made on (``WIP on <b>:``, ``On <b>:``)."""
@@ -369,7 +443,14 @@ class LocalGitWorktrees:
         return {ref: oid for ref, _, oid in pairs if ref in names}
 
     def _add_writable(
-        self, store: RepoStore, target: Path, branch: str, start: _Base, refs: dict[str, str]
+        self,
+        store: RepoStore,
+        target: Path,
+        branch: str,
+        start: _Base,
+        refs: dict[str, str],
+        *,
+        lock: str | None,
     ) -> Checkout:
         base = start.name
         local = refs.get(f"refs/heads/{branch}")
@@ -383,15 +464,15 @@ class LocalGitWorktrees:
             )
         if local and remote:
             detail = self._reconcile(store, branch, same=local == remote)
-            store.worktree_add(target, f"refs/heads/{branch}")
+            store.worktree_add(target, f"refs/heads/{branch}", lock_reason=lock)
             return Checkout(action="checked_out", base=base, detail=detail)
         if remote:
-            store.worktree_add(target, f"refs/remotes/{tracking}", branch=branch)
+            store.worktree_add(target, f"refs/remotes/{tracking}", branch=branch, lock_reason=lock)
             return Checkout(action="checked_out", base=base, detail=f"tracking {tracking}")
         if local:
-            store.worktree_add(target, f"refs/heads/{branch}")
+            store.worktree_add(target, f"refs/heads/{branch}", lock_reason=lock)
             return Checkout(action="checked_out", base=base, detail="resumed local branch")
-        store.worktree_add(target, start.ref, branch=branch)
+        store.worktree_add(target, start.ref, branch=branch, lock_reason=lock)
         return Checkout(action="created", base=base, detail=f"from {start.label}")
 
     def _reconcile(self, store: RepoStore, branch: str, *, same: bool) -> str:
@@ -554,6 +635,18 @@ class LocalGitWorktrees:
     def _is_ancestor(self, store: RepoStore, ancestor: str, descendant: str) -> bool:
         args = ["merge-base", "--is-ancestor", ancestor, descendant]
         return store.run(args, check=False).returncode == 0
+
+
+def _lock_reason(store: RepoStore, worktree: Path) -> str | None:
+    """Why the worktree at ``worktree`` is locked (``""`` with no reason); ``None``: not locked."""
+    listed = store.run(["worktree", "list", "--porcelain"], capture=True).text
+    for block in listed.split("\n\n"):
+        lines = block.splitlines()
+        if lines and lines[0] == f"worktree {worktree}":
+            for line in lines[1:]:
+                if line == "locked" or line.startswith("locked "):
+                    return line.removeprefix("locked").strip()
+    return None
 
 
 def _delete_tree(path: Path) -> None:

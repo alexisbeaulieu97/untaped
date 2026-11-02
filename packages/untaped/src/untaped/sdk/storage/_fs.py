@@ -143,7 +143,25 @@ def _remove_staged(paths: Iterable[Path]) -> None:
 
 #: The locks this process holds, by absolute path and thread: how many blocks hold each.
 _HELD: dict[tuple[str, int], int] = {}
+#: Held locks whose file goes once the outermost block lets go (:func:`unlink_lock_file`).
+_DROP: set[tuple[str, int]] = set()
 _HELD_GUARD = threading.Lock()
+
+
+def unlink_lock_file(path: Path) -> None:
+    """Delete lock file ``path`` now, or when this thread's outermost block holding it ends.
+
+    For a lock whose subject is gone (a removed project's): deleting a file
+    this thread still holds would let another process lock a new file while
+    this one still works under the old.
+    """
+    key = (os.path.realpath(path), threading.get_ident())
+    with _HELD_GUARD:
+        if key in _HELD:
+            _DROP.add(key)
+            return
+    with suppress(OSError):
+        path.unlink(missing_ok=True)
 
 
 @contextmanager
@@ -193,7 +211,12 @@ def file_lock(
     finally:
         with _HELD_GUARD:
             del _HELD[key]
+            drop = key in _DROP
+            _DROP.discard(key)
         lock.release()
+        if drop:
+            with suppress(OSError):
+                path.unlink(missing_ok=True)
 
 
 def read_structured_file(path: Path, *, flag: str | None = None) -> dict[str, Any]:

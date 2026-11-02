@@ -34,20 +34,21 @@ from __future__ import annotations
 
 import os
 import secrets
+import shutil
 import threading
 from collections.abc import Collection, Sequence
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from contextlib import AbstractContextManager, suppress
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, RootModel, field_validator
 
 from untaped.runtime.run_output import Diagnostics
-from untaped.sdk._home import DEFAULT_HOME, PLUGINS_FOLDER, home
+from untaped.sdk._home import CORE, DEFAULT_HOME, PLUGINS_FOLDER, home
 from untaped.sdk.errors import ConfigError, ErrorCategory, UsageError
 from untaped.sdk.marks import experimental
-from untaped.sdk.storage._fs import atomic_write
+from untaped.sdk.storage._fs import atomic_write, unlink_lock_file
 from untaped.sdk.storage._refs import (
     PROJECT,
     REFS,
@@ -69,6 +70,7 @@ from untaped.sdk.storage.holds import (
     UnknownHolder,
     add_hold,
     holder_lock,
+    holder_lock_file,
     holds_of,
     release_rows,
     repair_holds,
@@ -149,6 +151,7 @@ class Project(BaseModel):
         items: Collection[object] | None = None,
         force: Collection[object] = (),
         dry_run: bool = False,
+        leaving: Collection[Project] = (),
     ) -> list[OutcomeRecord]:
         """Let go of this project's holds of ``store`` (or only ``items``) through its owner.
 
@@ -156,11 +159,22 @@ class Project(BaseModel):
         previewed and confirmed: one refused or failed plan applies nothing
         and comes back as its row; ``force`` names the items whose refusal
         the user overrides; ``dry_run`` returns the preview and repairs
-        nothing. Each row is an ``untaped.hold_outcome`` to emit.
+        nothing. Each row is an ``untaped.hold_outcome`` to emit; a refused
+        row's hint is the owner's, and the command adds how to force.
+        ``leaving`` are projects the same confirmed command lets go of first
+        (``workspace remove`` of several): the preview counts none of them
+        as another holder, so it shows what this project's turn will do.
         """
         with self.locked():
             here = self if dry_run else writing(self)[0]
-            return release_rows(holder_of(here), store, items=items, force=force, dry_run=dry_run)
+            return release_rows(
+                holder_of(here),
+                store,
+                items=items,
+                force=force,
+                dry_run=dry_run,
+                leaving={holder_of(project) for project in leaving},
+            )
 
 
 def plugin_committed_path(plugin: str, name: str, *, root: Path) -> Path:
@@ -326,21 +340,56 @@ def anchor_state(ref: Reference) -> HolderState:
 type InitAction = Literal["created", "unchanged", "recorded", "repaired", "new id"]
 
 
+@experimental
 @dataclass(frozen=True)
 class Initialized:
-    """What ``project init`` did to one folder."""
+    """What ``project init`` did to one folder.
+
+    ``picked`` is the run's explicit pick a new project recorded as its
+    ``profile:`` (empty when it recorded none).
+    """
 
     project: Project
     action: InitAction
     detail: str
+    picked: tuple[str, ...] = ()
 
 
-def init(path: Path, *, new_id: bool = False) -> Initialized:
-    """Make ``path`` a project, or bring an existing one's record up to date.
+@experimental
+def init_project(path: Path, *, new_id: bool = False) -> Initialized:
+    """Make ``path`` a project, or bring an existing one's record up to date: ``project init``.
 
     Refuses ``~``, ``~/.untaped`` and core's folders in it, a folder inside
     another project, and a folder holding a recorded one (exit 2). ``new_id`` gives a
-    copy its own id; the folder the reference records keeps its id.
+    copy its own id; the folder the reference records keeps its id. A new
+    project made under an explicit pick (``--profile``, ``UNTAPED_PROFILE``)
+    records it as its ``.untaped/config.yml``'s ``profile:``, so the folder
+    keeps the environment it was made in; a pick the home doesn't define
+    exits 2 before anything is made.
+    """
+    from untaped.runtime.config_file import (  # noqa: PLC0415 - settings load on use
+        read_config_dict,
+        record_project_pick,
+    )
+    from untaped.runtime.profile_resolver import (  # noqa: PLC0415
+        check_defined,
+        explicit_pick,
+        named_profiles,
+    )
+
+    pick = explicit_pick()
+    check_defined(pick, named_profiles(read_config_dict()))
+    done = init(path, new_id=new_id)
+    if done.action == "created" and record_project_pick(done.project.root, pick):
+        return replace(done, picked=pick)
+    return done
+
+
+def init(path: Path, *, new_id: bool = False) -> Initialized:
+    """Make ``path`` a project, or bring an existing one's record up to date; picks aside.
+
+    :func:`init_project` is ``project init``: this, plus recording the run's
+    explicit pick on a new project.
     """
     path = path.expanduser().resolve()
     reserved = _reserved(path)
@@ -798,7 +847,10 @@ def _reserved(folder: Path) -> str | None:
 
     The current home and ``~/.untaped`` are both untaped's own. A checkout may
     hold a moved home (``UNTAPED_HOME=<checkout>/.untaped-home``) and stay a
-    project; only ``~/.untaped``'s parents are refused for holding it.
+    project; only ``~/.untaped``'s parents are refused for holding it. A
+    folder directly in a plugin's own place (``plugins/<plugin>/<place>/NAME``,
+    core's aside) may be a project, and nothing deeper: workspace makes each
+    workspace a project in its ``checkouts`` place.
     """
     home = Path.home().resolve()
     if folder == home:
@@ -809,8 +861,11 @@ def _reserved(folder: Path) -> str | None:
     for untaped in dict.fromkeys((current, default)):
         if folder == untaped:
             return f"it is {shown_path(untaped)}, untaped's own folder"
-        if folder.is_relative_to(untaped / PLUGINS_FOLDER):
-            return f"{shown_path(untaped / PLUGINS_FOLDER)} is untaped's own"
+        plugins = untaped / PLUGINS_FOLDER
+        if folder.is_relative_to(plugins) and (
+            len(parts := folder.relative_to(plugins).parts) != 3 or parts[0] == CORE
+        ):
+            return f"{shown_path(plugins)} is untaped's own"
     if default.is_relative_to(folder):
         return f"it holds {shown_path(default)}, untaped's own folder"
     return None
@@ -826,6 +881,124 @@ def _project_below(path: Path) -> Path | None:
     return None
 
 
+def core_files(root: Path) -> tuple[list[str], list[str]]:
+    """What ``remove`` would delete in ``root``'s ``.untaped/``, and what it keeps there."""
+    folder = root / DIRECTORY
+    try:
+        names = sorted(entry.name for entry in folder.iterdir())
+    except OSError:
+        return [], []
+    deletes, keeps = [], []
+    for name in names:
+        path = folder / name
+        core_file = name in _CORE_FILES or name in CORE_LOCKS or name == ".gitignore"
+        if name == PLUGINS_FOLDER and path.is_dir() and not path.is_symlink():
+            deletes.append(f"{name}/")
+        elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):
+            deletes.append(name)
+        else:
+            keeps.append(name)
+    return deletes, keeps
+
+
+def delete_core_files(root: Path) -> list[str]:
+    """Delete core's files in ``root/.untaped``, then empty folders; what stays, by name."""
+    folder = root / DIRECTORY
+    deletes, _ = core_files(root)
+    marker = folder / MARKER
+    for name in deletes:
+        path = folder / name.rstrip("/")
+        if path == marker:
+            continue
+        if name.endswith("/"):  # core's plugins/ folder, checked a real folder above
+            shutil.rmtree(path)
+        else:
+            with suppress(FileNotFoundError):
+                path.unlink()
+    with suppress(FileNotFoundError):
+        marker.unlink()  # last: until here, the folder is still the project
+    with suppress(OSError):
+        folder.rmdir()  # only when empty
+    with suppress(OSError):
+        root.rmdir()
+    if not root.exists():
+        return []
+    return [*core_entries(folder), *(name for name in core_entries(root) if name != DIRECTORY)]
+
+
+def core_entries(folder: Path) -> list[str]:
+    try:
+        return sorted(entry.name for entry in folder.iterdir())
+    except OSError:
+        return []
+
+
+def _untouched(folder: Path) -> bool:
+    try:
+        text = (folder / ".gitignore").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return text == GITIGNORE_TEXT
+
+
+def holds_left(holder: RefHolder) -> int:
+    file = reference_file(holder)
+    if not file.exists():
+        return 0
+    ref = read_reference(file)
+    return sum(1 for target in ref.targets if target.item is not None)
+
+
+#: Core's own files in ``.untaped/`` that removal deletes (``.gitignore`` only when untouched).
+_CORE_FILES = (MARKER,)
+
+
+@experimental
+@dataclass(frozen=True)
+class ProjectRemoval:
+    """What :func:`remove_project` did.
+
+    ``held`` counts the items the project still holds: when it is not zero,
+    nothing was removed. Otherwise ``kept`` names what stays in the folder
+    (empty when the folder went too).
+    """
+
+    held: int = 0
+    kept: tuple[str, ...] = ()
+
+
+@experimental
+def remove_project(project: Project) -> ProjectRemoval:
+    """Delete what core wrote in ``project`` and forget it, once it holds nothing.
+
+    What ``untaped project remove`` ends with, for a plugin that let go of its
+    own holds (``project.release(STORE)``) and made the project itself:
+    ``project.json``, ``plugins/`` (every plugin's project files), core's lock
+    file and an untouched ``.gitignore`` go, then the home's record;
+    ``config.yml`` and people's files stay, and so does the folder unless
+    nothing else is in it. While the project still holds items (another
+    plugin's, say) nothing is removed and the result says how many. The lock
+    file goes once the caller's outermost :meth:`Project.locked` ends.
+    """
+    with project.locked():
+        here = writing(project)[0]
+        holder = holder_of(here)
+        left = holds_left(holder)
+        if left:
+            return ProjectRemoval(held=left)
+        try:
+            kept = delete_core_files(here.root)
+            with locked(), suppress(FileNotFoundError):
+                reference_file(holder).unlink()
+        except OSError as exc:
+            raise ConfigError(
+                f"could not remove project {here.name}: {exc.strerror or exc}"
+            ) from exc
+        _forget(here.root)
+        unlink_lock_file(holder_lock_file(holder))
+    return ProjectRemoval(kept=tuple(kept))
+
+
 def _forget(root: Path | None = None) -> None:
     """Drop what discovery remembers: for ``root``, or all (``untaped.sdk.testing.plugin``)."""
     with _SEEN_GUARD:
@@ -835,4 +1008,15 @@ def _forget(root: Path | None = None) -> None:
             _SEEN.pop(str(root), None)
 
 
-__all__ = ["Project", "checkout_root", "nearest_pyproject", "project_at"]
+__all__ = [
+    "Initialized",
+    "Project",
+    "ProjectRemoval",
+    "checkout_root",
+    "current_project",
+    "init_project",
+    "known_projects",
+    "nearest_pyproject",
+    "project_at",
+    "remove_project",
+]

@@ -79,7 +79,7 @@ _ROWS: list[tuple[str, Record, list[str]]] = [
     (
         "workspace.remove_outcome",
         RemoveOutcome(**_REPO, action="removed"),
-        ["workspace", "repo", "action", "detail", "freed_bytes", "target_path"],
+        ["workspace", "repo", "action", "detail", "target_path"],
     ),
     (
         "workspace.resolve_outcome",

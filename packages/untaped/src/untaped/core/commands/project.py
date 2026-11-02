@@ -18,10 +18,7 @@ from typing import TYPE_CHECKING
 from pydantic import Field
 
 from untaped.core.commands.records import ProjectOutcome, RecordedProject
-from untaped.core.profile.repository import record_project_pick
 from untaped.core.settings import CoreSettings
-from untaped.runtime.config_file import read_config_dict
-from untaped.runtime.profile_resolver import check_defined, explicit_pick, named_profiles
 from untaped.sdk._confirm import Confirm
 from untaped.sdk._keys import key
 from untaped.sdk._output import Output
@@ -31,9 +28,10 @@ from untaped.sdk.fields import Positional
 from untaped.sdk.marks import experimental
 from untaped.sdk.plugin import Command, Group
 from untaped.sdk.projects import (
+    Initialized,
     Project,
     current_project,
-    init,
+    init_project,
     project_at,
     project_references,
     writing,
@@ -78,15 +76,16 @@ class Init(Command[CoreSettings]):
     output: Output[ProjectOutcome]
 
     def run(self) -> Iterator[ProjectOutcome]:
-        pick = explicit_pick()
-        check_defined(pick, named_profiles(read_config_dict()))
-        done = init(self.path if self.path is not None else Path.cwd(), new_id=self.new_id)
+        done: Initialized = init_project(
+            self.path if self.path is not None else Path.cwd(), new_id=self.new_id
+        )
         if done.action == "unchanged":
             self.ctx.diag.info(done.detail)
         else:
             self.ctx.diag.success(done.detail)
-        if done.action == "created" and record_project_pick(done.project.root, pick):
-            self.ctx.diag.info(f"it picks profile {','.join(pick)} (its .untaped/config.yml)")
+        if done.picked:
+            picked = ",".join(done.picked)
+            self.ctx.diag.info(f"it picks profile {picked} (its .untaped/config.yml)")
         yield ProjectOutcome(
             name=done.project.name,
             path=str(done.project.root),
@@ -320,7 +319,8 @@ class Prune(Command[CoreSettings]):
                     continue
                 stack.enter_context(Project(id=ref.holder.name, root=ref.anchor or Path()).locked())
                 try:
-                    removals.append(plan_removal(ref, force=self.force))
+                    earlier = [removal.holder for removal in removals]
+                    removals.append(plan_removal(ref, force=self.force, leaving=earlier))
                 except UntapedError as exc:  # back, or out of reach, since it was listed
                     if self.project is not None:
                         raise

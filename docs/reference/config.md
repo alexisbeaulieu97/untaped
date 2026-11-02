@@ -152,19 +152,10 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `workspace.workspaces_dir` | path (optional) | unset | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Parent directory of every workspace (`<workspaces_dir>/NAME`); it belongs to one untaped home, which holds its workspaces' locks. An absolute path; unset: `plugins/workspace/checkouts/` under the home. Experimental: may change in a minor release. |
+| `workspace.workspaces_dir` | path (optional) | unset | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Where `workspace create NAME` makes its project (`<workspaces_dir>/NAME`); a workspace added to another project stays where that project is. An absolute path; unset: `plugins/workspace/checkouts/` under the home. Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. 1 or more. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
 | `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. Experimental: may change in a minor release. |
-
-## `workspace` state
-
-Kept in `~/.untaped/plugins/workspace/state.yml`.
-
-| Key | Type | Description |
-|---|---|---|
-| `workspace.workspaces` | list | An active workspace as the plugin's state keeps it, one row per name. |
-| `workspace.archived` | list | An archived workspace: its worktrees are gone, its record stays. |
 
 ## Renamed settings
 

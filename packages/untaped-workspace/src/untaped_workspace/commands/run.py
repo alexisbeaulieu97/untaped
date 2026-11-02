@@ -21,10 +21,13 @@ from untaped.sdk import (
     Short,
     Stdin,
     UsageError,
+    q,
 )
+from untaped_workspace.application.archive import resume_hint
 from untaped_workspace.application.run import RunInRepos, RunTarget
 from untaped_workspace.commands._workspace import WORKERS, WorkspaceCommand
 from untaped_workspace.domain.models import RepoSpec
+from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import SubprocessRunner
 from untaped_workspace.records import RepoOutcome, RepoStatus, RunOutcome
 
@@ -123,8 +126,14 @@ class Run(WorkspaceCommand):
         _check_positionals(name, command)
         script = _piped_script(self.stdin) if command == "-" else None  # before --stdin's rows
         record = self.locate(name)
+        if record.archived:
+            raise WorkspaceError(
+                f"workspace {q(record.name)} is archived: it has no worktrees",
+                category="conflict",
+                hint=resume_hint(record),
+            )
         specs = self._selected(record.repos, workspace=record.name)
-        root = self.workspace_dir(record.name)
+        root = record.root
         targets = [RunTarget(record.name, spec, root / spec.dir) for spec in specs]
         if not targets:
             self.ctx.diag.warning("no repos to run in (read-only repos need --include-read-only)")
