@@ -30,6 +30,7 @@ from untaped.sdk._run import (
     settings_of,
 )
 from untaped.sdk._run_blocks import Limit, Parallel, Refresh
+from untaped.sdk._settings_plan import SettingsPlan, SettingsWritten
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk._terminal import Terminal
 from untaped.sdk._value_types import (
@@ -167,6 +168,8 @@ __all__ = [  # noqa: RUF022 — grouped by topic; order pinned by test_all_is_th
     "plugin_of",
     "http_of",
     "PluginHandle",
+    "SettingsPlan",
+    "SettingsWritten",
     # composition
     "InstalledPlugin",
     "installed_plugins",

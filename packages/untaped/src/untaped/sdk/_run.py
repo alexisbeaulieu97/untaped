@@ -31,6 +31,7 @@ from untaped.sdk._keys import SettingKey
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from untaped.sdk._settings_plan import SettingsPlan
     from untaped.sdk._terminal import Terminal
     from untaped.sdk._theme import ThemeSpec
     from untaped.sdk._ui import Ui
@@ -97,6 +98,15 @@ def _unspelled(spelled: SpelledCommand) -> str:
 def _no_remover(plugin: str, rows: str, key: str) -> str | None:
     """No command removes a row in a run that composed no declaration."""
     return None
+
+
+type SettingsPlanner = Callable[[str, Mapping[tuple[str, ...], object]], SettingsPlan]
+"""Core's planner of a plugin's writes to its own section: the section, each path's new value."""
+
+
+def _no_planner(section: str, changes: Mapping[tuple[str, ...], object]) -> SettingsPlan:
+    """A run the runtime didn't start has no settings writer."""
+    raise NoRunError("this run writes no settings: the runtime's start_run gives one a writer")
 
 
 #: The attribute core's section class of a plugin's settings model holds that model under.
@@ -302,6 +312,8 @@ class Run:
     #: sink of its ``diag`` follows: a child run sharing its parent's output
     #: holds its parent's cell, so the two never disagree.
     policy_cell: PolicyCell = field(default_factory=PolicyCell, repr=False)
+    #: Core's writer of a plugin's own settings (:meth:`PluginHandle.plan_settings`).
+    plan_settings: SettingsPlanner = field(default=_no_planner, repr=False)
 
     @property
     def home(self) -> Path:
@@ -506,6 +518,45 @@ class PluginHandle:
         from untaped.sdk.projects import plugin_committed_path  # noqa: PLC0415 - projects' cost
 
         return plugin_committed_path(self.name, name, root=Path() if root is None else root)
+
+    def plan_settings(self, changes: Mapping[SettingKey, object]) -> SettingsPlan:
+        """Plan writes to this plugin's own settings: checked now, written by ``write()``.
+
+        Each key is a ``key(Model)`` of this plugin's settings model, an entry
+        of a map included (``key(Model).sources[name]``); its value is the new
+        value (JSON data or a model, whose unset fields stay unwritten), or
+        ``None`` to unset the key or entry. The changes are validated together
+        against ``config.yml`` now, and nothing is written. They land where
+        ``config set`` writes (the profile ``--profile`` names, else the
+        base), except a ``HomeOnly`` key, which always goes to the base.
+
+        Raises :class:`TypeError` for a key that isn't one of this plugin's,
+        and the config error ``config set`` gives for a value it refuses.
+        Experimental (marked in ``untaped.sdk._settings_plan``, so a run pays
+        for no marks).
+        """
+        run = current_run()
+        paths: dict[tuple[str, ...], object] = {}
+        for setting, value in changes.items():
+            paths[self._own_path(run, setting)] = value
+        return run.plan_settings(self.name, paths)
+
+    def _own_path(self, run: Run, setting: object) -> tuple[str, ...]:
+        """``setting``'s path in this plugin's section; :class:`TypeError` for anyone else's."""
+        if not isinstance(setting, SettingKey):
+            raise TypeError(f"plan_settings takes key(Model) keys, not {setting!r}")
+        try:
+            owner = run.composition.owner_of_settings(SettingKey.model_of(setting))
+        except LookupError:
+            owner = None
+        if owner != self.name:
+            raise TypeError(
+                f"{setting!r} is not a setting of {self.name}: a plugin writes only its own"
+            )
+        path = SettingKey.path_of(setting)
+        if not path:
+            raise TypeError(f"{setting!r} names the whole section: name one setting in it")
+        return path
 
 
 def plugin_of(model: type[BaseModel]) -> PluginHandle:
