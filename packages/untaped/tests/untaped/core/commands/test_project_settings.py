@@ -7,6 +7,7 @@ The layer itself (order, refusals, trust) is tested in
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -306,3 +307,26 @@ def test_a_project_write_is_not_hidden_by_the_projects_own_pick(
     hidden = _cli("config", "set", "untaped.http.timeout_seconds", "61", "--project")
     assert hidden.exit_code == 0, hidden.output
     assert "from profile staging, picked over the project's file" in hidden.stderr
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX permissions")
+def test_config_set_project_refuses_a_folder_others_can_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _project(tmp_path, monkeypatch)
+    (root / ".untaped").chmod(0o777)
+    result = _cli("config", "set", "untaped.http.timeout_seconds", "90", "--project")
+    assert result.exit_code == 4, result.output
+    assert "others can write" in result.stderr
+    assert not (root / ".untaped" / "config.yml").exists()
+
+
+def test_doctor_leaves_a_bad_home_value_to_the_home_s_rows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_config: Path
+) -> None:
+    _isolated_config.write_text(HOME + "untaped: {ui: {theme: nosuch}}\n", encoding="utf-8")
+    get_settings.cache_clear()
+    _project(tmp_path, monkeypatch, "untaped: {ui: {border: none}}\n")
+    rows = _doctor()
+    assert rows[0]["status"] == "pass", rows[0]
+    assert any(row["status"] == "fail" and "nosuch" in str(row["detail"]) for row in rows[1:])

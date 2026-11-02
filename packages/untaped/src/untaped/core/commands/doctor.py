@@ -868,27 +868,43 @@ def _project_config_row() -> dict[str, object] | None:
 def _check_project_values(layer: FolderLayer) -> None:
     """Refuse (:class:`ConfigError`) what the project's file may not set or sets wrong.
 
-    Each section it sets is validated as a run inside the project with no
-    pick of its own reads it: the base, the project's picks, its values.
+    Each section it sets is checked as a run inside the project reads it
+    (the base, the project's picks, its values, variables), and blamed on
+    the file only when the same check passes without its values: a bad
+    value in the home is the config row's to report.
     """
-    from pydantic import ValidationError  # noqa: PLC0415 - only for a project
+    from dataclasses import replace  # noqa: PLC0415 - only for a project
 
-    from untaped.runtime.settings import (  # noqa: PLC0415
-        get_settings_model,
-        validate_settings_section,
-    )
-    from untaped.sdk.errors import first_validation_error  # noqa: PLC0415
+    from untaped.runtime.settings import profile_section_models  # noqa: PLC0415
 
-    effective = active_settings_layout().project_effective(read_config_dict(), layer)
-    model = get_settings_model()
-    for section in sorted(set(layer.sections) & set(model.model_fields)):
-        try:
-            validate_settings_section(effective, section, model)
-        except ValidationError as exc:
-            raise ConfigError(
-                f"invalid config section {section!r} in {shown_path(layer.file)}: "
-                f"{first_validation_error(exc)}"
-            ) from exc
+    try:
+        raw = read_config_dict()
+    except ConfigError, OSError:
+        return  # the home's own row reports it
+    layout = active_settings_layout()
+    with_file = layout.project_effective(raw, layer)  # raises for what the file may not set
+    without = layout.project_effective(raw, replace(layer, sections={}))
+    models = profile_section_models()
+    for section in sorted(set(layer.sections) & set(models)):
+        parts = (None,) if section != NAME else tuple(CoreSettings.model_fields)
+        for part in parts:
+            why = _section_error(with_file, section, models[section], part)
+            if why is not None and _section_error(without, section, models[section], part) is None:
+                raise ConfigError(why)
+
+
+def _section_error(
+    effective: Mapping[str, Any], section: str, model: type[BaseModel], part: str | None
+) -> str | None:
+    """Why ``section`` (or one ``part`` of core's) of ``effective`` fails a run's check."""
+    node = effective.get(section)
+    if part is not None and isinstance(node, dict):
+        node = None if node.get(part) is None else {part: node[part]}
+    try:
+        check_settings_field(section, node, model=model, part=part)
+    except ConfigError as exc:
+        return str(exc)
+    return None
 
 
 def _profile_row(settings_error: str | None) -> dict[str, object]:

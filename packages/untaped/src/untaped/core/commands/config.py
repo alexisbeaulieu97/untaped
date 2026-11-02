@@ -253,11 +253,12 @@ def _refuse_ignored(root: Path) -> None:
             f"runs here would ignore {shown_path(file)}: {reason}",
             hint=f"make the folder this home's project first: `untaped project init {root}`",
         )
-    why = untrusted(file) if file.exists() else None
+    why = untrusted(file)
     if why is not None:
+        paths = " ".join(str(path) for path in (file, file.parent) if path.exists())
         raise ConfigError(
             f"runs here would ignore {shown_path(file)}: {why}",
-            hint=f"make it yours and writable by you alone: `chmod go-w {file} {file.parent}`",
+            hint=f"make it yours and writable by you alone: `chmod go-w {paths}`",
         )
 
 

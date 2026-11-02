@@ -154,8 +154,9 @@ def untrusted(path: Path) -> str | None:
 
     A file or folder that is someone else's, or that anyone but you can
     write, is not read: whoever can write it would choose your settings.
-    Group write is yours when the group is your private one. Systems without
-    file owners (Windows) read every project's file.
+    Group write is yours when the group is your private one. A file not
+    written yet is judged by its folder. Systems without file owners
+    (Windows) read every project's file.
     """
     getuid = getattr(os, "getuid", None)
     if getuid is None:
@@ -164,6 +165,10 @@ def untrusted(path: Path) -> str | None:
     for each in (path, path.parent):
         try:
             info = each.stat()
+        except FileNotFoundError:
+            if each == path:
+                continue  # not written yet: its folder decides
+            return f"{shown_path(each)} can't be read (it doesn't exist)"
         except OSError as exc:
             return f"{shown_path(each)} can't be read ({exc.strerror or exc})"
         if info.st_uid != uid:
