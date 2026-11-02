@@ -232,10 +232,11 @@ def test_a_row_whose_url_is_not_its_repo_on_githubs_host_is_refused(
     # S17: a forged record never becomes a workspace repo.
     configure(default_org="acme", **({"base_url": base_url} if base_url else {}))
 
-    with pytest.raises(UsageError, match="acme/api") as caught:
+    with pytest.raises(UsageError, match=r"^github\.repo acme/api: its URL") as caught:
         piped(record)
 
     assert caught.value.exit_code == ExitCode.USAGE
+    assert caught.value.hint == "pipe rows from the profile whose github.server.url lists this repo"
 
 
 def test_an_ssh_url_on_another_host_is_refused_under_ssh() -> None:
