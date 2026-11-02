@@ -353,10 +353,10 @@ def test_the_preview_prints_through_confirm_and_dry_run_writes_nothing(
 def test_a_dry_run_block_prints_the_preview_and_writes_nothing(_isolated_config: Path) -> None:
     before = _isolated_config.read_bytes()
 
-    result = _untaped({SHELF.greeting: "hi"}, "shelf", "add", "--dry-run")
+    result = _untaped({SHELF.greeting: "café ✓"}, "shelf", "add", "--dry-run")
 
     assert result.exit_code == 0, result.output
-    assert 'set shelf.greeting to "hi" in profile default' in result.stderr
+    assert 'set shelf.greeting to "café ✓" in profile default' in result.stderr
     assert _isolated_config.read_bytes() == before
 
 
