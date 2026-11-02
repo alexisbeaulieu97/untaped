@@ -17,7 +17,14 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import HolderView, LetGo, ProjectRemoval, Refused, ReleaseAsk, known_projects
+from untaped.sdk import (
+    HolderView,
+    LetGo,
+    ProjectRemoval,
+    Refused,
+    ReleaseAsk,
+    known_projects,
+)
 from untaped.sdk.testing import install, make_project, plan_release
 from untaped.sdk.testing.git import GitRemote
 from untaped_workspace.application.remove import RemoveWorkspace
@@ -139,7 +146,7 @@ def test_remove_previews_every_workspace_of_the_name(
     assert folders == {str(workspace_env / "J-1"), str(other)}
 
 
-def test_a_copy_with_its_own_id_still_runs_no_git(
+def test_a_copy_with_its_own_id_runs_no_git_until_its_worktrees_go(
     make_upstream: Callable[..., GitRemote], workspace_env: Path, tmp_path: Path
 ) -> None:
     assert run(["create", "J-1", "--repo", make_upstream("api").url]).exit == 0
@@ -147,7 +154,13 @@ def test_a_copy_with_its_own_id_still_runs_no_git(
     ran = install(WorkspacePlugin).cli(["project", "init", str(copy), "--new-id"])
     assert ran.exit == 0, err(ran)
     status = run(["status", str(copy)])
-    assert "repos in this copy belong to another project" in err(status)
+    assert "repos in this copy belong to another project: delete api/ here" in err(status)
+    shutil.rmtree(copy / "api")  # as the refusal says, then add: a workspace of its own
+    added = run(["add", str(copy), "--repo", make_upstream("web").url])
+    assert added.exit == 0, err(added)
+    record = ProjectWorkspaceStore().find(str(copy))
+    assert [spec.dir for spec in record.repos] == ["web"]
+    assert record.meta is not None and record.meta.created_by == "user"
 
 
 def test_a_half_finished_removal_leaves_a_workspace_remove_can_finish(
