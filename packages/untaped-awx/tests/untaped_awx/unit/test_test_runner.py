@@ -12,6 +12,12 @@ import pytest
 from untaped.runtime.run import entered, start_run
 from untaped.runtime.run_output import Diagnostics, failure_exit_code
 from untaped.sdk import ConfigError, HttpTransportError
+from untaped_awx.application.suites.collaborators import (
+    SuiteLaunching,
+    SuiteOptions,
+    SuiteReading,
+)
+from untaped_awx.application.suites.evidence import LOG_TAIL_LINES
 from untaped_awx.application.suites.ports import (
     FkPrefetcher,
     LaunchCheck,
@@ -19,7 +25,7 @@ from untaped_awx.application.suites.ports import (
     Watcher,
 )
 from untaped_awx.application.suites.resolver import ResolveCasePayload
-from untaped_awx.application.suites.runner import LOG_TAIL_LINES, RunTestSuite
+from untaped_awx.application.suites.runner import RunTestSuite
 from untaped_awx.domain import Job, JobEvent
 from untaped_awx.domain.suites.case_failure import CaseFailure, FailureEvidence
 from untaped_awx.domain.suites.results import Baseline, SuiteRunOutcome
@@ -28,6 +34,20 @@ from untaped_awx.domain.suites.systems import AWX
 from untaped_awx.errors import ActionResponseError, LaunchPromptError
 from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
+
+
+def _suite_runner(**given: Any) -> RunTestSuite:
+    """A runner of the collaborators ``given`` by name, each put in its group."""
+    groups = [
+        group(**{name: given.pop(name) for name in fields if name in given})
+        for group, fields in (
+            (SuiteLaunching, SuiteLaunching.__dataclass_fields__),
+            (SuiteReading, SuiteReading.__dataclass_fields__),
+            (SuiteOptions, SuiteOptions.__dataclass_fields__),
+        )
+    ]
+    assert not given, f"no group takes {sorted(given)}"
+    return RunTestSuite(*groups)
 
 
 def _ignore(_message: str) -> None:
@@ -231,7 +251,7 @@ def _make_runner(
     )
     jt_scope = {"organization": default_org} if default_org is not None else None
     log_reader = log_reader or StubLogReader([])
-    return RunTestSuite(
+    return _suite_runner(
         resolver=resolver,
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, watcher),
@@ -280,7 +300,7 @@ def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
 
     fk = StubFk()
     launcher = StubLauncher({"__default__": {"job": _job(id_=7, status="running")}})
-    runner = RunTestSuite(
+    runner = _suite_runner(
         resolver=ResolveCasePayload(fk, catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, BlockingWatcher()),
@@ -760,7 +780,7 @@ def test_a_log_fetch_failure_counts_toward_the_exit_code() -> None:
 def test_evidence_is_skipped_when_not_wanted_but_the_failure_is_attributed() -> None:
     reader = StubLogReader(["boom"])
     events = StubEventReader([_event("runner_on_unreachable", failed=True, host="db1", msg="x")])
-    runner = RunTestSuite(
+    runner = _suite_runner(
         resolver=ResolveCasePayload(StubFk(), catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, StubLauncher({})),
         watcher=cast(Watcher, StubWatcher(default=_job(status="failed"))),
@@ -1383,7 +1403,7 @@ def _regression_runner(
         id_: final if isinstance(final, Job) else _job(id_=id_, status=final)
         for id_, final in finals.items()
     }
-    runner = RunTestSuite(
+    runner = _suite_runner(
         resolver=ResolveCasePayload(fk or StubFk(), catalog=AwxResourceCatalog(), warn=_ignore),
         launcher=cast(Launcher, launcher),
         watcher=cast(Watcher, watcher or StubWatcher(by_id=by_id)),
