@@ -183,9 +183,9 @@ that prints records declares `Output[R]`, which gives it `--format`.
 
 ## Output records
 
-- The record is for scripts and agents; the table is for a human scanning
-  rows. Keep every field on the record and mark the table's default columns
-  on its fields, `name: Annotated[str, Column]`: the identifying field, what
+- The record is for anything that parses it; the table is for scanning rows by
+  eye. Keep every field on the record and mark the table's default columns on
+  its fields, `name: Annotated[str, Column]`: the identifying field, what
   changed or its state, and what the reader acts on next. Leave out fields
   that repeat the command's own arguments or are empty on most rows.
 - The columns come in the order json shows the fields. An outcome's `action`
