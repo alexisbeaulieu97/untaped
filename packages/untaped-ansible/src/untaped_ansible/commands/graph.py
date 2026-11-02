@@ -37,13 +37,13 @@ from untaped.sdk import (
     run_hint,
     tree_text,
 )
+from untaped_ansible.application.graph import GraphDirection
 from untaped_ansible.commands._graph import (
     ALL_REFS,
     LIVE,
     TARGET,
     TARGET_REPO,
     GraphCommand,
-    GraphDirection,
     GraphEnv,
     check_all_refs,
     parse_depth,
