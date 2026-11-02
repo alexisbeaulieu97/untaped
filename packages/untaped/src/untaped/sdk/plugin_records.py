@@ -22,8 +22,8 @@ from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
     candidate_distribution,
-    declared_distributions,
 )
+from untaped.runtime.requirements import declared_distributions
 from untaped.sdk.fields import Column, Status
 from untaped.sdk.records import AbsolutePath, Record
 

@@ -36,7 +36,6 @@ from typing import TYPE_CHECKING
 
 from packaging.requirements import Requirement
 from packaging.utils import canonicalize_name
-from packaging.version import InvalidVersion, Version
 
 from untaped.core.commands.records import ScaffoldOutcome
 from untaped.runtime.plugin_package import candidate_package
@@ -44,8 +43,8 @@ from untaped.runtime.registry import (
     CompositionResult,
     PluginCandidate,
     check_plugin_name,
-    range_text,
 )
+from untaped.runtime.requirements import floor_for, range_text
 from untaped.sdk.errors import ConfigError, ErrorCategory, System, UntapedError, UsageError
 from untaped.sdk.words import not_found
 
@@ -165,7 +164,7 @@ class _Scaffold:
 
     def _pyproject(self) -> str:
         core = _core_metadata()
-        owner_range = _range(self.owner.distribution_version)
+        owner_floor = floor_for(self.owner.distribution_version)
         owner_dist = canonicalize_name(self.owner.distribution)
         return (
             dedent(
@@ -179,14 +178,14 @@ class _Scaffold:
                 dependencies = [
                     "untaped{core.untaped}",
                     "{core.pydantic}",
-                    "{owner_dist}{owner_range}",
+                    "{owner_dist}{owner_floor}",
                 ]
 
                 [project.entry-points."untaped.plugins"]
                 {_toml_key(self.name)} = "{self.package}.plugin:{self.camel}"
 
                 [dependency-groups]
-                dev = ["pytest>=9", "untaped[lint]{core.lint}"]
+                dev = ["pytest>=9", "untaped[lint]{core.untaped}"]
 
                 [build-system]
                 """
@@ -540,15 +539,14 @@ def _home(name: str, value: object) -> str | None:
 
 
 class _Core:
-    def __init__(self, untaped: str, lint: str, python: str, pydantic: str) -> None:
+    def __init__(self, untaped: str, python: str, pydantic: str) -> None:
         self.untaped = untaped
-        self.lint = lint
         self.python = python
         self.pydantic = pydantic
 
 
 def _core_metadata() -> _Core:
-    """This untaped's major range, its Python requirement and its pydantic requirement."""
+    """This untaped's floor, its Python requirement and its pydantic requirement."""
     found = metadata("untaped")
     requirements = [Requirement(line) for line in found.get_all("Requires-Dist") or []]
     pydantic = next(
@@ -556,28 +554,7 @@ def _core_metadata() -> _Core:
         "pydantic>=2,<3",
     )
     version = found["Version"]
-    return _Core(_range(version), _range(version, minor=True), found["Requires-Python"], pydantic)
-
-
-def _range(version: str, *, minor: bool = False) -> str:
-    """The installed version's compatible range; ``""`` when the version is unknown.
-
-    ``>=M,<M+1``, or ``>=0.m,<0.m+1`` before 1.0, where a minor may break; a
-    pre-release is its own lower bound (``>=12.0.0a1,<13``), since ``>=12``
-    leaves it out. ``minor`` floors it at this minor (``>=12.1,<13``), for an
-    extra an earlier minor didn't have.
-    """
-    try:
-        parsed = Version(version)
-    except InvalidVersion:
-        return ""
-    if parsed.major == 0:
-        low, high = f"0.{parsed.minor}", f"0.{parsed.minor + 1}"
-    else:
-        low, high = str(parsed.major), str(parsed.major + 1)
-        if minor:
-            low = f"{parsed.major}.{parsed.minor}"
-    return f">={parsed.public if parsed.is_prerelease else low},<{high}"
+    return _Core(floor_for(version), found["Requires-Python"], pydantic)
 
 
 def _toml_key(name: str) -> str:

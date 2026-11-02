@@ -41,7 +41,7 @@ name = "untaped-acme"
 version = "0.1.0"
 description = "Acme plugin for untaped."
 requires-python = ">=3.14.1"
-dependencies = ["pydantic>=2.13.3,<3", "untaped>=12,<13"]
+dependencies = ["pydantic>=2.13.3,<3", "untaped>=12.0"]
 
 [project.entry-points."untaped.plugins"]
 acme = "untaped_acme.plugin:Acme"
@@ -68,14 +68,28 @@ The entry point names the plugin class in a leaf module
 `PluginSpec` or a function returning a class included, is quarantined
 (`not-a-plugin-class`) and never called.
 
-The plugin's `untaped` requirement (`Requires-Dist`) is the only
-compatibility check: declare it (`untaped>=12,<13`, raising the floor to the
-minor that added an API you use, for example `untaped>=12.1,<13`); without
-one, nothing is checked. That range excludes pre-releases such as
-`12.0.0a0`; to run on a pre-release core, declare `untaped>=12.0.0a0,<13`. A
-running `untaped` outside that range quarantines the plugin. Installers
-normally enforce the range, so this shows up mainly after upgrading `untaped`
-past it. The [changelog](../CHANGELOG.md) says what each version added or broke.
+Requirements on `untaped` and on other plugins are floors: the minor that
+added what the plugin uses (`untaped>=12.1`, `untaped-git>=12.1`), never an
+upper limit or an exact pin. One stale plugin would otherwise hold back every
+install that has it, and two plugins whose ranges don't overlap could not be
+installed together. A floor excludes pre-releases such as `12.0.0a0`; to run on
+one, declare `untaped>=12.0.0a0`. `untaped lint` fails an upper limit or a pin
+(`lint.requirement-floor`), except a pin between packages released together
+from one uv workspace, as untaped's own are.
+
+Before importing a plugin, `untaped` checks what its distribution requires
+against what is installed: a requirement on `untaped` or another plugin by
+version, any other by presence. One that isn't met disables that plugin alone
+(`unmet-requirement`) with the fix, and so does requiring a plugin that is
+disabled. Running one of its commands exits 4 with the reason. A floor that is
+too low shows up in your own CI if one job installs the lowest versions you
+declare and runs your tests and `untaped lint`:
+
+```bash
+uv sync --resolution lowest-direct && uv run pytest && uv run untaped lint
+```
+
+The [changelog](../CHANGELOG.md) says what each version added or broke.
 
 ## Settings and the plugin class
 
@@ -254,26 +268,25 @@ class (`plugin.py`) filling the owner's contract, the provider
 since a stub would count as filling them), tests mirroring the package (lint's
 `assert_clean` and `assert_surface` beside the plugin, `assert_fills` with a
 list of samples to fill in beside the provider) and a `pyproject.toml` with
-the ranges below (`untaped[lint]` in its `dev` group). It never writes into an
+the floors below (`untaped[lint]` in its `dev` group). It never writes into an
 existing directory.
 
-A plugin that fills a contract declares, besides its `untaped` range, the owner
-in its dependencies with a range of the owner's versions, since the provider
+A plugin that fills a contract declares, besides its `untaped` floor, the owner
+in its dependencies with a floor of the owner's version, since the provider
 subclasses the owner's contract and can't load without it:
 
 ```toml
 [project]
-dependencies = ["untaped>=12,<13", "pydantic>=2.13.3,<3", "untaped-workspace>=12,<13"]
+dependencies = ["untaped>=12.0", "pydantic>=2.13.3,<3", "untaped-workspace>=12.0"]
 
 [project.entry-points."untaped.plugins"]
 gitlab = "untaped_gitlab.plugin:Gitlab"
 ```
 
-`untaped lint` fails a plugin with no `untaped` range, or one that fills a
-contract of a plugin it doesn't require with a range. An installed owner outside the
-range quarantines its fills of that owner alone (`owner-out-of-range`). The
-provider imports only the SDK (`untaped.sdk` and its groups) and the owner's
-`api` module.
+`untaped lint` fails a plugin that fills a contract of a plugin it doesn't
+require. An installed owner below the floor disables the provider
+(`unmet-requirement`), and so does a disabled owner. The provider imports only
+the SDK (`untaped.sdk` and its groups) and the owner's `api` module.
 
 Fill the stubs, add samples, drop the scaffold's `lint.live` ignore once the
 methods return, then run the plugin's tests and `untaped lint` in its directory.

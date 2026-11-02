@@ -116,7 +116,7 @@ def _needs_arg(value: str) -> object:
         ),
         (
             make_candidate(make_plugin("raiser"), "d", error=RuntimeError("boom-text")),
-            "malformed-entry-point",
+            "import-failed",
             "",
             "boom-text",
         ),

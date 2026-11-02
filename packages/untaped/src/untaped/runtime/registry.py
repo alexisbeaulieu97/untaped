@@ -30,10 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypeGuard
 
 from cyclopts import App
-from packaging.markers import UndefinedComparison, UndefinedEnvironmentName
-from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
-from packaging.version import InvalidVersion
 from pydantic import BaseModel
 
 from untaped.runtime.declaration import (
@@ -42,6 +39,17 @@ from untaped.runtime.declaration import (
     PluginDecl,
     Problem,
     Quarantined,
+)
+from untaped.runtime.requirements import (
+    UNEVALUABLE,
+    Installed,
+    Malformed,
+    applies,
+    distribution_present,
+    is_plain,
+    parse_requirement,
+    plain_requirements,
+    unmet,
 )
 from untaped.runtime.section_models import PLUGIN_NAME_PATTERN, reserved_section_keys, section_model
 from untaped.runtime.settings import RESERVED_SECTIONS, plugins_root
@@ -57,6 +65,8 @@ from untaped.sdk.network.credentials import (
 from untaped.sdk.storage.cache import Filled
 
 if TYPE_CHECKING:
+    from packaging.requirements import Requirement
+
     from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.composition import PluginEntry
     from untaped.runtime.mount import Mount
@@ -144,6 +154,8 @@ VALID_REASONS = frozenset(
     {
         "duplicate-name",
         "malformed-entry-point",
+        "import-failed",
+        "unmet-requirement",
         "not-a-plugin-class",
         "bad-commands",
         "bad-metadata",
@@ -159,7 +171,9 @@ VALID_REASONS = frozenset(
 class QuarantineRecord:
     """Why a plugin was excluded.
 
-    ``name`` is the candidate's entry-point (plugin) name.
+    ``name`` is the candidate's entry-point (plugin) name. ``detail`` says
+    why, ending with ``fix`` when there is one: what to do about it, which a
+    command run under the plugin's name repeats.
     """
 
     name: str
@@ -167,6 +181,7 @@ class QuarantineRecord:
     entry_point: str
     reason: str
     detail: str
+    fix: str = ""
 
     def __post_init__(self) -> None:
         if self.reason not in VALID_REASONS:
@@ -229,11 +244,14 @@ class _Quarantine(Exception):
     :func:`compose` converts it to a :class:`QuarantineRecord`.
     """
 
-    def __init__(self, reason: str, detail: str, entry_point: str | None = None) -> None:
+    def __init__(
+        self, reason: str, detail: str, entry_point: str | None = None, *, fix: str = ""
+    ) -> None:
         super().__init__(f"{reason}: {detail}")
         self.reason = reason
         self.detail = detail
         self.entry_point = entry_point
+        self.fix = fix
         #: Whether the candidate is a plugin class, which the declaration remembers refused.
         self.plugin_class = False
 
@@ -248,89 +266,8 @@ class _Quarantine(Exception):
             entry_point=entry_point,
             reason=self.reason,
             detail=self.detail,
+            fix=self.fix,
         )
-
-
-def parse_requirement(requirement: object) -> Requirement | None:
-    """Parse one PEP 508 Requires-Dist string; ``None`` when malformed."""
-    if not isinstance(requirement, str):
-        return None
-    try:
-        return Requirement(requirement)
-    except InvalidRequirement:
-        return None
-
-
-#: What ``requirement_admits`` raises on an entry whose marker or version it cannot evaluate.
-UNEVALUABLE = (InvalidVersion, UndefinedComparison, UndefinedEnvironmentName, KeyError)
-
-
-def requirement_admits(requirement: Requirement, sdk_version: str) -> bool:
-    """Whether a parsed Requires-Dist entry admits ``sdk_version``.
-
-    An entry whose environment marker does not apply (e.g. an ``extra``
-    nobody requested) constrains nothing. A direct reference (PEP 508 URL)
-    is a pinned source, not a version range, so admission cannot be
-    disproved. Pre-releases of the running SDK are compared per PEP 440
-    (``6.1.0.dev3`` does not satisfy ``>=6.1.0``).
-    """
-    if requirement.marker is not None and not requirement.marker.evaluate({"extra": ""}):
-        return True
-    if requirement.url:
-        return True
-    return requirement.specifier.contains(sdk_version, prereleases=True)
-
-
-def plain_requirements(requires_dist: Sequence[str], distribution: str) -> list[Requirement]:
-    """The requirements on ``distribution`` a default install pulls in: no ``extra`` marker.
-
-    Another marker (``python_version``, ``sys_platform``) keeps a requirement plain.
-    """
-    wanted = canonicalize_name(distribution)
-    return [
-        parsed
-        for parsed in (parse_requirement(line) for line in requires_dist)
-        if parsed is not None
-        and canonicalize_name(parsed.name) == wanted
-        and (parsed.marker is None or not mentions_extra(str(parsed.marker)))
-    ]
-
-
-def declared_distributions(requirements: Sequence[str]) -> set[str]:
-    """Canonical names of the distributions ``requirements`` (its ``Requires-Dist``) declare.
-
-    That is what a default install pulls in: extra-guarded requirements are
-    left out; other markers (``python_version``, ``sys_platform``…) are
-    ignored; invalid strings are skipped.
-    """
-    names: set[str] = set()
-    for requirement in requirements:
-        parsed = parse_requirement(requirement)
-        if parsed is not None and (parsed.marker is None or not mentions_extra(str(parsed.marker))):
-            names.add(canonicalize_name(parsed.name))
-    return names
-
-
-def mentions_extra(marker: str) -> bool:
-    """Whether ``marker`` tests the ``extra`` variable (quoted values aside)."""
-    return re.search(r"\bextra\b", re.sub(r"\"[^\"]*\"|'[^']*'", "", marker)) is not None
-
-
-def admits(requirement: Requirement, version: str) -> bool:
-    """Whether ``requirement``'s range admits ``version`` (a direct reference always does)."""
-    if requirement.url:
-        return True
-    try:
-        return requirement.specifier.contains(version, prereleases=True)
-    except InvalidVersion:
-        return True
-
-
-def range_text(requirement: Requirement) -> str:
-    """``requirement``'s range as people write it, lower bound first: ``>=2,<3``."""
-    return ",".join(
-        sorted((str(each) for each in requirement.specifier), key=lambda each: each[0] != ">")
-    )
 
 
 def _running_sdk_version() -> str | None:
@@ -360,43 +297,137 @@ def _check_entry_point_name(candidate: PluginCandidate) -> None:
         ) from None
 
 
-def _check_requires_dist(candidate: PluginCandidate, state: _CompositionState) -> None:
-    untaped_requirements: list[tuple[str, Requirement]] = []
-    for requirement in candidate.requires_dist:
-        parsed = parse_requirement(requirement)
-        if parsed is None:
-            raise _Quarantine(
-                "bad-metadata",
-                f"malformed Requires-Dist entry {requirement!r} of distribution "
-                f"{candidate.distribution!r}",
-            )
-        if canonicalize_name(parsed.name) == _CORE_DISTRIBUTION:
-            untaped_requirements.append((str(requirement), parsed))
-    if not untaped_requirements:
+def _check_requirements(candidate: PluginCandidate, state: _CompositionState) -> None:
+    """Quarantine ``candidate`` when what its distribution requires isn't installed as asked.
+
+    Metadata only, before any import: a malformed or unevaluable entry is
+    ``bad-metadata``; a requirement the install doesn't meet is
+    ``unmet-requirement``, its detail ending with the fix.
+    """
+    if not candidate.requires_dist:
         return
-    sdk_version = state.sdk_version
-    if sdk_version is None:
+    try:
+        found = unmet(
+            candidate.distribution,
+            candidate.distribution_version,
+            candidate.requires_dist,
+            state.installed,
+        )
+    except Malformed as malformed:
+        raise _Quarantine(
+            "bad-metadata",
+            f"malformed Requires-Dist entry {malformed.args[0]!r} of distribution "
+            f"{candidate.distribution!r}",
+        ) from None
+    if found is not None:
+        raise _Quarantine("unmet-requirement", found.detail, fix=found.fix)
+    if state.sdk_version is None and plain_requirements(
+        candidate.requires_dist, _CORE_DISTRIBUTION
+    ):
         raise _Quarantine(
             "bad-metadata",
             f"could not resolve running SDK version to check Requires-Dist "
             f"of distribution {candidate.distribution!r}",
         )
-    for requirement, parsed in untaped_requirements:
-        try:
-            admits = requirement_admits(parsed, sdk_version)
-        except UNEVALUABLE:
-            raise _Quarantine(
-                "bad-metadata",
-                f"malformed Requires-Dist entry {requirement!r} of distribution "
-                f"{candidate.distribution!r}",
-            ) from None
-        if not admits:
-            raise _Quarantine(
-                "bad-metadata",
-                f"Requires-Dist {requirement!r} of distribution "
-                f"{candidate.distribution!r} does not admit running SDK "
-                f"version {sdk_version}",
-            )
+
+
+def _requiring_disabled(
+    candidate: PluginCandidate, disabled: Mapping[str, QuarantineRecord]
+) -> _Quarantine | None:
+    """The quarantine of ``candidate`` when a plugin distribution it requires is disabled.
+
+    A requirement its marker leaves out here is not read, as :func:`unmet` reads none.
+    """
+    own = canonicalize_name(candidate.distribution)
+    for line in candidate.requires_dist:
+        parsed = parse_requirement(line)
+        if parsed is None or not is_plain(parsed) or not _applies(parsed):
+            continue
+        name = canonicalize_name(parsed.name)
+        record = disabled.get(name)
+        if record is None or name == own:
+            continue
+        who = f"{candidate.distribution} {candidate.distribution_version}".strip()
+        fix = _first(record)
+        return _Quarantine(
+            "unmet-requirement",
+            f"{who} requires {record.distribution}, which is disabled [{record.reason}]; {fix}",
+            fix=fix,
+        )
+    return None
+
+
+def _first(record: QuarantineRecord) -> str:
+    """What to fix first when ``record``'s plugin is disabled: its own fix, or its root's.
+
+    A plugin disabled because one it requires is disabled already names the
+    plugin to fix first, so its dependents pass that on instead of nesting it.
+    """
+    if _FIX_FIRST.fullmatch(record.fix):
+        return record.fix
+    fix = f"fix {record.distribution} first"
+    return f"{fix}: {record.fix}" if record.fix else fix
+
+
+#: A cascaded quarantine's fix, as :func:`_first` words it.
+_FIX_FIRST = re.compile(r"fix \S+ first(: .*)?", re.DOTALL)
+
+
+def _applies(requirement: Requirement) -> bool:
+    """Whether ``requirement``'s marker holds here; one that can't be evaluated doesn't."""
+    try:
+        return applies(requirement)
+    except UNEVALUABLE:
+        return False
+
+
+def _disabled(
+    ordered: Sequence[PluginCandidate], quarantined: Mapping[int, QuarantineRecord]
+) -> dict[str, QuarantineRecord]:
+    """Each distribution with a quarantined plugin, by canonical name, with one of its records.
+
+    Core's own distribution is never one: core always composes, whatever a
+    candidate shipped from it does.
+    """
+    disabled: dict[str, QuarantineRecord] = {
+        canonicalize_name(ordered[index].distribution): record
+        for index, record in sorted(quarantined.items())
+    }
+    disabled.pop(canonicalize_name(_CORE_DISTRIBUTION), None)
+    return disabled
+
+
+def _spread(
+    ordered: Sequence[PluginCandidate],
+    quarantined: dict[int, QuarantineRecord],
+    live: Iterable[int],
+) -> set[int]:
+    """Quarantine each of ``live`` that requires a disabled plugin, until nothing changes.
+
+    Returns the ones it quarantined. A plugin whose own import failed is told
+    as the cascade when a plugin it requires is disabled, since that is
+    usually why its import failed.
+    """
+    spread: set[int] = set()
+    waiting = [index for index in live if index not in quarantined]
+    changed = True
+    while changed:
+        changed = False
+        disabled = _disabled(ordered, quarantined)
+        for index in list(waiting):
+            found = _requiring_disabled(ordered[index], disabled)
+            if found is not None:
+                quarantined[index] = found.to_record(ordered[index])
+                spread.add(index)
+                waiting.remove(index)
+                changed = True
+    disabled = _disabled(ordered, quarantined)
+    for index, record in list(quarantined.items()):
+        if record.reason == "import-failed":
+            found = _requiring_disabled(ordered[index], disabled)
+            if found is not None:
+                quarantined[index] = found.to_record(ordered[index])
+    return spread
 
 
 def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[PluginCandidate, ...]:
@@ -440,7 +471,8 @@ def discover_candidates(*, group: str = PLUGINS_ENTRY_POINT_GROUP) -> tuple[Plug
 class _CompositionState:
     """Mutable accumulation of one composition run (core + committed plugins)."""
 
-    def __init__(self, core: PluginDecl) -> None:
+    def __init__(self, core: PluginDecl, candidates: Sequence[PluginCandidate] = ()) -> None:
+        self._candidates = tuple(candidates)
         #: The names no plugin may have, each with what holds it.
         self.taken: dict[str, str] = {
             **dict.fromkeys(RESERVED_SECTIONS, "a config key"),
@@ -457,6 +489,22 @@ class _CompositionState:
     def sdk_version(self) -> str | None:
         """The running SDK version, resolved once per composition when first needed."""
         return _running_sdk_version()
+
+    @cached_property
+    def installed(self) -> Installed:
+        """What requirements are checked against: untaped's and each plugin's version.
+
+        Read once per composition when first needed; untaped's version is
+        resolved only then (:func:`_check_requirements` refuses a requirement
+        on it when it can't be).
+        """
+        versions = {
+            str(canonicalize_name(each.distribution)): each.distribution_version
+            for each in self._candidates
+            if each.distribution.strip()
+        }
+        versions[_CORE_DISTRIBUTION] = self.sdk_version or ""
+        return Installed(versions=versions, present=functools.cache(distribution_present))
 
 
 def _check_free_name(name: str, state: _CompositionState) -> None:
@@ -572,11 +620,14 @@ def resolve_target(target: object) -> object:
         return target
     module_name, sep, attr_path = target.partition(":")
     if not sep or not module_name.strip() or not attr_path.strip():
-        raise ImportError(f"malformed entry-point target {target!r}: expected 'module:attr'")
+        raise _MalformedTarget(f"malformed entry-point target {target!r}: expected 'module:attr'")
     module = import_module(module_name)
     resolved: object = module
     for part in attr_path.split("."):
-        resolved = getattr(resolved, part)
+        try:
+            resolved = getattr(resolved, part)
+        except AttributeError as exc:
+            raise _MalformedTarget(str(exc)) from exc
     return resolved
 
 
@@ -725,6 +776,10 @@ def _digest(lines: list[str]) -> str:
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()[:16]
 
 
+class _MalformedTarget(ImportError):
+    """An entry point's target that names nothing: not ``module:attr``, or a missing attribute."""
+
+
 class _StaleDeclaration(Exception):
     """The cached declaration does not account for a candidate: compose without it."""
 
@@ -735,23 +790,34 @@ def _compose(
 ) -> CompositionResult:
     """:func:`compose` over ``ordered``; with ``declared``, its plugin classes come from it."""
     core = _core(declared)
-    state = _CompositionState(core)
+    state = _CompositionState(core, ordered)
     quarantined: dict[int, QuarantineRecord] = {}
     provided: dict[int, type[Plugin]] = {}
     replayed: dict[int, PluginDecl] = {}
     classes: set[int] = set()  # the plugin classes, as :func:`_refused` reads them
     contested = _replay(ordered, declared, replayed, quarantined)
-    for index, candidate in enumerate(ordered):
-        if index in replayed or index in quarantined:
+    # Those the declaration doesn't account for: refused before the mount, so checked
+    # again at each start; one that is now a plugin class makes the declaration stale.
+    waiting = [i for i in range(len(ordered)) if i not in replayed and i not in quarantined]
+    for index in waiting:  # metadata only, before any plugin's import
+        try:
+            _check_metadata(ordered[index], state)
+        except _Quarantine as failed:
+            quarantined[index] = failed.to_record(ordered[index])
+    _spread(ordered, quarantined, waiting)
+    for index in waiting:
+        if index in quarantined:
             continue
         try:
-            provided[index] = _provide(candidate, state)
+            provided[index] = _provide(ordered[index], state)
         except _Quarantine as failed:
-            quarantined[index] = failed.to_record(candidate)
+            quarantined[index] = failed.to_record(ordered[index])
             if failed.plugin_class:
                 classes.add(index)
-        if declared is not None and (index in classes or index in provided):
-            raise _StaleDeclaration(candidate.name)
+    for index in _spread(ordered, quarantined, provided):
+        del provided[index]
+    if declared is not None and (classes or provided):
+        raise _StaleDeclaration(ordered[min(classes | provided.keys())].name)
     classes |= provided.keys()
     claimants = provided.keys() | replayed.keys() | contested
     for index, contest in _contested(ordered, claimants).items():
@@ -799,7 +865,9 @@ def _replay(
         if isinstance(found, PluginDecl):
             replayed[index] = found
         elif found is not None:
-            quarantined[index] = _Quarantine(found.reason, found.detail).to_record(candidate)
+            quarantined[index] = _Quarantine(found.reason, found.detail, fix=found.fix).to_record(
+                candidate
+            )
             if found.reason == "duplicate-name":
                 contested.add(index)
     return contested
@@ -824,6 +892,7 @@ def _refused(
                 target=candidate_entry_point(candidate),
                 problems=problems,
                 reason=record.reason,
+                fix=record.fix,
             )
         )
     return tuple(refused)
@@ -939,6 +1008,8 @@ def _mounted(
                 quarantined[index] = failed.to_record(candidate)
                 continue
             mounted[index] = composed
+        for index in _spread(ordered, quarantined, mounted):
+            del mounted[index]
         if len(mounted) == len(classes):
             mount.problems.update(problems)
             return dict(sorted(mounted.items())), mount
@@ -1037,29 +1108,42 @@ def _class_name(candidate: PluginCandidate) -> str:
     return "".join(part.capitalize() for part in candidate.name.split("-"))
 
 
+def _check_metadata(candidate: PluginCandidate, state: _CompositionState) -> None:
+    """The gates read from distribution metadata alone, before any plugin code runs.
+
+    Raises :class:`_Quarantine` on the first failed check.
+    """
+    _check_entry_point_group(candidate)
+    _check_entry_point_name(candidate)
+    _check_requirements(candidate, state)
+
+
 def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugin]:
-    """Resolve one candidate's entry point to its plugin class.
+    """Resolve one candidate's entry point to its plugin class, its metadata already checked.
 
     The entry point names the class (``untaped_acme.plugin:Acme``), which
     composition reads with the other plugin classes (:func:`_mounted`);
     anything else (an object, a function) is ``not-a-plugin-class`` and is
-    never called.
+    never called. A target that names nothing (not ``module:attr``, a module
+    or attribute that isn't there) is ``malformed-entry-point``; anything
+    raised while importing the plugin's module is ``import-failed``.
 
     Raises :class:`_Quarantine` on the first failed check.
     """
-    # Metadata-only gates precede any import: group and Requires-Dist
-    # admission are decided from distribution metadata without executing
-    # plugin code.
-    _check_entry_point_group(candidate)
-    _check_entry_point_name(candidate)
-    _check_requires_dist(candidate, state)
     try:
         found = resolve_target(candidate.target)
     except Exception as exc:
+        if _names_nothing(candidate.target, exc):
+            raise _Quarantine(
+                "malformed-entry-point",
+                f"could not resolve entry point {candidate.target!r} of "
+                f"distribution {candidate.distribution!r}: {exc}",
+                entry_point="",
+            ) from None
         raise _Quarantine(
-            "malformed-entry-point",
-            f"could not resolve entry point {candidate.target!r} of "
-            f"distribution {candidate.distribution!r}: {exc}",
+            "import-failed",
+            f"importing entry point {candidate.target!r} of distribution "
+            f"{candidate.distribution!r} raised {type(exc).__name__}: {exc}",
             entry_point="",
         ) from None
     if _is_plugin_class(found):
@@ -1075,6 +1159,22 @@ def _provide(candidate: PluginCandidate, state: _CompositionState) -> type[Plugi
         f"entry point {candidate.name!r} of distribution {candidate.distribution!r} "
         f"names {_describe(found)}, not a plugin class; untaped composes plugin classes: "
         f"name the class ('{_package_of(candidate)}.plugin:{_class_name(candidate)}')",
+    )
+
+
+def _names_nothing(target: object, exc: Exception) -> bool:
+    """Whether resolving ``target`` failed because it names nothing, not because its code raised.
+
+    That is a target that isn't ``module:attr``, a module of it that isn't
+    installed, or an attribute its module doesn't have.
+    """
+    if isinstance(exc, _MalformedTarget):
+        return True
+    module = target.partition(":")[0] if isinstance(target, str) else ""
+    return (
+        isinstance(exc, ModuleNotFoundError)
+        and exc.name is not None
+        and (module == exc.name or module.startswith(f"{exc.name}."))
     )
 
 

@@ -294,7 +294,7 @@ def _dependencies(
     """
     from packaging.utils import canonicalize_name  # noqa: PLC0415
 
-    from untaped.runtime.registry import declared_distributions  # noqa: PLC0415
+    from untaped.runtime.requirements import declared_distributions  # noqa: PLC0415
 
     by_distribution: dict[str, PluginCandidate] = {
         canonicalize_name(each.distribution): each for each in discovered
