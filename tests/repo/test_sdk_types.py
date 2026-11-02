@@ -73,7 +73,7 @@ from datetime import timedelta
 from pydantic import BaseModel
 
 from untaped.sdk.storage import (
-    NO_PROGRESS, Cache, DataRead, Filled, Found, ProgressHandle, read_data_file
+    NO_PROGRESS, Cache, DataFile, DataRead, Filled, Found, ProgressHandle
 )
 
 
@@ -107,7 +107,7 @@ def names() -> list[str]:
 
 
 def read(path: object) -> Snapshot | None:
-    found: DataRead[Snapshot] = read_data_file(path, Snapshot)  # type: ignore[arg-type]
+    found: DataRead[Snapshot] = DataFile(path, Snapshot).read()  # type: ignore[arg-type]
     match found:
         case Found(value=value):
             return value

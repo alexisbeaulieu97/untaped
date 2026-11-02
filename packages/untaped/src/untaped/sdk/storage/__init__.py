@@ -37,8 +37,6 @@ if TYPE_CHECKING:
         Found,
         OtherVersion,
         Unreadable,
-        read_data_file,
-        write_data_file,
     )
     from untaped.sdk.storage.dir import Dir
     from untaped.sdk.storage.holds import (
@@ -81,9 +79,7 @@ __all__ = [
     "code_version",
     "dir_bytes",
     "file_lock",
-    "read_data_file",
     "read_structured_file",
-    "write_data_file",
 ]
 
 if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the table
@@ -107,8 +103,6 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "Found",
                 "OtherVersion",
                 "Unreadable",
-                "read_data_file",
-                "write_data_file",
             ),
             "dir": ("Dir",),
             "holds": (

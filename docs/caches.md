@@ -328,25 +328,23 @@ the references' lock before removing it. In tests,
 
 Any other file your plugin keeps for itself, whose place you decide (a
 file in a repo, a backup's description), goes on core's data file rather
-than a JSON format of your own (all experimental):
-`write_data_file(path, value, refreshed_at=None, exclusive=False)` writes a
-pydantic model's fields at the top level beside a stamp naming the format and
-the untaped version that wrote it (`{"untaped": {"file": 1, "by": "11.1.0"},
-...}`), atomically and owner-only; `exclusive=True` creates it whole only if
-it is absent and returns whether it did. `read_data_file(path, Model)`
-answers a `DataRead`: `Found(value, refreshed_at, by)` (`by` is the
-untaped version that wrote it), `Absent()`,
-`Unreadable(reason)` or `OtherVersion(file, by)` when a newer untaped wrote
-it, so a damaged file is never mistaken for a missing one; a file with no
-stamp is `Unreadable`. A model may not name a field `untaped`: that key is
-the stamp's.
+than a JSON format of your own (experimental). Name the file and its model
+once, `DataFile[Mark].at(path)`. `write(value, refreshed_at=None,
+exclusive=False)` writes a pydantic model's fields at the top level beside a
+stamp naming the format and the untaped version that wrote it (`{"untaped":
+{"file": 1, "by": "12.0.0"}, ...}`), atomically and owner-only, under the
+file's lock (a 10 s wait; the lock lives under the home's `locks/`, never
+beside the file); `exclusive=True` creates it whole only if it is absent and
+returns whether it did. A write keeps the keys a newer untaped added and
+never writes over a newer untaped's file or one it cannot read: either is a
+`ConfigError`, as is a failed write. `read()` answers a `DataRead`:
+`Found(value, refreshed_at, by)` (`by` is the untaped version that wrote it),
+`Absent()`, `Unreadable(reason)` or `OtherVersion(file, by)` when a newer
+untaped wrote it, so a damaged file is never mistaken for a missing one; a
+file with no stamp is `Unreadable`. `copy_to(path)` copies a file that
+reads, the same way. A model may not name a field `untaped`: that key is the
+stamp's.
 
-A 12.0 plugin names the file and its model once: `DataFile[Mark].at(path)`
-reads with `read()` (no unstamped files) and writes with `write(value,
-refreshed_at=, exclusive=)` under the file's lock (a 10 s wait; the lock
-lives under the home's `locks/`, never beside the file). A write keeps the
-keys a newer untaped added and never writes over a newer untaped's file or
-one it cannot read; `copy_to(path)` copies a file that reads, the same way.
 An operation that must not run twice at once declares a lock on the plugin
 class, `sync = Lock(wait=timedelta(minutes=10))`: `with
 DotfilesPlugin.sync.locked():` waits that long for another process

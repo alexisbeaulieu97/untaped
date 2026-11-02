@@ -16,6 +16,8 @@ from untaped.sdk.testing import ScriptedTerminal
 from untaped_recipe.domain.plan import FileChange
 from untaped_recipe.infrastructure.backup import BackupDraft, BackupStore
 
+pytestmark = pytest.mark.usefixtures("recipe_run")
+
 
 def _config_backup(tmp_path: Path) -> tuple[BackupDraft, Path]:
     """Back up ``target/config.yml`` (before -> after) and leave it at ``after``."""

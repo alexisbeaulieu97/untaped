@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+
 import pytest
+
+from untaped.sdk.testing import Install
+from untaped_recipe.plugin import RecipePlugin
 
 
 @pytest.fixture(autouse=True)
@@ -17,3 +22,10 @@ def stub_lock_freshness(monkeypatch: pytest.MonkeyPatch) -> None:
         "untaped_recipe.infrastructure.pack_files.check_lock",
         lambda project_root: None,
     )
+
+
+@pytest.fixture
+def recipe_run(install: Callable[..., Install]) -> Iterator[None]:
+    """Run the test under recipe's run, as a command does: a backup locks under the home."""
+    with install(RecipePlugin).running():
+        yield

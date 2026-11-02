@@ -115,9 +115,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `Submitted` and `Panes`), `Terminal.run`, `Terminal.require_screen_terminal`,
   and `untaped.sdk.testing.drive_screen` with `untaped.sdk.testing.ScreenKeys` and
   `untaped.sdk.testing.ScreenRun`. See [Screens](./screens.md).
-- Data files: `DataFile`, `read_data_file`, `write_data_file` and what a
-  read answers (`Found`, `Absent`, `Unreadable`
-  and `OtherVersion`) in `untaped.sdk`, and `keep_value` and `damage` in
+- Data files: `DataFile` and what a read answers (`Found`, `Absent`,
+  `Unreadable` and `OtherVersion`) in `untaped.sdk.storage`, and `keep_value` and `damage` in
   `untaped.sdk.testing`. The files they write are stable from the start:
   users keep them. See
   [Other files your plugin keeps](./caches.md#other-files-your-plugin-keeps).
