@@ -13,6 +13,7 @@ from __future__ import annotations
 import copy
 import typing
 from collections.abc import Callable, Mapping, Sequence
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -232,11 +233,16 @@ class StateRows[M: BaseModel](OwnedBlock):
         self._file.mutate(_update)
         return updated
 
-    def replace_all(self, change: Callable[[list[M]], list[M]]) -> list[M]:
+    def replace_all(
+        self, change: Callable[[list[M]], list[M]], *, wait: timedelta | None = None
+    ) -> list[M]:
         """Replace every row with ``change(rows)`` under the lock and return the new rows.
 
         A row whose key was already stored keeps the fields a newer untaped
-        added; a damaged row stops before ``change`` runs.
+        added; a damaged row stops before ``change`` runs. ``wait`` is how
+        long to wait for another process writing the file (``timedelta(0)``:
+        try once) before failing with a ``ConfigError``; ``None`` waits the
+        default ten seconds.
         """
         replaced: list[M] = []
 
@@ -261,7 +267,7 @@ class StateRows[M: BaseModel](OwnedBlock):
                 for key, value in zip(keys, replaced, strict=True)
             ]
 
-        self._file.mutate(_replace)
+        self._file.mutate(_replace, wait=wait)
         return replaced
 
     def delete(self, key: str) -> int:
@@ -553,10 +559,16 @@ class _PluginFile:
     def read(self) -> list[Any]:
         return self.rows(self._load())
 
-    def mutate(self, fn: Callable[[list[Any]], list[Any] | None]) -> None:
-        """Replace the rows under the file's lock; ``None`` or the same rows write nothing."""
+    def mutate(
+        self, fn: Callable[[list[Any]], list[Any] | None], *, wait: timedelta | None = None
+    ) -> None:
+        """Replace the rows under the file's lock; ``None`` or the same rows write nothing.
+
+        ``wait`` bounds the wait for another process (``None``: :data:`_WRITE_WAIT`).
+        """
         busy = f"{self.plugin} state is busy (another untaped process)"
-        with locked_write(self._path, timeout=_WRITE_WAIT, busy=busy):
+        timeout = _WRITE_WAIT if wait is None else wait.total_seconds()
+        with locked_write(self._path, timeout=timeout, busy=busy):
             state = self._load()
             before = self.rows(state)
             replacement = fn(copy.deepcopy(before))

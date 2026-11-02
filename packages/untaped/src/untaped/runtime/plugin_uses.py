@@ -222,11 +222,14 @@ def use_line(plugin: str, distribution: str, version: str, use: UseDecl) -> str:
     owner = "untaped" if use.core else use.distribution
     removal = removal_text(use.removed_in, None if use.core else use.distribution)
     head = f"{distribution} {version}".strip()
-    head = f"{head} {use.how} {use_name(use)} ({use.where}), {removal_phrase(removal)}"
+    where = f"in `{use.where}`" if use.how == "calls" else use.where
+    head = f"{head} {use.how} {use_name(use)} ({where}), {removal_phrase(removal)}"
     if use.removed_in is None:
         return f"{head}: upgrade {distribution} once a release stops using it"
+    # A call is seen while a command runs; an import or a fill is read before the plugin loads.
+    effect = f"makes `{use.where}` fail" if use.how == "calls" else f"disables {plugin}"
     return (
-        f"{head}: upgrading {owner} to {use.removed_in}.0 disables {plugin} "
+        f"{head}: upgrading {owner} to {use.removed_in}.0 {effect} "
         f"unless a newer {distribution} stops using it"
     )
 

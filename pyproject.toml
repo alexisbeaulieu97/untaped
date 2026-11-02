@@ -198,6 +198,7 @@ ignore_names = [
     "renamed_keys",  # settings ClassVars read by untaped.sdk.health.deprecated_keys
     "retired_keys",
     "visit_TryStar",  # ast.NodeVisitor dispatches by node class; vulture knows the older ones
+    "run_uses",  # Core's block attribute: composition reads a plugin class's blocks by walking it
 ]
 
 [tool.coverage.run]

@@ -125,12 +125,18 @@ class Mount:
         )
         return replace(self, declaration=declaration)
 
-    def with_uses(self, uses: Mapping[str, tuple[UseDecl, ...]]) -> Mount:
-        """This mount with each named plugin's deprecated uses on its declaration entry."""
-        if not uses:
+    def with_uses(
+        self, uses: Mapping[str, tuple[UseDecl, ...]], lockstep: frozenset[str] = frozenset()
+    ) -> Mount:
+        """This mount with each named plugin's deprecated uses, and each lockstep one marked."""
+        if not uses and not lockstep:
             return self
         plugins = tuple(
-            plugin.model_copy(update={"uses": uses[plugin.name]}) if plugin.name in uses else plugin
+            plugin.model_copy(
+                update={"uses": uses.get(plugin.name, ()), "lockstep": plugin.name in lockstep}
+            )
+            if plugin.name in uses or plugin.name in lockstep
+            else plugin
             for plugin in self.declaration.plugins
         )
         return replace(self, declaration=self.declaration.model_copy(update={"plugins": plugins}))

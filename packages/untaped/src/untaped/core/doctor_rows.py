@@ -64,6 +64,7 @@ from untaped.sdk.words import command_argv, command_line, removal_phrase
 
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
+    from untaped.runtime.declaration import UseDecl
     from untaped.sdk.projects import Project
 
 
@@ -582,18 +583,25 @@ def _uses_rows(
     """``plugin-uses``: one row per plugin and owning distribution, each deprecated name it uses.
 
     Read from the declaration, which kept what composition found the plugin
-    imports and fills.
+    imports and fills, and from core's ``run_uses``, what it was seen calling
+    while a command ran (:mod:`untaped.core.run_uses`).
     """
+    from untaped.core.run_uses import recorded  # noqa: PLC0415 - doctor only
+
     found = {candidate.name: candidate for candidate in result.candidates}
+    called: dict[str, list[UseDecl]] = {}
+    for row in recorded(result):
+        called.setdefault(row.plugin, []).append(row.use())
     rows: list[dict[str, object]] = []
     for plugin in result.mount.declaration.plugins:
-        if not plugin.uses or (plugins is not None and plugin.name not in plugins):
+        uses = [*plugin.uses, *called.get(plugin.name, ())]
+        if not uses or (plugins is not None and plugin.name not in plugins):
             continue
         candidate = found.get(plugin.name)
         distribution = plugin.name if candidate is None else candidate.distribution
         version = "" if candidate is None else candidate.distribution_version
         owners: dict[str, list[str]] = {}
-        for use in plugin.uses:
+        for use in uses:
             owners.setdefault(use.distribution, []).append(
                 use_line(plugin.name, distribution, version, use)
             )
