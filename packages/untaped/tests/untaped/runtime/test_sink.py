@@ -19,7 +19,7 @@ from core_test_support.runtime.run import quiet
 from untaped.core.commands import fix
 from untaped.runtime import verbose
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import (
+from untaped.runtime.run_output import (
     Diagnostics,
     current_sink,
     exit_on_counted_failure,

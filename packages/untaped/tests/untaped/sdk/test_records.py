@@ -27,11 +27,7 @@ from pydantic import (
 
 from untaped.core.commands.records import RegisteredHolder, RegisteredTarget
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import (
-    Diagnostics,
-    current_sink,
-    failure_exit_code,
-)
+from untaped.runtime.run_output import Diagnostics, current_sink, failure_exit_code
 from untaped.sdk import Plugin
 from untaped.sdk.diagnostic import (
     Debug,

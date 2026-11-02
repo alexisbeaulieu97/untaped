@@ -25,7 +25,7 @@ import pytest
 
 from untaped.runtime import verbose
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import Diagnostics, current_sink
+from untaped.runtime.run_output import Diagnostics, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import (
     raise_usage,

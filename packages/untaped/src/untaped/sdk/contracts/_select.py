@@ -31,7 +31,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from untaped.runtime.contracts.registry import BoundProvider, offers, ready_of, upgrade_hint
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
 from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract
 from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue

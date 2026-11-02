@@ -14,7 +14,7 @@ from cyclopts import App
 
 from core_test_support.runtime.run import quiet
 from untaped.runtime.run import child_run, entered, invocation, start_run
-from untaped.runtime.sink import Diagnostics, exit_on_counted_failure, failure_exit_code
+from untaped.runtime.run_output import Diagnostics, exit_on_counted_failure, failure_exit_code
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._cli import note_requested_format
 from untaped.sdk._run import OutputPolicy, Rendering, SettingsOverlay, is_quiet

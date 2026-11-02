@@ -21,12 +21,9 @@ from typing import Annotated, Any
 import pytest
 from cyclopts import App, Parameter
 
+from untaped.runtime.progress_stack import open_tasks
 from untaped.runtime.run import invocation
-from untaped.runtime.sink import (
-    count_row_failures,
-    exit_on_counted_failure,
-    open_tasks,
-)
+from untaped.runtime.run_output import count_row_failures, exit_on_counted_failure
 from untaped.sdk._cli import echo, report_errors
 from untaped.sdk._run import recording
 from untaped.sdk.diagnostic import Failure, Progress, Stale

@@ -17,7 +17,7 @@ import pytest
 import respx
 from cyclopts import App
 
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.sdk import now
 from untaped.sdk._concurrency import bounded_map
 from untaped.sdk._run import (

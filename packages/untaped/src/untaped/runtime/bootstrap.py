@@ -48,11 +48,11 @@ from untaped.runtime.root_options import (
     dispatch_line,
     resolve_command,
 )
+from untaped.runtime.run_output import derived_exit_code, exit_on_counted_failure
 from untaped.runtime.settings import (
     register_profile_settings,
     reset_config_registry,
 )
-from untaped.runtime.sink import derived_exit_code, exit_on_counted_failure
 from untaped.sdk._cli import (
     apply_default_format,
     given_tokens,

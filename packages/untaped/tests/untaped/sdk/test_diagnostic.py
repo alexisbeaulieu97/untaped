@@ -12,11 +12,7 @@ import pytest
 from pydantic import ValidationError
 
 from untaped.runtime.run import entered, start_run
-from untaped.runtime.sink import (
-    Diagnostics,
-    current_sink,
-    exit_on_counted_failure,
-)
+from untaped.runtime.run_output import Diagnostics, current_sink, exit_on_counted_failure
 from untaped.sdk.diagnostic import Failure, Stale
 from untaped.sdk.errors import ConfigError, ErrorCategory, UntapedError
 from untaped.sdk.records import OutcomeRecord

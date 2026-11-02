@@ -204,9 +204,11 @@ _STARTUP_PROBE = (
 #: total to 694. With dotfiles and git moved: 137 and 690, 2026-10-27. With
 #: every plugin moved and ansible's settings no longer importing github's
 #: application code: 107 and 649, 2026-10-29, so the budget goes to 110 and
-#: the total to 652.
-_TOTAL_BUDGET = 652
-_UNTAPED_BUDGET = 110
+#: the total to 652. Splitting the sink into the stderr writer, the progress
+#: stack and the run output adds three modules: 111 and 652, 2026-11-01, so
+#: the budget goes to 114 and the total to 655.
+_TOTAL_BUDGET = 655
+_UNTAPED_BUDGET = 114
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.

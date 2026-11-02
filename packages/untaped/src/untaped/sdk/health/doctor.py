@@ -26,7 +26,7 @@ from untaped.sdk.health.marks import MarkedField, SetupMarks, section_marks
 from untaped.sdk.network.auth import find_program
 
 if TYPE_CHECKING:
-    from untaped.runtime.sink import Diagnostics
+    from untaped.runtime.run_output import Diagnostics
     from untaped.sdk.plugin import SpelledCommand
 
 
@@ -121,7 +121,7 @@ class PluginContext:
     @property
     def diag(self) -> Diagnostics:
         """The stderr handle, as on a command's context: resolved at each call."""
-        from untaped.runtime.sink import Diagnostics  # noqa: PLC0415 - the sink imports the SDK
+        from untaped.runtime.run_output import Diagnostics  # noqa: PLC0415 - imports the SDK
 
         return Diagnostics()
 

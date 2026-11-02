@@ -30,8 +30,8 @@ from untaped.runtime.profile_resolver import (
     selected_profile,
 )
 from untaped.runtime.registry import CompositionResult, settings_model
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import load_settings_section
-from untaped.runtime.sink import Diagnostics
 from untaped.sdk._stdin import read_stdin_line
 from untaped.sdk._ui import Ui, build_terminal
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error

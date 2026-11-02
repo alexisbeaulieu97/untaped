@@ -58,6 +58,7 @@ from untaped.runtime.registry import (
     section_settings,
 )
 from untaped.runtime.run import child_run
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.settings import (
     HttpSettings,
     active_settings_layout,
@@ -68,7 +69,6 @@ from untaped.runtime.settings import (
     retired_env_vars,
     section_stabilities,
 )
-from untaped.runtime.sink import Diagnostics
 from untaped.runtime.theme import UiSettings, check_declared_tokens, resolve_theme
 from untaped.sdk._run import SettingsOverlay
 from untaped.sdk.errors import ConfigError, Failed, UntapedError

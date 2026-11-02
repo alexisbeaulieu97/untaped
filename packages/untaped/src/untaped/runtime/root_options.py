@@ -27,7 +27,7 @@ from cyclopts.utils import is_option_like
 
 from untaped.runtime.declaration import CommandDecl
 from untaped.runtime.profile_resolver import check_pick, parse_pick
-from untaped.runtime.sink import Diagnostics
+from untaped.runtime.run_output import Diagnostics
 from untaped.runtime.verbose import enable as _enable_verbose
 from untaped.sdk._cli import (
     follows_user_format,
