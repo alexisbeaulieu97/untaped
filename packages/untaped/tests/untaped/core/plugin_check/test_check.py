@@ -124,6 +124,17 @@ def test_a_quarantined_plugin_fails_registration(contract_plugins_site: Path) ->
     assert (row.check, row.status) == ("registration", "fail")
 
 
+def test_a_provider_whose_parameters_cannot_be_passed_names_the_fix(
+    contract_plugins_site: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    problem = {"named": "BinSource.named takes '_name', which the contract method doesn't declare"}
+    monkeypatch.setattr(_bin(), "__untaped_parameter_problems__", problem, raising=False)
+    [row] = [row for row in _check() if row.check == "registration"]
+    assert row.status == "fail"
+    assert row.detail.startswith("uses-missing: BinSource.named takes '_name'")
+    assert row.detail.endswith("; upgrade untaped-rack, or upgrade untaped-bin")
+
+
 def test_assert_fills_finds_the_installed_plugin_and_its_owner(
     contract_plugins_site: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

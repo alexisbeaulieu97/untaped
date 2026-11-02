@@ -363,9 +363,9 @@ def _uses_missing(
     Usually a parameter of a newer owner than the plugin declares, so
     upgrading the owner fixes it; else the plugin renamed one.
     """
-    dist, owner = plugin.plugin_ref.distribution, owner_distribution
-    detail = f"{'; '.join(problems)}: {dist} may need a newer {owner} than it declares"
-    return detail, f"upgrade {owner}, or upgrade {dist}"
+    dist = plugin.plugin_ref.distribution
+    newer = f"{dist} may need a newer {owner_distribution} than it declares"
+    return f"{'; '.join(problems)}: {newer}", f"upgrade {owner_distribution}, or upgrade {dist}"
 
 
 def owned_contracts() -> dict[str, list[ContractInfo]]:

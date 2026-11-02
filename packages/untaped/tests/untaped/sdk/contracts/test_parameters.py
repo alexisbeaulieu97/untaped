@@ -39,6 +39,7 @@ from untaped.sdk.contracts import (
     gather,
 )
 from untaped.sdk.contracts._declare import contract_of, parameter_problems
+from untaped.sdk.testing import assert_fills, compose_with
 
 
 class ByName(BookSource, Provider):
@@ -208,6 +209,14 @@ def test_no_provider_ready_names_the_fix() -> None:
     compose(shelf_plugin(), plugin("reader", fills=(Renamed,), module=__name__))
     with pytest.raises(NoProviderReady, match="upgrade untaped-shelf, or upgrade untaped-reader"):
         gather(BookSource.books)()
+
+
+def test_assert_fills_names_the_fix() -> None:
+    with (
+        compose_with(shelf_plugin(), plugin("reader", fills=(Renamed,), module=__name__)),
+        pytest.raises(AssertionError, match=r"; upgrade untaped-shelf, or upgrade untaped-reader$"),
+    ):
+        assert_fills(Renamed, samples=[Book(title="Dune")])
 
 
 def test_a_provider_taking_only_positional_extras_is_refused() -> None:
