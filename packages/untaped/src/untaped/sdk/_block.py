@@ -78,6 +78,18 @@ class Block:
 
         if isinstance(owner, type) and issubclass(owner, Plugin):
             self._bindings.append(Binding(owner, name))
+        for part in self._parts().values():
+            part.__set_name__(owner, name)  # the plugin's too, under the same attribute
+
+    def _parts(self) -> Mapping[str, Block]:
+        """The blocks this one is made of, by the attribute holding each (``cache``).
+
+        A part is the plugin's block, held under its whole's attribute: the
+        declaration lists it beside the whole, and its own readers find it (a
+        cache part has its max-age setting, a doctor check part its row). The
+        whole's checks cover it; a part has no parts of its own.
+        """
+        return {}
 
     @classmethod
     def derived_name(cls, attribute: str) -> str:

@@ -8,7 +8,7 @@ Every `untaped` command uses the same exit codes. Scripts can rely on them.
 | 1 | The thing you ran failed: a runtime failure, at least one failed item, a name that does not exist, input the remote or a local file rejected, or a declined confirmation (`cancelled; no changes made`). |
 | 2 | Usage error, found before any side effect: an unknown flag, conflicting flags, a value out of range, no selection, or a prompt with no terminal and no `--yes`. |
 | 3 | Predicate hit: the command worked, and the condition you asked it to check was true. |
-| 4 | The environment needs fixing: missing or invalid settings or config file, a rejected token (HTTP 401), missing permission (HTTP 403), a missing tool such as `git` or `$EDITOR`, a command of a disabled plugin. Retrying won't help, and neither will changing your code. |
+| 4 | The environment needs fixing: missing or invalid settings or config file, a rejected token (HTTP 401), missing permission (HTTP 403), a missing tool such as `git` or `$EDITOR`, a command of a disabled plugin, a server version the plugin doesn't support. Retrying won't help, and neither will changing your code. |
 | 5 | Temporary: the network is down, a request timed out, the service answered 5xx or 429, or another `untaped` process holds a lock. Retry later. |
 | 130 | Interrupted with Ctrl-C, including at a prompt. |
 
@@ -27,7 +27,7 @@ plugin may refine it, such as `awx.scm`).
 | Category | Meaning | Exit |
 |---|---|---|
 | `usage` | Bad flags or arguments, found before any side effect | 2 |
-| `config` | Local setup: missing or invalid settings, config file, CA bundle, missing tool | 4 |
+| `config` | Local setup: missing or invalid settings, config file, CA bundle, missing tool, a server version the plugin doesn't support | 4 |
 | `auth` | Credentials rejected (401) | 4 |
 | `permission` | Authenticated but not allowed (403) | 4 |
 | `not_found` | A named thing does not exist | 1 |

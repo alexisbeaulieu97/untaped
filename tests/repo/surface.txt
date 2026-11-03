@@ -6943,7 +6943,8 @@ sdk untaped.sdk.derive(qualname=) default=None
 sdk untaped.sdk.experimental
 sdk untaped.sdk.first_validation_error(exc)
 sdk untaped.sdk.health.DoctorCheck(*, title, run) callback(run, 1)
-sdk untaped.sdk.health.DoctorCheck(online=) default=false
+sdk untaped.sdk.health.DoctorCheck(network=) default=offline
+sdk untaped.sdk.health.DoctorCheck(online=) default=None  [deprecated, removed in 14.0; use network="online"]
 sdk untaped.sdk.health.DoctorCheck.binding
 sdk untaped.sdk.health.DoctorCheck.bindings
 sdk untaped.sdk.health.DoctorCheck.block_kind class
@@ -6953,7 +6954,8 @@ sdk untaped.sdk.health.DoctorCheck.module
 sdk untaped.sdk.health.DoctorCheck.name
 sdk untaped.sdk.health.DoctorCheck.name_problem(name)
 sdk untaped.sdk.health.DoctorCheck.name_style class
-sdk untaped.sdk.health.DoctorCheck.online
+sdk untaped.sdk.health.DoctorCheck.network
+sdk untaped.sdk.health.DoctorCheck.online  [deprecated, removed in 14.0; use DoctorCheck.network]
 sdk untaped.sdk.health.DoctorCheck.plugin
 sdk untaped.sdk.health.DoctorCheck.problems()
 sdk untaped.sdk.health.DoctorCheck.run
@@ -6981,7 +6983,8 @@ sdk untaped.sdk.health.ExecutableCheck.module
 sdk untaped.sdk.health.ExecutableCheck.name
 sdk untaped.sdk.health.ExecutableCheck.name_problem(name)
 sdk untaped.sdk.health.ExecutableCheck.name_style class
-sdk untaped.sdk.health.ExecutableCheck.online
+sdk untaped.sdk.health.ExecutableCheck.network
+sdk untaped.sdk.health.ExecutableCheck.online  [deprecated, removed in 14.0; use DoctorCheck.network]
 sdk untaped.sdk.health.ExecutableCheck.plugin
 sdk untaped.sdk.health.ExecutableCheck.problems()
 sdk untaped.sdk.health.ExecutableCheck.program
@@ -7003,7 +7006,8 @@ sdk untaped.sdk.health.OnlineCheck.module
 sdk untaped.sdk.health.OnlineCheck.name
 sdk untaped.sdk.health.OnlineCheck.name_problem(name)
 sdk untaped.sdk.health.OnlineCheck.name_style class
-sdk untaped.sdk.health.OnlineCheck.online
+sdk untaped.sdk.health.OnlineCheck.network
+sdk untaped.sdk.health.OnlineCheck.online  [deprecated, removed in 14.0; use DoctorCheck.network]
 sdk untaped.sdk.health.OnlineCheck.plugin
 sdk untaped.sdk.health.OnlineCheck.probe
 sdk untaped.sdk.health.OnlineCheck.problems()
@@ -7011,9 +7015,11 @@ sdk untaped.sdk.health.OnlineCheck.run
 sdk untaped.sdk.health.OnlineCheck.spelled
 sdk untaped.sdk.health.OnlineCheck.title
 sdk untaped.sdk.health.OnlineCheck.where
+sdk untaped.sdk.health.PluginContext(online@3=) default=false
 sdk untaped.sdk.health.PluginContext(owner@2=) default=None
 sdk untaped.sdk.health.PluginContext(settings)
 sdk untaped.sdk.health.PluginContext.diag
+sdk untaped.sdk.health.PluginContext.online
 sdk untaped.sdk.health.PluginContext.owner
 sdk untaped.sdk.health.PluginContext.plugin
 sdk untaped.sdk.health.PluginContext.settings
@@ -7158,6 +7164,7 @@ sdk untaped.sdk.network.ServerApi.cache  [experimental]
 sdk untaped.sdk.network.ServerApi.credential  [experimental]
 sdk untaped.sdk.network.ServerApi.derived_name(attribute)  [experimental]
 sdk untaped.sdk.network.ServerApi.detect  [experimental]
+sdk untaped.sdk.network.ServerApi.doctor  [experimental]
 sdk untaped.sdk.network.ServerApi.module  [experimental]
 sdk untaped.sdk.network.ServerApi.name  [experimental]
 sdk untaped.sdk.network.ServerApi.name_problem(name)  [experimental]

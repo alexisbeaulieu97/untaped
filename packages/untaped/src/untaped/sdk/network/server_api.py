@@ -19,7 +19,9 @@ runs the call again on it when nothing can have happened yet (no write went
 through, nothing printed), else exits 1 ("may have taken effect") or 5
 ("run it again"). A deprecated adapter warns on runs that detect or read
 the override. The port's proxy, its pick and the rerun live in
-:mod:`untaped.sdk.network._server_api_port`.
+:mod:`untaped.sdk.network._server_api_port`. The block's parts are its
+detection cache and its doctor row (:mod:`untaped.sdk.network._server_api_doctor`);
+the plugin's page and the surface read its adapters from the declaration.
 
 Core knows the server only from ``server=`` and the product only from
 ``str(version)``; it compares no versions (adapters compare their own
@@ -39,7 +41,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self, cast, get_args
 from pydantic import BaseModel, ValidationError
 from pydantic_core import core_schema
 
-from untaped.sdk._block import OwnedBlock
+from untaped.sdk._block import Block, OwnedBlock
 from untaped.sdk._keys import SettingKey
 from untaped.sdk.errors import (
     ConfigError,
@@ -49,6 +51,7 @@ from untaped.sdk.errors import (
     UntapedError,
     first_validation_error,
 )
+from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.marks import experimental
 from untaped.sdk.network._server_api_calls import last_sent
 from untaped.sdk.network.http import sent_by
@@ -58,6 +61,7 @@ if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
     from pydantic.json_schema import JsonSchemaValue
 
+    from untaped.sdk.health.doctor import DoctorResult, PluginContext
     from untaped.sdk.marks import Stability
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.network.http import HttpClient
@@ -371,8 +375,8 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
     Declared subscripted, ``ServerApi[JiraApi, JiraSettings, JiraVersion](...)``,
     and held by the plugin class (``server_api = SERVER_API``), whose
     attribute names it: the detection cache is ``<plugin>.server_api``
-    (``Refresh(SERVER_API.cache)`` names it), messages and warnings say
-    ``<plugin>.server-api``.
+    (``Refresh(SERVER_API.cache)`` names it), the doctor row, messages and
+    warnings say ``<plugin>.server-api``.
 
     ``server`` is ``key(S)`` of the field holding the plugin's
     ``CredentialKey`` (its URL and TLS), ``credential`` the plugin's
@@ -395,6 +399,8 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
     override: SettingKey
     #: The detection cache: one entry per server URL, ``str(version)``.
     cache: Cache[_Detected]
+    #: The doctor row ``<plugin>.server-api``: which server, served by what.
+    doctor: DoctorCheck
 
     def __init__(
         self,
@@ -421,12 +427,18 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
         self.adapters = tuple(adapters)
         self.override = override
         self.cache = Cache(label="server version", max_age=max_age, model=_Detected, split="none")
+        self.doctor = DoctorCheck(title="server API", run=self._doctor_row, network="both")
         self._picks: dict[tuple[int, str, str | None], Any] = {}
         self._picks_lock = threading.Lock()
 
-    def __set_name__(self, owner: type, name: str) -> None:
-        super().__set_name__(owner, name)
-        self.cache.__set_name__(owner, name)  # its cache is the plugin's too, under the same name
+    def _parts(self) -> Mapping[str, Block]:
+        """Its detection cache ``<plugin>.server_api`` and doctor row ``<plugin>.server-api``."""
+        return {"cache": self.cache, "doctor": self.doctor}
+
+    def _doctor_row(self, ctx: PluginContext) -> DoctorResult:
+        from untaped.sdk.network._server_api_doctor import server_api_row  # noqa: PLC0415
+
+        return server_api_row(self, ctx)
 
     def __repr__(self) -> str:
         return f"ServerApi({self.where!r})"
@@ -464,6 +476,14 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
         if arguments is None:
             raise TypeError(f"{self.where} names no version type: subscript it")
         return cast("type[V]", arguments[2])
+
+    @property
+    def _url_field(self) -> str | None:
+        """The field of the ``server=`` key holding the URL people set (``url``), if one does."""
+        from untaped.sdk.network.credentials import CredentialKey, key_shape  # noqa: PLC0415
+
+        shape = key_shape(cast("type[CredentialKey]", self.credential.key))
+        return shape.token_url or (shape.urls[0] if shape.urls else None)
 
     @property
     def _members(self) -> frozenset[str]:

@@ -64,7 +64,8 @@ def plan_rows(
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
-    checks = selected_check_rows(result, profile, frozenset(ready)) if ready else []
+    # Only --online runs the checks contacting a service; a plain plan sends nothing.
+    checks = selected_check_rows(result, profile, frozenset(ready)) if ready and online else []
     for plugin in services.values():
         rows.extend(_online_rows(plugin, checks, online=online, ready=plugin.name in ready))
     return rows
@@ -201,12 +202,12 @@ def _login_row(plugin: ComposedPlugin, field: MarkedField, profile: str) -> Row:
 def _online_rows(
     plugin: ComposedPlugin, checks: list[Row], *, online: bool, ready: bool
 ) -> list[Row]:
-    """One row per declared online check, ``<service>.online.<check>`` in every state."""
+    """One row per check contacting a service, ``<service>.online.<check>`` in every state."""
     name = plugin.name
     found = {str(row["check"]): row for row in checks if row["plugin"] == name}
     rows = []
     for check in plugin.doctor_checks:
-        if not check.online:
+        if check.network == "offline":
             continue
         step = f"{name}.online.{check.id.removeprefix(f'{name}.')}"
         row = found.get(check.id)

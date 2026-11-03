@@ -187,8 +187,8 @@ class _Composed:
     def lines(self, plugin: ComposedPlugin) -> list[Line]:
         """Every line ``plugin`` owns.
 
-        Its commands, settings and state, Python API, contracts, behaviours
-        and record kinds.
+        Its commands, settings and state, Python API, contracts, behaviours,
+        record kinds and server APIs.
         """
         from untaped.core.surface._cli import root_plugin_lines, subtree_lines  # noqa: PLC0415
         from untaped.core.surface._contracts import (  # noqa: PLC0415
@@ -197,6 +197,7 @@ class _Composed:
             owned_contracts,
         )
         from untaped.core.surface._sdk import module_lines  # noqa: PLC0415
+        from untaped.core.surface._server_apis import server_api_lines  # noqa: PLC0415
         from untaped.core.surface._settings import extension_lines, settings_lines  # noqa: PLC0415
 
         name = plugin.name
@@ -215,6 +216,7 @@ class _Composed:
         lines.extend(contract_lines(name, infos, mark, self.exports.stable_classes))
         lines.extend(self.behaviours.get(name, ()))
         lines.extend(self.records.get(name, ()))
+        lines.extend(server_api_lines(name, plugin.decl, mark))
         return lines
 
     def _words(self, plugin: ComposedPlugin) -> set[str]:

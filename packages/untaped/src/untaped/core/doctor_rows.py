@@ -2,7 +2,8 @@
 
 :func:`collect_doctor_rows` gathers every row, each isolated so one
 plugin's invalid settings never stop another's, plus with ``online=True``
-the checks that contact a service (:func:`online_probe_rows`);
+the checks that contact a service only (``network="online"``) and the
+``both`` ones contacting it (:func:`online_probe_rows`);
 :func:`selected_check_rows` is the rows setup shows for the plugins it set up.
 """
 
@@ -238,11 +239,12 @@ def online_probe_rows(
     ``profile`` (a ``None`` value unsets that key), laid over the loaded config
     for the duration of the call, in a child run carrying them
     (:func:`untaped.runtime.run.child_run`);
-    ``profile`` need not exist yet. Only the ``online=True`` checks run: the
-    offline ones would misreport on candidate values, and there are no state
-    or config-file rows.
+    ``profile`` need not exist yet. Only the checks that contact a service run
+    (``network="online"`` or ``"both"``): the offline ones would misreport on
+    candidate values, and there are no state or config-file rows.
     Settings that do not validate come back as the one failing ``validate
-    settings`` row. Never writes: not the config, not a token store.
+    settings`` row. Writes neither the config nor a token store (a server
+    API's row keeps what it detects, as any detection does).
 
     ``setup`` runs this on a worker thread inside a copy of its own context;
     the child run lives in that copy only.
@@ -259,9 +261,9 @@ def online_probe_rows(
         if error is not None:
             return [doctor_row("settings", scope.plugin, FAIL, "validate settings", error)]
         return [
-            _run_check(scope, check_item, settings, profile=profile)
+            _run_check(scope, check_item, settings, profile=profile, online=True)
             for check_item in scope.checks
-            if check_item.online
+            if check_item.network != "offline"
         ]
 
 
@@ -280,13 +282,13 @@ def _check_rows(
     plugins: frozenset[str] | None,
     profile: str,
 ) -> list[dict[str, object]]:
-    """Run the contributed checks (online ones only when ``online``)."""
+    """Run the contributed checks (the ``network="online"`` ones only when ``online``)."""
     return [
-        _run_check(scope, check_item, settings, profile=profile)
+        _run_check(scope, check_item, settings, profile=profile, online=online)
         for scope, settings in contexts
         if plugins is None or scope.plugin in plugins
         for check_item in scope.checks
-        if online or not check_item.online
+        if online or check_item.network != "online"
     ]
 
 
@@ -520,9 +522,14 @@ def _setup_rows(
 
 
 def _run_check(
-    scope: SectionScope, check_item: DoctorCheck, settings: BaseModel | None, *, profile: str
+    scope: SectionScope,
+    check_item: DoctorCheck,
+    settings: BaseModel | None,
+    *,
+    profile: str,
+    online: bool,
 ) -> dict[str, object]:
-    ctx = PluginContext(settings=settings, owner=scope.plugin)
+    ctx = PluginContext(settings=settings, owner=scope.plugin, online=online)
     try:
         # Typed as ``object``: provider bodies may return anything at runtime;
         # the shape checks below are the validation.

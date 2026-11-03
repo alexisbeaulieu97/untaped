@@ -11,18 +11,21 @@ contact the configured service.
 from __future__ import annotations
 
 import ssl
+import warnings
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated, Literal, get_args
 
 from pydantic import BaseModel
 
 from untaped.runtime.settings import plugins_root
 from untaped.sdk._block import OwnedBlock
+from untaped.sdk._parameter_marks import deprecated_parameters
 from untaped.sdk._run import PluginHandle
 from untaped.sdk.errors import HttpError, UntapedError
 from untaped.sdk.health._setup_status import set_command, shown_value, unset_fields
 from untaped.sdk.health.marks import MarkedField, SetupMarks, section_marks
+from untaped.sdk.marks import UntapedDeprecationWarning, deprecated
 from untaped.sdk.network.auth import find_program
 
 if TYPE_CHECKING:
@@ -30,13 +33,21 @@ if TYPE_CHECKING:
     from untaped.sdk.plugin import SpelledCommand
 
 
+#: Whether a check contacts a service: ``offline`` never, ``online`` only under
+#: ``doctor --online``, ``both`` from local state offline and the service under ``--online``.
+type Network = Literal["offline", "online", "both"]
+
+
 class DoctorCheck(OwnedBlock):
     """A health check contributed by core or a plugin.
 
     A plugin class holding it names it: ``store = DoctorCheck(title=..., run=...)``
-    is the check ``<plugin>.store``. An ``online`` check contacts a remote
-    service, so only ``untaped doctor --online`` runs it; every other check
-    stays offline.
+    is the check ``<plugin>.store``. ``network`` says whether it contacts a
+    remote service: an ``offline`` check never does; an ``online`` one runs
+    only under ``untaped doctor --online``; a ``both`` one runs every time,
+    reading local state offline and contacting the service under
+    ``--online`` (its body reads which from ``ctx.online``). Setup's plan
+    and the check of candidate settings run the ``online`` and ``both`` ones.
     """
 
     block_kind = "doctor-check"
@@ -44,19 +55,39 @@ class DoctorCheck(OwnedBlock):
 
     title: str
     run: Callable[[PluginContext], DoctorResult]
-    online: bool
+    network: Network
 
+    @deprecated_parameters
     def __init__(
         self,
         *,
         title: str,
         run: Callable[[PluginContext], DoctorResult],
-        online: bool = False,
+        network: Network = "offline",
+        online: Annotated[
+            bool | None, deprecated(removed_in=14, replacement='network="online"')
+        ] = None,
     ) -> None:
         super().__init__()
+        if network not in get_args(Network.__value__):
+            raise ValueError(f"DoctorCheck(network=) is offline, online or both, not {network!r}")
+        if online is not None:
+            if network != "offline":
+                raise TypeError("DoctorCheck takes network= or the deprecated online=, not both")
+            network = "online" if online else "offline"
         self.title = title
         self.run = run
-        self.online = online
+        self.network = network
+
+    @property
+    @deprecated(removed_in=14, replacement="DoctorCheck.network")
+    @warnings.deprecated(
+        "DoctorCheck.online is deprecated and will be removed in 14.0; use DoctorCheck.network",
+        category=UntapedDeprecationWarning,
+    )
+    def online(self) -> bool:
+        """Whether only ``doctor --online`` runs it: ``network == "online"``."""
+        return self.network == "online"
 
     @property
     def id(self) -> str:
@@ -110,6 +141,9 @@ class PluginContext:
 
     settings: BaseModel | None
     owner: str | None = None
+    #: Whether this run may contact services (``doctor --online``, setup's plan): what a
+    #: ``network="both"`` check reads to choose between local state and its service.
+    online: bool = False
 
     @property
     def plugin(self) -> PluginHandle:
@@ -180,7 +214,7 @@ class OnlineCheck(DoctorCheck):
     probe: Callable[[], str]
 
     def __init__(self, *, probe: Callable[[], str], title: str | None = None) -> None:
-        super().__init__(title=title or "", run=self._run, online=True)
+        super().__init__(title=title or "", run=self._run, network="online")
         self.probe = probe
 
     @property

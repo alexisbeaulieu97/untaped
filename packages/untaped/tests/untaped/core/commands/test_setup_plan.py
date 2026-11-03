@@ -288,6 +288,33 @@ def test_online_runs_the_services_own_online_check(_isolated_config: Path) -> No
     assert PROBES == ["probed"]
 
 
+def test_a_plain_plan_contacts_no_service(_isolated_config: Path) -> None:
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
+    online = _step(_plan(), "wiz.online.api")
+    assert (online["state"], online["detail"]) == ("skipped", "run with --online to check it")
+    assert PROBES == []
+
+
+def test_online_runs_a_both_check_knowing_it_may_contact(_isolated_config: Path) -> None:
+    _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
+    seen: list[bool] = []
+
+    def run(ctx: PluginContext) -> DoctorResult:
+        seen.append(ctx.online)
+        return DoctorResult(ok=True, detail="online" if ctx.online else "offline")
+
+    wiz = make_plugin(
+        "wiz",
+        settings=WizProfile,
+        version=DoctorCheck(title="wiz version", run=run, network="both"),
+    )
+    assert _step(_plan(specs=(wiz,)), "wiz.online.version")["state"] == "skipped"
+    assert seen == []
+    online = _step(_plan("--online", specs=(wiz,)), "wiz.online.version")
+    assert (online["state"], online["detail"]) == ("done", "online")
+    assert seen == [True]
+
+
 def test_a_failed_online_check_carries_its_fix(_isolated_config: Path) -> None:
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     FAIL.append(True)
@@ -405,7 +432,7 @@ def test_whether_a_manual_fix_takes_a_secret_depends_on_its_command(
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(id="wiz.api", ok=False, detail="no", fix=fix)
 
-    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    check = DoctorCheck(title="wiz API reachable", run=run, network="online")
     wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
@@ -426,7 +453,7 @@ def test_a_failed_check_whose_fix_sets_a_masked_value_takes_a_secret(
             id="pin.api", ok=False, detail="rejected", fix="config set pin.pin <PIN>"
         )
 
-    check = DoctorCheck(title="pin API reachable", run=run, online=True)
+    check = DoctorCheck(title="pin API reachable", run=run, network="online")
     pin = make_plugin("pin", settings=PinProfile, api=check)
     write_config(_isolated_config, "format_version: 2\npin: {pin: '1234'}\n")
     online = _step(_plan("--online", specs=(pin,)), "pin.online.api")
@@ -442,7 +469,7 @@ def test_an_online_rows_secret_follows_the_doctor_rows_automatic(
             id="wiz.api", ok=False, detail="stale", fix="auth login wiz", automatic=automatic
         )
 
-    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    check = DoctorCheck(title="wiz API reachable", run=run, network="online")
     wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")
@@ -459,7 +486,7 @@ def test_a_fix_that_sets_a_token_takes_a_secret_however_it_names_the_profile(
             id="wiz.api", ok=False, detail="no", fix=[*spelling, "auth", "login", "wiz"]
         )
 
-    check = DoctorCheck(title="wiz API reachable", run=run, online=True)
+    check = DoctorCheck(title="wiz API reachable", run=run, network="online")
     wiz = make_plugin("wiz", settings=WizProfile, api=check)
     _configure(_isolated_config, "{server: {url: https://wiz}, token_command: [x]}")
     online = _step(_plan("--online", specs=(wiz,)), "wiz.online.api")

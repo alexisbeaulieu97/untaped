@@ -78,6 +78,8 @@ Most commands take `--format table|json|yaml|raw|pipe` and `--columns`.
   [how composition works](./docs/composition.md),
   [contracts](./docs/contracts.md) between plugins,
   [credentials](./docs/credentials.md) for a service it connects to,
+  [server APIs](./docs/server-apis.md) for a server whose API changes
+  between versions,
   [caches](./docs/caches.md) of what an upstream answered,
   [state](./docs/state.md) only it holds and
   [its agent skill](./docs/plugin-skills.md), checked with

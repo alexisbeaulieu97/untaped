@@ -1,8 +1,9 @@
 """``online_probe_rows``: one plugin's online checks against candidate values.
 
-``setup`` calls it before saving. It runs only the plugin's ``online=True``
-checks, over the loaded config with the candidate values laid on top
-(a child run's overlay), and never writes anything.
+``setup`` calls it before saving. It runs only the plugin's checks contacting
+a service (``network="online"`` or ``"both"``), over the loaded config with the
+candidate values laid on top (a child run's overlay), and writes neither the
+config nor a token store.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from untaped.sdk._app_context import app_context
 from untaped.sdk._run import current_overlay
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.health import OnlineCheck
-from untaped.sdk.health.doctor import DoctorCheck, DoctorResult
+from untaped.sdk.health.doctor import DoctorCheck, DoctorResult, PluginContext
 from untaped.sdk.testing import MemoryCredentials
 
 pytestmark = pytest.mark.usefixtures("_isolated_config", "home_run")
@@ -100,6 +101,20 @@ def test_only_online_checks_run(_isolated_config: Path) -> None:
     assert OFFLINE_CALLS == []
     assert rows[0]["status"] == "pass"
     assert rows[0]["detail"] == "authenticated as alice"
+
+
+def test_a_both_check_runs_knowing_it_may_contact(_isolated_config: Path) -> None:
+    write_config(_isolated_config, _OLD)
+    seen: list[bool] = []
+
+    def run(ctx: PluginContext) -> DoctorResult:
+        seen.append(ctx.online)
+        return DoctorResult(ok=True, detail="checked")
+
+    both = DoctorCheck(title="wiz version", run=run, network="both")
+    rows = _rows({}, result=compose(make_plugin("wiz", settings=WizProfile, version=both)))
+    assert [(row["check"], row["status"]) for row in rows] == [("wiz.version", "pass")]
+    assert seen == [True]
 
 
 @pytest.mark.parametrize("stored", [False, True])

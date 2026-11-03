@@ -1,5 +1,8 @@
 """A plugin's page: its description, the guides to read first, its sections, what it extends.
 
+Then its servers (:mod:`untaped.core.docs._servers`) and, for a plugin that
+runs a command of its own, that command's usage.
+
 Sections with nothing in them are left out; the guides are listed under
 "Read first" rather than as a section (``untaped docs PLUGIN guides`` lists
 them again).
@@ -7,7 +10,7 @@ them again).
 
 from __future__ import annotations
 
-from untaped.core.docs import _commands, _guides, _settings
+from untaped.core.docs import _commands, _guides, _servers, _settings
 from untaped.core.docs._commands import mark
 from untaped.core.docs._docstring import describe, markdown
 from untaped.core.docs._site import ORGANIZED, Site
@@ -50,6 +53,8 @@ def page(site: Site, plugin: PluginDecl) -> list[str]:
         for section, count in sections(site, plugin).items()
     ]
     lines += extends(site, plugin, heading=True)
+    distribution = None if plugin.root else site.result_plugin(name).plugin_ref.distribution
+    lines += _servers.section(plugin, distribution)
     examples = described.examples
     if plugin.runs is not None:  # the plugin's own command (`untaped lint`): its usage here
         ran = describe(plugin.runs.doc)

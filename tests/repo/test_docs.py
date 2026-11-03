@@ -503,6 +503,7 @@ DOCS_PAGES = [
     "reference/records.md",
     "screens.md",
     "scripting.md",
+    "server-apis.md",
     "skills.md",
     "state.md",
     "troubleshooting.md",

@@ -7,6 +7,7 @@ groups, blocks, fills, caches) and collects the declarations and problems
 
 from __future__ import annotations
 
+import inspect
 import itertools
 import sys
 import typing
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 
 from untaped.runtime.command_walk import CommandWalk, is_deprecated, mark_stability
 from untaped.runtime.declaration import (
+    AdapterDecl,
     BlockDecl,
     CacheDecl,
     CommandDecl,
@@ -26,6 +28,7 @@ from untaped.runtime.declaration import (
     PluginDecl,
     PointDecl,
     Problem,
+    ServerApiDecl,
     StabilityDecl,
     TypeDecl,
     target_of,
@@ -70,6 +73,38 @@ def cache_setting(cache: Cache[Any]) -> CacheDecl:
         max_age_seconds=None if max_age is None else int(max_age.total_seconds()),
         renamed_from=cache.renamed_from,
         removed_in=cache.removed_in,
+    )
+
+
+def server_api_decl(api: Any) -> ServerApiDecl:
+    """A server API as its readers need it: its settings, ``detect``'s docstring, its adapters."""
+    url = api._url_field
+    return ServerApiDecl(
+        override=str(api.override),
+        url=".".join((*SettingKey.path_of(api.server), *(() if url is None else (url,)))),
+        detect=inspect.cleandoc(api.detect.__doc__ or ""),
+        adapters=tuple(_adapter_decl(adapter) for adapter in api.adapters),
+        stability=mark_stability(class_mark(type(api))),
+    )
+
+
+def _adapter_decl(adapter: Any) -> AdapterDecl:
+    # Imported here, where the plugin holding the server API has loaded it: no start-up import.
+    from untaped.sdk.network.server_api import summary_line  # noqa: PLC0415
+
+    doc = inspect.cleandoc(adapter.__dict__.get("__doc__") or "").splitlines()
+    mark = adapter.__dict__.get("stability")
+    stability = mark_stability(mark)
+    if stability is not None and stability.replaced_by is not None:  # another adapter
+        stability = stability.model_copy(
+            update={"replacement": mark.replacement.__name__, "replaced_by": None}
+        )
+    return AdapterDecl(
+        name=adapter.__name__,
+        summary=summary_line(adapter),
+        doc="\n".join(doc[1:]).strip(),
+        recorded=tuple(str(version) for version in adapter.recorded),
+        stability=stability,
     )
 
 
@@ -297,6 +332,9 @@ class PluginWalk:
         blocks = self._blocks(cls)
         #: Each attribute's value by identity: the blocks a command's fields may name.
         self.held = {id(value): attribute for attribute, value in self._attributes(cls).items()}
+        for attribute, value in self._attributes(cls).items():
+            if isinstance(value, Block):  # a block's parts are held under its attribute too
+                self.held.update((id(part), attribute) for part in value._parts().values())
         #: Each state rows attribute's removers (``removes =``), by command target: where
         #: the command is, and the flag taking the key (``None``: a positional).
         self.removers: dict[str, dict[str, tuple[str, str | None]]] = {}
@@ -578,6 +616,14 @@ class PluginWalk:
                 )
                 continue
             seen[id(value)] = attribute
+            for part_name, part in value._parts().items():
+                if id(part) in seen:
+                    self.problem(
+                        "duplicate-block",
+                        f"{where}.{part_name}",
+                        f"is the same {part.block_kind} as {seen[id(part)]}",
+                    )
+                seen[id(part)] = f"{attribute}.{part_name}"
             owners = {binding.owner for binding in value.bindings} - set(cls.__mro__)
             if owners:
                 other = ", ".join(sorted(owner.__qualname__ for owner in owners))
@@ -608,9 +654,11 @@ class PluginWalk:
             if problem is not None:
                 self.problem("block-name", where, problem)
                 continue
-            for problem in value.problems():
+            problems = value.problems()
+            for problem in problems:
                 self.problem("block-shape", where, problem)
             at = self._placed_at(value, where)
+            served = value.block_kind == "server-api" and not problems
             blocks.append(
                 BlockDecl(
                     block=value.block_kind,
@@ -618,10 +666,22 @@ class PluginWalk:
                     name=name,
                     module=value.module,
                     cache=cache_setting(value) if isinstance(value, Cache) else None,
+                    server_api=server_api_decl(value) if served else None,
                     layout=value.layout if isinstance(value, Dir) else None,
                     items=isinstance(value, Dir) and value.item_type is not None,
                     at=at,
                 )
+            )
+            blocks.extend(
+                BlockDecl(
+                    block=part.block_kind,
+                    attribute=attribute,
+                    name=part.derived_name(attribute),
+                    module=value.module,
+                    part=part_name,
+                    cache=cache_setting(part) if isinstance(part, Cache) else None,
+                )
+                for part_name, part in value._parts().items()
             )
         return tuple(blocks)
 
