@@ -18,10 +18,10 @@ from pathlib import Path
 from typing import Any
 
 from untaped.sdk.storage import atomic_write
-from untaped_dotfiles.documents import dump_document, load_document, load_values, merge_text, plain
+from untaped_dotfiles.documents import load_document, load_values, merge_text, plain, remove_text
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
-from untaped_dotfiles.merge import leaf_paths, project, remove_paths
+from untaped_dotfiles.merge import leaf_paths, project
 from untaped_dotfiles.models import KeyPath
 from untaped_dotfiles.package import MergeFormat
 from untaped_dotfiles.states import TargetInfo
@@ -114,9 +114,7 @@ class FilesystemPlacer:
         if not target.is_file():
             return
         text = target.read_text(encoding="utf-8")
-        existing = load_document(text, fmt=fmt, where=str(target))
-        remove_paths(existing, managed)
-        atomic_write(target, dump_document(existing, fmt=fmt, where=str(target), like=text))
+        atomic_write(target, remove_text(text, managed, fmt=fmt, where=str(target)))
 
     def delete(self, target: Path) -> None:
         if target.is_symlink() or target.is_file():

@@ -266,11 +266,22 @@ def test_a_toml_merge_no_layout_can_hold_is_refused(
 ) -> None:
     target = tmp_path / "config.toml"
     target.write_text("a = 1\n")
-    monkeypatch.setattr(documents, "_toml_text", lambda document: None)
+    monkeypatch.setattr(documents, "_toml_text", lambda document, expected: None)
     placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
     with pytest.raises(DotfilesError, match="nothing was written"):
         placer.merge(b"b = 2\n", target, fmt="toml")
     assert target.read_text() == "a = 1\n"
+
+
+def test_a_toml_merge_tomlkit_would_lose_a_key_in_is_refused(tmp_path: Path) -> None:
+    # Writing through an array of tables split around its table drops `d.c` in tomlkit.
+    before = "[[d.b]]\na = 0\n[d]\nc = 6\n[[d.b]]\nc = 5\n"
+    target = tmp_path / "config.toml"
+    target.write_text(before)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    with pytest.raises(DotfilesError, match="nothing was written"):
+        placer.merge(b"[[d.b]]\nz = 1\n", target, fmt="toml")
+    assert target.read_text() == before
 
 
 def test_toml_that_would_not_read_back_is_refused() -> None:

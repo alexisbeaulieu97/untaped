@@ -313,9 +313,10 @@ class PackageFile(Where):
       `format` without `merge` is refused. A merge writes the keys the
       source names: mappings (TOML tables) recurse, other values (lists and
       arrays of tables too) replace, and the target's other keys stay, with
-      a YAML or TOML target's comments and order. In TOML, a new table
-      under dotted keys (`a.b = 1`) is written inline, and a merge that
-      would move the target's other keys is refused, writing nothing.
+      a YAML or TOML target's comments and order. In TOML, a new table is
+      written inline where a `[header]` would capture the keys after it
+      (under dotted keys such as `a.b = 1`), and a merge that can't be
+      written without changing the target's other keys writes nothing.
     - `policy` is the author's suggestion: `sync`, `once` or `manual`
       (default). A machine can choose its own.
     - `os` (`macos`, `linux`, `windows`), `only` and `unless` (tag lists) on

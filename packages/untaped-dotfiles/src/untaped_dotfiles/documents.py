@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import TYPE_CHECKING, Any, cast
 
 from untaped.sdk import yaml_mapping_indent
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import value_hash
-from untaped_dotfiles.merge import as_is, merge_into
+from untaped_dotfiles.merge import Fit, as_is, merge_into, remove_paths
+from untaped_dotfiles.models import KeyPath
 from untaped_dotfiles.package import MergeFormat
 
 if TYPE_CHECKING:
@@ -61,23 +62,35 @@ def merge_text(
     TOML first merges as JSON and YAML do, a new table getting its own
     ``[header]``. Where a header would capture the keys after it (under dotted
     keys such as ``a.b = 1``) the merge is redone with new tables and arrays of
-    tables written inline; when neither reads back as the merged values,
-    nothing is written.
+    tables written inline. A TOML text is kept only when it reads back as the
+    same merge on plain values; otherwise nothing is written.
     """
     if fmt != "toml":
         document = load_document(text, fmt=fmt, where=where)
         merge_into(document, incoming)
         return document, dump_document(document, fmt=fmt, where=where, like=text)
-    for fit in (as_is, _inline_below_headers):
+    return _edit_toml(
+        text,
+        lambda document, fit: merge_into(document, incoming, fit=fit),
+        fits=(as_is, _inline_below_headers),
+        where=where,
+    )
+
+
+def remove_text(text: str, managed: tuple[KeyPath, ...], *, fmt: MergeFormat, where: str) -> str:
+    """The document ``text`` holds without the keys at ``managed`` (see :func:`remove_paths`).
+
+    A TOML text is kept only when it reads back as the same removal on plain
+    values; otherwise nothing is written.
+    """
+    if fmt != "toml":
         document = load_document(text, fmt=fmt, where=where)
-        try:
-            merge_into(document, incoming, fit=fit)
-        except Exception:
-            continue
-        rendered = _toml_text(document)
-        if rendered is not None:
-            return document, rendered
-    raise _refused(where)
+        remove_paths(document, managed)
+        return dump_document(document, fmt=fmt, where=where, like=text)
+    _, rendered = _edit_toml(
+        text, lambda document, fit: remove_paths(document, managed), fits=(as_is,), where=where
+    )
+    return rendered
 
 
 def dump_document(
@@ -91,7 +104,7 @@ def dump_document(
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     if fmt == "toml":
-        rendered = _toml_text(document)
+        rendered = _toml_text(document, _unwrap(document))
         if rendered is None:
             raise _refused(where)
         return rendered
@@ -131,8 +144,37 @@ def _inline(value: Any) -> Any:
     return value
 
 
-def _toml_text(document: MutableMapping[str, Any]) -> str | None:
-    """``document`` as TOML, or ``None`` when that text doesn't read back as ``document``."""
+def _edit_toml(
+    text: str,
+    edit: Callable[[MutableMapping[str, Any], Fit], None],
+    *,
+    fits: tuple[Fit, ...],
+    where: str,
+) -> tuple[MutableMapping[str, Any], str]:
+    """Apply ``edit`` to the TOML ``text`` with the first fit whose text reads back right.
+
+    Right is what ``edit`` makes of the plain values: tomlkit can lose a key
+    while editing (an array of tables split around its parent table), so the
+    edited document is not its own reference.
+    """
+    expected = _unwrap(load_document(text, fmt="toml", where=where))
+    edit(expected, as_is)
+    failure: Exception | None = None
+    for fit in fits:
+        document = load_document(text, fmt="toml", where=where)
+        try:
+            edit(document, fit)
+        except Exception as exc:  # tomlkit can't edit this layout with this fit; next one
+            failure = exc
+            continue
+        rendered = _toml_text(document, expected)
+        if rendered is not None:
+            return document, rendered
+    raise _refused(where) from failure
+
+
+def _toml_text(document: MutableMapping[str, Any], expected: Any) -> str | None:
+    """``document`` as TOML, or ``None`` when that text doesn't read back as ``expected``."""
     import tomlkit  # noqa: PLC0415
 
     text = tomlkit.dumps(document)
@@ -140,7 +182,7 @@ def _toml_text(document: MutableMapping[str, Any]) -> str | None:
         back = tomlkit.parse(text).unwrap()
     except Exception:  # tomlkit wrote text it can't read
         return None
-    return text if value_hash(back) == value_hash(_unwrap(document)) else None
+    return text if value_hash(back) == value_hash(expected) else None
 
 
 def _unwrap(document: MutableMapping[str, Any]) -> dict[str, Any]:
