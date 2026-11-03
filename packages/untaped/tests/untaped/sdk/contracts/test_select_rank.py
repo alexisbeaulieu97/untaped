@@ -24,7 +24,9 @@ from core_test_support.contracts.support import (
     shop_plugin,
     write_config,
 )
+from untaped.core.config import RankProviders, SettingsFileRepository
 from untaped.runtime.bootstrap import build_root_app
+from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.contracts.registry import doctor_rows, ranking
 from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.settings import (
@@ -270,6 +272,54 @@ def test_plugin_rank_removing_what_isnt_there_changes_nothing() -> None:
     assert json.loads(result.stdout)["action"] == "unchanged"
     assert "shelf.extensions.book_source.rank.books unchanged" in result.stderr
     assert "shelf" not in config_path().read_text()
+
+
+@pytest.mark.parametrize(
+    "stored",
+    ["extensions: {}", "extensions: {book_source: {}}", "extensions: {book_source: {rank: {}}}"],
+)
+def test_plugin_rank_removing_a_ranking_that_isnt_set_leaves_the_file(stored: str) -> None:
+    """What it reports matches the file: a ranking not set is unchanged, and nothing is written."""
+    write_config(f"format_version: 2\nshelf:\n  {stored}\n")
+    before = config_path().read_text()
+    result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
+    assert json.loads(result.stdout)["action"] == "unchanged"
+    assert "removed the ranking" not in result.stderr
+    assert config_path().read_text() == before
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "extensions: null",
+        "extensions: {book_source: null}",
+        "extensions: {book_source: {rank: null}}",
+        "extensions: {book_source: {rank: {books: null}}}",
+        "extensions: [1]",
+    ],
+)
+def test_plugin_rank_removing_repairs_a_null_or_malformed_value(stored: str) -> None:
+    """A null or malformed value is stored, as runs read it: removing it is a change."""
+    write_config(f"format_version: 2\nshelf:\n  {stored}\n")
+    result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
+    assert json.loads(result.stdout)["action"] == "deleted", result.stderr
+    assert "extensions" not in (read_config_dict(config_path()).get("shelf") or {})
+
+
+def test_plugin_rank_as_asked_is_unchanged_even_in_a_dry_run() -> None:
+    write_config(RANKED)
+    argv = ["plugin", "rank", "shelf.book_source", "books", "shop", "library", "-f", "json"]
+    result = _run([*argv, "--dry-run"], *_all())
+    assert json.loads(result.stdout)["action"] == "unchanged"
+    assert config_path().read_text() == RANKED
+
+
+def test_rank_refuses_a_changed_ranking_even_when_it_is_already_as_asked() -> None:
+    write_config(RANKED)
+    build_root_app(candidates=candidates(*_all()))  # registers the shelf's settings
+    rank = RankProviders(SettingsFileRepository(), owners=["shelf"])
+    with pytest.raises(ConfigError, match="changed in profile default while it was open"):
+        rank("shelf.book_source", "books", ["shop", "library"], expected=["shop"])
 
 
 def test_plugin_rank_reports_unchanged_updated_and_deleted() -> None:
@@ -578,3 +628,18 @@ def test_doctor_has_one_row_per_provider() -> None:
         ("library", "pass", "active"),
         ("shop", "pass", "active"),
     ]
+
+
+@pytest.mark.usefixtures("home_run")
+def test_a_ranking_as_asked_is_still_validated_before_a_new_profile_is_made() -> None:
+    """Setup makes a profile only for a valid ranking, even one the base already holds."""
+    from untaped.core.commands.setup_write import RankTarget, write_ranking
+
+    write_config(
+        RANKED.replace("        books: [shop, library]", "        books: [shop]\n    junk: 1")
+    )
+    build_root_app(candidates=candidates(*_all()))  # registers the shelf's settings
+    target = RankTarget("shelf", "book_source", "books")
+    with pytest.raises(ConfigError, match=r"invalid value for 'shelf\.extensions'"):
+        write_ranking(target, '["shop"]', profile="prod", owners={"shelf"})
+    assert "profiles" not in read_config_dict(config_path())
