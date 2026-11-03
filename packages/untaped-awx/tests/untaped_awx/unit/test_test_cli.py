@@ -306,6 +306,20 @@ def test_a_var_no_suite_declares_is_a_usage_error(tmp_path: Path) -> None:
     assert "unknown input: frooks; declared: env" in result.stderr
 
 
+def test_non_interactive_at_a_terminal_names_the_missing_variable_without_asking(
+    tmp_path: Path,
+) -> None:
+    test_file = _write(
+        tmp_path / "s.yml",
+        "---\nvariables:\n  env: {}\n---\nkind: AwxTestSuite\njobTemplate: J\ncases: {c: {}}\n",
+    )
+
+    result = run(["test", "list", str(test_file), "--non-interactive"], interactive=True)
+
+    assert result.exit_code == 2
+    assert "required 1 variable not provided: env" in result.stderr
+
+
 def test_run_uses_var_flag(fake_aap: FakeAap, tmp_path: Path) -> None:
     _seed_jt(fake_aap)
     test_file = _write(

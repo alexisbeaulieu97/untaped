@@ -7,10 +7,11 @@ from untaped.sdk import ErrorCategory, System, UntapedError, experimental
 
 @experimental
 class InputError(UntapedError):
-    """An input value that doesn't fit its declaration, or a name nothing declares.
+    """An input value that doesn't fit its declaration.
 
     Invalid local input (exit 1): the values come from flags, files and
-    answers on this machine. The message names the input and never repeats
+    answers on this machine; a name nothing declares is a usage error
+    instead (exit 2). The message names the input and never repeats
     the value, which may be a secret.
     """
 

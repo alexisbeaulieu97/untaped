@@ -29,6 +29,12 @@ class InputSpec(Input):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     type: Literal["str", "int", "bool", "float", "list", "dict"] = "str"
+    items: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `list` input's element type (default: `str`)."
+    )
+    values: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `dict` input's value type (default: `str`)."
+    )
     required: bool = False
     scope: InputScope = "global"
     from_: tuple[str, ...] = Field(default=(), alias="from")

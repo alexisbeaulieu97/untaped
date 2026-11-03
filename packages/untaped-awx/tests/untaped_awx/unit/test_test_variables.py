@@ -13,7 +13,7 @@ import yaml
 from untaped.sdk import ConfigError, Terminal, UsageError
 from untaped.sdk.prompt import PromptChoice
 from untaped_awx.application.suites.loader import LoadTestSuite
-from untaped_awx.domain.suites.suite import Suite, VariableSpec
+from untaped_awx.domain.suites.suite import Suite
 from untaped_awx.infrastructure.suites import DefaultParser
 from untaped_values.api import Ask, Input, InputError, Vars, terminal_ask
 
@@ -164,11 +164,6 @@ def test_a_bad_declaration_names_the_variable() -> None:
         _suite("  env: {type: choice, choices: [a, b], default: c}\n")
 
 
-def test_variable_spec_is_required_without_a_default() -> None:
-    assert VariableSpec(name="env").required is True
-    assert VariableSpec(name="env", default="dev").required is False
-
-
 @dataclass
 class _Terminal:
     """Just enough of a terminal for ``terminal_ask``."""
@@ -204,13 +199,3 @@ def test_each_variable_gets_its_prompt_naming_the_file() -> None:
         ("secret", "token for vars.yml"),
         ("text", "regions for vars.yml (comma-separated)"),
     ]
-
-
-@pytest.mark.parametrize(("can_prompt", "non_interactive"), [(False, False), (True, True)])
-def test_no_terminal_or_non_interactive_never_asks(can_prompt: bool, non_interactive: bool) -> None:
-    terminal = _Terminal(can_prompt=can_prompt)
-    ask = terminal_ask(cast(Terminal, terminal), Vars(non_interactive=non_interactive))
-    assert ask is None
-    with pytest.raises(UsageError, match="required 1 variable not provided: env"):
-        _suite("  env: {}\n")
-    assert terminal.asked == []

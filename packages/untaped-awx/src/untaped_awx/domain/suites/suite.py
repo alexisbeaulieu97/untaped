@@ -99,8 +99,6 @@ class VariableSpec(Input):
     required.
     """
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
     name: str = Field(description="The variable's key under the header's `variables:`.")
     type: VariableType = Field(
         default="string",
@@ -109,11 +107,6 @@ class VariableSpec(Input):
         "(a YAML list, or a comma-separated string; `items` types its elements).",
     )
     values: SkipJsonSchema[None] = Field(None, exclude=True)  # a dict's; awx has no dict
-
-    @property
-    def required(self) -> bool:
-        """A variable without a default must be supplied (CLI/file/prompt)."""
-        return self.default is None
 
 
 def _document_schema(schema: JsonDict) -> None:
