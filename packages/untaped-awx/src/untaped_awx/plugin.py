@@ -19,6 +19,7 @@ from untaped_awx.commands.unified_templates import UnifiedTemplatesGroup
 from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.infrastructure.resources.specs import ALL_SPECS
 from untaped_awx.providers.lint import AwxDocuments, AwxRules
+from untaped_awx.server import SERVER_API
 from untaped_awx.settings import RESOURCES, TOKEN, AwxSettings
 
 
@@ -41,6 +42,7 @@ class Awx(Plugin):
     records = (Resources, *(spec.require_record() for spec in ALL_SPECS))
     resources = RESOURCES
     token = TOKEN
+    server_api = SERVER_API
     api = OnlineCheck(probe=probe)
     skill = StubSkill(
         "Ansible Automation Platform (AAP) and AWX resources and jobs: job and workflow "

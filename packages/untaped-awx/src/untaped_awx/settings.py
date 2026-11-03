@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import timedelta
-from typing import TYPE_CHECKING, Annotated, ClassVar
+from enum import StrEnum
+from typing import TYPE_CHECKING, Annotated, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from untaped.sdk import experimental, installed_code
 from untaped.sdk.health import NeedsSetup
-from untaped.sdk.network import Credential, CredentialKey, TlsVerify
+from untaped.sdk.network import Credential, CredentialKey, Release, ServerVersion, TlsVerify
 from untaped.sdk.storage import Cache
 
 if TYPE_CHECKING:
@@ -33,6 +35,49 @@ class AwxServer(CredentialKey):
     )
 
 
+class Product(StrEnum):
+    """The controller's distribution."""
+
+    AAP = "aap"
+    AWX = "awx"
+
+
+#: How each product spells itself in a version's text.
+_PRODUCT_NAMES = {Product.AWX: "AWX", Product.AAP: "AAP controller"}
+
+
+@dataclass(frozen=True)
+class ControllerVersion(ServerVersion):
+    """An automation controller: ``AWX 24.6.1``, or ``AAP controller 4.6.2``.
+
+    AWX and AAP serve the same controller API v2; AAP 2.5 and later put it
+    behind the platform gateway, which :attr:`gateway` derives from the
+    version, so the text form says everything.
+    """
+
+    product: Product
+    release: Release
+
+    @property
+    def gateway(self) -> bool:
+        """Whether the platform gateway fronts the controller: AAP 2.5, whose controller is 4.6."""
+        return self.product is Product.AAP and self.release >= (4, 6)
+
+    def __str__(self) -> str:
+        return f"{_PRODUCT_NAMES[self.product]} {self.release}"
+
+    @classmethod
+    def parse(cls, text: str) -> Self:
+        """The version ``text`` spells: ``AWX 24.6.1`` or ``AAP controller 4.6.2``."""
+        spelled = text.strip()
+        for product, name in _PRODUCT_NAMES.items():
+            if spelled.startswith(name + " "):
+                return cls(product, Release.parse(spelled.removeprefix(name + " ")))
+        raise ValueError(
+            f"a controller version reads `AWX 24.6.1` or `AAP controller 4.6.2`, not {text!r}"
+        )
+
+
 class AwxSettings(BaseModel):
     """Connection + behaviour configuration for a single AWX/AAP target."""
 
@@ -49,9 +94,12 @@ class AwxSettings(BaseModel):
             "`untaped auth login awx`."
         ),
     )
-    api_prefix: str = Field(
-        default="/api/controller/v2/",
-        description="API prefix. Standalone AWX usually uses `/api/v2/`.",
+    server_version: ControllerVersion | None = Field(
+        default=None,
+        description=(
+            "The controller's version, for example `AWX 24.6.1` or `AAP controller 4.6.2`. "
+            "Set, untaped uses it instead of asking the server; leave it unset to detect it."
+        ),
     )
     default_organization: str | None = Field(
         default=None,
@@ -73,13 +121,6 @@ class AwxSettings(BaseModel):
     test_parallel: Annotated[
         int, experimental, Field(gt=0, description="Default `test run --parallel`.")
     ] = 4
-
-    @field_validator("api_prefix")
-    @classmethod
-    def _api_prefix_shape(cls, v: str) -> str:
-        if not v.startswith("/"):
-            raise ValueError(f"api_prefix must start with '/' (got {v!r})")
-        return v.rstrip("/") + "/"
 
 
 #: The version of what a controller snapshot holds: its model and the code that fills it.
@@ -115,4 +156,11 @@ RESOURCES = Cache(
 TOKEN = Credential(key=AwxServer, env=_TOKEN_ENV)
 
 
-__all__ = ["RESOURCES", "TOKEN", "AwxServer", "AwxSettings"]
+__all__ = [
+    "RESOURCES",
+    "TOKEN",
+    "AwxServer",
+    "AwxSettings",
+    "ControllerVersion",
+    "Product",
+]

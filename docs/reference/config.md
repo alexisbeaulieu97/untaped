@@ -72,12 +72,13 @@ Kept in `~/.untaped/plugins/ansible/state.yml`.
 |---|---|---|---|---|
 | `awx.server.url` | URL | unset | `UNTAPED_AWX__SERVER__URL` | AWX/AAP URL, for example `https://aap.example.com`. |
 | `awx.server.verify_tls` | boolean or path | `true` | `UNTAPED_AWX__SERVER__VERIFY_TLS` | Check the controller's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
-| `awx.api_prefix` | string | `/api/controller/v2/` | `UNTAPED_AWX__API_PREFIX` | API prefix. Standalone AWX usually uses `/api/v2/`. |
+| `awx.server_version` | string (optional) | unset | `UNTAPED_AWX__SERVER_VERSION` | The controller's version, for example `AWX 24.6.1` or `AAP controller 4.6.2`. Set, untaped uses it instead of asking the server; leave it unset to detect it. |
 | `awx.default_organization` | string (optional) | unset | `UNTAPED_AWX__DEFAULT_ORGANIZATION` | Organization that scopes name lookups and `apply` documents without one. |
 | `awx.page_size` | integer | `200` | `UNTAPED_AWX__PAGE_SIZE` | Results requested per AWX API page. Above 0. |
 | `awx.test_timeout_seconds` | number | `1800` | `UNTAPED_AWX__TEST_TIMEOUT_SECONDS` | Seconds a `test run` case waits before its job is cancelled, unless `--timeout`, the case's `timeout:` or the suite's `defaults.timeout` sets it. Above 0. Experimental: may change in a minor release. |
 | `awx.test_parallel` | integer | `4` | `UNTAPED_AWX__TEST_PARALLEL` | Default `test run --parallel`. Above 0. Experimental: may change in a minor release. |
 | `awx.caches.resources.max_age_seconds` | integer | `3600` | `UNTAPED_AWX__CACHES__RESOURCES__MAX_AGE_SECONDS` | Seconds controller resources is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `awx.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_AWX__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `dotfiles`
 

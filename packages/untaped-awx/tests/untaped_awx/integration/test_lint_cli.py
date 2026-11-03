@@ -207,7 +207,11 @@ def test_the_controller_origin_reads_every_kind_once_and_reports_each_rule(fake_
         "awx", "job-templates", "patch", "deploy-web", "--organization", "Platform",
         "--set", "ask_limit_on_launch=true",
     ]  # fmt: skip
-    listed = [request for request in _requests(fake_aap) if request.count("/") == 4]
+    listed = [
+        call.request.url.path
+        for call in fake_aap.router.calls
+        if fake_aap.relative(call.request.url.path).count("/") == 1
+    ]
     assert len(listed) == len(set(listed)) == 15  # one list per catalog kind
 
 
@@ -392,7 +396,7 @@ def test_a_kind_the_token_cannot_list_is_named_from_summary_fields(fake_aap: Any
     result = _lint()
     messages = [row["message"] for row in _rows(result) if row["target"].endswith("/deploy-web")]
     assert "project 'web' was not checked: the token cannot list Project records" in messages
-    assert "GET /api/v2/projects/10/" not in _requests(fake_aap)
+    assert f"GET {fake_aap.path('projects/10/')}" not in _requests(fake_aap)
 
 
 @pytest.mark.usefixtures("composed")
@@ -409,7 +413,9 @@ def test_a_hidden_record_is_named_by_its_referrers_summary_and_read_once_at_most
             inventory=20, playbook="site.yml", summary_fields=fields,
         )  # fmt: skip
     result = _lint()
-    assert _requests(fake_aap).count("GET /api/v2/projects/11/") == 0  # a summary names it
+    assert (
+        _requests(fake_aap).count(f"GET {fake_aap.path('projects/11/')}") == 0
+    )  # a summary names it
     messages = {
         row["target"]: row["message"]
         for row in _rows(result)
@@ -431,7 +437,7 @@ def test_a_hidden_record_no_summary_names_is_read_once(fake_aap: Any) -> None:
             inventory=20, playbook="site.yml", summary_fields=_PLATFORM_SUMMARY,
         )  # fmt: skip
     result = _lint()
-    assert _requests(fake_aap).count("GET /api/v2/projects/11/") == 1
+    assert _requests(fake_aap).count(f"GET {fake_aap.path('projects/11/')}") == 1
     assert "project '#11' was not checked: the token cannot read that Project" in {
         row["message"] for row in _rows(result)
     }
@@ -817,7 +823,7 @@ def test_the_fill_stays_within_its_request_budget(fake_aap: Any) -> None:
     """
     seed_controller(fake_aap)
     _lint()
-    paths = [call.request.url.path.removeprefix("/api/v2/") for call in fake_aap.router.calls]
+    paths = [fake_aap.relative(call.request.url.path) for call in fake_aap.router.calls]
     queries = [call.request.url.params for call in fake_aap.router.calls]
     assert all(call.request.method == "GET" for call in fake_aap.router.calls)
     assert not [path for path in paths if path.strip("/").split("/")[-1].isdigit()]

@@ -126,9 +126,7 @@ def test_delete_renders_async_receipt(fake_aap: Any) -> None:
     import httpx
 
     seed(fake_aap, "inventories")
-    fake_aap.router.delete("https://aap.example.com/api/v2/inventories/10/").mock(
-        return_value=httpx.Response(202)
-    )
+    fake_aap.router.delete(fake_aap.url("inventories/10/")).mock(return_value=httpx.Response(202))
     result = run(["inventories", "delete", "10", "--by-id", "--yes", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)[0]["action"] == "deletion_requested"

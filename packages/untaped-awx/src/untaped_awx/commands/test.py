@@ -282,7 +282,6 @@ class Run(_SuiteCommand):
         from untaped_awx.commands import _temporary_sets as copies  # noqa: PLC0415
         from untaped_awx.commands._action_runner import report_interrupted  # noqa: PLC0415
         from untaped_awx.infrastructure import git_head  # noqa: PLC0415
-        from untaped_awx.infrastructure.jobs.web_ui import job_ui_url  # noqa: PLC0415
 
         results = self.results
         source_ref = self.source.source_ref
@@ -344,7 +343,7 @@ class Run(_SuiteCommand):
                 tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
                 host_reader=ctx.jobs.host_summaries,
                 node_reader=ctx.jobs.workflow_nodes,
-                job_url=partial(job_ui_url, ctx.settings),
+                job_url=ctx.repo.job_url,
             )
             options = SuiteOptions(
                 report=lambda item, failure: diag.failure(failure, item=item),

@@ -2,7 +2,7 @@
 
 AWX returns ``{"count", "next", "previous", "results"}`` on every list
 endpoint. ``next`` is an absolute path (already including the
-configured ``api_prefix``) or ``null`` once exhausted. We follow it
+controller API prefix) or ``null`` once exhausted. We follow it
 verbatim until exhausted; :meth:`AwxClient.get_absolute_json` refuses a
 ``next`` URL outside the configured ``base_url`` origin.
 """
@@ -34,7 +34,7 @@ def paginate(
 ) -> Iterator[dict[str, Any]]:
     """Yield each item from a paginated AWX list endpoint.
 
-    ``path`` is relative to ``api_prefix`` (e.g. ``"job_templates/"``).
+    ``path`` is relative to the controller API prefix (e.g. ``"job_templates/"``).
     ``params`` are query parameters for the *first* page only — AWX
     bakes them into the ``next`` URL it returns. ``limit`` caps the
     total number of items yielded.

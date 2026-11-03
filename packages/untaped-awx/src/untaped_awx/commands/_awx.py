@@ -16,13 +16,13 @@ class AwxCommand(Command[AwxSettings]):
     """A command that talks to AWX through the profile's ``awx`` settings."""
 
     @contextmanager
-    def awx(self) -> Iterator[AwxContext]:
-        """The controller's client and its use cases for this run, closed after the block."""
-        context = AwxContext(self)
-        try:
-            yield context
-        finally:
-            context.close()
+    def awx(self, *, refresh: bool | None = None) -> Iterator[AwxContext]:
+        """The controller's port and its use cases for this run.
+
+        ``refresh`` is a ``Refresh(SERVER_API.cache)`` field's directive: detect
+        the controller's version again, or read only what was detected.
+        """
+        yield AwxContext(self, refresh=refresh)
 
 
 class ResourceCommand(AwxCommand):

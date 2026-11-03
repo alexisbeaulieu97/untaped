@@ -8,7 +8,7 @@ from untaped.sdk import Record
 
 
 class PingStatus(Record):
-    """Health status returned by AAP's ``/api/v2/ping/`` endpoint."""
+    """Health status the controller's ``ping/`` returns."""
 
     model_config = ConfigDict(frozen=True, extra="ignore")
 

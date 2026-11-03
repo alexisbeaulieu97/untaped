@@ -4,29 +4,11 @@ from __future__ import annotations
 
 import pytest
 import yaml
-from pydantic import ValidationError
 
 from untaped.sdk import home, settings_of
 from untaped.sdk.testing import install
 from untaped_awx.plugin import Awx
 from untaped_awx.settings import AwxSettings
-
-
-@pytest.mark.parametrize(
-    ("given", "stored"),
-    [
-        ("/api/v2/", "/api/v2/"),
-        ("/api/v2", "/api/v2/"),
-        ("/api/controller/v2//", "/api/controller/v2/"),
-    ],
-)
-def test_api_prefix_gets_one_trailing_slash(given: str, stored: str) -> None:
-    assert AwxSettings(api_prefix=given).api_prefix == stored
-
-
-def test_api_prefix_must_start_with_a_slash() -> None:
-    with pytest.raises(ValidationError, match="api_prefix"):
-        AwxSettings(api_prefix="api/v2/")
 
 
 def test_the_retired_test_timeout_is_not_read(capsys: pytest.CaptureFixture[str]) -> None:

@@ -1,6 +1,6 @@
 """DTO for a single workflow job template node.
 
-A frozen view of one row in ``/api/v2/workflow_job_templates/<id>/
+A frozen view of one row in ``workflow_job_templates/<id>/
 workflow_nodes/``, flattened so the CLI can render a table without
 reaching into raw ``summary_fields`` dicts. The raw ``summary_fields``
 is also preserved verbatim — as a named field rather than via

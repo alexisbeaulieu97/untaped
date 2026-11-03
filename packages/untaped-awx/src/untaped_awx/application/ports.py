@@ -1,14 +1,20 @@
-"""The port the controller connection satisfies for ``awx ping``.
+"""The port awx's commands call to reach the controller, and the slice ``awx ping`` needs.
 
-Each feature keeps its own ports beside its use cases
+:class:`AwxApi` is what ``SERVER_API.port(settings)`` returns: one adapter per
+controller API version serves it (:mod:`untaped_awx.infrastructure.controller`),
+so no command or use case branches on the version. Each feature keeps its own
+narrower ports beside its use cases
 (:mod:`~untaped_awx.application.resources.ports`,
 :mod:`~untaped_awx.application.jobs.ports`,
-:mod:`~untaped_awx.application.suites.ports`); this one is the client's own.
+:mod:`~untaped_awx.application.suites.ports`), which the port satisfies.
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol
+
+from untaped_awx.application.resources.ports import ProjectPlaybooks, RawHttpResourceClient
+from untaped_awx.domain import Job
 
 
 class AwxPingService(Protocol):
@@ -22,4 +28,12 @@ class AwxPingService(Protocol):
         ...
 
 
-__all__ = ["AwxPingService"]
+class AwxApi(RawHttpResourceClient, ProjectPlaybooks, AwxPingService, Protocol):
+    """The controller, as awx's commands reach it: resources, raw paths, health and links."""
+
+    def job_url(self, job: Job) -> str | None:
+        """The web UI page of ``job``'s output; ``None`` for a kind the UI doesn't show."""
+        ...
+
+
+__all__ = ["AwxApi", "AwxPingService"]

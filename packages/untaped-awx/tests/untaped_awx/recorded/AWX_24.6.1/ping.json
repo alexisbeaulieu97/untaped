@@ -1,0 +1,20 @@
+{
+  "ha": false,
+  "version": "24.6.1",
+  "active_node": "awx-task-0",
+  "install_uuid": "00000000-0000-4000-8000-000000000001",
+  "instances": [
+    {
+      "node": "awx-task-0",
+      "node_type": "control",
+      "uuid": "00000000-0000-4000-8000-000000000002",
+      "heartbeat": "2026-11-03T07:00:00.000000Z",
+      "capacity": 50,
+      "version": "24.6.1"
+    }
+  ],
+  "instance_groups": [
+    {"name": "controlplane", "capacity": 50, "instances": ["awx-task-0"]},
+    {"name": "default", "capacity": 0, "instances": []}
+  ]
+}

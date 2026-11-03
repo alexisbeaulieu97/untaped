@@ -197,7 +197,7 @@ class RawHttpResourceClient(ResourceClient, Protocol):
     ) -> Iterator[dict[str, Any]]:
         """Walk every page of a list endpoint at ``path``.
 
-        ``path`` is relative to ``api_prefix``. Use this instead of a
+        ``path`` is relative to the controller API prefix. Use this instead of a
         single ``request("GET", path, params=…)`` whenever the result
         could exceed one page — AWX silently truncates at ``page_size``
         otherwise.
@@ -376,8 +376,8 @@ class WorkflowNodeRepository(Protocol):
     """Access to workflow-job-template nodes.
 
     Wraps the node collection from both directions: per-workflow via
-    ``/api/v2/workflow_job_templates/<id>/workflow_nodes/`` and
-    collection-wide via ``/api/v2/workflow_job_template_nodes/`` — the
+    ``workflow_job_templates/<id>/workflow_nodes/`` and
+    collection-wide via ``workflow_job_template_nodes/`` — the
     DAG of unified-job-template references that AWX executes when the
     workflow runs. Returned dicts carry the full AWX shape (including
     ``summary_fields``) so the use case can flatten the referenced

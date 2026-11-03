@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from untaped.sdk.network import HttpFactory
+from awx_test_support import ClientRepository
 from untaped_awx.application.resources.apply_ordering import topological_sort
 from untaped_awx.application.resources.apply_verifier import ApplyVerifier
 from untaped_awx.application.resources.delete_resource import DeleteResource
@@ -24,7 +24,6 @@ from untaped_awx.errors import BadRequestError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
-from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.resources.specs import (
     INVENTORY_SOURCE_SPEC,
     INVENTORY_SPEC,
@@ -32,7 +31,6 @@ from untaped_awx.infrastructure.resources.specs import (
     SCHEDULE_SPEC,
 )
 from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
-from untaped_awx.settings import AwxSettings
 
 
 def test_inventory_is_mutable_and_ordered():
@@ -239,17 +237,15 @@ class Controller:
 
 @pytest.fixture
 def controller(
-    awx_config: AwxSettings,
-    http: HttpFactory,
-) -> Iterator[tuple[Controller, BatchMutationEngine, ResourceRepository, HttpFkResolver]]:
+    awx_client: AwxClient,
+) -> Iterator[tuple[Controller, BatchMutationEngine, ClientRepository, HttpFkResolver]]:
     state = Controller()
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.route().mock(side_effect=state.dispatch)
-        with AwxClient(awx_config, http=http) as client:
-            repo = ResourceRepository(client)
-            catalog = AwxResourceCatalog()
-            fk = HttpFkResolver(repo, catalog)
-            yield state, BatchMutationEngine(repo, catalog, fk, StaticStrategyResolver()), repo, fk
+        repo = ClientRepository(awx_client)
+        catalog = AwxResourceCatalog()
+        fk = HttpFkResolver(repo, catalog)
+        yield state, BatchMutationEngine(repo, catalog, fk, StaticStrategyResolver()), repo, fk
 
 
 def inventory_doc(**spec: Any) -> Resource:
