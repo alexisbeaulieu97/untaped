@@ -35,7 +35,10 @@ class Stdin[R: BaseModel](FieldBlock):
     own kind and reads each through that provider's bridge, so ``R`` is the
     owner's model; a row ``R`` takes reads as it would without ``via``. The
     contract's providers are built, and a provider's settings read, only
-    when a row of a provider's kind arrives. A kind no provider reads, or a
+    when a row of a provider's kind arrives. A record bridge reads the same
+    way: ``Stdin[RepoSelector](via=RepoSource.to_selector)`` takes each
+    provider's own selector rows through the fill that names their record.
+    A kind no provider reads, or a
     kind-less line, exits 2; a provider's row that doesn't validate as its
     record exits 1; an unready provider, or a bridge returning an invalid
     owner model, exits 4.

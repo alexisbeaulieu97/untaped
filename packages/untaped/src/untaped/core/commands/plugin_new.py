@@ -310,11 +310,17 @@ class _Scaffold:
         commented: list[str] = []
         for method_name, method in info.methods.items():
             text = _method(method_name, method.function, param, model)
-            if method.bridge:
+            if method.item_bridge:
                 commented.append(
                     "# Only when this provider issues records of its own: subclass "
                     f"{info.cls.__name__}[YourRecord]\n# and turn each into the owner's.\n"
                     + _comment(text)
+                )
+            elif method.bridge:
+                commented.append(
+                    "# Optional: when this provider has a record of its own for it (a selector,\n"
+                    "# say), annotate item with that record and turn it into the owner's;\n"
+                    "# give assert_fills a sample of it too.\n" + _comment(text)
                 )
             elif method_name in getattr(info.cls, "__abstractmethods__", ()):
                 live.append(text)
@@ -360,8 +366,9 @@ class _Scaffold:
         samples, call = "", f"assert_fills({self.provider})"
         if self.info.item is not None:
             samples = (
-                "#: Records as the provider issues them (its ``T``), each checked by "
-                "``assert_fills``.\n#: Add a few, built the way your API returns them.\n"
+                "#: Records as the provider issues them (its ``T``, and the record each "
+                "record bridge it fills\n#: takes), each checked by ``assert_fills``. "
+                "Add a few, built the way your API returns them.\n"
                 "SAMPLES: list[object] = []\n\n\n"
             )
             call = f"assert_fills({self.provider}, samples=SAMPLES)"

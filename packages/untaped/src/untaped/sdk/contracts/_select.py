@@ -33,7 +33,7 @@ from pydantic import BaseModel, ValidationError
 from untaped.runtime.contracts.registry import BoundProvider, offers, ready_of, upgrade_hint
 from untaped.runtime.run_output import Diagnostics
 from untaped.sdk._pipe import PipeEnvelope
-from untaped.sdk.contracts._declare import ContractInfo, Method, method_contract
+from untaped.sdk.contracts._declare import ContractInfo, Method, bridge_takes, method_contract
 from untaped.sdk.contracts._gather import Answers, Errored, Ok, Skipped, _Invalid, issue
 from untaped.sdk.contracts._reasons import Reason
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
@@ -144,17 +144,19 @@ def _one[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:
 def bridged[R](
     bridge: Callable[..., R], envelope: PipeEnvelope, given: type[BaseModel] | None
 ) -> R:
-    """``envelope`` as the owner's model, read through the provider whose kind it is.
+    """``envelope`` as the bridge's model, read through the provider whose record it is.
 
-    ``bridge`` names the contract's bridge method (``RepoSource.to_repo``),
-    whose return type is the owner's model; ``given`` is the model the
-    record's kind names. A record of the owner's own kind validates directly,
-    its ``source`` as given; no provider is asked. Any other kind goes to the
-    provider whose ``T`` is the record's model or its nearest base (the most
-    derived wins), is validated as that model and runs through the provider's
-    bridge. A record without a kind, or of a kind no provider reads, is a
-    :class:`UsageError` (exit 2); a provider that isn't ready, or turns the
-    record into an invalid owner model, is a :class:`ConfigError` (exit 4).
+    ``bridge`` names a contract's bridge method (``RepoSource.to_repo``, or a
+    record bridge such as ``RepoSource.to_selector``), whose return type is
+    the model it reads into; ``given`` is the model the record's kind names.
+    A record of that model's own kind validates directly, its ``source`` as
+    given; no provider is asked. Any other kind goes to the provider whose
+    fill of the bridge takes the record's model or its nearest base (the most
+    derived wins: ``T`` for the item bridge, the fill's annotation for a
+    record bridge), is validated as that model and runs through the
+    provider's bridge. A record without a kind, or of a kind no provider
+    reads, is a :class:`UsageError` (exit 2); a provider that isn't ready, or
+    turns the record into an invalid model, is a :class:`ConfigError` (exit 4).
     """
     info, method = bridge_of(bridge)
     model = method.hints["return"]
@@ -164,7 +166,7 @@ def bridged[R](
         raise UsageError(f"line {envelope.lineno}: a piped record needs a kind to be read")
     if kind == owner_kind:
         return _read(model, envelope)  # type: ignore[no-any-return]  # R is the owner's model
-    provider = None if given is None else _reader(info, given)
+    provider = None if given is None else _reader(info, method, given)
     if provider is None or given is None:
         raise UsageError(
             f"line {envelope.lineno}: no installed provider reads {kind} records as {owner_kind}"
@@ -198,7 +200,7 @@ def bridge_of(bridge: Callable[..., Any]) -> tuple[ContractInfo, Method]:
     if not method.bridge:
         raise TypeError(
             f"{info.cls.__qualname__}.{method.name} is not a bridge "
-            "(a method taking T and returning the owner's model)"
+            "(a method taking T, or a ProviderRecord, and returning an issued model)"
         )
     return info, method
 
@@ -214,30 +216,24 @@ def _read(model: type[Any], envelope: PipeEnvelope) -> Any:
         ) from None
 
 
-def _reader(info: ContractInfo, given: type[Any]) -> BoundProvider | None:
-    readers = [
-        entry
-        for entry in offers(info)
-        if isinstance(entry, BoundProvider)
-        and not entry.binding.owns_item
-        and entry.binding.item is not None
-        and issubclass(given, entry.binding.item)
-    ]
+def _reader(info: ContractInfo, method: Method, given: type[Any]) -> BoundProvider | None:
+    """The provider whose fill of bridge ``method`` takes ``given`` or its nearest base."""
+    readers: list[tuple[BoundProvider, type[Any]]] = []
+    for entry in offers(info):
+        if not isinstance(entry, BoundProvider):
+            continue
+        takes = bridge_takes(type(entry.instance), info, method.name)
+        if takes is not None and issubclass(given, takes):
+            readers.append((entry, takes))
     nearest = [
-        entry
-        for entry in readers
-        if not any(
-            other.binding.item is not entry.binding.item
-            and other.binding.item is not None
-            and entry.binding.item is not None
-            and issubclass(other.binding.item, entry.binding.item)
-            for other in readers
-        )
+        (entry, takes)
+        for entry, takes in readers
+        if not any(other is not takes and issubclass(other, takes) for _, other in readers)
     ]
     if len(nearest) > 1:
-        plugins = ", ".join(entry.plugin for entry in nearest)
+        plugins = ", ".join(entry.plugin for entry, _ in nearest)
         raise ConfigError(
             f"{plugins} all read {given.__qualname__} records [duplicate-kind]",
-            details={"providers": [entry.plugin for entry in nearest]},
+            details={"providers": [entry.plugin for entry, _ in nearest]},
         )
-    return nearest[0] if nearest else None
+    return nearest[0][0] if nearest else None

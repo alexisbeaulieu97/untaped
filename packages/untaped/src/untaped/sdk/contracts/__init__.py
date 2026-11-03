@@ -5,7 +5,8 @@ An owner declares a contract as an ABC subclass of :class:`Contract`, marks it
 :func:`gather` (and :func:`select_one`, or ``Stdin(via=...)``). A provider fills it
 by subclassing it and :class:`Provider`, optionally with its own record type
 ``T`` and the contract's bridge (the method taking ``T`` and returning the
-owner's model), and its plugin class lists it in ``fills``.
+owner's model), or a record bridge taking another record of its own (a
+:data:`ProviderRecord`), and its plugin class lists it in ``fills``.
 
 This module root is never imported by :mod:`untaped.sdk`, so a command that
 asks no contract pays nothing for it. The rules are in ``docs/contracts.md``.
@@ -17,6 +18,7 @@ from untaped.sdk.contracts._declare import (
     Contract,
     NotReady,
     Provider,
+    ProviderRecord,
     cached,
 )
 from untaped.sdk.contracts._gather import (
@@ -41,6 +43,7 @@ __all__ = [
     "NotReady",
     "Ok",
     "Provider",
+    "ProviderRecord",
     "Reason",
     "Skipped",
     "cached",

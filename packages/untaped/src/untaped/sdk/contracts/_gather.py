@@ -226,16 +226,20 @@ def gather[C: Contract, **P, R](
 
     ``plugins`` asks only those providers, each a provider class where the
     code holds one or a plugin name at the user edge (``--source github``);
-    the others are left out of the answers. ``refresh`` directs ``@cached``
-    methods: ``False`` serves cached answers only (none stored:
-    ``Skipped(no-cache)``), ``True`` always calls, and ``None`` follows the
-    command's ``Refresh`` when it names this method's cache, else serves
-    within the cache's max age (its ``<owner>.caches.<name>.max_age_seconds``
-    setting). A call refreshing an answer holds that answer's lock, so a
-    second process asking the same provider waits for it. With no ready
-    provider at all it raises :class:`NoProviderReady` (exit 4) naming why
-    each one isn't. ``progress`` counts the providers as they answer, each
-    named as it does; a provider's method never gets the handle.
+    the others are left out of the answers, and a named one that doesn't
+    fill ``method`` (an optional method) answers ``Skipped(not-filled)``, so
+    a caller falling back to another method can say why. ``refresh``
+    directs ``@cached`` methods: ``False`` serves cached answers only (none
+    stored: ``Skipped(no-cache)``), ``True`` always calls, and ``None``
+    follows the command's ``Refresh`` when it names this method's cache,
+    else serves within the cache's max age (its
+    ``<owner>.caches.<name>.max_age_seconds`` setting). A call refreshing an
+    answer holds that answer's lock, so a second process asking the same
+    provider waits for it. With no ready
+    provider at all, and none named that doesn't fill it, it raises
+    :class:`NoProviderReady` (exit 4) naming why each one isn't.
+    ``progress`` counts the providers as they answer, each named as it does;
+    a provider's method never gets the handle.
     """
     info, wanted = method_contract(method)
     asked = _picked(plugins)
@@ -265,6 +269,13 @@ def gather[C: Contract, **P, R](
                 quarantined[entry.plugin] = entry.reason
                 continue
             if not fills(type(entry.instance), info, wanted.name):
+                if plugins is not None:  # named, so the caller's fallback has a reason to say
+                    answers[entry.plugin] = Skipped(
+                        entry.plugin,
+                        Reason.not_filled,
+                        f"{entry.plugin} doesn't fill {info.cls.__name__}.{wanted.name}",
+                        rank,
+                    )
                 continue
             ready = ready_of(entry)
             if ready is not None:
@@ -276,7 +287,10 @@ def gather[C: Contract, **P, R](
                 reasons.append(f"{entry.plugin}: {ready.reason}{setting}")
                 continue
             runnable.append((entry, rank))
-        if not runnable:
+        if not runnable and not any(
+            isinstance(answer, Skipped) and answer.reason is Reason.not_filled
+            for answer in answers.values()
+        ):
             what = f"{owner}.{info.name}.{wanted.name}"
             detail = "; ".join(reasons) if reasons else "no installed plugin fills it"
             raise NoProviderReady(
@@ -298,7 +312,8 @@ def gather[C: Contract, **P, R](
             progress.update(job[0].plugin, done=len(stale), total=len(runnable))
 
         progress.update(done=0, total=len(runnable))
-        bounded_map(ask, runnable, concurrency=min(_POOL, len(runnable)), on_each=keep)
+        if runnable:
+            bounded_map(ask, runnable, concurrency=min(_POOL, len(runnable)), on_each=keep)
         ordered = sorted(
             answers.values(),
             key=lambda answer: (answer.rank is None, answer.rank or 0, answer.plugin),
