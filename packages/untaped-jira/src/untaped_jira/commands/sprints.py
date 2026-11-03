@@ -8,7 +8,6 @@ from pydantic import Field
 
 from untaped.sdk import Group, Limit, Output, UsageError
 from untaped_jira.commands._jira import JiraCommand
-from untaped_jira.parse import parse_sprint
 from untaped_jira.records import Sprint
 
 
@@ -27,11 +26,8 @@ class List(JiraCommand):
             raise UsageError(
                 "board id is required (pass --board-id or configure jira.default_board_id)"
             )
-        with self.client() as client, self.ctx.diag.progress("Listing sprints"):
-            rows = [
-                parse_sprint(sprint)
-                for sprint in client.list_sprints(board, state=self.state, limit=self.limit.value)
-            ]
+        with self.ctx.diag.progress("Listing sprints"):
+            rows = list(self.client().sprints(board, state=self.state, limit=self.limit.value))
         yield from rows
 
 

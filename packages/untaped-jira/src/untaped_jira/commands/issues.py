@@ -7,7 +7,6 @@ from collections.abc import Iterator
 from pydantic import Field
 
 from untaped.sdk import Group, Limit, Output, Positional, Stdin, UntapedError, UsageError, key
-from untaped_jira.client import JiraClient
 from untaped_jira.commands._jira import (
     ISSUE_COLUMNS,
     ISSUE_DETAIL_COLUMNS,
@@ -19,7 +18,7 @@ from untaped_jira.commands.comments import Comments
 from untaped_jira.commands.issue_writes import Comment, Create, Patch, Transition
 from untaped_jira.commands.links import Links
 from untaped_jira.keys import validate_issue_key
-from untaped_jira.parse import parse_comment, parse_issue, parse_transition
+from untaped_jira.ports import JiraApi
 from untaped_jira.records import Issue, IssueOutcome
 from untaped_jira.records import Transition as TransitionRow
 from untaped_jira.search import JiraIssueSearchFilters
@@ -54,26 +53,27 @@ class Get(JiraCommand):
         if len(self.keys) != 1:
             return self._each(keys)
         self.output.columns.show(*ISSUE_DETAIL_COLUMNS)
-        with self.client() as client, self.ctx.diag.progress("Fetching issues"):
-            return self._issue(client, keys[0])
+        with self.ctx.diag.progress("Fetching issues"):
+            return self._issue(self.client(), keys[0])
 
     def _each(self, keys: list[str]) -> Iterator[Issue]:
         rows: list[Issue] = []
-        with self.client() as client, self.ctx.diag.progress("Fetching issues"):
+        jira = self.client()
+        with self.ctx.diag.progress("Fetching issues"):
             for key in keys:
                 try:
-                    rows.append(self._issue(client, key))
+                    rows.append(self._issue(jira, key))
                 except UntapedError as exc:
                     self.ctx.diag.failure(exc, item=key)
         yield from rows
 
-    def _issue(self, client: JiraClient, key: str) -> Issue:
-        issue = parse_issue(client.get_issue(key), detail=True)
+    def _issue(self, jira: JiraApi, key: str) -> Issue:
+        issue = jira.issue(key)
         if not issue.links and self.output.format == "table":
             issue = issue.model_copy(update={"links": None})  # a table shows links only when some
         if not self.comments:
             return issue
-        comments = [parse_comment(each, issue_key=issue.key) for each in client.list_comments(key)]
+        comments = [each.model_copy(update={"issue_key": issue.key}) for each in jira.comments(key)]
         return issue.model_copy(update={"comments": comments})
 
 
@@ -91,11 +91,8 @@ class _Search(JiraCommand):
     limit: Limit = Limit(default=50)
 
     def _found(self, filters: JiraIssueSearchFilters, progress: str) -> Iterator[Issue]:
-        with self.client() as client, self.ctx.diag.progress(progress):
-            rows = [
-                parse_issue(issue)
-                for issue in client.search_issues(filters.to_jql(), limit=self.limit.value)
-            ]
+        with self.ctx.diag.progress(progress):
+            rows = list(self.client().search(filters.to_jql(), limit=self.limit.value))
         yield from rows
 
 
@@ -183,8 +180,8 @@ class Transitions(JiraCommand):
     def run(self) -> Iterator[TransitionRow]:
         self.output.empty("No transitions available for this issue.")
         key = validate_issue_key(self.key)
-        with self.client() as client, self.ctx.diag.progress("Fetching available transitions"):
-            rows = [parse_transition(each) for each in client.list_transitions(key)]
+        with self.ctx.diag.progress("Fetching available transitions"):
+            rows = self.client().transitions(key)
         yield from rows
 
 
@@ -193,10 +190,10 @@ class Issues(Group):
 
     ## The preview
 
-    The preview lists each request a write sends (`METHOD path`), then one
-    `field: old → new` line per change. A field's long text is cut to 60
-    characters in the preview only; the full value is sent. A comment prints
-    whole.
+    The preview lists each change a write makes (`update ABC-1`, `assign
+    ABC-1`, `transition ABC-1`), then one `field: old → new` line per field.
+    A field's long text is cut to 60 characters in the preview only; the full
+    value is sent. A comment prints whole.
 
     - `--dry-run` prints the preview on stderr, emits a `jira.issue_outcome`
       with `action` `planned`, and sends nothing, even with `--yes`.

@@ -24,6 +24,9 @@ IMPLEMENTERS: Mapping[str, str] = {
     "untaped.sdk.Group": "every command group subclasses it, and core reads its commands",
     "untaped.sdk.Plugin": "every plugin subclasses it, and core reads its attributes",
     "untaped.sdk.contracts.Contract": "every provider subclasses it, and the SDK calls its ready()",
+    "untaped.sdk.network.ServerVersion": (
+        "a server API's version type subclasses it, and the SDK calls its parse() and str()"
+    ),
     "untaped.sdk.testing.PromptBackend": (
         "tests pass their own backend to invoke_cli(prompt_backend=), and the SDK calls its methods"
     ),

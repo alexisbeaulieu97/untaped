@@ -5,8 +5,11 @@ To add it to an existing install, see [Getting started](https://github.com/alexi
 
 `untaped jira` searches, creates, updates, comments on and transitions Jira
 issues, and looks up projects, boards and sprints, from a terminal, a script
-or an agent. It targets Jira Data Center and self-hosted Jira (REST API v2
-and Agile 1.0), not Jira Cloud.
+or an agent. It works with Jira Data Center and Server 8 and later, not Jira
+Cloud: it asks the server which Jira it runs on first use, checks again after
+a day, and refuses a Jira it doesn't support with exit 4. Set
+`jira.server_version` (for example `Jira Data Center 11.2.1`) to skip the
+question; `untaped doctor` shows what it found.
 
 ## Set up
 
@@ -43,7 +46,7 @@ git log -1 --format=%B | untaped jira issues comment OPS-123 --body -
 untaped jira issues links create OPS-123 Blocks OPS-124 --dry-run
 ```
 
-The preview lists each request and one `field: old → new` line per change.
+The preview lists each change and one `field: old → new` line per field.
 Writes preview under `--dry-run`, and those that replace or remove ask first; `untaped jira issues --help` says which.
 
 ## Move issues through a workflow

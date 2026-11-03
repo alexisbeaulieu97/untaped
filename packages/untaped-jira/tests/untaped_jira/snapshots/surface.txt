@@ -1,12 +1,13 @@
 # untaped surface 3
-cfg jira.agile_prefix string default=/rest/agile/1.0
-cfg jira.api_prefix string default=/rest/api/2
+adapter jira.server-api DataCenter  [experimental]
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
+cfg jira.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg jira.default_board_id integer? default=unset
 cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
 cfg jira.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg jira.server.verify_tls boolean|string(format=path) default=true
+cfg jira.server_version string? default=unset
 cli untaped jira
 cli untaped jira boards
 cli untaped jira boards list
@@ -338,3 +339,4 @@ record jira.user.display_name string?
 record jira.user.email_address string?
 record jira.user.key string?
 record jira.user.name string?
+server-api jira.server-api override=jira.server_version  [experimental]

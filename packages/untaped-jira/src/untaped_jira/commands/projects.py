@@ -9,7 +9,6 @@ from pydantic import Field
 from untaped.sdk import Group, Output, Positional
 from untaped_jira.commands._jira import JiraCommand
 from untaped_jira.keys import validate_project_key
-from untaped_jira.parse import parse_project
 from untaped_jira.records import Project
 
 
@@ -20,8 +19,8 @@ class List(JiraCommand):
 
     def run(self) -> Iterator[Project]:
         self.output.empty("No projects are visible to you.")
-        with self.client() as client, self.ctx.diag.progress("Listing projects"):
-            rows = [parse_project(project) for project in client.list_projects()]
+        with self.ctx.diag.progress("Listing projects"):
+            rows = list(self.client().projects())
         yield from rows
 
 
@@ -33,8 +32,8 @@ class Get(JiraCommand):
 
     def run(self) -> Project:
         key = validate_project_key(self.key)
-        with self.client() as client, self.ctx.diag.progress("Fetching project"):
-            return parse_project(client.get_project(key))
+        with self.ctx.diag.progress("Fetching project"):
+            return self.client().project(key)
 
 
 class Projects(Group):

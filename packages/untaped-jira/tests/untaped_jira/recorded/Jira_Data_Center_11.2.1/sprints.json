@@ -1,0 +1,17 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "isLast": true,
+  "values": [
+    {
+      "id": 42,
+      "self": "https://jira.example.com/rest/agile/1.0/sprint/42",
+      "state": "active",
+      "name": "Sprint 42",
+      "startDate": "2026-10-27T09:00:00.000Z",
+      "endDate": "2026-11-10T09:00:00.000Z",
+      "originBoardId": 7,
+      "goal": "Rotate the keys"
+    }
+  ]
+}

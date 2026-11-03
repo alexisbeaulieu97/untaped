@@ -665,7 +665,7 @@ class HttpFactory:
     """A plugin's HTTP clients: ``self.ctx.http.client(settings, base_url=..., bearer=...)``.
 
     Commands and providers reach it as ``self.ctx.http``; a client class
-    takes it rather than building its own (``JiraClient(settings,
+    takes it rather than building its own (``AcmeClient(settings,
     http=self.ctx.http)``). Core adds untaped's proxy, trust, timeout and
     retries, binds the credential to its origin and refuses a folder's
     proxy, all attributed to the plugin whose settings model ``settings``

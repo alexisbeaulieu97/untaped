@@ -5,11 +5,9 @@ from __future__ import annotations
 from pydantic import Field
 
 from untaped.sdk import Group, Positional, q
-from untaped_jira.client import JiraClient
 from untaped_jira.commands._jira import ISSUE_KEY, SendsDirectly
-from untaped_jira.keys import validate_issue_key
-from untaped_jira.parse import browse_url
-from untaped_jira.payloads import build_link_payload
+from untaped_jira.keys import browse_url, validate_issue_key
+from untaped_jira.ports import JiraApi
 from untaped_jira.records import IssueOutcome
 
 
@@ -30,16 +28,16 @@ class Create(SendsDirectly):
     def run(self) -> IssueOutcome:
         key, other = validate_issue_key(self.key), validate_issue_key(self.other)
         settings, link_type = self.settings, self.link_type
-        # The REST field names read backwards; say the direction in words.
+        # Link types read one way only; say the direction in words.
         reads_as = f"reads as: {key} <outward phrase of {q(link_type)}> {other}"
         outcome = {"key": key, "url": browse_url(settings.url, key), "link_type": link_type}
 
-        def send(client: JiraClient) -> IssueOutcome:
-            client.create_link(build_link_payload(key, link_type, other))
+        def send(jira: JiraApi) -> IssueOutcome:
+            jira.link(key, link_type, other)
             return IssueOutcome(action="linked", linked_key=other, **outcome)
 
         return self.send(
-            [("POST", f"{settings.api_prefix}/issueLink", [reads_as])],
+            [(f"link {key} to {other}", [reads_as])],
             send,
             planned=IssueOutcome(action="planned", linked_key=other, **outcome),
             progress="Linking issues",

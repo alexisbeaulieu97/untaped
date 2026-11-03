@@ -1,20 +1,20 @@
-"""What every jira command shares: its client, and how a write previews, asks and sends."""
+"""What every jira command shares: its port to Jira, and how a write previews, asks and sends."""
 
 from __future__ import annotations
 
 import textwrap
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Sequence
 
 from untaped.sdk import Command, Confirm, DryRun, Output, key
-from untaped_jira.client import JiraClient
 from untaped_jira.keys import validate_issue_key
+from untaped_jira.ports import JiraApi
 from untaped_jira.records import Issue, IssueOutcome
+from untaped_jira.server_api import SERVER_API
 from untaped_jira.settings import JiraSettings
 
-#: One write request as previewed: method, path and its readable change lines.
-PreviewRequest = tuple[str, str, list[str]]
-Preview = Sequence[PreviewRequest] | Callable[[JiraClient], Sequence[PreviewRequest]]
+#: One change a write would make, as previewed: what it does (``update ABC-1``) and its lines.
+PreviewChange = tuple[str, list[str]]
+Preview = Sequence[PreviewChange] | Callable[[JiraApi], Sequence[PreviewChange]]
 
 #: A compact row per issue; a detail view prints one issue's own fields.
 ISSUE_COLUMNS = (
@@ -49,11 +49,9 @@ ISSUE_KEY = "Issue key (PROJECT-123, in any case) or numeric id."
 class JiraCommand(Command[JiraSettings]):
     """A command that talks to Jira through the profile's ``jira`` settings."""
 
-    @contextmanager
-    def client(self) -> Iterator[JiraClient]:
-        """A Jira client for this run, closed when the block ends."""
-        with JiraClient(self.settings, http=self.ctx.http) as client:
-            yield client
+    def client(self) -> JiraApi:
+        """The port to the profile's Jira: nothing is sent until a call, none names a version."""
+        return SERVER_API.port(self.settings)
 
 
 class JiraWrite(JiraCommand):
@@ -68,7 +66,7 @@ class JiraWrite(JiraCommand):
     def send(
         self,
         preview: Preview,
-        send: Callable[[JiraClient], IssueOutcome],
+        send: Callable[[JiraApi], IssueOutcome],
         *,
         planned: IssueOutcome,
         progress: str,
@@ -77,27 +75,21 @@ class JiraWrite(JiraCommand):
         """Preview the write (``--dry-run``), or go ahead and send it.
 
         A callable ``preview`` reads the issue's current values, so it runs
-        only when a preview is shown; a static one needs no client.
+        only when a preview is shown; a static one sends nothing.
         ``replaces`` says the write can replace or remove what the issue holds.
         """
-        with ExitStack() as stack:
-            opened: list[JiraClient] = []
+        jira = self.client()
 
-            def client() -> JiraClient:
-                if not opened:
-                    opened.append(stack.enter_context(self.client()))
-                return opened[0]
+        def lines() -> list[str]:
+            if not callable(preview):
+                return change_lines(preview)
+            with self.ctx.diag.progress("Reading current values"):
+                return change_lines(preview(jira))
 
-            def lines() -> list[str]:
-                if not callable(preview):
-                    return request_lines(preview)
-                with self.ctx.diag.progress("Reading current values"):
-                    return request_lines(preview(client()))
-
-            if not self._go_ahead(lines, replaces=replaces):
-                return planned
-            with self.ctx.diag.progress(progress):
-                return send(client())
+        if not self._go_ahead(lines, replaces=replaces):
+            return planned
+        with self.ctx.diag.progress(progress):
+            return send(jira)
 
 
 class AsksFirst(JiraWrite):
@@ -106,7 +98,7 @@ class AsksFirst(JiraWrite):
     confirm: Confirm
 
     def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
-        return self.confirm("Send this request to Jira?", preview=preview, needed=replaces)
+        return self.confirm("Send this change to Jira?", preview=preview, needed=replaces)
 
 
 class SendsDirectly(JiraWrite):
@@ -119,12 +111,12 @@ class SendsDirectly(JiraWrite):
         return self.dry_run.go_ahead(preview)
 
 
-def request_lines(requests: Sequence[PreviewRequest]) -> list[str]:
-    """Each request a write would send, then its readable changes indented under it."""
+def change_lines(requests: Sequence[PreviewChange]) -> list[str]:
+    """Each change a write would make (``update ABC-1``), then its lines indented under it."""
     return [
         line
-        for method, path, changes in requests
-        for line in (f"{method} {path}", *(textwrap.indent(each, "  ") for each in changes))
+        for what, changes in requests
+        for line in (what, *(textwrap.indent(each, "  ") for each in changes))
     ]
 
 

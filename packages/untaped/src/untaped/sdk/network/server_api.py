@@ -36,10 +36,9 @@ import typing
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self, cast, get_args
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, cast, get_args
 
 from pydantic import BaseModel, ValidationError
-from pydantic_core import core_schema
 
 from untaped.sdk._block import Block, OwnedBlock
 from untaped.sdk._keys import SettingKey
@@ -54,132 +53,15 @@ from untaped.sdk.errors import (
 from untaped.sdk.health.doctor import DoctorCheck
 from untaped.sdk.marks import experimental
 from untaped.sdk.network._server_api_calls import last_sent
+from untaped.sdk.network._versions import Release, ServerVersion
 from untaped.sdk.network.http import sent_by
 from untaped.sdk.storage.cache import Cache
 
 if TYPE_CHECKING:
-    from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
-    from pydantic.json_schema import JsonSchemaValue
-
     from untaped.sdk.health.doctor import DoctorResult, PluginContext
     from untaped.sdk.marks import Stability
     from untaped.sdk.network.credentials import Credential
     from untaped.sdk.network.http import HttpClient
-
-
-# --------------------------------------------------------------------------- #
-# Versions
-# --------------------------------------------------------------------------- #
-
-
-def _text_schema(read: Callable[[Any], Any]) -> core_schema.CoreSchema:
-    """A schema that validates through ``read`` and serialises as ``str()``: one setting value."""
-    return core_schema.no_info_plain_validator_function(
-        read, serialization=core_schema.plain_serializer_function_ser_schema(str)
-    )
-
-
-@experimental
-class Release(tuple[int, ...]):
-    """A dotted release, ``Release.parse("11.2.1")``: a tuple of numbers, so ``>= (12,)`` works.
-
-    ``str()`` is ``11.2.1``. As a pydantic field it validates from that text
-    (or a sequence of numbers, as an API returns it) and serialises to it.
-
-    Experimental. First consumer: jira.
-    """
-
-    __slots__ = ()
-
-    def __new__(cls, numbers: Sequence[int]) -> Self:
-        parts = tuple(numbers)
-        if not parts or not all(
-            isinstance(part, int) and not isinstance(part, bool) and part >= 0 for part in parts
-        ):
-            raise ValueError(f"a release is one or more numbers, like 11.2.1, not {numbers!r}")
-        return super().__new__(cls, parts)
-
-    @classmethod
-    def parse(cls, text: str) -> Self:
-        """The release ``text`` spells (``11.2.1``); :class:`ValueError` for anything else."""
-        parts = text.strip().split(".")
-        if not all(part.isdigit() and part.isascii() for part in parts):
-            raise ValueError(f"a release is dotted numbers, like 11.2.1, not {text!r}")
-        return cls([int(part) for part in parts])
-
-    def __str__(self) -> str:
-        return ".".join(map(str, self))
-
-    def __repr__(self) -> str:
-        return f"Release({str(self)!r})"
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source: Any, handler: GetCoreSchemaHandler
-    ) -> core_schema.CoreSchema:
-        def read(value: object) -> Release:
-            if isinstance(value, cls):
-                return value
-            if isinstance(value, str):
-                return cls.parse(value)
-            if isinstance(value, list | tuple):
-                return cls(cast("Sequence[int]", value))
-            raise ValueError(f"a release is dotted numbers, like 11.2.1, not {value!r}")
-
-        return _text_schema(read)
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        del schema, handler
-        return {"type": "string", "examples": ["11.2.1"]}
-
-
-@experimental
-class ServerVersion:
-    """What one server runs: the bound of a :class:`ServerApi`'s version type.
-
-    Subclass it as a frozen dataclass of the facts adapters choose by (a
-    deployment, a :class:`Release`). ``str()`` is how people read the
-    version and how they set it (``Jira Data Center 11.2.1``); :meth:`parse`
-    reads that text back, and composition checks ``parse(str(v)) == v`` for
-    every recorded version. No order is needed: adapters compare their own
-    fields. As a pydantic field (the override setting) it validates from its
-    text and serialises to it, so it is one setting value.
-
-    Experimental. First consumer: jira.
-    """
-
-    @classmethod
-    def parse(cls, text: str) -> Self:
-        """The version ``text`` spells; :class:`ValueError` when it spells none."""
-        raise NotImplementedError(f"{cls.__qualname__} defines no parse()")
-
-    def __str__(self) -> str:
-        raise NotImplementedError(f"{type(self).__qualname__} defines no __str__()")
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source: Any, handler: GetCoreSchemaHandler
-    ) -> core_schema.CoreSchema:
-        target = cast("type[ServerVersion]", source)
-
-        def read(value: object) -> ServerVersion:
-            if isinstance(value, target):
-                return value
-            if isinstance(value, str):
-                return target.parse(value)
-            raise ValueError(f"a {target.__name__} is written as text, not {value!r}")
-
-        return _text_schema(read)
-
-    @classmethod
-    def __get_pydantic_json_schema__(
-        cls, schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
-    ) -> JsonSchemaValue:
-        del schema, handler
-        return {"type": "string"}
 
 
 # --------------------------------------------------------------------------- #

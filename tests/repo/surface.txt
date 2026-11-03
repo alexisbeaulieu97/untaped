@@ -1,4 +1,5 @@
 # untaped surface 3
+adapter jira.server-api DataCenter  [experimental]
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -44,14 +45,14 @@ cfg github.inventory.teams string[] default=[]
 cfg github.server.url string(format=uri,maxLength=2083,minLength=1) default=<computed>
 cfg github.server.verify_tls boolean|string(format=path) default=true
 cfg github.sweep.parallel integer(minimum=1) default=12
-cfg jira.agile_prefix string default=/rest/agile/1.0
-cfg jira.api_prefix string default=/rest/api/2
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
+cfg jira.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg jira.default_board_id integer? default=unset
 cfg jira.default_project string? default=unset
 cfg jira.page_size integer(exclusiveMinimum=0) default=50
 cfg jira.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg jira.server.verify_tls boolean|string(format=path) default=true
+cfg jira.server_version string? default=unset
 cfg lint.extensions.linter.rank.findings string[] default=[]  [experimental]
 cfg lint.extensions.linter.rank.rules string[] default=[]  [experimental]
 cfg lint.extensions.tree_reader.rank.read string[] default=[]  [experimental]
@@ -7178,7 +7179,7 @@ sdk untaped.sdk.network.ServerApi.qualified  [experimental]
 sdk untaped.sdk.network.ServerApi.server  [experimental]
 sdk untaped.sdk.network.ServerApi.spelled  [experimental]
 sdk untaped.sdk.network.ServerApi.where  [experimental]
-sdk untaped.sdk.network.ServerVersion()  [experimental]
+sdk untaped.sdk.network.ServerVersion implement=  [experimental]
 sdk untaped.sdk.network.ServerVersion.parse(text)  [experimental]
 sdk untaped.sdk.network.TlsVerify
 sdk untaped.sdk.network.capped()  [experimental]
@@ -8499,6 +8500,7 @@ sdk untaped_workspace.api.RepoName  [experimental]
 sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
+server-api jira.server-api override=jira.server_version  [experimental]
 state ansible.aliases Alias[]
 state ansible.aliases.alias string
 state ansible.aliases.repo string

@@ -125,12 +125,12 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 |---|---|---|---|---|
 | `jira.server.url` | URL | unset | `UNTAPED_JIRA__SERVER__URL` | Jira Data Center URL, for example `https://jira.example.com`. |
 | `jira.server.verify_tls` | boolean or path | `true` | `UNTAPED_JIRA__SERVER__VERIFY_TLS` | Check Jira's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
-| `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
-| `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
+| `jira.server_version` | string (optional) | unset | `UNTAPED_JIRA__SERVER_VERSION` | The Jira the server runs, such as `Jira Data Center 11.2.1`, instead of detecting it; set it beside `server.url`. |
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
+| `jira.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_JIRA__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `lint`
 
@@ -172,6 +172,8 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.token` | `UNTAPED_GITHUB__TOKEN` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `github.token_command` | `UNTAPED_GITHUB__TOKEN_COMMAND` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
+| `jira.agile_prefix` | `UNTAPED_JIRA__AGILE_PREFIX` | none | deleted in 12.0; jira detects which Jira it talks to and the API it serves; a context path goes in jira.server.url |
+| `jira.api_prefix` | `UNTAPED_JIRA__API_PREFIX` | none | deleted in 12.0; jira detects which Jira it talks to and the API it serves; a context path goes in jira.server.url |
 | `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
 
 ## See also

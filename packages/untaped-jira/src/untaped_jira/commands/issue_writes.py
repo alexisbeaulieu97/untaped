@@ -1,14 +1,14 @@
 """``untaped jira issues create|patch|comment|transition``: the issue writes.
 
-Each previews the requests it sends under ``--dry-run``; patches and
+Each previews the changes it makes under ``--dry-run``; patches and
 transitions ask first when they replace or remove. The ``issues`` group's
 page explains both.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
-from typing import Any
+from collections.abc import Iterator, Sequence
+from typing import Any, NamedTuple
 
 from pydantic import Field
 
@@ -31,6 +31,7 @@ from untaped.sdk import (
     plural,
     q,
 )
+from untaped.sdk.network import ApiMismatch
 from untaped_jira.changes import (
     change_line,
     comment_lines,
@@ -39,27 +40,22 @@ from untaped_jira.changes import (
     referenced_fields,
     transition_changes,
 )
-from untaped_jira.client import JiraClient
 from untaped_jira.commands._jira import (
     ISSUE_KEY,
     AsksFirst,
     JiraCommand,
     JiraWrite,
-    PreviewRequest,
+    PreviewChange,
     SendsDirectly,
+    change_lines,
     issue_keys,
-    request_lines,
 )
 from untaped_jira.errors import JiraError, JiraTransitionError
-from untaped_jira.keys import validate_issue_key
-from untaped_jira.parse import browse_url, parse_user
-from untaped_jira.payloads import (
-    IssueDocument,
-    build_assignee_payload,
-    build_issue_payload,
-    build_transition_payload,
-)
+from untaped_jira.keys import browse_url, validate_issue_key
+from untaped_jira.payloads import IssueDocument, build_issue_payload
+from untaped_jira.ports import Current, JiraApi
 from untaped_jira.records import Issue, IssueOutcome
+from untaped_jira.records import Transition as TransitionRow
 
 
 class _Fields(JiraWrite):
@@ -105,19 +101,18 @@ class Create(_Fields, SendsDirectly):
             project=self.project or settings.default_project, issue_type=self.issue_type
         )
 
-        def send(client: JiraClient) -> IssueOutcome:
-            created = client.create_issue(payload)
-            key = _text(created.get("key"))
+        def send(jira: JiraApi) -> IssueOutcome:
+            created = jira.create(payload)
             return IssueOutcome(
                 action="created",
-                key=key,
-                id=_text(created.get("id")),
-                url=browse_url(settings.url, key) if key else None,
-                api_url=_text(created.get("self")),
+                key=created.key,
+                id=created.id,
+                url=browse_url(settings.url, created.key) if created.key else None,
+                api_url=created.api_url,
             )
 
         return self.send(
-            [("POST", f"{settings.api_prefix}/issue", payload_changes(payload))],
+            [("create an issue", payload_changes(payload))],
             send,
             planned=IssueOutcome(action="planned"),
             progress="Creating issue",
@@ -154,25 +149,25 @@ class Patch(_Fields, AsksFirst):
         settings = self.settings
         edit, assign = self._requests()
 
-        def preview(client: JiraClient) -> list[PreviewRequest]:
+        def preview(jira: JiraApi) -> list[PreviewChange]:
             names = referenced_fields(edit) + (["assignee"] if assign is not None else [])
-            current = (client.get_issue(key, fields=names).get("fields") or {}) if names else {}
-            requests: list[PreviewRequest] = []
+            current = jira.current(key, names).fields if names else {}
+            requests: list[PreviewChange] = []
             if edit is not None:
-                path = f"{settings.api_prefix}/issue/{key}"
-                requests.append(("PUT", path, payload_changes(edit, current)))
+                requests.append((f"update {key}", payload_changes(edit, current)))
             if assign is not None:
-                line = change_line("assignee", assign, old=current.get("assignee"))
-                requests.append(("PUT", f"{settings.api_prefix}/issue/{key}/assignee", [line]))
+                new = {"name": assign.username}  # the user as Jira names one, as the old value
+                line = change_line("assignee", new, old=current.get("assignee"))
+                requests.append((f"assign {key}", [line]))
             return requests
 
-        def send(client: JiraClient) -> IssueOutcome:
+        def send(jira: JiraApi) -> IssueOutcome:
             if edit is not None:
-                client.edit_issue(key, edit)
+                jira.edit(key, edit)
             if assign is not None:
                 try:
-                    client.assign_issue(key, assign)
-                except JiraError as err:
+                    jira.assign(key, assign.username)
+                except (JiraError, ApiMismatch) as err:
                     if edit is None:
                         raise
                     raise JiraError(
@@ -188,7 +183,7 @@ class Patch(_Fields, AsksFirst):
             progress="Updating issue",
         )
 
-    def _requests(self) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    def _requests(self) -> tuple[dict[str, Any] | None, _Assign | None]:
         """The field edit and the assignment to send; ``None`` for one not asked for."""
         payload = self._payload()
         assigning = self.assignee is not None or self.unassign
@@ -204,17 +199,17 @@ class Patch(_Fields, AsksFirst):
             )
         assign = None
         if self.assignee is not None:
-            assign = build_assignee_payload(self._username(self.assignee))
+            assign = _Assign(self._username(self.assignee))
         elif self.unassign:
-            assign = build_assignee_payload(None)
+            assign = _Assign(None)
         return (payload if has_fields else None), assign
 
     def _username(self, assignee: str) -> str:
         """``assignee`` itself, or the authenticated user's name for ``@me`` (one GET)."""
         if assignee != "@me":
             return assignee
-        with self.client() as client, self.ctx.diag.progress("Fetching authenticated user"):
-            name = parse_user(client.me()).name
+        with self.ctx.diag.progress("Fetching authenticated user"):
+            name = self.client().me().name
         if not name:
             raise JiraError("the authenticated Jira user has no username")
         return name
@@ -249,17 +244,17 @@ class Comment(SendsDirectly):
         if not body.strip():
             raise JiraError("the comment's body is empty", category="invalid", system=System.LOCAL)
 
-        def send(client: JiraClient) -> IssueOutcome:
-            result = client.add_comment(key, body)
+        def send(jira: JiraApi) -> IssueOutcome:
+            added = jira.comment(key, body)
             return IssueOutcome(
                 action="commented",
                 key=key,
                 url=browse_url(settings.url, key),
-                comment_id=_text(result.get("id")),
+                comment_id=added.id or None,
             )
 
         return self.send(
-            [("POST", f"{settings.api_prefix}/issue/{key}/comment", comment_lines(body))],
+            [(f"comment on {key}", comment_lines(body))],
             send,
             planned=IssueOutcome(action="planned", key=key, url=browse_url(settings.url, key)),
             progress="Adding comment",
@@ -315,88 +310,77 @@ class Transition(JiraCommand):
 
     def _rows(self, keys: Sequence[str]) -> list[IssueOutcome]:
         url = self.settings.url
-        with self.client() as client:
-            with self.ctx.diag.progress("Resolving transitions"):
-                plans = [(key, plan) for key in keys if (plan := self._plan(client, key))]
-            if not plans:
-                return []
-            question = f"Transition {plural(len(plans), 'issue')} in Jira?"
-            preview = lambda: self._preview(client, plans)  # noqa: E731 - read only when asked
-            if not self.confirm(question, preview=preview):
-                return [
-                    IssueOutcome(
-                        action="planned",
-                        key=key,
-                        url=browse_url(url, key),
-                        transition_id=plan["id"],
-                    )
-                    for key, plan in plans
-                ]
-            return [self._send(client, key, plan["id"]) for key, plan in plans]
+        jira = self.client()
+        with self.ctx.diag.progress("Resolving transitions"):
+            plans = [(key, plan) for key in keys if (plan := self._plan(jira, key))]
+        if not plans:
+            return []
+        question = f"Transition {plural(len(plans), 'issue')} in Jira?"
+        preview = lambda: self._preview(jira, plans)  # noqa: E731 - read only when asked
+        if not self.confirm(question, preview=preview):
+            return [
+                IssueOutcome(
+                    action="planned", key=key, url=browse_url(url, key), transition_id=plan.id
+                )
+                for key, plan in plans
+            ]
+        return [self._send(jira, key, plan.id) for key, plan in plans]
 
-    def _plan(self, client: JiraClient, key: str) -> dict[str, Any] | None:
-        """The transition to apply to ``key``: ``{"id": ...}`` for an id, else looked up by name.
+    def _plan(self, jira: JiraApi, key: str) -> TransitionRow | None:
+        """The transition to apply to ``key``: the ``--id`` given, else the one ``--to`` names.
 
-        A transition found by name keeps Jira's ``name`` and ``to`` (its
-        target status), so the preview need not list the transitions again.
-        A key that fails is reported and left out.
+        A transition found by name keeps its name and target status, so the
+        preview need not list the transitions again. A key that fails is
+        reported and left out.
         """
         if self.id:
-            return {"id": self.id}
+            return TransitionRow(id=self.id, name="")
         try:
-            return _named(client, key, self.to or "")
+            return _named(jira, key, self.to or "")
         except UntapedError as exc:
             self.ctx.diag.failure(exc, item=key)
             return None
 
-    def _preview(
-        self, client: JiraClient, plans: Sequence[tuple[str, Mapping[str, Any]]]
-    ) -> list[str]:
-        prefix = self.settings.api_prefix
+    def _preview(self, jira: JiraApi, plans: Sequence[tuple[str, TransitionRow]]) -> list[str]:
         with self.ctx.diag.progress("Reading current values"):
-            requests: list[PreviewRequest] = [
-                ("POST", f"{prefix}/issue/{key}/transitions", self._changes(client, key, plan))
-                for key, plan in plans
+            requests: list[PreviewChange] = [
+                (f"transition {key}", self._changes(jira, key, plan)) for key, plan in plans
             ]
-        return request_lines(requests)
+        return change_lines(requests)
 
-    def _changes(self, client: JiraClient, key: str, transition: Mapping[str, Any]) -> list[str]:
+    def _changes(self, jira: JiraApi, key: str, transition: TransitionRow) -> list[str]:
         """A transition's lines: one read of the issue's status and resolution.
 
-        When ``transition`` came from an id (without its target), the same
+        For an ``--id`` (whose name and target aren't known yet), the same
         read lists what the issue offers. A failed read shows ``(unknown)``
         rather than failing the batch.
         """
-        known = "to" in transition
+        by_id = self.to is None
         try:
-            issue = client.get_issue(
-                key, fields=["status", "resolution"], expand=None if known else "transitions"
-            )
+            current = jira.current(key, ["status", "resolution"], transitions=by_id)
         except UntapedError:
             return transition_changes(
                 transition, None, comment=self.comment, resolution=self.resolution
             )
         match, available = transition, True
-        if not known:
-            offered = {str(t.get("id")): t for t in issue.get("transitions") or []}
-            found = offered.get(str(transition["id"]))
+        if by_id:
+            found = _offered(current).get(transition.id)
             match, available = found or transition, found is not None
         return transition_changes(
             match,
-            issue.get("fields") or {},
+            current.fields,
             available=available,
             comment=self.comment,
             resolution=self.resolution,
         )
 
-    def _send(self, client: JiraClient, key: str, transition_id: str) -> IssueOutcome:
-        payload = build_transition_payload(
-            transition_id, comment=self.comment, resolution=self.resolution
-        )
+    def _send(self, jira: JiraApi, key: str, transition_id: str) -> IssueOutcome:
         url = browse_url(self.settings.url, key)
         try:
             with self.ctx.diag.progress(f"Transitioning {key}"):
-                client.transition_issue(key, payload)
+                jira.transition(
+                    key, transition_id, comment=self.comment, resolution=self.resolution
+                )
         except UntapedError as exc:
             error = self.ctx.diag.failure(exc, item=key)
             return IssueOutcome(
@@ -405,23 +389,29 @@ class Transition(JiraCommand):
         return IssueOutcome(action="transitioned", key=key, url=url, transition_id=transition_id)
 
 
-def _named(client: JiraClient, key: str, name: str) -> dict[str, Any]:
-    transitions = client.list_transitions(key)
-    matches = [t for t in transitions if str(t.get("name", "")).casefold() == name.casefold()]
+class _Assign(NamedTuple):
+    """An assignment a patch makes: to ``username``, or to nobody."""
+
+    username: str | None
+
+
+def _offered(current: Current) -> dict[str, TransitionRow]:
+    return {transition.id: transition for transition in current.transitions}
+
+
+def _named(jira: JiraApi, key: str, name: str) -> TransitionRow:
+    transitions = jira.transitions(key)
+    matches = [t for t in transitions if t.name.casefold() == name.casefold()]
     if not matches:
-        known = sorted({str(t.get("name", "")) for t in transitions})
+        known = sorted({t.name for t in transitions})
         raise JiraTransitionError(
             f"{not_found('transition', name, known=known)} (issue {key})", category="not_found"
         )
     if len(matches) > 1:
         raise JiraTransitionError(f"multiple transitions named {q(name)} are available for {key}")
-    return {**matches[0], "id": str(matches[0]["id"])}
+    return matches[0]
 
 
 def _without_last_newline(text: str) -> str:
     """``text`` less one terminal newline (LF or CRLF), as a file or a pipe ends."""
     return text.removesuffix("\n").removesuffix("\r") if text.endswith("\n") else text
-
-
-def _text(value: Any) -> str | None:
-    return None if value is None else str(value)
