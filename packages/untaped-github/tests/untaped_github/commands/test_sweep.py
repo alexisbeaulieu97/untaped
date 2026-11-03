@@ -14,6 +14,9 @@ import respx
 from github_test_support import Result, Settings, run
 from untaped_github.records import SweepRepo
 
+#: GitHub's own not-found answer.
+NOT_FOUND = {"message": "Not Found", "documentation_url": "https://docs.github.com/rest"}
+
 pytestmark = pytest.mark.usefixtures("composed")
 
 SourceRepo = Callable[[str, dict[str, str | bytes]], Path]
@@ -336,7 +339,7 @@ def test_missing_explicit_repo_is_unscanned_and_strict_fails(source_repo: Source
     source = source_repo("api", {"README.md": "needle\n"})
     args = ["--repo", "acme/gone", "--repo", "acme/api", "--grep", "needle", "--format", "json"]
     routes = {
-        "acme/gone": httpx.Response(404, json={"message": "Not Found"}),
+        "acme/gone": httpx.Response(404, json=NOT_FOUND),
         "acme/api": httpx.Response(200, json=_repo("acme/api", source)),
     }
 
@@ -354,7 +357,7 @@ def test_every_explicit_repo_failing_resolution_exits_non_zero() -> None:
     result, _ = _sweep(
         ["--repo", "acme/a", "--repo", "acme/b", "--grep", "needle"],
         repos={
-            "acme/a": httpx.Response(404, json={"message": "Not Found"}),
+            "acme/a": httpx.Response(404, json=NOT_FOUND),
             "acme/b": httpx.Response(403, json={"message": "Must have admin rights"}),
         },
     )

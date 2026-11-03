@@ -1,0 +1,45 @@
+{
+  "request": "GET /search/code",
+  "status": 200,
+  "headers": {},
+  "body": {
+    "total_count": 1,
+    "incomplete_results": false,
+    "items": [
+      {
+        "name": "main.py",
+        "path": "src/main.py",
+        "sha": "95b966ae1c166bd92f8ae7d1c313e738c731dfc3",
+        "url": "https://ghe.example.com/api/v3/repositories/1296269/contents/src/main.py",
+        "html_url": "https://ghe.example.com/acme/api/blob/main/src/main.py",
+        "score": 1.0,
+        "repository": {
+          "id": 1296269,
+          "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+          "name": "api",
+          "full_name": "acme/api",
+          "private": false,
+          "owner": {
+            "login": "acme",
+            "id": 9919,
+            "type": "Organization"
+          },
+          "html_url": "https://ghe.example.com/acme/api",
+          "description": "Synthetic repository for tests",
+          "fork": false,
+          "url": "https://ghe.example.com/api/v3/repos/acme/api",
+          "clone_url": "https://ghe.example.com/acme/api.git",
+          "ssh_url": "git@ghe.example.com:acme/api.git",
+          "language": "Python",
+          "stargazers_count": 3,
+          "forks_count": 1,
+          "archived": false,
+          "default_branch": "main",
+          "pushed_at": "2026-10-30T12:00:00Z",
+          "updated_at": "2026-10-30T12:00:00Z",
+          "visibility": "public"
+        }
+      }
+    ]
+  }
+}

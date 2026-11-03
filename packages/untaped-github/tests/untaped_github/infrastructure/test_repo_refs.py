@@ -1,4 +1,4 @@
-"""``GithubClient.batch_repo_refs`` / ``batch_default_branch_refs``: the GraphQL ref probe."""
+"""``Rest2022.batch_repo_refs`` / ``batch_default_branch_refs``: the GraphQL ref probe."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ import respx
 from pydantic import HttpUrl
 
 from untaped.sdk import UntapedError
-from untaped.sdk.network import HttpFactory
 from untaped.sdk.testing import Running
 from untaped_github.domain.models import BatchRepoRefsResult
 from untaped_github.errors import GithubGraphqlError
-from untaped_github.infrastructure import GithubClient
+from untaped_github.server import SERVER_API
 from untaped_github.settings import GithubServer, GithubSettings
+from untaped_github.version import GithubVersion
 
 #: Every probe's token comes from gh's variable, which the composed github reads: each
-#: test's client is built over the ``composed`` run's ``http``.
+#: test probes inside the ``composed`` run.
 
 
 Reply = httpx.Response | Callable[[httpx.Request], httpx.Response] | Exception
@@ -37,7 +37,6 @@ _KIND_CATEGORIES = {
 
 
 def _probe(
-    http: HttpFactory,
     replies: Reply | Sequence[Reply],
     repos: list[str],
     *,
@@ -53,18 +52,21 @@ def _probe(
             route.mock(return_value=replies)
         else:
             route.mock(side_effect=replies)
-        client = GithubClient(GithubSettings(server=GithubServer(url=HttpUrl(base_url))), http=http)
-        with client:
-            result = getattr(client, method)(repos, **kwargs)
+        settings = GithubSettings(
+            server=GithubServer(url=HttpUrl(base_url)),
+            # GitHub Enterprise Server's version is pinned, so no detection is sent
+            server_version=GithubVersion.parse("GitHub Enterprise Server 3.14.2")
+            if base_url.endswith("/api/v3")
+            else None,
+        )
+        result = getattr(SERVER_API.port(settings), method)(repos, **kwargs)
         queries = [json.loads(call.request.content)["query"] for call in route.calls]
     return result, queries
 
 
-def _raises(
-    http: HttpFactory, replies: Reply | Sequence[Reply], repos: list[str], **kwargs: Any
-) -> Any:
+def _raises(replies: Reply | Sequence[Reply], repos: list[str], **kwargs: Any) -> Any:
     with pytest.raises((GithubGraphqlError, UntapedError)) as exc_info:
-        _probe(http, replies, repos, **kwargs)
+        _probe(replies, repos, **kwargs)
     return exc_info.value
 
 
@@ -148,7 +150,7 @@ def test_batch_repo_refs_returns_peeled_refs_default_branch_and_rate_limit(
         remaining=4998,
     )
 
-    result, [query] = _probe(composed.http, reply, ["acme/site", "acme/empty"])
+    result, [query] = _probe(reply, ["acme/site", "acme/empty"])
 
     site, empty = result.repos
     assert (site.full_name, site.default_branch) == ("acme/site", "main")
@@ -169,7 +171,6 @@ def test_batch_repo_refs_returns_peeled_refs_default_branch_and_rate_limit(
 
 def test_batch_repo_refs_chunks_requests_and_merges_rate_limits(composed: Running) -> None:
     result, (first, second) = _probe(
-        composed.http,
         [
             _ok(_repo_node("acme/a"), _repo_node("acme/b"), cost=2, remaining=4998),
             _ok(_repo_node("acme/c"), cost=3, remaining=4995, reset_at="2026-06-10T01:00:00Z"),
@@ -190,7 +191,6 @@ def test_batch_repo_refs_follows_ref_pagination_cursor(composed: Running) -> Non
     paged = _connection([_ref("main", "c1")], has_next=True, end_cursor="CUR")
 
     result, (_, page) = _probe(
-        composed.http,
         [
             _ok(_repo_node("acme/site", heads=paged), cost=2, remaining=4990),
             httpx.Response(
@@ -209,7 +209,6 @@ def test_batch_repo_refs_follows_ref_pagination_cursor(composed: Running) -> Non
 
 def test_batch_repo_refs_dedupes_kinds_and_omits_unrequested_connections(composed: Running) -> None:
     result, [query] = _probe(
-        composed.http,
         _ok(_repo_node("acme/site", heads=_connection([_ref("main", "c1")]))),
         ["acme/site"],
         kinds=("heads", "heads"),
@@ -235,7 +234,7 @@ def test_batch_repo_refs_collects_inaccessible_repos_into_missing(
         ),
     )
 
-    result, _ = _probe(composed.http, reply, ["acme/site", "acme/gone"])
+    result, _ = _probe(reply, ["acme/site", "acme/gone"])
 
     assert _names(result) == (["acme/site"], [])
     assert result.missing == ("acme/gone",)
@@ -277,7 +276,7 @@ def test_batch_repo_refs_collects_inaccessible_repos_into_missing(
 def test_batch_repo_refs_raises_global_graphql_errors(
     body: dict[str, Any], kind: str, message: str, composed: Running
 ) -> None:
-    error = _raises(composed.http, httpx.Response(200, json=body), ["acme/site"])
+    error = _raises(httpx.Response(200, json=body), ["acme/site"])
 
     assert isinstance(error, GithubGraphqlError)
     assert error.kind == kind
@@ -298,15 +297,12 @@ def test_a_chunk_that_reads_wrong_fails_its_repos_and_the_rest_go_on(
     paged = _connection([_ref("main", "c1")], has_next=True, end_cursor="CUR")
 
     unexplained, _ = _probe(
-        composed.http,
         [_ok(None), _ok(_repo_node("acme/ok"))],
         ["acme/site", "acme/ok"],
         chunk_size=1,
     )
     # The repo resolved in the batch query, then vanished before the next page.
-    vanished, _ = _probe(
-        composed.http, [_ok(_repo_node("acme/site", heads=paged)), lost], ["acme/site"]
-    )
+    vanished, _ = _probe([_ok(_repo_node("acme/site", heads=paged)), lost], ["acme/site"])
 
     assert _names(unexplained) == (["acme/ok"], ["acme/site"])
     [null] = unexplained.failures
@@ -321,7 +317,6 @@ def test_chunks_run_side_by_side_and_report_progress_in_repos(composed: Running)
     progress: list[tuple[int, int]] = []
 
     result, queries = _probe(
-        composed.http,
         _echo_repos,
         ["acme/a", "acme/b", "acme/c"],
         chunk_size=2,
@@ -339,7 +334,6 @@ def test_chunks_run_side_by_side_and_report_progress_in_repos(composed: Running)
 
 def test_the_lowest_budget_any_chunk_saw_is_the_one_left(composed: Running) -> None:
     result, _ = _probe(
-        composed.http,
         [
             _ok(_repo_node("acme/a"), remaining=4500),
             _ok(_repo_node("acme/b"), remaining=4800, reset_at="2026-06-09T00:00:00Z"),
@@ -355,7 +349,7 @@ def test_the_lowest_budget_any_chunk_saw_is_the_one_left(composed: Running) -> N
 def test_default_branch_probe_asks_for_a_hundred_repos_a_request(composed: Running) -> None:
     repos = [f"acme/r{index}" for index in range(101)]
 
-    _, queries = _probe(composed.http, _echo_repos, repos, method="batch_default_branch_refs")
+    _, queries = _probe(_echo_repos, repos, method="batch_default_branch_refs")
 
     assert [query.count(": repository(") for query in queries] == [100, 1]
 
@@ -369,7 +363,6 @@ def _echo_repos(request: httpx.Request) -> httpx.Response:
 
 def test_batch_repo_refs_derives_ghe_graphql_endpoint(composed: Running) -> None:
     result, _ = _probe(
-        composed.http,
         _ok(_repo_node("acme/site")),
         ["acme/site"],
         base_url="https://ghe.example.com/api/v3",
@@ -384,7 +377,6 @@ def test_transient_failure_retries_the_same_chunk_before_splitting(
     failure: Reply, composed: Running
 ) -> None:
     result, queries = _probe(
-        composed.http,
         [failure, _ok(_repo_node("acme/a"), _repo_node("acme/b"))],
         ["acme/a", "acme/b"],
     )
@@ -404,7 +396,7 @@ def test_transient_failure_retries_the_same_chunk_before_splitting(
 def test_single_repo_transient_failure_becomes_a_failure_row_after_retries(
     failure: Reply, kind: str, status: int | None, reason: str, composed: Running
 ) -> None:
-    result, queries = _probe(composed.http, failure, ["acme/a"])
+    result, queries = _probe(failure, ["acme/a"])
 
     assert len(queries) == 3
     assert result.repos == ()
@@ -418,9 +410,7 @@ def test_full_outage_reports_every_repo_within_a_bounded_number_of_requests(
     failure: Reply,
     composed: Running,
 ) -> None:
-    result, queries = _probe(
-        composed.http, failure, ["acme/a", "acme/b", "acme/c", "acme/d"], chunk_size=4
-    )
+    result, queries = _probe(failure, ["acme/a", "acme/b", "acme/c", "acme/d"], chunk_size=4)
 
     assert len(queries) == 21
     assert _names(result) == ([], ["acme/a", "acme/b", "acme/c", "acme/d"])
@@ -470,7 +460,6 @@ def test_adaptive_splitting_isolates_payload_specific_5xxs(
     repos: list[str], bad: list[str], method: str, requests: int | None, composed: Running
 ) -> None:
     result, queries = _probe(
-        composed.http,
         _fail_for(*bad, method=method),
         [f"acme/{name}" for name in repos],
         method=method,
@@ -496,9 +485,7 @@ def test_batch_default_branch_refs_uses_connection_free_query_and_synthesizes_he
         {"nameWithOwner": "acme/empty", "defaultBranchRef": None},
     )
 
-    result, [query] = _probe(
-        composed.http, reply, ["acme/site", "acme/empty"], method="batch_default_branch_refs"
-    )
+    result, [query] = _probe(reply, ["acme/site", "acme/empty"], method="batch_default_branch_refs")
 
     assert "defaultBranchRef" in query
     assert "refs(" not in query
@@ -544,9 +531,8 @@ def test_http_access_errors_are_classified_and_never_retried(
 ) -> None:
     with respx.mock(base_url="https://api.github.com") as mock:
         route = mock.post("/graphql").mock(side_effect=[response])
-        client = GithubClient(GithubSettings(), http=composed.http)
-        with client, pytest.raises(GithubGraphqlError) as exc_info:
-            client.batch_repo_refs(["acme/a", "acme/b"])
+        with pytest.raises(GithubGraphqlError) as exc_info:
+            SERVER_API.port(GithubSettings()).batch_repo_refs(["acme/a", "acme/b"])
 
     assert route.call_count == 1
     assert exc_info.value.kind == kind
@@ -569,7 +555,7 @@ def test_http_access_errors_are_classified_and_never_retried(
 def test_http_error_message_is_extracted_from_common_body_shapes(
     body: dict[str, object], composed: Running
 ) -> None:
-    error = _raises(composed.http, httpx.Response(403, json=body), ["acme/a"])
+    error = _raises(httpx.Response(403, json=body), ["acme/a"])
 
     assert str(error) == "github graphql access forbidden: Resource not accessible"
 
@@ -579,7 +565,7 @@ def test_batch_repo_refs_rejects_invalid_repo_strings(bad: str, composed: Runnin
     # UntapedError, not ValueError: repo strings can come from user source
     # config, and core's error boundary renders UntapedError as a message.
     with pytest.raises(UntapedError, match="owner/name"):
-        _probe(composed.http, [], [bad])
+        _probe([], [bad])
 
 
 @pytest.mark.parametrize(
@@ -594,11 +580,11 @@ def test_batch_repo_refs_rejects_invalid_arguments(
     kwargs: dict[str, Any], message: str, composed: Running
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        _probe(composed.http, [], ["acme/site"], **kwargs)
+        _probe([], ["acme/site"], **kwargs)
 
 
 def test_batch_repo_refs_with_no_repos_makes_no_requests(composed: Running) -> None:
-    result, queries = _probe(composed.http, [], [])
+    result, queries = _probe([], [])
 
     assert queries == []
     assert (result.repos, result.missing, result.rate_limit_remaining) == ((), (), None)

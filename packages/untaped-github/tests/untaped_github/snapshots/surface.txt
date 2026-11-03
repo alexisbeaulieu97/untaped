@@ -1,4 +1,6 @@
 # untaped surface 3
+adapter github.server-api Rest2022  [experimental]
+cfg github.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
 cfg github.git_protocol choice=https
@@ -8,6 +10,7 @@ cfg github.inventory.orgs string[] default=[]
 cfg github.inventory.teams string[] default=[]
 cfg github.server.url string(format=uri,maxLength=2083,minLength=1) default=<computed>
 cfg github.server.verify_tls boolean|string(format=path) default=true
+cfg github.server_version string? default=unset
 cfg github.sweep.parallel integer(minimum=1) default=12
 cli untaped github
 cli untaped github cache
@@ -563,36 +566,35 @@ sdk untaped_github.api.BatchRepoRefsResult.rate_limit_cost
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_remaining
 sdk untaped_github.api.BatchRepoRefsResult.rate_limit_reset_at
 sdk untaped_github.api.BatchRepoRefsResult.repos
-sdk untaped_github.api.GithubClient(config, *, http)
-sdk untaped_github.api.GithubClient.batch_default_branch_refs(chunk_size=) default=100
-sdk untaped_github.api.GithubClient.batch_default_branch_refs(concurrency=) default=1
-sdk untaped_github.api.GithubClient.batch_default_branch_refs(on_progress=) default=None callback(2)
-sdk untaped_github.api.GithubClient.batch_default_branch_refs(repos)
-sdk untaped_github.api.GithubClient.batch_repo_refs(chunk_size=) default=50
-sdk untaped_github.api.GithubClient.batch_repo_refs(concurrency=) default=1
-sdk untaped_github.api.GithubClient.batch_repo_refs(kinds=) default=["heads","tags"]
-sdk untaped_github.api.GithubClient.batch_repo_refs(on_progress=) default=None callback(2)
-sdk untaped_github.api.GithubClient.batch_repo_refs(repos)
-sdk untaped_github.api.GithubClient.close()
-sdk untaped_github.api.GithubClient.get_raw_content(owner, repo, path, *, ref)
-sdk untaped_github.api.GithubClient.get_repository(owner, repo)
-sdk untaped_github.api.GithubClient.get_tree(owner, repo, tree_sha)
-sdk untaped_github.api.GithubClient.get_tree(recursive=) default=false
-sdk untaped_github.api.GithubClient.list_matching_refs(owner, repo, namespace)
-sdk untaped_github.api.GithubClient.list_org_repos(org)
-sdk untaped_github.api.GithubClient.list_team_repos(org, team_slug)
-sdk untaped_github.api.GithubClient.me()
-sdk untaped_github.api.GithubClient.search_code(limit=) default=None
-sdk untaped_github.api.GithubClient.search_code(q)
-sdk untaped_github.api.GithubClient.search_issues(limit=) default=None
-sdk untaped_github.api.GithubClient.search_issues(q)
-sdk untaped_github.api.GithubClient.search_issues(sort=) default=None
-sdk untaped_github.api.GithubClient.search_repositories(limit=) default=None
-sdk untaped_github.api.GithubClient.search_repositories(q)
-sdk untaped_github.api.GithubClient.search_repositories(sort=) default=None
-sdk untaped_github.api.GithubClient.search_users(limit=) default=None
-sdk untaped_github.api.GithubClient.search_users(q)
-sdk untaped_github.api.GithubClient.search_users(sort=) default=None
+sdk untaped_github.api.GithubApi
+sdk untaped_github.api.GithubApi.batch_default_branch_refs(chunk_size=) default=100
+sdk untaped_github.api.GithubApi.batch_default_branch_refs(concurrency=) default=1
+sdk untaped_github.api.GithubApi.batch_default_branch_refs(on_progress=) default=None callback(2)
+sdk untaped_github.api.GithubApi.batch_default_branch_refs(repos)
+sdk untaped_github.api.GithubApi.batch_repo_refs(chunk_size=) default=50
+sdk untaped_github.api.GithubApi.batch_repo_refs(concurrency=) default=1
+sdk untaped_github.api.GithubApi.batch_repo_refs(kinds=) default=["heads","tags"]
+sdk untaped_github.api.GithubApi.batch_repo_refs(on_progress=) default=None callback(2)
+sdk untaped_github.api.GithubApi.batch_repo_refs(repos)
+sdk untaped_github.api.GithubApi.get_raw_content(owner, repo, path, *, ref)
+sdk untaped_github.api.GithubApi.get_repository(owner, repo)
+sdk untaped_github.api.GithubApi.get_tree(owner, repo, tree_sha)
+sdk untaped_github.api.GithubApi.get_tree(recursive=) default=false
+sdk untaped_github.api.GithubApi.list_matching_refs(owner, repo, namespace)
+sdk untaped_github.api.GithubApi.list_org_repos(org)
+sdk untaped_github.api.GithubApi.list_team_repos(org, team_slug)
+sdk untaped_github.api.GithubApi.me()
+sdk untaped_github.api.GithubApi.search_code(limit=) default=None
+sdk untaped_github.api.GithubApi.search_code(q)
+sdk untaped_github.api.GithubApi.search_issues(limit=) default=None
+sdk untaped_github.api.GithubApi.search_issues(q)
+sdk untaped_github.api.GithubApi.search_issues(sort=) default=None
+sdk untaped_github.api.GithubApi.search_repositories(limit=) default=None
+sdk untaped_github.api.GithubApi.search_repositories(q)
+sdk untaped_github.api.GithubApi.search_repositories(sort=) default=None
+sdk untaped_github.api.GithubApi.search_users(limit=) default=None
+sdk untaped_github.api.GithubApi.search_users(q)
+sdk untaped_github.api.GithubApi.search_users(sort=) default=None
 sdk untaped_github.api.GithubGraphqlError base=untaped.sdk.UntapedError
 sdk untaped_github.api.GithubGraphqlError(body=) default=None
 sdk untaped_github.api.GithubGraphqlError(category=) default=None
@@ -611,6 +613,7 @@ sdk untaped_github.api.GithubSettings(default_org=) default=None
 sdk untaped_github.api.GithubSettings(git_protocol=) default=https
 sdk untaped_github.api.GithubSettings(inventory=) default=<computed>
 sdk untaped_github.api.GithubSettings(server=) default=<computed>
+sdk untaped_github.api.GithubSettings(server_version=) default=None
 sdk untaped_github.api.GithubSettings(sweep=) default=<computed>
 sdk untaped_github.api.GithubSettings.api_url
 sdk untaped_github.api.GithubSettings.default_org
@@ -618,6 +621,7 @@ sdk untaped_github.api.GithubSettings.git_protocol
 sdk untaped_github.api.GithubSettings.inventory
 sdk untaped_github.api.GithubSettings.retired_keys class
 sdk untaped_github.api.GithubSettings.server
+sdk untaped_github.api.GithubSettings.server_version
 sdk untaped_github.api.GithubSettings.sweep
 sdk untaped_github.api.RepoRef(*, kind, name, sha)
 sdk untaped_github.api.RepoRef.kind
@@ -640,6 +644,7 @@ sdk untaped_github.api.ResolveRepositoryInventory(service)
 sdk untaped_github.api.TeamScope(org, slug)
 sdk untaped_github.api.TeamScope.org
 sdk untaped_github.api.TeamScope.slug
+sdk untaped_github.api.github_api(settings)
 sdk untaped_github.api.github_settings()
 sdk untaped_github.api.github_token_found()
 sdk untaped_github.api.github_web_host(base_url)
@@ -647,3 +652,4 @@ sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
 sdk untaped_github.api.split_repo_id(value)
+server-api github.server-api override=github.server_version  [experimental]

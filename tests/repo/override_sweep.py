@@ -2,7 +2,10 @@
 
 Imports every module of each first-party package and example, and prints one
 line per member a class overrides on an exported SDK class that is neither a
-listed hook nor on an implementer (nothing printed: all declared).
+listed hook nor on an implementer (nothing printed: all declared). A plugin's
+own class implementing what its own ``api`` or ``testing`` exports (github's
+adapter serving its exported port) is the owner keeping its interface, not a
+hook another package reads, so it is not listed.
 """
 
 from __future__ import annotations
@@ -58,6 +61,15 @@ def _defines(cls: type, name: str) -> bool:
     return name not in outside and any(name in vars(klass) for klass in own)
 
 
+def _owns(cls: type, paths: list[str]) -> bool:
+    """Whether ``cls`` belongs to the plugin whose ``api`` or ``testing`` exports the base."""
+    package = cls.__module__.partition(".")[0]
+    return any(
+        path.startswith((f"{package}.api.", f"{package}.testing.")) and package != "untaped"
+        for path in paths
+    )
+
+
 def _fields(cls: type) -> set[str]:
     found = set(getattr(cls, "model_fields", {}) or {})
     if dataclasses.is_dataclass(cls):
@@ -85,6 +97,8 @@ def undeclared() -> list[str]:
             if base not in paths or issubclass(base, Contract):
                 continue
             if any(path in IMPLEMENTERS for path in paths[base]):
+                continue
+            if _owns(cls, paths[base]):
                 continue
             hooks = {
                 name

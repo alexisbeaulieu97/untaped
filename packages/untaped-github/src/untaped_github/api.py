@@ -1,7 +1,8 @@
 """GitHub's declared public module: the only github code other plugins import.
 
-Ansible uses it for repository inventory, client operations, reference
-probing, settings, and result/error types. Workspace never imports github:
+Ansible uses it for repository inventory, github's port (the GitHub API,
+served for the server's version), reference probing, settings, and
+result/error types. Workspace never imports github:
 github fills its ``RepoSource`` contract (``providers/workspace.py``). The
 closed :data:`__all__` keeps the boundary explicit; everything else under
 ``untaped_github`` is private to GitHub.
@@ -14,6 +15,7 @@ from untaped_github.application.inventory import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
 )
+from untaped_github.application.ports import GithubApi
 from untaped_github.application.scopes import TeamScope, normalize_team_scopes
 from untaped_github.domain.errors import is_global_github_failure
 from untaped_github.domain.hosts import github_web_host
@@ -25,13 +27,13 @@ from untaped_github.domain.models import (
 )
 from untaped_github.domain.repo_id import split_repo_id
 from untaped_github.errors import GithubGraphqlError, GithubGraphqlErrorKind
-from untaped_github.infrastructure.github_client import GithubClient
+from untaped_github.server import github_api
 from untaped_github.settings import TOKEN, GithubSettings
 
 __all__ = [
     "BatchRepoRefsFailure",
     "BatchRepoRefsResult",
-    "GithubClient",
+    "GithubApi",
     "GithubGraphqlError",
     "GithubGraphqlErrorKind",
     "GithubSettings",
@@ -40,6 +42,7 @@ __all__ = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "github_api",
     "github_settings",
     "github_token_found",
     "github_web_host",

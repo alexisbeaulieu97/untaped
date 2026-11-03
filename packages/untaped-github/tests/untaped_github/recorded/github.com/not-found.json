@@ -1,0 +1,10 @@
+{
+  "request": "GET /repos/acme/gone",
+  "status": 404,
+  "headers": {},
+  "body": {
+    "message": "Not Found",
+    "documentation_url": "https://docs.github.com/rest/repos/repos#get-a-repository",
+    "status": "404"
+  }
+}

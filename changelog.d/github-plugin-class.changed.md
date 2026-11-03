@@ -16,7 +16,5 @@ fetched, as other tables' unknown columns are; it only warned before. A
 warning. `github.token`, `github.token_command`, `github.base_url` and
 `github.sweep.max_age_seconds` are retired: they are no longer read, and
 `untaped doctor` names them for `untaped config migrate` to delete.
-For plugin authors: `untaped_github.api.GithubClient(settings, http=)` takes
-the run's `HttpFactory` (`self.ctx.http`) rather than `HttpSettings`, and
-`GithubSettings` has no `base_url`, `token`, `token_command` or
-`token_sources`.
+For plugin authors: `GithubSettings` has no `base_url`, `token`,
+`token_command` or `token_sources`.
