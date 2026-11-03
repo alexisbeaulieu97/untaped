@@ -57,6 +57,7 @@ class SettingsWriter(Protocol):
         profile: str | None = None,
         dry_run: bool = False,
         on_spelling_removed: Callable[[str], None] | None = None,
+        on_unchanged: Callable[[str], None] | None = None,
     ) -> str: ...
     def update_values(
         self,

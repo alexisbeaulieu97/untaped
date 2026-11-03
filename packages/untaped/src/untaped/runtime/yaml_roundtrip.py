@@ -46,6 +46,29 @@ def render_preserving(
     return plain_dump(after)
 
 
+def same_data(left: Any, right: Any) -> bool:
+    """Whether two config values are the same, kinds included.
+
+    Python counts ``1``, ``1.0`` and ``True`` equal; a file holding one of
+    them doesn't hold the others, so a write that swaps them changes it.
+    """
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return left.keys() == right.keys() and all(same_data(left[k], right[k]) for k in left)
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(map(same_data, left, right, strict=True))
+    if _kind(left) is not _kind(right):
+        return False
+    return bool(left == right or (left != left and right != right))  # a NaN is the same NaN
+
+
+def _kind(value: Any) -> type:
+    """``value``'s kind as YAML tells them apart (a loader's ``int`` subclass is an ``int``)."""
+    for kind in (bool, int, float, str):
+        if isinstance(value, kind):
+            return kind
+    return type(value)
+
+
 def plain_dump(data: Mapping[str, Any]) -> str:
     """Dump ``data`` with PyYAML in insertion order (no comments to keep)."""
     return yaml.safe_dump(dict(data), sort_keys=False, default_flow_style=False)
@@ -53,7 +76,7 @@ def plain_dump(data: Mapping[str, Any]) -> str:
 
 def _reads_back(text: str, expected: Mapping[str, Any]) -> bool:
     try:
-        return bool(yaml.safe_load(text) == expected)
+        return same_data(yaml.safe_load(text), expected)
     except yaml.YAMLError:
         return False
 
@@ -116,7 +139,7 @@ def _sync_map(node: Any, before: Mapping[Any, Any], after: Mapping[Any, Any]) ->
     for key in [key for key in node if key not in after]:
         del node[key]
     for key, value in after.items():
-        if key in carried or (key in before and before[key] == value):
+        if key in carried or (key in before and same_data(before[key], value)):
             continue
         if key in node and _sync_child(node, key, before[key], value):
             continue
@@ -135,7 +158,7 @@ def _carry_renames(node: Any, before: Mapping[Any, Any], after: Mapping[Any, Any
     for key, value in after.items():
         if key in before:
             continue
-        match = next((old for old in gone if before[old] == value), None)
+        match = next((old for old in gone if same_data(before[old], value)), None)
         if match is None:
             continue
         gone.remove(match)
@@ -190,7 +213,7 @@ def _sync_seq(node: Any, before: list[Any], after: list[Any]) -> None:
         return
     shared = min(len(before), len(after))
     for index in range(shared):
-        if before[index] == after[index]:
+        if same_data(before[index], after[index]):
             continue
         if not _sync_child(node, index, before[index], after[index]):
             node[index] = _fresh(after[index])

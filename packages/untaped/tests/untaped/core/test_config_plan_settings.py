@@ -439,3 +439,40 @@ def test_a_write_hidden_by_a_picked_profile_says_so(
         result.stderr
     )
     assert _outcomes() == [("shelf.greeting", "default", "updated")]
+
+
+def test_a_value_the_key_already_holds_is_unchanged(_isolated_config: Path) -> None:
+    before = _isolated_config.read_text(encoding="utf-8")
+
+    previewed = _untaped({SHELF.greeting: "hey"}, "shelf", "write", "--dry-run")
+    assert 'shelf.greeting is already "hey" in profile default' in previewed.stderr
+
+    result = _untaped({SHELF.greeting: "hey"}, "shelf", "write", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert _outcomes() == [("shelf.greeting", "default", "unchanged")]
+    assert _isolated_config.read_text(encoding="utf-8") == before
+
+
+def test_a_plan_leaves_an_empty_profile_alone_when_only_the_base_changes(
+    _isolated_config: Path,
+) -> None:
+    """A home-only key lands in the base; ``work:`` (null), changed by nothing, stays null."""
+    _isolated_config.write_text(HOME.replace("  work: {}", "  work:"), encoding="utf-8")
+    package = SHELF.sources["main"].packages["fish"]
+
+    result = _untaped(
+        {package: Item(policy="sync"), SHELF.retries: None},
+        "--profile",
+        "work",
+        "shelf",
+        "write",
+        "--yes",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "  work:\n" in _isolated_config.read_text(encoding="utf-8")
+    assert _outcomes() == [
+        ("shelf.sources.main.packages.fish", "default", "updated"),
+        ("shelf.retries", "work", "unchanged"),
+    ]
