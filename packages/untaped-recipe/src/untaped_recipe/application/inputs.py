@@ -23,7 +23,7 @@ from untaped_recipe.domain.input_jinja import (
 )
 from untaped_recipe.domain.recipe import InputSpec, RecipeFile
 from untaped_recipe.errors import RecipeError
-from untaped_values.api import Ask, coerce, redact, resolve
+from untaped_values.api import Ask, InputError, coerce, redact, resolve
 
 
 @dataclass(frozen=True)
@@ -212,6 +212,9 @@ def _derive_source_value(source: CompiledInputSource, target: Target) -> object:
 def _coerce_derived_value(name: str, spec: InputSpec, value: object) -> object:
     structured = spec.type in _STRUCTURED
     ensure_derived_value_within_bound(value, structured=structured)
+    if structured and isinstance(value, str):
+        # Only given text is parsed as YAML or split on commas; a derived string stays one.
+        raise InputError(f"input {name!r}: cannot coerce value to {spec.type}")
     coerced = coerce(spec, value, name=name)
     ensure_derived_value_within_bound(coerced, structured=structured)
     return coerced

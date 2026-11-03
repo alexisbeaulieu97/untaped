@@ -454,6 +454,20 @@ def test_jinja_allows_scalar_literals_and_target_record_field_access() -> None:
             "cannot coerce value to list",
             id="structured-rejects-nesting",
         ),
+        pytest.param(
+            {"type": "list", "from": "{{ record.value }}"},
+            {"value": "[api, web]"},
+            InputError,
+            "cannot coerce value to list",
+            id="derived-text-is-not-parsed-as-a-list",
+        ),
+        pytest.param(
+            {"type": "dict", "from": "{{ record.value }}"},
+            {"value": "{team: core}"},
+            InputError,
+            "cannot coerce value to dict",
+            id="derived-text-is-not-parsed-as-a-mapping",
+        ),
     ],
 )
 def test_derived_values_are_bounded_and_shape_checked(

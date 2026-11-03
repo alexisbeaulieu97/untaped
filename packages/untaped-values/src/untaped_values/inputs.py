@@ -35,9 +35,9 @@ class Input(BaseModel):
     (`1/true/yes/on`, `0/false/no/off`), `choice` (one of `choices`), `list`
     (a YAML list, or comma-separated text; `items` is its element type,
     default `str`) or `dict` (a YAML mapping; `values` is its value type,
-    default `str`). An input with no `default` must be given, or is asked at a
-    terminal. A `secret` input is asked hidden, shown as `***` and never
-    rendered into text such as a path or a command line.
+    default `str`). An input with no `default` and no given value is asked at
+    a terminal, or reported missing. A `secret` input is asked hidden, shown
+    as `***`, and never placed in a path, a target or a command line.
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -45,7 +45,9 @@ class Input(BaseModel):
     description: str = Field("", description="What the value is; the prompt shows it.")
     type: InputType = Field("str", description="How a given value is converted.")
     default: JsonValue | None = Field(None, description="The value when none is given.")
-    secret: bool = Field(False, description="Asked hidden, shown as `***`, never put in text.")
+    secret: bool = Field(
+        False, description="Asked hidden, shown as `***`, never in a path or command line."
+    )
     choices: tuple[JsonValue, ...] = Field((), description="A `choice` input's allowed values.")
     items: ScalarType | None = Field(None, description="A `list` input's element type.")
     values: ScalarType | None = Field(
@@ -108,17 +110,16 @@ def _from_text(value: object, kind: Literal["list", "dict"]) -> object:
     expected = "list" if kind == "list" else "mapping"
     try:
         return yaml.safe_load(str(value))
-    except yaml.YAMLError as exc:
-        raise InputError(f"expects YAML {expected}: {exc}") from None
+    except yaml.YAMLError:
+        # The parser's message quotes the text, which may be a secret.
+        raise InputError(f"expects YAML {expected}: the text is not valid YAML") from None
 
 
 def _coerce_list(value: object, spec: Input) -> list[object]:
     if isinstance(value, str):
         value = [item.strip() for item in value.split(",") if item.strip()]
-    elif isinstance(value, Mapping):
+    elif isinstance(value, Mapping | bytes) or not isinstance(value, Sequence):
         raise InputError("cannot coerce value to list")
-    elif not isinstance(value, Sequence) or isinstance(value, bytes):
-        value = [value]
     item_type = spec.items or "str"
     try:
         return [_coerce_element(item, item_type) for item in value]

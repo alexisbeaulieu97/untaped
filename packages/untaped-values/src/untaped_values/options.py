@@ -50,9 +50,10 @@ class Vars(BaseModel):
     ## Prompts
 
     Only an input that must have a value and has none prompts, and only when
-    stdin is a terminal; `list` and `dict` inputs never prompt. With no
-    terminal or with `--non-interactive`, nothing prompts and the command
-    names every missing input at once.
+    stdin is a terminal. `list` and `dict` inputs never prompt: when one is
+    missing, nothing prompts. With no terminal, with `--non-interactive` or
+    with a missing `list` or `dict`, the command names every missing input at
+    once.
     """
 
     var: list[KeyValue] = Field(

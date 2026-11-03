@@ -61,7 +61,8 @@ class Inputs(BaseModel):
     2. the recipe's `from` candidates;
     3. the recipe's `default`;
     4. a prompt, for a required input only;
-    5. otherwise a `missing required input` error.
+    5. otherwise a `missing required input` error, naming every missing
+       input at once.
 
     `untaped recipe get REF` lists a recipe's inputs; an input not declared
     `required: true` and with no default is left unset.
@@ -88,8 +89,9 @@ class Inputs(BaseModel):
 
     Prompts run in target order before planning starts, and never under
     `--check`. With no terminal (piped `--stdin` included), `--non-interactive`
-    or `--check`, a missing input fails with `missing required input: NAME`: a
-    global input fails the run, a target input fails that target's row.
+    or `--check`, a missing input fails with `missing required input: NAME`
+    (`missing required inputs: A, B` for several): a global input fails the
+    run, a target input fails that target's row.
     """
 
     input_from: list[KeyValue] = Field(

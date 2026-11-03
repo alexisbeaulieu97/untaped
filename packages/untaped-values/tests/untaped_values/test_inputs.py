@@ -40,7 +40,6 @@ _INT_DICT = {"type": "dict", "values": "int"}
         ({"type": "list"}, "a, b,,c", ["a", "b", "c"]),
         ({"type": "list"}, "enabled", ["enabled"]),
         (_INT_LIST, "1,2", [1, 2]),
-        ({"type": "list"}, 5, ["5"]),
         ({"type": "dict", "values": "int"}, "{replicas: 3}", {"replicas": 3}),
         ({"type": "choice", "choices": ["dev", "prod"]}, "prod", "prod"),
         ({"type": "choice", "choices": [1, 2]}, "2", 2),
@@ -64,6 +63,8 @@ def test_coerce_is_safe_to_apply_twice() -> None:
         (_INT_LIST, ["not-an-int"], "cannot coerce value to list"),
         (_INT_LIST, [["nested"]], "cannot coerce value to list"),
         (_INT_LIST, {"a": 1}, "cannot coerce value to list"),
+        ({"type": "list"}, 5, "cannot coerce value to list"),
+        ({"type": "list"}, None, "cannot coerce value to list"),
         (_INT_LIST, "[", "expects YAML list:"),
         (_INT_DICT, "not-a-dict", "cannot coerce value to dict"),
         (_INT_DICT, {1: "2"}, "dict input keys must be strings"),
@@ -92,6 +93,22 @@ def test_coercion_errors_do_not_echo_values(input_type: str) -> None:
 
     with pytest.raises(InputError, match=f"cannot coerce value to {input_type}") as excinfo:
         coerce(Input(type=input_type), secret, name="token")  # type: ignore[arg-type]
+
+    assert secret not in str(excinfo.value)
+    assert secret not in "".join(
+        traceback.format_exception(type(excinfo.value), excinfo.value, excinfo.value.__traceback__)
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_type", "text"),
+    [("list", "[TOP-SECRET-9000, "), ("dict", "{TOP-SECRET-9000: [")],
+)
+def test_yaml_errors_do_not_echo_values(input_type: str, text: str) -> None:
+    secret = "TOP-SECRET-9000"
+
+    with pytest.raises(InputError, match="the text is not valid YAML") as excinfo:
+        coerce(Input(type=input_type, secret=True), text, name="token")  # type: ignore[arg-type]
 
     assert secret not in str(excinfo.value)
     assert secret not in "".join(
