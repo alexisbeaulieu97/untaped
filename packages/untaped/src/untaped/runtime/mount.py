@@ -53,7 +53,7 @@ from untaped.sdk._block import FieldBlock, Invocation
 from untaped.sdk._confirm import Confirm, DryRun
 from untaped.sdk._input_blocks import Stdin
 from untaped.sdk._output import Output
-from untaped.sdk._run import Run
+from untaped.sdk._run import Run, note_printed
 from untaped.sdk._stdin import read_stdin_text
 from untaped.sdk._stream import _Stream
 from untaped.sdk._value_types import File
@@ -870,6 +870,7 @@ def _print(
         return
     if decl.returns in ("line", "line-or-none"):
         printed.text = str(result)
+        note_printed()
         print(result)
         return
     if isinstance(result, BaseModel):

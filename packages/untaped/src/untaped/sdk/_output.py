@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from untaped.sdk._block import FieldBlock, FieldOption, Invocation
 from untaped.sdk._keys import SettingKey
+from untaped.sdk._run import note_printed
 from untaped.sdk._table import (
     Columns,
     _column_names_of,
@@ -223,6 +224,7 @@ class Output[R: BaseModel](FieldBlock):
         from untaped.sdk._rows import _as_row, _model_fields  # noqa: PLC0415 - rendering is heavy
         from untaped.sdk._ui import build_terminal  # noqa: PLC0415 - rendering is heavy
 
+        note_printed()
         count_failed_actions([records] if isinstance(records, BaseModel) else records)
         renderer = self.render.get(self.format)
         if self.format == "table" and self._requested is not None:

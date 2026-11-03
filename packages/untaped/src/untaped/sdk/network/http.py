@@ -114,6 +114,45 @@ _INHERIT = _Inherit()
 _DEFAULT_RETRY = RetryPolicy()
 
 
+@dataclass
+class _Sent:
+    """One :meth:`HttpClient.request` of a recording client, as it ended.
+
+    The server API block records each request its adapters send, to tell
+    whether a write went through before a mismatch (``ServerApi``'s rerun).
+    ``idempotent`` is the policy the request was sent with (its ``retry=``,
+    else the client's, else the default): the rule that decides what may be
+    sent twice. ``outcome``: ``answered`` (a response, any status), ``unsent``
+    (a transport failure before anything left), ``maybe`` (it may have been
+    sent: a transport failure after connecting, or anything else that
+    stopped it). ``accepted_nothing`` marks the 404 or 405 a mismatch turned
+    into "this server lacks that path or method".
+    """
+
+    method: str
+    path: str
+    idempotent: bool
+    outcome: Literal["unsent", "answered", "maybe"] = "unsent"
+    status: int | None = None
+    accepted_nothing: bool = False
+
+    @property
+    def wrote(self) -> bool:
+        """Whether this is a write that went through, or may have."""
+        if self.idempotent or self.outcome == "unsent":
+            return False
+        return self.outcome == "maybe" or not self.accepted_nothing
+
+    def __str__(self) -> str:
+        return f"{self.method} {self.path}"
+
+
+def sent_by(error: BaseException) -> _Sent | None:
+    """The recorded request a status error answers (``None``: not a recording client's)."""
+    found = getattr(error, "_untaped_sent", None)
+    return found if isinstance(found, _Sent) else None
+
+
 def _parse_retry_after(value: str) -> float | None:
     """Parse a ``Retry-After`` header (delta-seconds or HTTP-date) to seconds.
 
@@ -211,6 +250,8 @@ class HttpClient:
         self._retry = retry
         self._timeout = timeout
         self.system = system or HttpError.system
+        #: Where each request is recorded as it ends (the server API block's clients only).
+        self._record: Callable[[_Sent], None] | None = None
 
     def request(
         self,
@@ -237,6 +278,10 @@ class HttpClient:
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
+        idempotent = (policy or _DEFAULT_RETRY).idempotent_methods
+        record = _Sent(method.upper(), "", idempotent=method.upper() in idempotent)
+        if self._record is not None:
+            self._record(record)
         follow = bool(kwargs.pop("follow_redirects", False))
         if capped() is not None:
             policy = None
@@ -244,10 +289,12 @@ class HttpClient:
         while True:
             attempt += 1
             request = self._client.build_request(method, path, **self._bounded(kwargs))
+            record.path = request.url.path
             if self._auth is not None:
                 request = self._auth(request)
             started = time.monotonic()
             sent = [request]
+            record.outcome = "maybe"  # from here on, it may have left
             try:
                 response = self._send(sent, follow=follow, started=started)
             except httpx.HTTPError as exc:
@@ -278,6 +325,7 @@ class HttpClient:
                 ):
                     _sleep_before_retry(policy.backoff(attempt), attempt, policy)
                     continue
+                record.outcome = "unsent" if presend else "maybe"
                 raise HttpTransportError(
                     str(exc),
                     url=str(request.url),
@@ -286,6 +334,7 @@ class HttpClient:
                 ) from exc
             request = sent[-1]
             _log_exchange(request, str(response.status_code), started)
+            record.outcome, record.status = "answered", response.status_code
             if response.status_code >= 400:
                 if (
                     policy is not None
@@ -295,7 +344,7 @@ class HttpClient:
                     delay = policy.status_delay(attempt, response.headers.get("Retry-After"))
                     _sleep_before_retry(delay, attempt, policy)
                     continue
-                raise HttpStatusError(
+                error = HttpStatusError(
                     f"HTTP {response.status_code} for {request.url}",
                     status_code=response.status_code,
                     url=str(request.url),
@@ -303,6 +352,8 @@ class HttpClient:
                     system=self.system,
                     details={"attempts": attempt},
                 )
+                error._untaped_sent = record  # type: ignore[attr-defined]
+                raise error
             succeeded()
             return response
 

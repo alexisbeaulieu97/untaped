@@ -142,6 +142,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   tree draws is for people and outside the promise anyway.
 - Table cells: `TableText` in `untaped.sdk`, a nested model's `table_text()`
   as its cell (lint's locations are its one consumer).
+- Server APIs: `ServerApi`, `ApiAdapter`, `ApiMismatch`, `ServerVersion` and
+  `Release` in `untaped.sdk.network`, which keep a plugin's commands
+  independent of the API version its server runs.
 
 ## Names plugins use
 
