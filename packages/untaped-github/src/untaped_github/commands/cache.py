@@ -253,8 +253,8 @@ class Worktree(GithubCommand):
     """Materialize one cached repo/ref and print the worktree path.
 
     It checks a stored ref out, detached, under
-    ``~/.untaped/plugins/github/worktrees/``, for reading a repo's files;
-    ``untaped workspace`` makes checkouts you edit. It runs ``git``, which
+    ``~/.untaped/plugins/github/worktrees/``, for reading a repo's files, never
+    for editing them. It runs ``git``, which
     must be on ``PATH``, and works only for refs already stored, and offline
     once their files have been fetched. ``--format raw`` prints just the
     path, for ``$(…)``.

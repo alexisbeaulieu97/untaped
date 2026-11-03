@@ -1,14 +1,13 @@
 """The ``workspace`` plugin class: what the plugin has, each under its own name.
 
 The ``untaped.plugins`` entry point names :class:`WorkspacePlugin`, in this
-leaf module: the class imports every command, so ``api`` (which repo
-providers import) imports without them. Its docstring is the workspace guide.
+leaf module, since the class imports every command. Its docstring is the
+workspace guide.
 """
 
 from __future__ import annotations
 
 from untaped.sdk import Plugin, StubSkill, experimental
-from untaped_workspace.api import RepoSource
 from untaped_workspace.commands.archive import Archive, Remove
 from untaped_workspace.commands.create import Add, Create
 from untaped_workspace.commands.repos import ReposGroup
@@ -54,9 +53,9 @@ class WorkspacePlugin(Plugin):
 
     - `OWNER/NAME`, or a bare `NAME` that is unique, both looked up in the repos
       every installed repo source lists (the plugins that fill `RepoSource`).
-      The lists are cached (`workspace.caches.repo_source_repos.max_age_seconds`).
+      The lists are cached (`git.caches.repo_source_repos.max_age_seconds`).
       When two sources list the same name,
-      `untaped plugin rank workspace.repo_source repos PLUGIN...` sets their order.
+      `untaped plugin rank git.repo_source repos PLUGIN...` sets their order.
     - A clone URL: `https://…`, `ssh://…` or `user@host:path`. It skips the
       lookup, and its repo is named by its path (`acme/api`). Local paths and
       `file://` URLs are refused. A URL on a host a plugin claims must name a
@@ -182,7 +181,6 @@ class WorkspacePlugin(Plugin):
     settings = WorkspaceSettings
     stability = experimental
     commands = (Create, Add, List, Status, Path, Archive, Remove, Run, ReposGroup)
-    offers = (RepoSource,)
     checkouts = CHECKOUTS
     repos = HELD_REPOS
     worktrees = WORKTREES

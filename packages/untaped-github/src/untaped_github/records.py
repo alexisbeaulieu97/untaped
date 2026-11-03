@@ -67,7 +67,7 @@ class Repo(Record):
     so a raw REST row validates as it is and unknown fields are dropped; only
     ``full_name`` is required, and a field the row's source didn't report is
     ``None``: a cache row lacks most of GitHub's metadata. github fills
-    workspace's ``RepoSource`` with it, so a piped row becomes a workspace repo
+    the git plugin's ``RepoSource`` with it, so a piped row becomes a ``git.repo``
     without an API call.
     """
 
@@ -115,7 +115,7 @@ REPO_HIT_COLUMNS = (
 class CorpusRepo(Repo):
     """One repository row in the local scan corpus.
 
-    A :class:`Repo`, so it pipes into workspace like any repo row.
+    A :class:`Repo`, so it pipes into any command that reads ``git.repo`` rows.
     """
 
     ref: str
@@ -161,8 +161,8 @@ class CacheDeleteOutcome(OutcomeRecord):
 class SweepRepo(Repo):
     """Aggregated sweep result for one repository.
 
-    A :class:`Repo`, so a sweep's matches pipe into workspace (or a
-    second sweep) like any repo row.
+    A :class:`Repo`, so a sweep's matches pipe into any command that
+    reads ``git.repo`` rows (a second sweep, say).
     """
 
     matched: bool = Field(

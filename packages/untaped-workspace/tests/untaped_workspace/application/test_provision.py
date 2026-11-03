@@ -10,13 +10,12 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import Source, UsageError
+from untaped_git.api import Repo, RepoFinder
 from untaped_git.testing import GitRemote
-from untaped_workspace.api import Repo
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.domain.models import Checkout, RepoArg
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.infrastructure import LocalGitWorktrees, ProjectWorkspaceStore
-from untaped_workspace.infrastructure.catalog import RepoSources
 from untaped_workspace.records import RepoOutcome
 from workspace_test_support import stored
 
@@ -26,7 +25,7 @@ def provision(tmp_path: Path, store_root: Path) -> ProvisionRepos:
     return ProvisionRepos(
         ProjectWorkspaceStore(),
         LocalGitWorktrees(plugin="workspace"),
-        RepoSources(),
+        RepoFinder(),
         workspaces_dir=tmp_path / "ws",
         branch_template="feature/{name}",
         parallel=4,
@@ -107,7 +106,7 @@ def test_unexpected_error_still_persists_finished_repos(tmp_path: Path) -> None:
     provision = ProvisionRepos(
         ProjectWorkspaceStore(),
         _FlakyGit(),  # type: ignore[arg-type]
-        RepoSources(),
+        RepoFinder(),
         workspaces_dir=tmp_path / "ws",
         branch_template="{name}",
         parallel=1,
@@ -216,7 +215,7 @@ def _recording(tmp_path: Path, git: _RecordingGit, catalog: object) -> Provision
 
 def test_https_and_ssh_urls_of_one_repo_are_the_same_repo(tmp_path: Path) -> None:
     git = _RecordingGit()
-    provision = _recording(tmp_path, git, RepoSources())
+    provision = _recording(tmp_path, git, RepoFinder())
     https, ssh = "https://github.com/acme/api.git", "git@github.com:acme/api.git"
     assert len(provision.create("J-1", [RepoArg(ident=https), RepoArg(ident=ssh)])) == 1
     record = stored("J-1")
@@ -232,7 +231,7 @@ def test_a_chosen_repo_is_admitted_not_looked_up_and_keeps_its_source(tmp_path: 
         name="acme/gone",
         url="https://git.example/acme/gone.git",
         default_branch="dev",
-        source=Source(plugin="forge", kind="workspace.repo"),
+        source=Source(plugin="forge", kind="git.repo"),
     )
     rows = _recording(tmp_path, git, catalog).create(
         "J-1", [RepoArg(ident="acme/gone", repo=picked)]
@@ -248,7 +247,7 @@ def test_a_chosen_repo_is_admitted_not_looked_up_and_keeps_its_source(tmp_path: 
 
 def test_an_unknown_name_fails_before_anything_is_created(tmp_path: Path) -> None:
     with pytest.raises(UsageError):
-        _recording(tmp_path, _RecordingGit(), RepoSources()).create(
+        _recording(tmp_path, _RecordingGit(), RepoFinder()).create(
             "J-1", [RepoArg(ident="acme/gone")]
         )
     assert stored("J-1") is None

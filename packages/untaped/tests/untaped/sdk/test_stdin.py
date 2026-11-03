@@ -58,7 +58,7 @@ def test_read_stdin_input_names_the_malformed_envelope_line() -> None:
 
 def test_read_stdin_input_checks_accepted_kinds() -> None:
     with _feed(_env({"id": 1}, kind="github.repo") + "\n"), pytest.raises(UsageError):
-        read_stdin_input(accept_kinds={"workspace.repo"})
+        read_stdin_input(accept_kinds={"git.repo"})
 
 
 def test_another_kind_is_refused_naming_the_accepted_kinds() -> None:

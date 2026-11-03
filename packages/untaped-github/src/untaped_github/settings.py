@@ -39,22 +39,22 @@ class SweepSettings(BaseModel):
 
 
 class InventorySettings(BaseModel):
-    """The orgs and teams whose repos github lists for workspace (its ``RepoSource``)."""
+    """The orgs and teams whose repos github lists as repos you can name (its ``RepoSource``)."""
 
     model_config = ConfigDict(frozen=True)
 
     orgs: list[str] = Field(
         default_factory=list,
         description=(
-            "Orgs whose repositories github lists for workspace (repo names, the "
-            "picker). With no orgs or teams, `github.default_org`."
+            "Orgs whose repositories github lists as repos you can name in "
+            "commands. With no orgs or teams, `github.default_org`."
         ),
     )
     teams: list[str] = Field(
         default_factory=list,
         description=(
             "Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in "
-            "`github.default_org`) whose repositories github lists for workspace."
+            "`github.default_org`) whose repositories github lists as repos you can name."
         ),
     )
 
@@ -111,8 +111,8 @@ class GithubSettings(BaseModel):
     git_protocol: Literal["https", "ssh"] = Field(
         default="https",
         description=(
-            "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
-            "fetch repos on the GitHub host: `https` or `ssh` "
+            "How `sweep`, `cache sync` and any plugin that names repos through "
+            "git's `RepoSource` fetch repos on the GitHub host: `https` or `ssh` "
             "(`git@HOST:OWNER/NAME.git`, with your own SSH keys)."
         ),
     )

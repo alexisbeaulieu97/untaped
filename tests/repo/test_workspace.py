@@ -147,7 +147,7 @@ def test_dependent_plugins_pin_their_siblings() -> None:
         "ansible": ("untaped-git", "untaped-github"),
         "awx": ("untaped-git", "untaped-lint", "untaped-values"),
         "dotfiles": ("untaped-git",),
-        "github": ("untaped-git", "untaped-workspace"),
+        "github": ("untaped-git",),
         "lint": ("untaped-git",),
         "recipe": ("untaped-git", "untaped-values"),
         "workspace": ("untaped-git",),

@@ -1,4 +1,4 @@
-"""Real-git fixtures for tests that fetch (``untaped_git.testing``): a local remote like a host.
+"""Test helpers (``untaped_git.testing``): a local remote like a host, and fake providers.
 
 :func:`git_remote` makes a bare repository that answers at an ``https://``
 URL (the test ``HOME``'s git config rewrites it to the local path), with an
@@ -16,6 +16,16 @@ without a network.
 Tests run under ``untaped.sdk.testing.plugin``'s hermetic ``HOME``: the
 fixtures write to its ``~/.gitconfig``. Experimental (``docs/versioning.md``):
 the module may change in a minor release while the store gets its consumers.
+:func:`conformance` is the owner's check untaped's plugin checks run on every
+provider of git's contracts; a provider's own tests may call it too.
+
+Fake providers of git's contracts, for a plugin that names repos or fetches
+from a host: :func:`listing` fills ``RepoSource`` with fixed :func:`make_repo` rows
+(or an error, or not ready), :func:`host` fills ``GitHost.home``, and
+:func:`rank` orders providers in the test home's ``config.yml``, as
+``untaped plugin rank`` would. Each factory returns a provider class of its
+own, since core builds a provider itself: what it lists, raises or counted is
+on the class (``github.error``, ``github.calls``).
 """
 
 from __future__ import annotations
@@ -28,18 +38,30 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, ClassVar, Literal
 
-import pytest
+from untaped.sdk import UntapedError, experimental, home
+from untaped.sdk.contracts import NotReady, Provider
+from untaped_git.hosts import Credential, GitHost
+from untaped_git.repos import Repo, RepoSource
 
-from untaped.sdk import experimental
+if TYPE_CHECKING:
+    import pytest
 
 __all__ = [
     "GitRemote",
+    "Host",
+    "Listing",
+    "conformance",
     "git_remote",
     "git_shim",
     "global_config",
+    "host",
     "hostile_git_home",
+    "invalid_repo",
+    "listing",
+    "make_repo",
+    "rank",
     "trace2_events",
 ]
 
@@ -235,6 +257,111 @@ def git_remote(base: Path, name: str = "app", *, host: str = "git.example") -> G
     remote.allow_filter(True)
     remote.commit("README.md", f"# {name}\n")
     return remote
+
+
+@experimental
+def conformance(provider: object) -> None:
+    """Fail unless every repo a ``RepoSource`` provider lists has a name of its own.
+
+    untaped's plugin checks call it for every provider of git's contracts; a
+    ``GitHost`` provider has nothing to check here. Repos are found by name, so
+    two repos one provider lists under one name could never be told apart.
+    """
+    if not isinstance(provider, RepoSource):
+        return
+    names = [repo.name.lower() for repo in provider.repos()]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    assert not duplicates, f"repos share a name: {', '.join(duplicates)}"
+
+
+@experimental
+def make_repo(name: str, host: str = "github.com", **fields: object) -> Repo:
+    """``name`` on ``host``: ``https://<host>/<name>.git``."""
+    return Repo(name=name, url=f"https://{host}/{name}.git", **fields)
+
+
+@experimental
+def invalid_repo(name: str, host: str = "gitlab.example") -> Repo:
+    """A row a provider might return that is not a valid :class:`Repo` (``infra//api``)."""
+    return Repo.model_construct(name=name, url=f"https://{host}/{name}.git")
+
+
+@experimental
+class Listing(RepoSource, Provider):
+    """Lists ``rows``, or raises ``error``; ``not_ready`` makes it wait for a setting.
+
+    ``calls`` counts the live calls (the answer cache may serve the others).
+    """
+
+    rows: ClassVar[list[Repo]] = []
+    error: ClassVar[UntapedError | None] = None
+    not_ready: ClassVar[NotReady | None] = None
+    calls: ClassVar[int] = 0
+
+    def ready(self) -> NotReady | None:
+        return type(self).not_ready
+
+    def repos(self) -> list[Repo]:
+        type(self).calls += 1
+        error = type(self).error
+        if error is not None:
+            raise error
+        return list(self.rows)
+
+
+@experimental
+def listing(
+    *rows: Repo, error: UntapedError | None = None, not_ready: NotReady | None = None
+) -> type[Listing]:
+    """A :class:`Listing` of its own, listing ``rows``."""
+    attrs = {"rows": list(rows), "error": error, "not_ready": not_ready, "calls": 0}
+    return type("Listing", (Listing,), attrs)
+
+
+@experimental
+class Host(GitHost, Provider):
+    """A plugin serving ``home`` (``GitHost``), with no token."""
+
+    served: ClassVar[str] = "git.example"
+
+    def home(self) -> str | None:
+        return self.served
+
+    def credential(self, url: str) -> Credential | None:
+        return None
+
+
+@experimental
+def host(served: str) -> type[Host]:
+    """A :class:`Host` of its own, serving ``served``."""
+    return type("Host", (Host,), {"served": served})
+
+
+@experimental
+def rank(
+    *plugins: str,
+    contract: Literal["repo_source", "git_host"] = "repo_source",
+    method: str | None = None,
+) -> None:
+    """Rank ``plugins`` (first first) for ``contract.method`` in the test home's ``config.yml``.
+
+    ``method`` defaults to ``repos`` for ``repo_source`` and is required for
+    ``git_host``. It writes what ``untaped plugin rank git.<contract> <method>
+    ...`` would, and one call writes the whole file, so it holds one ranking;
+    install the plugins after, since ``install`` keeps the ranking core keeps
+    in git's section.
+    """
+    if method is None:
+        if contract != "repo_source":
+            raise TypeError(f"rank(contract={contract!r}) needs a method")
+        method = "repos"
+    path = home().expanduser() / "config.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"format_version: 2\ngit:\n  extensions:\n    {contract}:\n"
+        f"      rank:\n        {method}: [{', '.join(plugins)}]\n",
+        encoding="utf-8",
+    )
 
 
 @experimental

@@ -106,6 +106,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 |---|---|---|---|---|
 | `git.store_dir` | path (optional) | unset | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`; an absolute path. Unset: `plugins/git/store/` under the home. |
 | `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
+| `git.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_GIT__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `github`
 
@@ -114,11 +115,11 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `github.server.url` | URL | `https://api.github.com/` | `UNTAPED_GITHUB__SERVER__URL` | GitHub API URL. GitHub Enterprise Server uses `https://HOST/api/v3`. |
 | `github.server.verify_tls` | boolean or path | `true` | `UNTAPED_GITHUB__SERVER__VERIFY_TLS` | Check the server's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
-| `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
+| `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync` and any plugin that names repos through git's `RepoSource` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
 | `github.server_version` | string (optional) | unset | `UNTAPED_GITHUB__SERVER_VERSION` | Which GitHub the server runs, instead of detecting it: `github.com` or `GitHub Enterprise Server 3.14.2`. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
-| `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists for workspace (repo names, the picker). With no orgs or teams, `github.default_org`. |
-| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists for workspace. |
+| `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists as repos you can name in commands. With no orgs or teams, `github.default_org`. |
+| `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists as repos you can name. |
 | `github.caches.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS` | Seconds repo data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 | `github.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
@@ -159,7 +160,6 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `workspace.workspaces_dir` | path (optional) | unset | `UNTAPED_WORKSPACE__WORKSPACES_DIR` | Where `workspace create NAME` makes its project (`<workspaces_dir>/NAME`); a workspace added to another project stays where that project is. An absolute path; unset: `plugins/workspace/checkouts/` under the home. Experimental: may change in a minor release. |
 | `workspace.parallel` | integer (optional) | unset | `UNTAPED_WORKSPACE__PARALLEL` | Default workers for `create`/`add`/`run` and for status/archive checks. Unset means `min(8, 2 * CPUs)`; values above `2 * CPUs` are clamped. 1 or more. Experimental: may change in a minor release. |
 | `workspace.branch_template` | string | `{name}` | `UNTAPED_WORKSPACE__BRANCH_TEMPLATE` | Branch name for writable repos; `{name}` is the workspace name. Experimental: may change in a minor release. |
-| `workspace.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_WORKSPACE__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. Experimental: may change in a minor release. |
 
 ## Renamed settings
 

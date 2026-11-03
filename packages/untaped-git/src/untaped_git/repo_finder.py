@@ -1,7 +1,7 @@
 """Resolve what the user typed to a :class:`Repo`, asking every plugin that fills ``RepoSource``.
 
 A typed URL becomes a plain repo named by its full path and no provider is
-asked. A name is matched (:func:`workspace_match`) over every ready
+asked. A name is matched (:func:`name_matches`) over every ready
 provider's ``repos()`` with the SDK's ``select_one``: a stale listing confirms
 a match, never an absence, and two unranked providers listing it are
 ambiguous until ``untaped plugin rank`` orders them. Every repo, typed,
@@ -14,7 +14,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Sequence
 
-from untaped.sdk import UsageError, not_found, q
+from untaped.sdk import UsageError, experimental, not_found, q
 from untaped.sdk.contracts import (
     Answers,
     NoProviderReady,
@@ -25,15 +25,21 @@ from untaped.sdk.contracts import (
     select_one,
 )
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle
-from untaped_git.api import GitHost, repo_url_parts
-from untaped_workspace.api import Repo, RepoSource
-from untaped_workspace.domain.naming import looks_like_url, typed_repo, workspace_match
+from untaped_git.hosts import GitHost
+from untaped_git.repos import Repo, RepoSource, looks_like_url, typed_repo
+from untaped_git.url import repo_url_parts
 
 _URL_HINT = "pass the repo's clone URL"
 
 
-class RepoSources:
-    """``RepoCatalog`` over the plugins filling ``RepoSource`` (asked once per catalog)."""
+@experimental
+class RepoFinder:
+    """Repos by name over the plugins filling ``RepoSource``, asked once per finder.
+
+    Keep one finder for a command that names several repos: the providers
+    are asked the first time a name is resolved, and every later name reads
+    the same answers.
+    """
 
     def __init__(self) -> None:
         self._answers: Answers[list[Repo]] | None = None
@@ -53,7 +59,7 @@ class RepoSources:
         except NoProviderReady as exc:
             raise UsageError(not_found("repo", ident), hint=_unasked_hint(exc)) from None
         try:
-            repo = select_one(answers, lambda repo: workspace_match(repo.name, ident))
+            repo = select_one(answers, lambda repo: name_matches(repo.name, ident))
         except NotFound as exc:
             raise UsageError(_not_found(ident, answers), hint=exc.hint or _URL_HINT) from None
         return self.admit(repo)
@@ -103,7 +109,7 @@ class RepoSources:
         return self.admit(select_one(answers, lambda listed: listed.name == repo.name))
 
     def _reask(self, plugin: str) -> Answers[list[Repo]] | None:
-        """``plugin``'s live listing, asked once per catalog however many repos it sourced."""
+        """``plugin``'s live listing, asked once per finder however many repos it sourced."""
         if plugin not in self._live:
             try:
                 self._live[plugin] = gather(RepoSource.repos, refresh=True, plugins={plugin})()
@@ -117,13 +123,20 @@ class RepoSources:
         return self._answers
 
 
+def name_matches(name: str, ident: str) -> bool:
+    """Whether the repo ``name`` is what the user typed: ``owner/name`` (any depth) exactly,
+    else a bare name against the last segment; case-insensitive."""
+    wanted = ident.lower()
+    if "/" in ident:
+        return name.lower() == wanted
+    return name.rpartition("/")[2].lower() == wanted
+
+
 def _unasked_hint(exc: NoProviderReady) -> str:
-    """``github wasn't asked: …; set github.default_org, or pass the repo's clone URL``."""
+    """``forge wasn't asked: …; set forge.org, or pass the repo's clone URL``."""
     if not exc.not_ready:
         # Nobody is merely unconfigured: none is installed, or each was set aside.
-        return (
-            f"{exc}; install or upgrade a plugin that lists repos (untaped[github]), or {_URL_HINT}"
-        )
+        return f"{exc}; install or upgrade a plugin that lists repos, or {_URL_HINT}"
     parts = []
     for plugin, ready in exc.not_ready.items():
         setting = f"; set {ready.spelled}" if ready.spelled else ""

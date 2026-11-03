@@ -104,4 +104,4 @@ installs the skill that points an agent there.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#workspace) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#workspace)
-- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), which lists repos for workspace (its `RepoSource` provider)
+- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md), which lists repos by name (it fills the git plugin's `RepoSource`)

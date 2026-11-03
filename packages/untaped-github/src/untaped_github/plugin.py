@@ -15,7 +15,7 @@ from untaped_github.commands.search import SearchGroup
 from untaped_github.commands.sweep import SweepGroup
 from untaped_github.commands.whoami import Whoami, probe
 from untaped_github.providers.git import GithubHost
-from untaped_github.providers.workspace import GithubRepos
+from untaped_github.providers.repos import GithubRepos
 from untaped_github.server import SERVER_API
 from untaped_github.settings import SWEEP, TOKEN, GithubSettings
 

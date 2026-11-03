@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 
+from untaped_git.api import RepoFinder
 from untaped_git.testing import GitRemote
 from untaped_workspace.application.archive import ArchiveWorkspace
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.application.status import WorkspaceStatus
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped_workspace.infrastructure import LocalGitWorktrees, ProjectWorkspaceStore
-from untaped_workspace.infrastructure.catalog import RepoSources
 from workspace_test_support import archived_records, commit_in, git, stored
 
 T0 = datetime(2026, 10, 1, tzinfo=UTC)
@@ -41,7 +41,7 @@ def env(tmp_path: Path, store_root: Path, make_upstream: Callable[..., GitRemote
     provision = ProvisionRepos(
         store,
         git_,
-        RepoSources(),
+        RepoFinder(),
         workspaces_dir=workspaces,
         branch_template="{name}",
         parallel=2,
@@ -133,7 +133,7 @@ def test_read_only_commit_blocks(
     ProvisionRepos(
         store,
         git_,
-        RepoSources(),
+        RepoFinder(),
         workspaces_dir=tmp_path / "ws",
         branch_template="{name}",
         parallel=1,
@@ -228,7 +228,7 @@ def test_add_during_archive_waits_then_resumes_the_workspace(
     provision = ProvisionRepos(
         store,
         real,
-        RepoSources(),
+        RepoFinder(),
         workspaces_dir=workspaces,
         branch_template="{name}",
         parallel=1,

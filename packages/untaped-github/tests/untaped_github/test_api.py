@@ -3,7 +3,7 @@
 Proves ``untaped_github.api`` exports exactly the pinned names,
 each identical to its canonical implementation, plus the port signatures
 ansible calls. The rest of their behaviour is tested with the owning modules;
-workspace reads github's repos through ``RepoSource`` (``test_workspace_provider``),
+other plugins read github's repos through git's ``RepoSource`` (``providers/test_repos.py``),
 never through this module.
 """
 

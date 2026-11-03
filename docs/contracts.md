@@ -1,7 +1,7 @@
 # Contracts
 
 A contract is an interface one plugin (its owner) declares and others fill,
-so the owner never names who answers: workspace asks for repositories without
+so the owner never names who answers: git asks for repositories without
 knowing whether GitHub, GitLab or both supply them. Everything lives in
 `untaped.sdk.contracts`, whose docstrings are the reference; `untaped.sdk` never
 imports it, so a command that asks no contract pays nothing.
@@ -164,7 +164,7 @@ the profile is skipped silently; with none ready `gather` raises
 isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
 nothing and is only in `composition().quarantine`), so an owner can turn it
-into its own error (workspace reports a repo name nobody could look up as not found, naming the
+into its own error (git's repo finder reports a repo name nobody could look up as not found, naming the
 setting to set). A provider that raises is `Errored` with `reason` `Reason.raised`.
 `select_one` then decides:
 
@@ -195,18 +195,18 @@ declare `extensions`, nor `caches`, kept for cache settings; one that
 does is quarantined (`bad-settings-keys`).
 
 ```yaml
-workspace:
+git:
   extensions:
     repo_source:
       rank:
         repos: [github, gitlab]
 ```
 
-`untaped plugin rank workspace.repo_source repos github gitlab` writes that
+`untaped plugin rank git.repo_source repos github gitlab` writes that
 ranking in the profile; naming no plugin removes it. The command refuses a
 contract or method the owner doesn't have, and a bridge method, which is
 never ranked. The environment overrides it like any setting:
-`UNTAPED_WORKSPACE__EXTENSIONS__REPO_SOURCE__RANK__REPOS='["github","gitlab"]'`.
+`UNTAPED_GIT__EXTENSIONS__REPO_SOURCE__RANK__REPOS='["github","gitlab"]'`.
 Loading config checks only the names' spelling, so a ranking in
 the base never breaks a profile where a ranked plugin isn't
 installed or configured.

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from untaped.sdk import OutcomeRecord
     from untaped.sdk.projects import ProjectRemoval
     from untaped.sdk.storage import ProgressHandle
+    from untaped_git.api import Repo
     from untaped_workspace.domain.models import (
         Checkout,
         CommandResult,
@@ -25,7 +26,6 @@ if TYPE_CHECKING:
         WorkspaceRecord,
         WorktreeStatus,
     )
-    from untaped_workspace.domain.repo import Repo
 
 
 class GitWorktrees(Protocol):

@@ -596,9 +596,9 @@ def _samples() -> dict[str, WireModel]:
         ProfileView(name="work", selected=False, raw=True, data={"github": {"token": "***"}}),
         ProfileOutcome(name="work", action="renamed", previous_name="old"),
         ContractMethod(
-            contract="workspace.repo_source",
+            contract="git.repo_source",
             method="repos",
-            owner="workspace",
+            owner="git",
             stability="experimental",
             providers=["github", "gitlab"],
             ranked=["github"],

@@ -1,8 +1,9 @@
 """Helpers the workspace plugin's tests share: real git, the command line, fake providers.
 
-The fakes fill workspace's ``RepoSource`` (and git's ``GitHost``) as plugins
-workspace knows nothing about, as it knows nothing about the real ones:
-``install(WorkspacePlugin, providers={"github": (listing(repo("acme/api")),)})``.
+The fakes (git's own, from ``untaped_git.testing``, and a forge with its own
+record kind) fill git's ``RepoSource`` and ``GitHost`` as plugins workspace
+knows nothing about, as it knows nothing about the real ones:
+``install(WorkspacePlugin, providers={"github": (listing(make_repo("acme/api")),)})``.
 Each factory returns a provider class of its own, since core builds a
 provider itself; what the class lists, raises or counted is on the class, so
 a test changes ``github.error`` or reads ``github.calls`` after composing it.
@@ -18,12 +19,11 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import ClassVar
 
-from untaped.sdk import Record, UntapedError, UsageError, home
-from untaped.sdk.contracts import NotReady, Provider
+from untaped.sdk import Record, UsageError
+from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import Ran, Running, install
-from untaped_git.api import Credential, GitHost, store_key
+from untaped_git.api import Repo, RepoSource, store_key
 from untaped_git.testing import GitRemote
-from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import ProjectWorkspaceStore
 from untaped_workspace.plugin import WorkspacePlugin
@@ -103,45 +103,6 @@ def init_submodules(worktree: Path) -> None:
     git(worktree, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init")
 
 
-def repo(name: str, host: str = "github.com", **fields: object) -> Repo:
-    """``name`` on ``host``: ``https://<host>/<name>.git``."""
-    return Repo(name=name, url=f"https://{host}/{name}.git", **fields)  # type: ignore[arg-type]
-
-
-def invalid_repo(name: str, host: str = "gitlab.example") -> Repo:
-    """A row a provider might return that is not a valid :class:`Repo` (``infra//api``)."""
-    return Repo.model_construct(name=name, url=f"https://{host}/{name}.git")
-
-
-class Listing(RepoSource, Provider):
-    """Lists ``rows``, or raises ``error``; ``not_ready`` makes it wait for a setting.
-
-    ``calls`` counts the live calls (the answer cache may serve the others).
-    """
-
-    rows: ClassVar[list[Repo]] = []
-    error: ClassVar[UntapedError | None] = None
-    not_ready: ClassVar[NotReady | None] = None
-    calls: ClassVar[int] = 0
-
-    def ready(self) -> NotReady | None:
-        return type(self).not_ready
-
-    def repos(self) -> list[Repo]:
-        type(self).calls += 1
-        if type(self).error is not None:
-            raise type(self).error
-        return list(self.rows)
-
-
-def listing(
-    *rows: Repo, error: UntapedError | None = None, not_ready: NotReady | None = None
-) -> type[Listing]:
-    """A :class:`Listing` of its own, listing ``rows``."""
-    attrs = {"rows": list(rows), "error": error, "not_ready": not_ready, "calls": 0}
-    return type("Listing", (Listing,), attrs)
-
-
 class Project(Record):
     """The forge's own record of a repo: what it pipes (``--format pipe``)."""
 
@@ -176,38 +137,6 @@ def forge(*rows: Project, host: str = "git.example") -> type[Forge]:
     """A :class:`Forge` of its own, listing ``rows`` on ``host``."""
     attrs = {"rows": list(rows), "host": host, "bridged": [], "listings": 0}
     return type("Forge", (Forge,), attrs)
-
-
-class Host(GitHost, Provider):
-    """A plugin serving ``home`` (git's ``GitHost``), with no token."""
-
-    served: ClassVar[str] = "git.example"
-
-    def home(self) -> str | None:
-        return self.served
-
-    def credential(self, url: str) -> Credential | None:
-        return None
-
-
-def host(served: str) -> type[Host]:
-    """A :class:`Host` of its own, serving ``served``."""
-    return type("Host", (Host,), {"served": served})
-
-
-def rank(*plugins: str) -> None:
-    """Rank ``plugins`` (first first) for ``RepoSource.repos``, as a user would in config.yml.
-
-    Install the plugins after: ``install`` keeps the ranking core keeps in
-    workspace's section.
-    """
-    path = home().expanduser() / "config.yml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "format_version: 2\nworkspace:\n  extensions:\n    repo_source:\n"
-        f"      rank:\n        repos: [{', '.join(plugins)}]\n",
-        encoding="utf-8",
-    )
 
 
 def stored(name: str) -> WorkspaceRecord | None:

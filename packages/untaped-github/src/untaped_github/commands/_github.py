@@ -91,8 +91,8 @@ class Scope(BaseModel):
 
     - `--stdin` reads bare `owner/name` lines or `github.repo`,
       `github.sweep_repo` and `github.corpus_repo` records, by `full_name`;
-      other kinds exit 2. `untaped workspace create NAME --stdin` reads the
-      same records, to check the repos out.
+      other kinds exit 2. Any command that reads `git.repo` records reads them
+      too, through github's `RepoSource`.
     - `sweep` and `cache sync` use records from `repos list` as they are, with
       no API call per repo, and their `pushed_at` lets an unchanged repo skip
       its fetch. Other records and bare names are looked up.

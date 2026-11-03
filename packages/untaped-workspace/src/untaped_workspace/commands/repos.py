@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from pydantic import Field
 
 from untaped.sdk import Group, Output, Positional
+from untaped_git.api import RepoFinder
 from untaped_workspace.application.resolve import ResolveRepos
 from untaped_workspace.commands._workspace import NAME_HELP, WorkspaceCommand
 from untaped_workspace.records import ResolveOutcome
@@ -25,10 +26,8 @@ class Resolve(WorkspaceCommand):
     output: Output[ResolveOutcome]
 
     def run(self) -> Iterator[ResolveOutcome]:
-        from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415
-
         record = self.locate(self.name)
-        resolve = ResolveRepos(self.store(), self.git_worktrees(), RepoSources())
+        resolve = ResolveRepos(self.store(), self.git_worktrees(), RepoFinder())
         rows = resolve(record)
         self.output.empty("No repos found.")
         self.report(rows, lambda row: f"{row.workspace}/{row.dir}")

@@ -1,7 +1,7 @@
 """The records the workspace commands print; a kind is its class name (``workspace.workspace``).
 
 It holds models only, so importing it never imports a command. The
-``workspace.repo`` record a ``RepoSource`` issues lives in ``domain/repo.py``.
+``git.repo`` record a ``RepoSource`` issues is the git plugin's.
 """
 
 from __future__ import annotations

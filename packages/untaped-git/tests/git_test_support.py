@@ -1,12 +1,16 @@
-"""Helpers the git plugin's tests share: store handles, and git run on a store repo."""
+"""Helpers the git plugin's tests share: store handles, git run on a store repo, and a
+composed git (the fake providers are ``untaped_git.testing``'s)."""
 
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
+from untaped.sdk.testing import Running, install
 from untaped_git.errors import GitError
+from untaped_git.plugin import Git
 from untaped_git.store import RepoStore
 
 type StoreFor = Callable[..., RepoStore]
@@ -46,3 +50,10 @@ def objects(repo: Path) -> dict[str, int]:
         for key, _, value in (line.partition(": ") for line in out.splitlines())
         if value.isdigit()
     }
+
+
+@contextmanager
+def composed(providers: Mapping[str, Sequence[type]]) -> Iterator[Running]:
+    """The block runs as a git command would, with ``providers`` composed as plugins."""
+    with install(Git, providers=providers).running() as running:
+        yield running

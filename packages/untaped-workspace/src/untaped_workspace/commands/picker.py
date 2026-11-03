@@ -10,23 +10,21 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, NamedTuple
+from typing import NamedTuple
 
 from untaped.sdk import Terminal, UntapedError, UsageError, command_line, q
 from untaped.sdk.prompt import PickCatalog, PickItem, PickRequest, PickResult, PickSetting
+from untaped_git.api import looks_like_url
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.application.ports import GitWorktrees, WorkspaceStore
 from untaped_workspace.application.provision import refuse_occupied
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped_workspace.domain.naming import (
     branch_for,
-    looks_like_url,
     repo_key,
     validate_workspace_name,
 )
-
-if TYPE_CHECKING:
-    from untaped_workspace.infrastructure.pick_source import RepoPickSource
+from untaped_workspace.infrastructure.pick_source import RepoPickSource
 
 NO_REPOS_HINT = "pass --repo OWNER/NAME (repeatable) or --stdin; the repo picker needs a terminal"
 NO_NAME_HINT = "pass NAME and --repo OWNER/NAME (or --stdin); the repo picker needs a terminal"
@@ -203,8 +201,6 @@ def _pick(
         template = branch_for(picker.branch_template, record.name)
         title, title_label, fixed_name = "", "", record.name
         exclude = {repo_key(spec.url) for spec in record.repos}
-    from untaped_workspace.infrastructure.pick_source import RepoPickSource  # noqa: PLC0415
-
     source = RepoPickSource(git=picker.git, exclude=exclude)
     from untaped_workspace.commands.create import Add, Create  # noqa: PLC0415 - import cycle
 

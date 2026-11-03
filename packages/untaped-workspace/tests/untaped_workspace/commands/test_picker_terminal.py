@@ -12,11 +12,11 @@ from untaped.sdk import Source
 from untaped.sdk.contracts import gather
 from untaped.sdk.prompt import Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.testing import ScriptedTerminal
-from untaped_git.testing import GitRemote, global_config
-from untaped_workspace.api import Repo, RepoSource
+from untaped_git.api import Repo, RepoSource
+from untaped_git.testing import GitRemote, global_config, listing
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.infrastructure import LocalGitWorktrees
-from workspace_test_support import composed, err, git, listing, new_workspace, run, stored
+from workspace_test_support import composed, err, git, new_workspace, run, stored
 
 
 @dataclass
@@ -300,7 +300,7 @@ def test_a_pick_dropped_by_a_refresh_uses_its_remembered_repo(
     record = stored("J-1")
     assert record is not None
     [spec] = record.repos
-    assert (spec.url, spec.source) == (url, Source(plugin="github", kind="workspace.repo"))
+    assert (spec.url, spec.source) == (url, Source(plugin="github", kind="git.repo"))
 
 
 def test_an_owner_less_hosted_repo_is_offered(

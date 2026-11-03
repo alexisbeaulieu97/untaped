@@ -1,7 +1,7 @@
-"""``RepoSources``: what the user typed, resolved over every plugin filling ``RepoSource``.
+"""``RepoFinder``: what the user typed, resolved over every plugin filling ``RepoSource``.
 
-The providers are fakes named ``github`` and ``gitlab`` (design §15's scenarios);
-workspace asks them only through ``untaped.sdk.contracts``.
+The providers are fakes named ``github`` and ``gitlab`` (the repo sources
+design's scenarios); the finder asks them only through ``untaped.sdk.contracts``.
 """
 
 from __future__ import annotations
@@ -13,13 +13,13 @@ from datetime import timedelta
 import pytest
 from pydantic import BaseModel
 
+from git_test_support import composed
 from untaped.sdk import ErrorCategory, Source, UntapedError, UsageError, key
 from untaped.sdk.contracts import Ambiguous, NotReady, gather
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock, Running
-from untaped_workspace.api import Repo, RepoSource
-from untaped_workspace.infrastructure.catalog import RepoSources
-from workspace_test_support import composed, host, invalid_repo, listing, rank, repo
+from untaped_git.api import Repo, RepoFinder, RepoSource
+from untaped_git.testing import host, invalid_repo, listing, make_repo, rank
 
 GITLAB = "gitlab.example"
 
@@ -37,23 +37,23 @@ NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
 
 @contextmanager
 def providers(**plugins: Sequence[type]) -> Iterator[Running]:
-    """Workspace composed with fake plugins, each filling contracts with its provider classes."""
+    """Git composed with fake plugins, each filling contracts with its provider classes."""
     with composed({name: tuple(p) for name, p in plugins.items()}) as running:
         yield running
 
 
 def _resolve(ident: str) -> Repo:
-    return RepoSources().resolve(ident)
+    return RepoFinder().resolve(ident)
 
 
 def test_an_unconfigured_provider_is_not_asked_and_the_other_answers() -> None:
     """S1: gitlab installed but not configured; github's repo is the answer."""
-    gitlab = listing(repo("acme/api", GITLAB), not_ready=NO_BASE_URL)
-    with providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]):
+    gitlab = listing(make_repo("acme/api", GITLAB), not_ready=NO_BASE_URL)
+    with providers(github=[listing(make_repo("acme/api"))], gitlab=[gitlab]):
         found = _resolve("acme/api")
     assert (found.url, found.source) == (
         "https://github.com/acme/api.git",
-        Source(plugin="github", kind="workspace.repo"),
+        Source(plugin="github", kind="git.repo"),
     )
     assert gitlab.calls == 0
 
@@ -61,7 +61,8 @@ def test_an_unconfigured_provider_is_not_asked_and_the_other_answers() -> None:
 def test_a_repo_only_one_provider_lists_is_that_providers() -> None:
     """S2: a repo only gitlab has, by its full path."""
     with providers(
-        github=[listing(repo("acme/api"))], gitlab=[listing(repo("infra/team/api", GITLAB))]
+        github=[listing(make_repo("acme/api"))],
+        gitlab=[listing(make_repo("infra/team/api", GITLAB))],
     ):
         found = _resolve("infra/team/api")
     assert (found.name, found.source and found.source.plugin) == ("infra/team/api", "gitlab")
@@ -70,27 +71,25 @@ def test_a_repo_only_one_provider_lists_is_that_providers() -> None:
 def test_a_repo_two_unranked_providers_list_is_ambiguous_until_ranked() -> None:
     """S3: mirrored in both, nothing ranked: ambiguous (exit 2) with the rank command."""
     lists = {
-        "github": [listing(repo("acme/api"))],
-        "gitlab": [listing(repo("acme/api", GITLAB), repo("infra/team/api", GITLAB))],
+        "github": [listing(make_repo("acme/api"))],
+        "gitlab": [listing(make_repo("acme/api", GITLAB), make_repo("infra/team/api", GITLAB))],
     }
     with providers(**lists), pytest.raises(Ambiguous) as caught:
         _resolve("acme/api")
     assert isinstance(caught.value, UsageError)
-    assert (
-        caught.value.hint == "run `untaped plugin rank workspace.repo_source repos github gitlab`"
-    )
+    assert caught.value.hint == "run `untaped plugin rank git.repo_source repos github gitlab`"
 
 
 def test_ranking_picks_the_first_ranked_providers_repo() -> None:
     """S3, ranked: github's acme/api; the repo only gitlab lists stays gitlab's."""
     rank("github", "gitlab")
     lists = {
-        "github": [listing(repo("acme/api"))],
-        "gitlab": [listing(repo("acme/api", GITLAB), repo("infra/team/api", GITLAB))],
+        "github": [listing(make_repo("acme/api"))],
+        "gitlab": [listing(make_repo("acme/api", GITLAB), make_repo("infra/team/api", GITLAB))],
     }
     with providers(**lists):
-        catalog = RepoSources()
-        mirrored, only_gitlab = catalog.resolve("acme/api"), catalog.resolve("infra/team/api")
+        finder = RepoFinder()
+        mirrored, only_gitlab = finder.resolve("acme/api"), finder.resolve("infra/team/api")
     assert mirrored.url == "https://github.com/acme/api.git"
     assert only_gitlab.source is not None and only_gitlab.source.plugin == "gitlab"
 
@@ -102,8 +101,8 @@ def test_a_stale_listing_without_the_repo_is_the_providers_failure(clock: Manual
     """S4: rank [github, gitlab], github down and its stored answer lacks acme/api: github's
     error (exit 5) and hint, never gitlab's match below it."""
     rank("github", "gitlab")
-    github = listing(repo("acme/other"))
-    with providers(github=[github], gitlab=[listing(repo("acme/api", GITLAB))]) as running:
+    github = listing(make_repo("acme/other"))
+    with providers(github=[github], gitlab=[listing(make_repo("acme/api", GITLAB))]) as running:
         gather(RepoSource.repos)()
         clock.advance(timedelta(hours=7))
         github.error = HTTP_503
@@ -122,8 +121,8 @@ def test_a_match_ranked_above_the_failed_provider_wins_with_a_warning(
 ) -> None:
     """S4: rank [gitlab, github], github down: gitlab's match stands, with a warning."""
     rank("gitlab", "github")
-    github = listing(repo("acme/other"))
-    with providers(github=[github], gitlab=[listing(repo("acme/api", GITLAB))]):
+    github = listing(make_repo("acme/other"))
+    with providers(github=[github], gitlab=[listing(make_repo("acme/api", GITLAB))]):
         gather(RepoSource.repos)()
         clock.advance(timedelta(hours=7))
         github.error = HTTP_503
@@ -138,8 +137,8 @@ def test_a_match_ranked_above_the_failed_provider_wins_with_a_warning(
 def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line(clock: ManualClock) -> None:
     """S4: github down, but its stored answer has acme/api: github's, said once, no error."""
     rank("github", "gitlab")
-    github = listing(repo("acme/api"))
-    with providers(github=[github], gitlab=[listing(repo("acme/api", GITLAB))]) as running:
+    github = listing(make_repo("acme/api"))
+    with providers(github=[github], gitlab=[listing(make_repo("acme/api", GITLAB))]) as running:
         gather(RepoSource.repos)()
         clock.advance(timedelta(hours=7))
         github.error = HTTP_503
@@ -149,8 +148,8 @@ def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line(clock: Ma
     assert github.calls == 2  # the second call failed; the stored answer stood in
     [stale] = emitted
     assert isinstance(stale, Stale)
-    assert (stale.plugin, stale.cache) == ("github", "workspace.repo_source_repos")
-    assert stale.hint is None  # workspace has no --cached to suggest
+    assert (stale.plugin, stale.cache) == ("github", "git.repo_source_repos")
+    assert stale.hint is None  # the finder has no --cached to suggest
 
 
 def test_an_expired_token_blocks_with_its_own_category_never_not_found() -> None:
@@ -159,7 +158,7 @@ def test_an_expired_token_blocks_with_its_own_category_never_not_found() -> None
         "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth login gitlab`"
     )
     with (
-        providers(github=[listing(repo("acme/api"))], gitlab=[listing(error=expired)]),
+        providers(github=[listing(make_repo("acme/api"))], gitlab=[listing(error=expired)]),
         pytest.raises(UntapedError) as caught,
     ):
         _resolve("acme/api")
@@ -171,8 +170,8 @@ def test_an_invalid_row_of_an_unranked_provider_warns_and_the_other_answers(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """S8: gitlab returns an invalid row and is unranked: a warning, github's ``api``."""
-    gitlab = listing(repo("infra/web", GITLAB), invalid_repo("infra//api"))
-    with providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]):
+    gitlab = listing(make_repo("infra/web", GITLAB), invalid_repo("infra//api"))
+    with providers(github=[listing(make_repo("acme/api"))], gitlab=[gitlab]):
         found = _resolve("api")
     assert found.url == "https://github.com/acme/api.git"
     err = capsys.readouterr().err
@@ -182,9 +181,9 @@ def test_an_invalid_row_of_an_unranked_provider_warns_and_the_other_answers(
 def test_an_invalid_row_of_a_provider_ranked_first_is_a_config_error() -> None:
     """S8: gitlab ranked first returns an invalid row: exit 4, "upgrade untaped-gitlab"."""
     rank("gitlab", "github")
-    gitlab = listing(repo("infra/web", GITLAB), invalid_repo("infra//api"))
+    gitlab = listing(make_repo("infra/web", GITLAB), invalid_repo("infra//api"))
     with (
-        providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]),
+        providers(github=[listing(make_repo("acme/api"))], gitlab=[gitlab]),
         pytest.raises(UntapedError) as caught,
     ):
         _resolve("api")
@@ -194,7 +193,7 @@ def test_an_invalid_row_of_a_provider_ranked_first_is_a_config_error() -> None:
 
 def test_a_typed_url_is_a_plain_repo_named_by_its_full_path_and_asks_no_provider() -> None:
     """S9: a URL becomes ``infra/team/api`` with no source; no provider is asked."""
-    github, gitlab = listing(repo("acme/api")), listing(repo("infra/team/api", GITLAB))
+    github, gitlab = listing(make_repo("acme/api")), listing(make_repo("infra/team/api", GITLAB))
     with providers(github=[github], gitlab=[gitlab]):
         found = _resolve("https://gitlab.example.com/infra/team/api.git")
     assert found == Repo(name="infra/team/api", url="https://gitlab.example.com/infra/team/api.git")
@@ -206,7 +205,7 @@ def test_a_typed_url_is_a_plain_repo_named_by_its_full_path_and_asks_no_provider
     "url", ["file:///srv/git/api.git", "/srv/git/api.git", "https://user:pw@h.example/a/b.git"]
 )
 def test_a_typed_url_untaped_refuses_is_a_usage_error(url: str) -> None:
-    with providers(github=[listing(repo("acme/api"))]), pytest.raises(UsageError) as caught:
+    with providers(github=[listing(make_repo("acme/api"))]), pytest.raises(UsageError) as caught:
         _resolve(url)
     assert caught.value.hint == "pass an https:// or ssh:// clone URL, or a repo name"
 
@@ -215,7 +214,7 @@ def test_with_no_provider_ready_a_name_is_not_found_naming_the_setting() -> None
     """S12: github has no inventory scope: not found (exit 2) naming why and the setting;
     no URL is guessed from the name."""
     github = listing(
-        repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
+        make_repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
     )
     with providers(github=[github]), pytest.raises(UsageError) as caught:
         _resolve("acme/api")
@@ -231,14 +230,14 @@ def test_with_no_provider_installed_a_name_is_not_found() -> None:
     with providers(), pytest.raises(UsageError) as caught:
         _resolve("acme/api")
     assert caught.value.hint == (
-        "no provider of workspace.repo_source.repos is ready: no installed plugin fills it; "
-        "install or upgrade a plugin that lists repos (untaped[github]), "
+        "no provider of git.repo_source.repos is ready: no installed plugin fills it; "
+        "install or upgrade a plugin that lists repos, "
         "or pass the repo's clone URL"
     )
 
 
 def test_a_listed_url_on_another_host_than_its_source_serves_is_refused() -> None:
-    """S17 (workspace's side): github serves github.com, so its repo on evil.example is
+    """S17 (the finder's side): github serves github.com, so its repo on evil.example is
     refused (exit 2) before anything is fetched."""
     forged = Repo(name="acme/api", url="https://evil.example/acme/api.git")
     with (
@@ -252,34 +251,36 @@ def test_a_listed_url_on_another_host_than_its_source_serves_is_refused() -> Non
 def test_admit_checks_a_chosen_repo_against_its_source_host() -> None:
     """S17: a piped or picked repo passes the same check; a plugin serving no host is not
     checked, and neither is a repo without a source."""
-    on_github = Source(plugin="github", kind="workspace.repo")
-    forged = repo("acme/api", "evil.example", source=on_github)
+    on_github = Source(plugin="github", kind="git.repo")
+    forged = make_repo("acme/api", "evil.example", source=on_github)
     with providers(github=[listing(), host("GitHub.com")], gitlab=[listing()]):
-        catalog = RepoSources()
+        finder = RepoFinder()
         with pytest.raises(UsageError):
-            catalog.admit(forged)
-        genuine = repo("acme/api", source=on_github)
-        assert catalog.admit(genuine) is genuine
-        unchecked = repo("acme/api", "evil.example", source=Source(plugin="gitlab", kind=""))
-        assert catalog.admit(unchecked) is unchecked
-        typed = repo("acme/api", "evil.example")
-        assert catalog.admit(typed) is typed
+            finder.admit(forged)
+        genuine = make_repo("acme/api", source=on_github)
+        assert finder.admit(genuine) is genuine
+        unchecked = make_repo("acme/api", "evil.example", source=Source(plugin="gitlab", kind=""))
+        assert finder.admit(unchecked) is unchecked
+        typed = make_repo("acme/api", "evil.example")
+        assert finder.admit(typed) is typed
 
 
 def test_owner_slash_name_matches_exactly_in_any_case() -> None:
-    with providers(github=[listing(repo("acme/api", default_branch="develop"), repo("x/acme"))]):
+    with providers(
+        github=[listing(make_repo("acme/api", default_branch="develop"), make_repo("x/acme"))]
+    ):
         found = _resolve("ACME/api")
     assert (found.name, found.default_branch) == ("acme/api", "develop")
 
 
 def test_a_bare_name_matches_the_last_segment() -> None:
-    with providers(github=[listing(repo("acme/api"), repo("acme/web"))]):
+    with providers(github=[listing(make_repo("acme/api"), make_repo("acme/web"))]):
         assert _resolve("API").name == "acme/api"
 
 
 def test_a_bare_name_two_repos_of_one_provider_share_is_ambiguous() -> None:
     with (
-        providers(github=[listing(repo("acme/web"), repo("other/web"))]),
+        providers(github=[listing(make_repo("acme/web"), make_repo("other/web"))]),
         pytest.raises(Ambiguous, match="2 items from github match"),
     ):
         _resolve("web")
@@ -288,7 +289,7 @@ def test_a_bare_name_two_repos_of_one_provider_share_is_ambiguous() -> None:
 def test_an_unknown_name_says_who_wasnt_asked() -> None:
     gitlab = listing(not_ready=NO_BASE_URL)
     with (
-        providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]),
+        providers(github=[listing(make_repo("acme/api"))], gitlab=[gitlab]),
         pytest.raises(UsageError) as caught,
     ):
         _resolve("nope")
@@ -301,68 +302,68 @@ def test_an_unknown_name_says_who_wasnt_asked() -> None:
 )
 def test_an_unknown_name_suggests_close_matches(ident: str, suggested: str) -> None:
     with (
-        providers(github=[listing(repo("acme/api"), repo("acme/web"))]),
+        providers(github=[listing(make_repo("acme/api"), make_repo("acme/web"))]),
         pytest.raises(UsageError, match="did you mean") as caught,
     ):
         _resolve(ident)
     assert suggested in str(caught.value)
 
 
-def test_the_providers_are_asked_once_per_catalog() -> None:
+def test_the_providers_are_asked_once_per_finder() -> None:
     """A failed answer is not stored, so a second ask would call again."""
     down = listing(error=HTTP_503)
     with providers(github=[down]):
-        catalog = RepoSources()
+        finder = RepoFinder()
         for ident in ("api", "web"):
             with pytest.raises(UntapedError, match="HTTP 503"):
-                catalog.resolve(ident)
+                finder.resolve(ident)
     assert down.calls == 1
 
 
 def test_reask_asks_the_repos_source_live_and_admits_what_it_lists_now() -> None:
-    github = listing(repo("acme/api"))
-    gitlab = listing(repo("infra/api", GITLAB))
+    github = listing(make_repo("acme/api"))
+    gitlab = listing(make_repo("infra/api", GITLAB))
     with providers(github=[github, host("github.com")], gitlab=[gitlab]):
-        catalog = RepoSources()
-        saved = catalog.resolve("acme/api")  # github's answer is stored, fresh
-        github.rows = [repo("acme/api", description="moved")]
-        again = catalog.reask(saved)
+        finder = RepoFinder()
+        saved = finder.resolve("acme/api")  # github's answer is stored, fresh
+        github.rows = [make_repo("acme/api", description="moved")]
+        again = finder.reask(saved)
         assert again is not None and again.description == "moved"
         assert (github.calls, gitlab.calls) == (2, 1)  # live, and only the source is asked
-        assert catalog.reask(catalog.resolve("https://github.com/acme/api.git")) is None
-        github.rows = [repo("acme/api", "evil.example")]
+        assert finder.reask(finder.resolve("https://github.com/acme/api.git")) is None
+        github.rows = [make_repo("acme/api", "evil.example")]
         with pytest.raises(UsageError, match="refusing to fetch it"):
-            RepoSources().reask(saved)
+            RepoFinder().reask(saved)
 
 
 def test_reask_lists_each_source_once_however_many_repos_it_sourced() -> None:
-    github = listing(repo("acme/api"), repo("acme/web"), repo("acme/docs"))
+    github = listing(make_repo("acme/api"), make_repo("acme/web"), make_repo("acme/docs"))
     with providers(github=[github, host("github.com")]):
-        saved = [RepoSources().resolve(name) for name in ("acme/api", "acme/web", "acme/docs")]
+        saved = [RepoFinder().resolve(name) for name in ("acme/api", "acme/web", "acme/docs")]
         calls = github.calls
-        catalog = RepoSources()
-        assert [catalog.reask(each) for each in saved] == saved
+        finder = RepoFinder()
+        assert [finder.reask(each) for each in saved] == saved
         assert github.calls == calls + 1
 
 
 def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer() -> None:
-    github = listing(repo("acme/api"))
+    github = listing(make_repo("acme/api"))
     with providers(github=[github]) as running:
-        catalog = RepoSources()
-        saved = catalog.resolve("acme/api")  # github's answer is stored
+        finder = RepoFinder()
+        saved = finder.resolve("acme/api")  # github's answer is stored
         github.error = HTTP_503
         with pytest.raises(UntapedError) as caught:
-            catalog.reask(saved)
+            finder.reask(saved)
     emitted = running.diagnostics
     assert caught.value is HTTP_503
     assert [each for each in emitted if isinstance(each, Stale)] == []  # the error says it
 
 
 def test_reask_of_a_source_that_is_gone_or_not_ready_is_none() -> None:
-    gitlab = listing(repo("infra/api", GITLAB), not_ready=NO_BASE_URL)
-    with providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]):
-        catalog = RepoSources()
-        from_gitlab = repo("infra/api", GITLAB, source=Source(plugin="gitlab", kind=""))
-        assert catalog.reask(from_gitlab) is None
-        gone = repo("infra/api", GITLAB, source=Source(plugin="gitea", kind=""))
-        assert catalog.reask(gone) is None
+    gitlab = listing(make_repo("infra/api", GITLAB), not_ready=NO_BASE_URL)
+    with providers(github=[listing(make_repo("acme/api"))], gitlab=[gitlab]):
+        finder = RepoFinder()
+        from_gitlab = make_repo("infra/api", GITLAB, source=Source(plugin="gitlab", kind=""))
+        assert finder.reask(from_gitlab) is None
+        gone = make_repo("infra/api", GITLAB, source=Source(plugin="gitea", kind=""))
+        assert finder.reask(gone) is None

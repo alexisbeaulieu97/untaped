@@ -106,13 +106,13 @@ CASES = {
         False,
     ),
     "add a required field to a payload model": (
-        "contract workspace.Repo(name, url)",
-        "contract workspace.Repo(name, owner, url)",
+        "contract git.Repo(name, url)",
+        "contract git.Repo(name, owner, url)",
         False,
     ),
     "add an optional field to a payload model": (
-        "contract workspace.Repo(name, url)",
-        "contract workspace.Repo(name, url)\ncontract workspace.Repo.owner string? default=None",
+        "contract git.Repo(name, url)",
+        "contract git.Repo(name, url)\ncontract git.Repo.owner string? default=None",
         True,
     ),
     "rename a stable state key": (
@@ -121,18 +121,18 @@ CASES = {
         False,
     ),
     "add a Literal value to a contract field": (
-        "contract workspace.Repo.ref choice=heads",
-        "contract workspace.Repo.ref choice=heads\ncontract workspace.Repo.ref choice=tags",
+        "contract git.Repo.ref choice=heads",
+        "contract git.Repo.ref choice=heads\ncontract git.Repo.ref choice=tags",
         True,
     ),
     "drop a Literal value from a contract field": (
-        "contract workspace.Repo.ref choice=heads\ncontract workspace.Repo.ref choice=tags",
-        "contract workspace.Repo.ref choice=heads",
+        "contract git.Repo.ref choice=heads\ncontract git.Repo.ref choice=tags",
+        "contract git.Repo.ref choice=heads",
         False,
     ),
     "tighten a contract field's constraint": (
-        "contract workspace.Repo.name string(minLength=1)",
-        "contract workspace.Repo.name string(maxLength=64,minLength=1)",
+        "contract git.Repo.name string(minLength=1)",
+        "contract git.Repo.name string(maxLength=64,minLength=1)",
         False,
     ),
     "deprecate a stable command": (
@@ -174,18 +174,18 @@ CASES = {
         True,
     ),
     "add an abstract method to a contract": (
-        "contract workspace.repo_source abstract=repos",
-        "contract workspace.repo_source abstract=repos,teams",
+        "contract git.repo_source abstract=repos",
+        "contract git.repo_source abstract=repos,teams",
         False,
     ),
     "give a contract method parameter a default": (
-        "contract workspace.repo_source.repos(refresh: boolean?) -> Repo[]",
-        "contract workspace.repo_source.repos(refresh: boolean? = None) -> Repo[]",
+        "contract git.repo_source.repos(refresh: boolean?) -> Repo[]",
+        "contract git.repo_source.repos(refresh: boolean? = None) -> Repo[]",
         False,
     ),
     "retype a payload field": (
-        "contract workspace.Repo.url string",
-        "contract workspace.Repo.url object",
+        "contract git.Repo.url string",
+        "contract git.Repo.url object",
         False,
     ),
     "remove a setting key": ("cfg untaped.http.timeout number? default=unset", "", False),

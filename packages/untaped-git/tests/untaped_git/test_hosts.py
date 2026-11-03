@@ -15,11 +15,11 @@ from pydantic import SecretStr
 
 from untaped.sdk import ConfigError
 from untaped.sdk.contracts import Provider
-from untaped.sdk.testing import Home, Install, install
+from untaped.sdk.testing import Install, install
 from untaped_git.helper_nonce import KEY_FILE, helper_nonce
 from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.plugin import Git
-from untaped_git.testing import global_config
+from untaped_git.testing import global_config, rank
 
 
 class Forge(GitHost, Provider):
@@ -59,17 +59,6 @@ def _fresh() -> Iterator[None]:
     Forge.asked = []
     Forge.error = None
     yield
-
-
-def rank(home: Home, method: str, *plugins: str) -> None:
-    """Rank ``plugins`` for ``GitHost.<method>`` in config, as `untaped plugin rank` writes it."""
-    listed = ", ".join(plugins)
-    home.path.mkdir(parents=True, exist_ok=True)
-    (home.path / "config.yml").write_text(
-        "format_version: 2\ngit:\n  extensions:\n    git_host:\n"
-        f"      rank:\n        {method}: [{listed}]\n",
-        encoding="utf-8",
-    )
 
 
 def test_no_provider_means_plain_git() -> None:
@@ -116,10 +105,10 @@ def test_a_failing_credential_is_raised() -> None:
 
 
 @pytest.mark.parametrize("url", ["https://github.com/acme/app.git", "git@github.com:acme/app.git"])
-def test_the_credential_rank_decides_between_two_homes(url: str, home: Home) -> None:
+def test_the_credential_rank_decides_between_two_homes(url: str) -> None:
     Forge.homes = {"hub": "github.com", "lab": "github.com"}
     forges = installed("hub", "lab")
-    rank(home, "credential", "lab")
+    rank("lab", contract="git_host", method="credential")
 
     with forges.running():
         auth = resolve_host(url)
@@ -129,10 +118,10 @@ def test_the_credential_rank_decides_between_two_homes(url: str, home: Home) -> 
     assert Forge.asked == (["lab"] if url.startswith("https://") else [])  # hub is never asked
 
 
-def test_another_methods_rank_does_not_decide(home: Home) -> None:
+def test_another_methods_rank_does_not_decide() -> None:
     Forge.homes = {"hub": "github.com", "lab": "github.com"}
     forges = installed("hub", "lab")
-    rank(home, "proxy", "lab")
+    rank("lab", contract="git_host", method="proxy")
 
     with forges.running(), pytest.raises(ConfigError, match="rank them"):
         resolve_host("git@github.com:acme/app.git")

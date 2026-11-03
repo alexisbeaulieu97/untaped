@@ -18,23 +18,10 @@ from pydantic import BaseModel
 from untaped.sdk import Source, UntapedError, key
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.testing import ManualClock, Ran, Running
-from untaped_git.testing import GitRemote
-from untaped_workspace.api import Repo
+from untaped_git.api import Repo
+from untaped_git.testing import GitRemote, Listing, host, listing, make_repo, rank
 from untaped_workspace.infrastructure import LocalGitWorktrees
-from workspace_test_support import (
-    Listing,
-    Project,
-    composed,
-    err,
-    forge,
-    git,
-    host,
-    listing,
-    rank,
-    repo,
-    run,
-    stored,
-)
+from workspace_test_support import Project, composed, err, forge, git, run, stored
 
 
 class _Gitlab(BaseModel):
@@ -46,7 +33,7 @@ class _Github(BaseModel):
 
 
 NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
-GITHUB = Source(plugin="github", kind="workspace.repo")
+GITHUB = Source(plugin="github", kind="git.repo")
 
 
 @contextmanager
@@ -76,7 +63,7 @@ def test_create_by_name_checks_out_the_repo_the_ready_provider_lists(
 ) -> None:
     """S1: gitlab installed, not configured: ``--repo acme/api`` is github's."""
     api = make_upstream("api", branches=("develop",))
-    gitlab = listing(repo("acme/api", "gitlab.example"), not_ready=NO_BASE_URL)
+    gitlab = listing(make_repo("acme/api", "gitlab.example"), not_ready=NO_BASE_URL)
     with providers(github=[listing(_listed(api, default_branch="develop"))], gitlab=[gitlab]):
         created = run(["create", "J-1", "--repo", "acme/api", "--format", "json"])
     assert created.exit == 0, err(created)
@@ -94,14 +81,13 @@ def test_a_repo_two_unranked_providers_list_is_a_usage_error_naming_the_rank_com
 ) -> None:
     """S3: exit 2 with the ``untaped plugin rank`` hint; nothing is created."""
     with providers(
-        github=[listing(repo("acme/api"))], gitlab=[listing(repo("acme/api", "gitlab.example"))]
+        github=[listing(make_repo("acme/api"))],
+        gitlab=[listing(make_repo("acme/api", "gitlab.example"))],
     ):
         result = run(["create", "J-1", "--repo", "acme/api"])
     assert result.exit == 2, err(result)
     assert "error: github, gitlab each have a match; rank them to choose" in err(result)
-    assert "hint: run `untaped plugin rank workspace.repo_source repos github gitlab`" in (
-        err(result)
-    )
+    assert "hint: run `untaped plugin rank git.repo_source repos github gitlab`" in (err(result))
     assert _nothing_created(workspace_env)
 
 
@@ -110,7 +96,7 @@ def test_a_ranked_provider_that_is_down_fails_with_its_own_exit_code(workspace_e
     rank("github", "gitlab")
     down = UntapedError("HTTP 503", category="unavailable", system="github")
     with providers(
-        github=[listing(error=down)], gitlab=[listing(repo("acme/api", "gitlab.example"))]
+        github=[listing(error=down)], gitlab=[listing(make_repo("acme/api", "gitlab.example"))]
     ):
         result = run(["create", "J-1", "--repo", "acme/api"])
     assert result.exit == 5, err(result)
@@ -123,7 +109,7 @@ def test_an_expired_token_exits_with_the_auth_code_and_its_hint(workspace_env: P
     expired = UntapedError(
         "401 Unauthorized", category="auth", system="gitlab", hint="run `untaped auth login gitlab`"
     )
-    with providers(github=[listing(repo("acme/api"))], gitlab=[listing(error=expired)]):
+    with providers(github=[listing(make_repo("acme/api"))], gitlab=[listing(error=expired)]):
         result = run(["create", "J-1", "--repo", "acme/api"])
     assert result.exit == 4, err(result)
     assert "hint: run `untaped auth login gitlab`" in err(result)
@@ -136,7 +122,7 @@ def test_a_typed_url_is_checked_out_under_its_full_path_without_asking_a_provide
 ) -> None:
     """S9: a URL is a plain repo named by its full path, with no source."""
     api = make_upstream("api")
-    github = listing(repo("acme/api"))
+    github = listing(make_repo("acme/api"))
     with providers(github=[github]):
         created = run(["create", "J-1", "--repo", api.url, "--format", "json"])
     assert created.exit == 0, err(created)
@@ -153,7 +139,7 @@ def test_with_no_provider_ready_a_name_is_not_found_naming_the_setting(
 ) -> None:
     """S12: github has no inventory scope: exit 2, the hint names the setting and the URL."""
     github = listing(
-        repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
+        make_repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
     )
     with providers(github=[github]):
         result = run(["create", "J-1", "--repo", "acme/api"])
@@ -241,7 +227,7 @@ def test_a_piped_workspace_repo_is_read_as_it_is(
 ) -> None:
     api = make_upstream("api")
     github = listing()
-    piped = _pipe(("workspace.repo", {"name": "acme/api", "url": api.url, "description": "API"}))
+    piped = _pipe(("git.repo", {"name": "acme/api", "url": api.url, "description": "API"}))
     with providers(github=[github]):
         created = run(["create", "J-1", "--stdin", "--format", "json"], input=piped)
     assert created.exit == 0, err(created)
@@ -258,7 +244,7 @@ def test_a_piped_workspace_repo_is_read_as_it_is(
 
 
 def test_a_piped_workspace_repo_with_a_local_url_is_invalid_input(workspace_env: Path) -> None:
-    piped = _pipe(("workspace.repo", {"name": "acme/api", "url": "file:///srv/acme/api.git"}))
+    piped = _pipe(("git.repo", {"name": "acme/api", "url": "file:///srv/acme/api.git"}))
     result = run(["create", "J-1", "--stdin"], input=piped)
     assert result.exit == 1, err(result)
     assert result.stderr == ["error: line 1: url: file:// is not an accepted Git URL scheme"]
@@ -277,7 +263,7 @@ def test_a_piped_record_no_provider_reads_is_a_usage_error(workspace_env: Path) 
     piped = _pipe(("forge.project", {"path": "acme/api", "clone_url": "https://x.example/a.git"}))
     result = run(["create", "J-1", "--stdin"], input=piped)  # no forge composed
     assert result.exit == 2, err(result)
-    assert "no installed provider reads forge.project records as workspace.repo" in err(result)
+    assert "no installed provider reads forge.project records as git.repo" in err(result)
     assert _nothing_created(workspace_env)
 
 

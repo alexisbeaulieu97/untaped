@@ -75,7 +75,7 @@ its `<NAME>` value is one).
 | Consumer | Reads | Field used |
 |---|---|---|
 | `workspace run --stdin` | `workspace.repo_status`, `workspace.repo_outcome`, `workspace.run_outcome`; or lines, each a repo name or directory | `repo`, else `dir` |
-| `workspace create --stdin`, `workspace add --stdin` | `workspace.repo`, and any kind a `RepoSource` provider reads (github: `github.repo`, `github.sweep_repo`, `github.corpus_repo`); or lines, each a repo name (`owner/name`, a unique name) or a clone URL | the whole record, turned into a repo by the plugin whose kind it is, without an API call; a name line is looked up in the providers' repos |
+| `workspace create --stdin`, `workspace add --stdin` | `git.repo`, and any kind a `RepoSource` provider reads (github: `github.repo`, `github.sweep_repo`, `github.corpus_repo`); or lines, each a repo name (`owner/name`, a unique name) or a clone URL | the whole record, turned into a repo by the plugin whose kind it is, without an API call; a name line is looked up in the providers' repos |
 
 ## github
 

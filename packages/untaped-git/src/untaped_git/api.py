@@ -3,6 +3,9 @@
 ``RepoStore`` is the repo store (one blobless, full-history bare repo per URL,
 shared by plugins, each in its own ref namespace); ``GitHost`` is the
 contract a forge plugin fills to supply credentials and a proxy for its host;
+``RepoSource`` is the contract plugins fill to list the repos a person can
+name, issuing ``Repo`` records, and ``RepoFinder`` resolves a typed name or
+URL to one of them (``typed_repo`` names a URL with no provider asked);
 ``ls_remote`` and ``default_branch`` query a remote with those credentials,
 and ``clone`` makes a working copy with them that its owner keeps;
 ``check_names`` says why a branch or tag name is one the store refuses.
@@ -24,6 +27,8 @@ from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.namespace import check_names
 from untaped_git.records import TreeEntry
 from untaped_git.release import Released, Removed
+from untaped_git.repo_finder import RepoFinder
+from untaped_git.repos import Repo, RepoName, RepoSource, looks_like_url, typed_repo
 from untaped_git.run import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_git.settings import store_root
 from untaped_git.store import RepoStore
@@ -42,17 +47,23 @@ __all__ = [
     "RefMove",
     "Released",
     "Removed",
+    "Repo",
+    "RepoFinder",
+    "RepoName",
+    "RepoSource",
     "RepoStore",
     "TreeEntry",
     "check_names",
     "clone",
     "default_branch",
     "git_toplevel",
+    "looks_like_url",
     "ls_remote",
     "repo_url_parts",
     "run_git",
     "store_key",
     "store_root",
+    "typed_repo",
     "validate_git_url",
 ]
 
