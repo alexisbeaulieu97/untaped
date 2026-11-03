@@ -66,6 +66,20 @@ file, line and YAML key path, read at the commit the source indexed. A
 refresh analyses each repo's YAML files and templates once per file
 version, beside its dependency files.
 
+## Find what checks out the dependents
+
+```bash
+untaped ansible impact checkouts acme/base-role
+```
+
+One row per checkout of a dependent, from every installed plugin that fills
+ansible's `CheckoutSource` contract (with its job templates, say). Each
+names the dependent it checks out at its ref, or none when the source
+doesn't hold that ref. A plugin that wasn't asked gets a hint, and one that
+failed is an error with its own exit code; their answers are cached for
+`ansible.caches.checkout_source_checkouts.max_age_seconds` (one hour), and
+`--refresh`/`--cached` reach them too.
+
 ## Find which roots contain a repository
 
 ```bash

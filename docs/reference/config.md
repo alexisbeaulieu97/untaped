@@ -56,6 +56,7 @@ Kept in `~/.untaped/plugins/untaped/state.yml`.
 | `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. 0 or more. |
 | `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
 | `ansible.caches.source_data.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__SOURCE_DATA__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `ansible.caches.checkout_source_checkouts.max_age_seconds` | integer | `3600` | `UNTAPED_ANSIBLE__CACHES__CHECKOUT_SOURCE_CHECKOUTS__MAX_AGE_SECONDS` | Seconds checkouts is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `ansible` state
 

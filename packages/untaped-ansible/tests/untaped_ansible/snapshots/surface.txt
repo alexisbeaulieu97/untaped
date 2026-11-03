@@ -1,7 +1,10 @@
 # untaped surface 3
+cfg ansible.caches.checkout_source_checkouts.max_age_seconds integer(minimum=0) default=3600
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
+cfg ansible.extensions.checkout_source.rank.checkouts string[] default=[]  [experimental]
+cfg ansible.extensions.checkout_source.rank.to_checkout string[] default=[]  [experimental]
 cfg ansible.git_fetch_parallel integer(maximum=32,minimum=1) default=8
 cfg ansible.index_dir string(format=path)? default=unset
 cfg ansible.probe_parallel integer(maximum=32,minimum=1) default=8
@@ -149,6 +152,37 @@ cli untaped ansible impact --source VALUE... default=unset
 cli untaped ansible impact --target-repo VALUE default=unset
 cli untaped ansible impact --team VALUE... default=unset
 cli untaped ansible impact ROLE
+cli untaped ansible impact checkouts --backend VALUE default=unset
+cli untaped ansible impact checkouts --backend choice=auto
+cli untaped ansible impact checkouts --backend choice=git
+cli untaped ansible impact checkouts --backend choice=graphql
+cli untaped ansible impact checkouts --columns VALUE... default=unset
+cli untaped ansible impact checkouts --columns alias=-c
+cli untaped ansible impact checkouts --depth VALUE default=unset
+cli untaped ansible impact checkouts --format VALUE default=table
+cli untaped ansible impact checkouts --format alias=-f
+cli untaped ansible impact checkouts --format choice=json
+cli untaped ansible impact checkouts --format choice=pipe
+cli untaped ansible impact checkouts --format choice=raw
+cli untaped ansible impact checkouts --format choice=table
+cli untaped ansible impact checkouts --format choice=yaml
+cli untaped ansible impact checkouts --org VALUE... default=unset
+cli untaped ansible impact checkouts --parallel VALUE default=unset
+cli untaped ansible impact checkouts --parallel alias=-j
+cli untaped ansible impact checkouts --path VALUE... default=unset
+cli untaped ansible impact checkouts --ref VALUE default=unset
+cli untaped ansible impact checkouts --ref-kind VALUE... default=unset
+cli untaped ansible impact checkouts --ref-pattern VALUE... default=unset
+cli untaped ansible impact checkouts --ref-scan-default VALUE default=unset
+cli untaped ansible impact checkouts --ref-scan-default choice=all
+cli untaped ansible impact checkouts --ref-scan-default choice=default_branch
+cli untaped ansible impact checkouts --refresh negative=--cached
+cli untaped ansible impact checkouts --refresh switch default=unset
+cli untaped ansible impact checkouts --repo VALUE... default=unset
+cli untaped ansible impact checkouts --source VALUE... default=unset
+cli untaped ansible impact checkouts --target-repo VALUE default=unset
+cli untaped ansible impact checkouts --team VALUE... default=unset
+cli untaped ansible impact checkouts ROLE
 cli untaped ansible impact uses --backend VALUE default=unset
 cli untaped ansible impact uses --backend choice=auto
 cli untaped ansible impact uses --backend choice=git
@@ -317,6 +351,20 @@ cli untaped ansible source-alias set --format choice=raw
 cli untaped ansible source-alias set --format choice=table
 cli untaped ansible source-alias set --format choice=yaml
 cli untaped ansible source-alias set ALIAS REPO
+contract ansible.Checkout(name, url)  [experimental]
+contract ansible.Checkout.link string? default=None  [experimental]
+contract ansible.Checkout.name string  [experimental]
+contract ansible.Checkout.ref string? default=None  [experimental]
+contract ansible.Checkout.source Source? default=None  [experimental]
+contract ansible.Checkout.url string  [experimental]
+contract ansible.Checkout.via string? default=None  [experimental]
+contract ansible.Source(kind, plugin)
+contract ansible.Source.kind string
+contract ansible.Source.plugin string
+contract ansible.Source.record object default={}
+contract ansible.checkout_source abstract=checkouts  [experimental]
+contract ansible.checkout_source.checkouts() -> Checkout[]  [experimental]
+contract ansible.checkout_source.to_checkout(item: Checkout) -> Checkout  [experimental]
 record ansible.FoundIn
 record ansible.FoundIn.path string[]
 record ansible.FoundIn.ref string?
@@ -351,6 +399,21 @@ record ansible.GraphNode.stopped choice=depth
 record ansible.GraphNode.stopped choice=not_cached
 record ansible.GraphNode.stopped string?
 record ansible.GraphNode.unresolved string?
+record ansible.checkout  [experimental]
+record ansible.checkout.link string?  [experimental]
+record ansible.checkout.name string  [experimental]
+record ansible.checkout.ref string?  [experimental]
+record ansible.checkout.source Source?  [experimental]
+record ansible.checkout.url string  [experimental]
+record ansible.checkout.via string?  [experimental]
+record ansible.checkout_hit
+record ansible.checkout_hit.dependent FoundIn?
+record ansible.checkout_hit.link string?
+record ansible.checkout_hit.name string
+record ansible.checkout_hit.ref string?
+record ansible.checkout_hit.source Source?
+record ansible.checkout_hit.url string
+record ansible.checkout_hit.via string?
 record ansible.dependency
 record ansible.dependency.declared_in string?
 record ansible.dependency.declared_ref string?
@@ -449,6 +512,21 @@ record ansible.variable_use_hit.line integer
 record ansible.variable_use_hit.ref string?
 record ansible.variable_use_hit.repo string
 record ansible.variable_use_hit.variable string
+sdk untaped_ansible.api.Checkout base=untaped.sdk.Issued  [experimental]
+sdk untaped_ansible.api.Checkout base=untaped.sdk.Record  [experimental]
+sdk untaped_ansible.api.Checkout extra=forbid  [experimental]
+sdk untaped_ansible.api.Checkout(*, name, url)  [experimental]
+sdk untaped_ansible.api.Checkout(link=) default=None  [experimental]
+sdk untaped_ansible.api.Checkout(ref=) default=None  [experimental]
+sdk untaped_ansible.api.Checkout(source=) default=None  [experimental]
+sdk untaped_ansible.api.Checkout(via=) default=None  [experimental]
+sdk untaped_ansible.api.Checkout.link  [experimental]
+sdk untaped_ansible.api.Checkout.name  [experimental]
+sdk untaped_ansible.api.Checkout.ref  [experimental]
+sdk untaped_ansible.api.Checkout.url  [experimental]
+sdk untaped_ansible.api.Checkout.via  [experimental]
+sdk untaped_ansible.api.CheckoutSource base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_ansible.api.CheckoutSource implement=checkouts  [experimental]
 state ansible.aliases Alias[]
 state ansible.aliases.alias string
 state ansible.aliases.repo string

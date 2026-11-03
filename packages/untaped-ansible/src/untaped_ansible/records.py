@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import Column, OutcomeRecord, Record, Status, UtcTimestamp
 from untaped.sdk.storage import FreshnessRecord
+from untaped_ansible.checkouts import Checkout
 from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
 
@@ -168,6 +169,10 @@ class FoundIn(BaseModel):
     ref: str | None
     path: list[str]
 
+    def table_text(self) -> str:
+        """``repo@ref`` (``repo`` without a ref), as a table shows it."""
+        return f"{self.repo}@{self.ref}" if self.ref else self.repo
+
 
 class VariableUse(Record):
     """Where one variable is defined, set or read in one repo at one ref.
@@ -196,7 +201,24 @@ class VariableUseHit(VariableUse):
     dependent: FoundIn
 
 
+class CheckoutHit(Checkout):
+    """A checkout of a dependent of the role ``impact checkouts`` was asked about.
+
+    The provider's :class:`~untaped_ansible.api.Checkout`, ``source`` and all,
+    plus the dependent it checks out.
+    """
+
+    dependent: FoundIn | None = Field(
+        description=(
+            "The dependent at the ref it checks out; null when the source holds that repo "
+            "as a dependent at other refs only, or, for a checkout naming no ref, doesn't "
+            "know the repo's default branch."
+        )
+    )
+
+
 __all__ = [
+    "CheckoutHit",
     "Dependency",
     "DependencyMatch",
     "Dependent",

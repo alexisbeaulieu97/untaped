@@ -407,7 +407,7 @@ WHEEL_MATRIX = {
     "bare": ('"$CORE"', '--expect ""'),
     "awx": (
         '--find-links dist "untaped[awx] @ file://$PWD/$CORE"',
-        "--expect awx,git,lint,values --docs",
+        "--expect ansible,awx,git,github,lint,values --docs",
     ),
     "all": ('--find-links dist "untaped[all] @ file://$PWD/$CORE"', "--docs"),
     "hello": (

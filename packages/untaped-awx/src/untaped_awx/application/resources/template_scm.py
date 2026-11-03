@@ -8,7 +8,7 @@ default branch is never guessed. Each distinct project is read once.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 from untaped_awx.application.resources.ports import Catalog, ResourceClient
@@ -26,11 +26,13 @@ def with_scm(
     client: ResourceClient,
     catalog: Catalog,
     warn: Callable[[str], None],
+    project_fields: Sequence[str] = (),
 ) -> list[dict[str, Any]]:
     """Return copies of job template ``records`` carrying :data:`SCM_FIELDS`.
 
     A template without a project, or whose project cannot be read, gets
-    ``null`` values (the latter with one warning per project).
+    ``null`` values (the latter with one warning per project). Each of
+    ``project_fields`` is copied from the project as ``project_<field>``.
     """
     rows = [dict(record) for record in records]
     project_spec = catalog.get("Project")
@@ -48,11 +50,13 @@ def with_scm(
         project = projects.get(project_id) if isinstance(project_id, int) else None
         if project is None:
             row.update(dict.fromkeys(SCM_FIELDS))
+            row.update(dict.fromkeys(f"project_{field}" for field in project_fields))
             continue
         row["scm_url"] = project.get("scm_url")
         row["effective_scm_ref"] = effective_scm_ref(row, project)
         allow = project.get("allow_override")
         row["project_allow_override"] = None if allow is None else bool(allow)
+        row.update({f"project_{field}": project.get(field) for field in project_fields})
     return rows
 
 
