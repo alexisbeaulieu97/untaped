@@ -51,16 +51,14 @@ class GithubDependencyIndex:
         *,
         github: GitHubDependencyReader,
         wrapped: DependencyIndex,
-        aliases: dict[str, str],
+        resolver: IdentityResolver,
         dependency_paths: list[str],
-        github_host: str | None = None,
         concurrency: int = 1,
     ) -> None:
         self._github = github
-        self._github_host = github_host
         self._concurrency = concurrency
         self._wrapped = wrapped
-        self._aliases = aliases
+        self._resolver = resolver
         self._dependency_paths = dependency_paths
         self._cache: dict[tuple[str, str | None], list[IndexedDependency]] = {}
         # Default branch resolved by each ref-less read, keyed by repo_key.
@@ -220,7 +218,7 @@ class GithubDependencyIndex:
                 f"GitHub truncated the file listing for {repo}@{source_ref}; "
                 "dependency files missing from it were not read"
             )
-        resolver = IdentityResolver(self._aliases, github_host=self._github_host)
+        resolver = self._resolver
         edges = read.edges
         for path in self._dependency_paths:
             if path not in paths:

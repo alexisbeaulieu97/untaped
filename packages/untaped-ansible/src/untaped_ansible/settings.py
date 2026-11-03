@@ -54,8 +54,11 @@ class SourceDefinition(BaseModel):
     def _validate_source(self) -> Self:
         if not any((self.orgs, self.teams, self.repos)):
             raise ValueError("a source selects at least one org, team or repo")
+        # A source lists GitHub repos, so a repo it selects is GitHub's owner/name.
+        from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
+
         for repo in self.repos:
-            if not is_repo_name(repo):
+            if split_repo_id(repo) is None:
                 raise ValueError(f"repo must be owner/name: {repo!r}")
         invalid_ref_kinds = sorted(set(self.ref_kinds) - set(ALLOWED_REF_KINDS))
         if invalid_ref_kinds:
@@ -120,7 +123,7 @@ class AnsibleSettings(BaseModel):
 
 
 class Alias(BaseModel):
-    """A role or Galaxy name and the GitHub ``owner/repo`` it stands for."""
+    """A role or Galaxy name and the repository name it stands for."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -130,22 +133,22 @@ class Alias(BaseModel):
 
 #: Saved sources, one row per name. Managed by `ansible source` commands.
 SOURCES = StateRows[SourceDefinition](omit_none=True)
-#: Role or Galaxy name to `owner/repo` aliases. Managed by `ansible source-alias` commands.
+#: Role or Galaxy name to repository name aliases. Managed by `ansible source-alias` commands.
 ALIASES = StateRows[Alias]()
 
 
 def alias_map() -> dict[str, str]:
-    """The saved aliases as a name → ``owner/repo`` map."""
+    """The saved aliases as a name → repository name map."""
     return {row.alias: row.repo for row in ALIASES.all()}
 
 
-#: The dependency index: ``<ansible.index_dir>/index.v4.sqlite3``, or
+#: The dependency index: ``<ansible.index_dir>/index.v6.sqlite3``, or
 #: ``plugins/ansible/index/`` under the home when the setting is unset. The
 #: layout is ``sqlite_schema.ADDITIVE_SINCE`` (a test holds them equal;
 #: importing the schema here would load the plugin's infrastructure at
 #: startup), not the schema version: an additive schema change keeps sharing
 #: the layout's file.
-INDEX_DIR = Dir(at=key(AnsibleSettings).index_dir, layout=4, file="index.sqlite3")
+INDEX_DIR = Dir(at=key(AnsibleSettings).index_dir, layout=6, file="index.sqlite3")
 
 #: The version of what a ref's dependency edges are made by: the parser and
 #: identity code, the models they build and PyYAML. Folded into the dependency
@@ -192,10 +195,3 @@ def normalize_team_refs(teams: list[str], orgs: list[str]) -> list[str]:
 
 def _dedupe_sorted(values: list[str]) -> list[str]:
     return sorted(dict.fromkeys(values))
-
-
-def is_repo_name(value: str) -> bool:
-    """Return whether ``value`` is a GitHub ``owner/name`` repo id."""
-    from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
-
-    return split_repo_id(value) is not None

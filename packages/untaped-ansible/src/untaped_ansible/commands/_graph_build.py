@@ -45,15 +45,13 @@ class LiveReads:
         open_github: Callable[[], GithubApi],
         *,
         wrapped: DependencyIndex,
-        aliases: dict[str, str],
+        resolver: Callable[[], IdentityResolver],
         settings: AnsibleSettings,
-        github_host: str | None,
     ) -> None:
         self._open_github = open_github
         self._wrapped = wrapped
-        self._aliases = aliases
+        self._resolver = resolver
         self._settings = settings
-        self._github_host = github_host
         self._index: GithubDependencyIndex | None = None
 
     def index(self) -> GithubDependencyIndex:
@@ -61,9 +59,8 @@ class LiveReads:
             self._index = GithubDependencyIndex(
                 github=self._open_github(),
                 wrapped=self._wrapped,
-                aliases=self._aliases,
+                resolver=self._resolver(),
                 dependency_paths=self._settings.dependency_paths,
-                github_host=self._github_host,
                 concurrency=self._settings.probe_parallel,
             )
         return self._index
@@ -84,22 +81,14 @@ class LocalDependencies:
     warnings: list[str]
 
 
-def resolve_target_repo(
-    target: str, aliases: dict[str, str], *, github_host: str | None
-) -> str | None:
+def resolve_target_repo(target: str, resolver: IdentityResolver) -> str | None:
+    """The repository TARGET names: by alias, name or URL, or by a local checkout's origin URL."""
     path = Path(target).expanduser()
     if path.exists():
-        return _repo_from_local_git(path, github_host=github_host)
+        origin_url = local_remote_url(path)
+        return None if origin_url is None else resolver.repo_of(origin_url)
     declaration = DependencyDeclaration(name=target, src=target, source_path="<target>")
-    return IdentityResolver(aliases, github_host=github_host).resolve(declaration).repo
-
-
-def _repo_from_local_git(path: Path, *, github_host: str | None) -> str | None:
-    origin_url = local_remote_url(path)
-    if origin_url is None:
-        return None
-    declaration = DependencyDeclaration(name=origin_url, src=origin_url, source_path="<git-remote>")
-    return IdentityResolver(github_host=github_host).resolve(declaration).repo
+    return resolver.resolve(declaration).repo
 
 
 def local_dependencies(
@@ -107,14 +96,12 @@ def local_dependencies(
     *,
     repo: str,
     ref: str | None,
-    aliases: dict[str, str],
+    resolver: IdentityResolver,
     dependency_paths: list[str],
-    github_host: str | None,
 ) -> LocalDependencies:
     edges: list[IndexedDependency] = []
     warnings: list[str] = []
     ignored_collections: list[str] = []
-    resolver = IdentityResolver(aliases, github_host=github_host)
     for relative in dependency_paths:
         dep_path = path / relative
         if not dep_path.is_file():

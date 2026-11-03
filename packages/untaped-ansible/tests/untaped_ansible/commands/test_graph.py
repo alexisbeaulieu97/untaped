@@ -479,7 +479,10 @@ def test_graph_cached_missing_ref_lists_available_refs_in_display_order(
         ),
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:platform", source_repo="acme/site", default_branch="trunk"
+                source_key="source:platform",
+                source_repo="acme/site",
+                default_branch="trunk",
+                url="https://github.com/acme/site.git",
             ),
         ),
         scanned_at=now,
@@ -502,7 +505,10 @@ def _unpinned_consumers(tmp_path: Path, *, base_default: str | None) -> None:
         if base_default is None
         else (
             SourceRepoMetadata(
-                source_key="source:prod", source_repo="acme/base", default_branch=base_default
+                source_key="source:prod",
+                source_repo="acme/base",
+                default_branch=base_default,
+                url="https://github.com/acme/base.git",
             ),
         )
     )
@@ -1063,7 +1069,7 @@ def test_find_follows_unpinned_hops_through_the_default_branch(tmp_path: Path, m
         make_edge("acme/lib", "acme/target", ref="trunk", version="v1"),
         repo_metadata=(
             SourceRepoMetadata(source_key="source:platform", source_repo="acme/lib",
-                               default_branch="trunk"),
+                               default_branch="trunk", url="https://github.com/acme/lib.git"),
         ),
     )  # fmt: skip
     use_config(tmp_path, monkeypatch, _CONTAINS_SOURCE)
@@ -1269,7 +1275,7 @@ def test_find_resolves_targets_before_refreshing(tmp_path: Path, monkeypatch) ->
                   "--refresh")  # fmt: skip
 
     assert result.exit_code == 1
-    assert "could not resolve target to a GitHub repo: './no-such-role'" in result.stderr
+    assert "could not resolve target to a repository: './no-such-role'" in result.stderr
     assert calls == []
 
 
@@ -1406,7 +1412,10 @@ def test_deps_live_unpinned_hop_follows_the_current_default_branch(
         make_edge("acme/base", "acme/wrong"),
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:platform", source_repo="acme/base", default_branch="main"
+                source_key="source:platform",
+                source_repo="acme/base",
+                default_branch="main",
+                url="https://github.com/acme/base.git",
             ),
         ),
     )
@@ -1572,7 +1581,10 @@ def _seed_two_refs(tmp_path: Path) -> None:
         make_edge("acme/site", "acme/legacy", ref="v1"),
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:platform", source_repo="acme/site", default_branch="trunk"
+                source_key="source:platform",
+                source_repo="acme/site",
+                default_branch="trunk",
+                url="https://github.com/acme/site.git",
             ),
         ),
     )

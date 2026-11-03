@@ -44,6 +44,7 @@ from untaped_ansible.commands._graph_source import (
 )
 from untaped_ansible.commands._source_data import SourceData
 from untaped_ansible.domain.graph import DependencyGraph
+from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
 from untaped_ansible.refresh import GIT_PARALLEL_CAP, Backend, serve_sources
@@ -52,9 +53,9 @@ from untaped_github.api import GithubSettings, github_api
 
 CommandName = Literal["graph", "deps", "impact", "find"]
 
-TARGET = "Role or repo: owner/repo, GitHub URL, source alias, or local path."
+TARGET = "Role or repo: its name (owner/repo), its URL, a source alias, or a local path."
 TARGET_REPO = (
-    "owner/repo of a local target; needed for a subdirectory of a checkout, whose remote "
+    "Repository name of a local target; needed for a subdirectory of a checkout, whose remote "
     "is read only at the checkout's top level."
 )
 DEPTH = "Traversal depth, or 'unlimited' (default)."
@@ -131,6 +132,7 @@ class GraphCommand(AnsibleCommand):
             )
         sqlite_index = open_index()
         index = dependency_index_for_graph_source(sqlite_index, graph_source)
+        resolvers = GraphResolvers(sqlite_index, aliases=aliases, github_host=github_host)
         return GraphEnv(
             command=command,
             settings=settings,
@@ -143,12 +145,12 @@ class GraphCommand(AnsibleCommand):
             live=live,
             depth=parse_depth(self.depth),
             all_refs=all_refs,
+            resolvers=resolvers,
             live_reads=LiveReads(
                 lambda: github_api(github),
                 wrapped=index,
-                aliases=aliases,
+                resolver=resolvers.get,
                 settings=settings,
-                github_host=github_host,
             ),
         )
 
@@ -168,11 +170,16 @@ class GraphCommand(AnsibleCommand):
         if not _reads_source(env, direction):
             return read()
         wiring = self.wiring(env.sqlite_index, parallel=self.parallel.value, backend=self.backend)
+
+        def served_read() -> T:
+            env.resolvers.forget()  # a refresh may have stored repositories on new hosts
+            return read()
+
         try:
             served = serve_sources(
                 env.graph_source.selections,
                 refresh=self.refresh.directive,
-                read=read,
+                read=served_read,
                 empty=empty,
                 wiring=wiring,
             )
@@ -208,9 +215,8 @@ class GraphCommand(AnsibleCommand):
                 target_path,
                 repo=target_repo_name,
                 ref=ref,
-                aliases=env.aliases,
+                resolver=env.resolver(),
                 dependency_paths=env.settings.dependency_paths,
-                github_host=env.github_host,
             )
             parse_warnings.extend(local.warnings)
 
@@ -283,6 +289,7 @@ class GraphEnv:
     aliases: dict[str, str]
     github_settings: GithubSettings
     github_host: str | None
+    """GitHub's Git host, where live reads go."""
     index: DependencyIndex
     sqlite_index: SqliteDependencyIndex
     graph_source: GraphSource
@@ -290,6 +297,39 @@ class GraphEnv:
     depth: int | None
     all_refs: bool
     live_reads: LiveReads
+
+    resolvers: GraphResolvers
+
+    def resolver(self) -> IdentityResolver:
+        """Names a target or dependency: see :class:`GraphResolvers`."""
+        return self.resolvers.get()
+
+
+class GraphResolvers:
+    """One command's resolver: by the aliases, or by a URL on a host repositories live on.
+
+    The hosts are those of every source's stored repository URLs, as a
+    refresh resolves them, and GitHub's, where live reads go. It is read once
+    and again after the selected sources were served (:meth:`forget`), so a
+    refresh's new hosts count.
+    """
+
+    def __init__(
+        self, index: SqliteDependencyIndex, *, aliases: dict[str, str], github_host: str | None
+    ) -> None:
+        self._index = index
+        self._aliases = aliases
+        self._github_host = github_host
+        self._resolver: IdentityResolver | None = None
+
+    def get(self) -> IdentityResolver:
+        if self._resolver is None:
+            hosts = {*self._index.repo_hosts(), *([self._github_host] if self._github_host else [])}
+            self._resolver = IdentityResolver(self._aliases, hosts=hosts)
+        return self._resolver
+
+    def forget(self) -> None:
+        self._resolver = None
 
 
 class BuiltGraph(NamedTuple):
@@ -321,18 +361,18 @@ def check_all_refs(ref: str | None, *, all_refs: bool) -> None:
 
 
 def require_repo(env: GraphEnv, target: str, *, target_repo: str | None = None) -> str:
-    """The ``owner/repo`` TARGET names, or an error saying why there is none."""
-    repo = target_repo or resolve_target_repo(target, env.aliases, github_host=env.github_host)
+    """The repository TARGET names, or an error saying why there is none."""
+    repo = target_repo or resolve_target_repo(target, env.resolver())
     if repo is not None:
         return repo
-    message = f"could not resolve target to a GitHub repo: {q(target)}"
+    message = f"could not resolve target to a repository: {q(target)}"
     if Path(target).expanduser().exists():
         message = (
             f"{message}; the local path is not the top level of a Git checkout "
-            "with a remote pointing at GitHub"
+            "with a remote on a host the sources' repositories live on"
         )
         if env.command != "find":
-            message = f"{message}. Pass --target-repo OWNER/NAME"
+            message = f"{message}. Pass --target-repo NAME"
     raise AnsibleError(message, category="not_found")
 
 

@@ -509,11 +509,26 @@ def test_expansion_dedupes_overlapping_selectors_with_explicit_repo_precedence(
 
 
 def test_repo_candidate_does_not_guess_main_when_default_branch_is_missing() -> None:
-    assert repo_candidate({"full_name": "acme/site"}, fallback=None).default_branch == "HEAD"
+    assert repo_candidate({"full_name": "acme/site"}).default_branch == "HEAD"
+
+
+@pytest.mark.parametrize(
+    ("row", "web_host", "url"),
+    [
+        ({"clone_url": "https://ghe.example.com/acme/site.git"}, None, "ghe.example.com"),
+        ({"html_url": "https://ghe.example.com/acme/site/"}, None, "ghe.example.com"),
+        ({}, "ghe.example.com", "ghe.example.com"),
+        ({}, None, "github.com"),
+    ],
+)
+def test_a_repo_s_url_is_its_clone_url(row: dict[str, str], web_host: str | None, url: str) -> None:
+    candidate = repo_candidate({"full_name": "acme/site", **row}, web_host=web_host)
+
+    assert candidate.url == f"https://{url}/acme/site.git"
 
 
 def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
-    repos = [repo_candidate({"full_name": f"acme/{name}"}, fallback=None) for name in "ab"]
+    repos = [repo_candidate({"full_name": f"acme/{name}"}) for name in "ab"]
     options: dict[str, Any] = {
         "paths_fingerprint": "paths",
         "aliases_fingerprint": "aliases",
@@ -682,7 +697,10 @@ def test_partial_refresh_commit_persists_progress_in_same_adapter_call(tmp_path:
         keep={("acme/a", "heads", "main")},
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:prod", source_repo="acme/a", default_branch="main"
+                source_key="source:prod",
+                source_repo="acme/a",
+                default_branch="main",
+                url="https://github.com/acme/a.git",
             ),
         ),
         processed_repos=frozenset({"acme/a"}),
@@ -833,14 +851,11 @@ def test_git_refresh_leaves_out_a_ref_the_store_cannot_hold(h: Harness) -> None:
     )
 
 
-def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> None:
+def test_the_aliases_fingerprint_folds_in_the_hosts_of_the_source_s_repos(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", "- common\n"))
     aliases = {"a": "b"}
-    nine_x = hashlib.sha256(
-        json.dumps(aliases, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
     folded = json.dumps(
-        {"aliases": aliases, "github_host": "github.com"}, sort_keys=True, separators=(",", ":")
+        {"aliases": aliases, "hosts": ["github.com"]}, sort_keys=True, separators=(",", ":")
     ).encode()
 
     def stored(**overrides: Any) -> str:
@@ -849,10 +864,44 @@ def test_the_aliases_fingerprint_always_folds_the_github_host_in(h: Harness) -> 
             ("heads", "main")
         ].aliases_fingerprint
 
-    default_host = stored()
-    assert default_host == hashlib.sha256(folded).hexdigest()
-    assert default_host != nine_x
-    assert stored(github_host="GitHub.com") == default_host
+    assert stored() == hashlib.sha256(folded).hexdigest()
+
+
+def test_a_dependency_url_resolves_on_a_host_the_source_s_repos_live_on(h: Harness) -> None:
+    reqs = "- src: https://github.com/acme/base.git\n- src: https://ghe.example.com/acme/lib.git\n"
+    h.set_refs("acme/site", ("main", "sha-main", reqs))
+
+    h.run()
+
+    edges = h.index.dependencies("acme/site", "main", source_key="source:prod")
+    assert [(edge.dependency_repo, edge.unresolved) for edge in edges] == [
+        ("acme/base", None),
+        (None, "https://ghe.example.com/acme/lib.git"),
+    ]
+
+
+def test_a_dependency_url_resolves_on_a_host_another_source_s_repos_live_on(h: Harness) -> None:
+    reqs = "- src: https://ghe.example.com/acme/lib.git\n"
+    h.set_refs("acme/site", ("main", "sha-main", reqs))
+    h.index.commit_source_ref_partial_refresh(
+        "source:ghe",
+        scans=(),
+        touches=(),
+        keep=set(),
+        repo_metadata=(
+            SourceRepoMetadata(
+                source_key="source:ghe",
+                source_repo="acme/lib",
+                default_branch="main",
+                url="https://ghe.example.com/acme/lib.git",
+            ),
+        ),
+    )
+
+    h.run()
+
+    [edge] = h.index.dependencies("acme/site", "main", source_key="source:prod")
+    assert (edge.dependency_repo, edge.unresolved) == ("acme/lib", None)
 
 
 def test_git_refresh_reindexes_unchanged_ref_when_aliases_change(h: Harness) -> None:

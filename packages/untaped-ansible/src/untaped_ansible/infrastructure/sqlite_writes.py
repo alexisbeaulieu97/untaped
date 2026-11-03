@@ -187,13 +187,19 @@ def upsert_source_repo_metadata(
     db.executemany(
         """
         insert into source_repo_metadata(
-            source_key, source_repo, source_repo_key, default_branch
-        ) values (?, ?, ?, ?)
+            source_key, source_repo, source_repo_key, default_branch, url
+        ) values (?, ?, ?, ?, ?)
         on conflict(source_key, source_repo) do update set
-            default_branch = excluded.default_branch
+            default_branch = excluded.default_branch, url = excluded.url
         """,
         [
-            (row.source_key, row.source_repo, repo_key(row.source_repo), row.default_branch)
+            (
+                row.source_key,
+                row.source_repo,
+                repo_key(row.source_repo),
+                row.default_branch,
+                row.url,
+            )
             for row in sorted(metadata, key=lambda item: (item.source_key, item.source_repo))
         ],
     )

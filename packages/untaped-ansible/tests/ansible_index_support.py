@@ -31,7 +31,7 @@ REQS = "roles/requirements.yml"
 
 def index_path(tmp_path: Path) -> Path:
     """The index file under the test's ``ansible.index_dir``."""
-    return tmp_path / "index.v4.sqlite3"
+    return tmp_path / "index.v6.sqlite3"
 
 
 def open_index(tmp_path: Path) -> SqliteDependencyIndex:

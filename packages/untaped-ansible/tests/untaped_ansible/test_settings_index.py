@@ -75,7 +75,7 @@ def test_the_default_index_is_its_layout_file_in_the_plugin_folder(
     with running():
         index = open_index()
 
-    assert index._path == home.plugin("ansible") / "index" / "index.v4.sqlite3"
+    assert index._path == home.plugin("ansible") / "index" / "index.v6.sqlite3"
 
 
 def test_a_set_folder_holds_the_layout_file_and_never_opens_another(
@@ -99,7 +99,7 @@ def test_the_source_data_takes_the_index_s_layout(home: Home) -> None:
         open_index()
         _fill()
 
-    assert (home.plugin("ansible") / "cached" / "source_data.v4").is_dir()
+    assert (home.plugin("ansible") / "cached" / "source_data.v6").is_dir()
 
 
 def test_open_index_is_the_only_way_the_plugin_opens_the_index() -> None:
