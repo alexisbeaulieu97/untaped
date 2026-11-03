@@ -128,16 +128,14 @@ def test_issue_keys_accept_lowercase_and_numeric_ids(key: str, path: str, jira: 
 # --- write confirmation ------------------------------------------------------------
 
 WRITES = {
-    "create": (["issues", "create", "--project", "ABC", "--summary", "x"], "POST", "/issue"),
-    "patch": (["issues", "patch", "ABC-1", "--summary", "x"], "PUT", "/issue/ABC-1"),
-    "comment": (["issues", "comment", "ABC-1", "--body", "hi"], "POST", "/issue/ABC-1/comment"),
-    "transition": (
-        ["issues", "transition", "ABC-1", "--id", "31"],
-        "POST",
-        "/issue/ABC-1/transitions",
-    ),
-    "link": (["issues", "links", "create", "ABC-1", "Blocks", "ABC-2"], "POST", "/issueLink"),
+    "create": (["issues", "create", "--project", "ABC", "--summary", "x"], "create an issue"),
+    "patch": (["issues", "patch", "ABC-1", "--summary", "x"], "update ABC-1"),
+    "comment": (["issues", "comment", "ABC-1", "--body", "hi"], "comment on ABC-1"),
+    "transition": (["issues", "transition", "ABC-1", "--id", "31"], "transition ABC-1"),
+    "link": (["issues", "links", "create", "ABC-1", "Blocks", "ABC-2"], "link ABC-1 to ABC-2"),
 }
+#: Jira's own answer for an issue that does not exist: a 404 carrying ``errorMessages``.
+GONE = {"errorMessages": ["Issue Does Not Exist"], "errors": {}}
 #: The writes that ask first: each sets a field, or transitions.
 ASKING = ("patch", "transition")
 
@@ -157,7 +155,7 @@ def _mock_writes(mock: respx.MockRouter) -> respx.Route:
 
 @pytest.mark.parametrize("verb", ASKING)
 def test_writes_need_yes_when_not_interactive(verb: str, jira: Invoke) -> None:
-    args, _, _ = WRITES[verb]
+    args, _ = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
         result = jira(args)
@@ -171,7 +169,7 @@ def test_writes_need_yes_when_not_interactive(verb: str, jira: Invoke) -> None:
 def test_writes_send_only_once_confirmed(
     verb: str, answer: bool, terminal: ScriptedTerminal, jira: Invoke
 ) -> None:
-    args, _, _ = WRITES[verb]
+    args, _ = WRITES[verb]
     terminal.answers(answer)
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
@@ -187,8 +185,8 @@ def test_writes_send_only_once_confirmed(
 
 
 @pytest.mark.parametrize("verb", sorted(WRITES))
-def test_dry_run_prints_the_request_and_wins_over_yes(verb: str, jira: Invoke) -> None:
-    args, method, path = WRITES[verb]
+def test_dry_run_prints_the_change_and_wins_over_yes(verb: str, jira: Invoke) -> None:
+    args, change = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
         yes = ["--yes"] if verb in ASKING else []
@@ -196,7 +194,7 @@ def test_dry_run_prints_the_request_and_wins_over_yes(verb: str, jira: Invoke) -
 
     assert result.exit_code == 0, result.output
     assert len(route.calls) == 0
-    assert f"{method} /rest/api/2{path}" in result.stderr
+    assert f'"message": "{change}"' in result.stderr
     assert _one(result.stdout)["action"] == "planned"
 
 
@@ -236,7 +234,7 @@ def test_issue_get_several_keys_reports_each_failure(jira: Invoke) -> None:
         mock.get("/rest/api/2/issue/ABC-1").mock(
             return_value=httpx.Response(200, json=_issue("ABC-1"))
         )
-        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404))
+        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404, json=GONE))
         result = jira(["issues", "get", "ABC-1", "ABC-9", "--format", "json"])
 
     assert result.exit_code == 1, result.output
@@ -305,7 +303,7 @@ def test_issue_transition_unknown_name_lists_the_available_ones(jira: Invoke) ->
 
 def test_missing_issue_is_a_not_found_error(jira: Invoke) -> None:
     with respx.mock(base_url=BASE) as mock:
-        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404))
+        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404, json=GONE))
         result = jira(["issues", "get", "ABC-9"])
 
     assert result.exit_code == 1, result.output
@@ -361,7 +359,7 @@ def test_missing_issue_is_a_not_found_diagnostic(
 ) -> None:
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
     with respx.mock(base_url=BASE) as mock:
-        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404))
+        mock.get("/rest/api/2/issue/ABC-9").mock(return_value=httpx.Response(404, json=GONE))
         result = jira(["issues", "get", "ABC-9", "--format", "json"])
 
     assert result.exit_code == 1, result.output
@@ -378,3 +376,16 @@ def test_fields_updated_but_forbidden_assignment_keeps_its_category(jira: Invoke
     assert result.stderr.endswith(
         "error: fields updated, but assigning failed: permission denied (HTTP 403)\n"
     )
+
+
+def test_fields_updated_but_an_assignment_the_api_lacks_says_so(jira: Invoke) -> None:
+    """The assignee path answers a 404 without Jira's error: a mismatch, after the edit landed."""
+    with respx.mock(base_url=BASE) as mock:
+        mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        mock.put("/rest/api/2/issue/ABC-1/assignee").mock(
+            return_value=httpx.Response(404, text="<html/>")
+        )
+        result = jira(["issues", "patch", "ABC-1", "--summary", "x", "--assignee", "bob", "--yes"])
+
+    assert result.exit_code == 1, result.output
+    assert "error: fields updated, but assigning failed: " in result.stderr

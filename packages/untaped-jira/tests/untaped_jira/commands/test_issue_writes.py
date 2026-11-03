@@ -226,7 +226,7 @@ def test_patch_assignee_me_resolves_the_authenticated_user(jira: Invoke) -> None
     assert json.loads(route.calls[0].request.content) == {"name": "jdoe"}
 
 
-def test_patch_dry_run_shows_the_edit_and_assignee_requests(jira: Invoke) -> None:
+def test_patch_dry_run_shows_the_edit_and_the_assignment(jira: Invoke) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "jdoe"}))
         mock.get("/rest/api/2/issue/ABC-1").mock(
@@ -239,9 +239,9 @@ def test_patch_dry_run_shows_the_edit_and_assignee_requests(jira: Invoke) -> Non
 
     assert result.exit_code == 0, result.output
     assert (
-        "PUT /rest/api/2/issue/ABC-1\n"
+        "update ABC-1\n"
         '  summary: "Summary of ABC-1" → "New"\n'
-        "PUT /rest/api/2/issue/ABC-1/assignee\n"
+        "assign ABC-1\n"
         "  assignee: (none) → jdoe\n"
     ) in result.stderr
     assert len(route.calls) == 0
@@ -308,4 +308,4 @@ def test_links_create_dry_run_states_the_direction_in_words(jira: Invoke) -> Non
 
     assert result.exit_code == 0, result.output
     assert "reads as: ABC-1 <outward phrase of 'Blocks'> ABC-2" in result.stderr
-    assert "POST /rest/api/2/issueLink" in result.stderr
+    assert "link ABC-1 to ABC-2" in result.stderr

@@ -114,7 +114,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `github.server.verify_tls` | boolean or path | `true` | `UNTAPED_GITHUB__SERVER__VERIFY_TLS` | Check the server's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync`, workspace and `ansible source refresh` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
-| `github.server_version` | server version (optional) | unset | `UNTAPED_GITHUB__SERVER_VERSION` | Which GitHub the server runs, instead of detecting it: `github.com` or `GitHub Enterprise Server 3.14.2`. |
+| `github.server_version` | string (optional) | unset | `UNTAPED_GITHUB__SERVER_VERSION` | Which GitHub the server runs, instead of detecting it: `github.com` or `GitHub Enterprise Server 3.14.2`. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists for workspace (repo names, the picker). With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists for workspace. |
@@ -127,12 +127,12 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 |---|---|---|---|---|
 | `jira.server.url` | URL | unset | `UNTAPED_JIRA__SERVER__URL` | Jira Data Center URL, for example `https://jira.example.com`. |
 | `jira.server.verify_tls` | boolean or path | `true` | `UNTAPED_JIRA__SERVER__VERIFY_TLS` | Check Jira's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
-| `jira.api_prefix` | string | `/rest/api/2` | `UNTAPED_JIRA__API_PREFIX` | Jira platform REST prefix. |
-| `jira.agile_prefix` | string | `/rest/agile/1.0` | `UNTAPED_JIRA__AGILE_PREFIX` | Jira Software (boards, sprints) REST prefix. |
+| `jira.server_version` | string (optional) | unset | `UNTAPED_JIRA__SERVER_VERSION` | The Jira the server runs, such as `Jira Data Center 11.2.1`, instead of detecting it; set it beside `server.url`. |
 | `jira.assigned_jql` | string | `assignee = currentUser() AND resolution = Unresolved` | `UNTAPED_JIRA__ASSIGNED_JQL` | Base JQL for `issues assigned`, and for `issues search` with no query. |
 | `jira.default_project` | string (optional) | unset | `UNTAPED_JIRA__DEFAULT_PROJECT` | Project key `issues create` uses when `--project` is omitted. |
 | `jira.default_board_id` | integer (optional) | unset | `UNTAPED_JIRA__DEFAULT_BOARD_ID` | Board `sprints list` uses when `--board-id` is omitted. |
 | `jira.page_size` | integer | `50` | `UNTAPED_JIRA__PAGE_SIZE` | Results requested per Jira API page. Above 0. |
+| `jira.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_JIRA__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `lint`
 
@@ -174,6 +174,8 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | `github.token` | `UNTAPED_GITHUB__TOKEN` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `github.token_command` | `UNTAPED_GITHUB__TOKEN_COMMAND` | none | deleted in 12.0; store the token with `untaped auth login github` |
 | `jira.base_url` | `UNTAPED_JIRA__BASE_URL` | `jira.server.url` | retired |
+| `jira.agile_prefix` | `UNTAPED_JIRA__AGILE_PREFIX` | none | deleted in 12.0; jira detects which Jira it talks to and the API it serves; a context path goes in jira.server.url |
+| `jira.api_prefix` | `UNTAPED_JIRA__API_PREFIX` | none | deleted in 12.0; jira detects which Jira it talks to and the API it serves; a context path goes in jira.server.url |
 | `jira.confirm` | `UNTAPED_JIRA__CONFIRM` | none | deleted in 12.0; jira asks before writes that replace or remove; pass --yes to skip the question |
 
 ## See also

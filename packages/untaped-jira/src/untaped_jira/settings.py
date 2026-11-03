@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from untaped.sdk.health import NeedsSetup, Retired
 from untaped.sdk.network import Credential, CredentialKey, TlsVerify
+from untaped_jira.server import JiraVersion
 
 DEFAULT_ASSIGNED_JQL = "assignee = currentUser() AND resolution = Unresolved"
 
@@ -38,6 +39,14 @@ class JiraSettings(BaseModel):
             note="deleted in 12.0; jira asks before writes that replace or remove; "
             "pass --yes to skip the question"
         ),
+        "api_prefix": Retired(
+            note="deleted in 12.0; jira detects which Jira it talks to and the API it serves; "
+            "a context path goes in jira.server.url"
+        ),
+        "agile_prefix": Retired(
+            note="deleted in 12.0; jira detects which Jira it talks to and the API it serves; "
+            "a context path goes in jira.server.url"
+        ),
     }
 
     model_config = ConfigDict(frozen=True)
@@ -49,9 +58,12 @@ class JiraSettings(BaseModel):
             "stored with `untaped auth login jira`."
         ),
     )
-    api_prefix: str = Field(default="/rest/api/2", description="Jira platform REST prefix.")
-    agile_prefix: str = Field(
-        default="/rest/agile/1.0", description="Jira Software (boards, sprints) REST prefix."
+    server_version: JiraVersion | None = Field(
+        default=None,
+        description=(
+            "The Jira the server runs, such as `Jira Data Center 11.2.1`, instead of "
+            "detecting it; set it beside `server.url`."
+        ),
     )
     assigned_jql: str = Field(
         default=DEFAULT_ASSIGNED_JQL,
@@ -69,13 +81,6 @@ class JiraSettings(BaseModel):
     def url(self) -> str | None:
         """The server's URL as text, or ``None`` while it is not set up."""
         return None if self.server is None else str(self.server.url)
-
-    @field_validator("api_prefix", "agile_prefix")
-    @classmethod
-    def _prefix_shape(cls, value: str) -> str:
-        if not value.startswith("/"):
-            raise ValueError("API prefixes must start with '/'")
-        return value.rstrip("/") or "/"
 
     @field_validator("assigned_jql")
     @classmethod

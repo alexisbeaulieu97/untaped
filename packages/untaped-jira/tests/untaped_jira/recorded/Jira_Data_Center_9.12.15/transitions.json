@@ -1,0 +1,33 @@
+{
+  "expand": "transitions",
+  "transitions": [
+    {
+      "id": "21",
+      "name": "Start Progress",
+      "to": {
+        "self": "https://jira.example.com/rest/api/2/status/3",
+        "name": "In Progress",
+        "id": "3",
+        "statusCategory": {
+          "id": 4,
+          "key": "indeterminate",
+          "name": "In Progress"
+        }
+      }
+    },
+    {
+      "id": "31",
+      "name": "Done",
+      "to": {
+        "self": "https://jira.example.com/rest/api/2/status/10001",
+        "name": "Done",
+        "id": "10001",
+        "statusCategory": {
+          "id": 4,
+          "key": "done",
+          "name": "Done"
+        }
+      }
+    }
+  ]
+}

@@ -382,7 +382,7 @@ into the test's home; `.run(Greet())` and `.cli("hello say ada")` return a
 runs, and `run.diagnostics` are the typed lines the block itself shows, as
 `Ran.diagnostics` are a command's (a command run inside reports on its own
 `Ran`), and `run.http` is the factory a client class takes
-(`JiraClient(settings, http=run.http)`); `clock`, `terminal` (absent until
+(`AcmeClient(settings, http=run.http)`); `clock`, `terminal` (absent until
 scripted) and `credentials` are the clock, terminal and password store commands
 meet; and `check(install(Hello))` guards its composition checks. To waive a
 rule on one line, see [Enforcement](./reference/conventions.md#enforcement).

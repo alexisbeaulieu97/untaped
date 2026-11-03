@@ -1,8 +1,9 @@
 """Readable write previews and which patches replace or remove (pure, no I/O).
 
-A preview is one ``METHOD path`` line per request followed by indented
-``field: old → new`` lines, instead of the raw JSON body. Old values come
-from the caller (the issue as it is now) and are ``None`` when not fetched.
+A preview is one line per change a write makes (``update ABC-1``) followed
+by indented ``field: old → new`` lines, instead of a request body. Old
+values come from the caller (the issue as it is now) and are ``None`` when
+not fetched.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import json
 import textwrap
 from collections.abc import Mapping
 from typing import Any
+
+from untaped_jira.records import Transition
 
 _ARROW = "→"
 _TEXT_LIMIT = 60
@@ -130,7 +133,7 @@ def referenced_fields(payload: Mapping[str, Any] | None) -> list[str]:
 
 
 def transition_changes(
-    transition: Mapping[str, Any],
+    transition: Transition,
     current: Mapping[str, Any] | None,
     *,
     available: bool = True,
@@ -142,11 +145,11 @@ def transition_changes(
     ``current`` is the issue's fields, ``None`` when they could not be read;
     ``available=False`` says the transition is not offered from its status.
     """
-    transition_id, name, target = transition.get("id"), transition.get("name"), transition.get("to")
+    transition_id, name = transition.id, transition.name
     if not available:
         after = "(not available from this status)"
     else:
-        after = render_value(target) if target else "(unknown)"
+        after = transition.to_status or "(unknown)"
     before = "(unknown)" if current is None else render_value(current.get("status"))
     lines = [
         f"transition: {name} ({transition_id})" if name else f"transition: {transition_id}",

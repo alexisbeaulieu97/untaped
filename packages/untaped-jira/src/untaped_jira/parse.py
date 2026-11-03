@@ -1,4 +1,8 @@
-"""Jira REST payloads turned into the records ``untaped jira`` writes."""
+"""REST API 2 payloads turned into the records ``untaped jira`` writes.
+
+The Data Center adapter's parsing (:mod:`untaped_jira.data_center`):
+nothing else reads Jira's JSON.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +11,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from untaped.sdk import parse_utc
+from untaped_jira.keys import browse_url
 from untaped_jira.records import (
     Board,
     Comment,
@@ -248,10 +253,3 @@ def _browser_url(data: Mapping[str, Any]) -> str:
     if isinstance(self_url, str) and "/rest/api/" in self_url and isinstance(key, str):
         return browse_url(self_url.split("/rest/api/", 1)[0], key) or ""
     return self_url if isinstance(self_url, str) else ""
-
-
-def browse_url(base_url: str | None, key: str) -> str | None:
-    """The browser URL of issue ``key`` on the Jira at ``base_url``."""
-    if not base_url:
-        return None
-    return f"{base_url.rstrip('/')}/browse/{key}"

@@ -1,7 +1,7 @@
 """CLI tests for which writes ask first and the readable write previews.
 
 A write that replaces or removes asks first; one that only adds never does.
-The preview shows each request as ``field: old → new`` lines, reading the
+The preview shows each change as ``field: old → new`` lines, reading the
 issue's current values only when a preview is shown.
 """
 
@@ -178,11 +178,11 @@ def test_patch_preview_diffs_current_values(run: Run) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1") == [
-        "PUT /rest/api/2/issue/ABC-1",
+    assert _preview(result.stderr, "update ABC-1") == [
+        "update ABC-1",
         '  summary: "Old title" → "New title"',
         '  labels: ["infra"] (unchanged)',
-        "PUT /rest/api/2/issue/ABC-1/assignee",
+        "assign ABC-1",
         "  assignee: alice → bob",
     ]
     requested = set(issue.calls[0].request.url.params["fields"].split(","))
@@ -201,12 +201,12 @@ def test_patch_preview_shows_update_operations_and_unassign(tmp_path: Path, run:
     )
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1") == [
-        "PUT /rest/api/2/issue/ABC-1",
+    assert _preview(result.stderr, "update ABC-1") == [
+        "update ABC-1",
         '  labels: + "urgent"',
         '  labels: - "infra"',
         '  labels: ["infra"] → ["a", "b"]',
-        "PUT /rest/api/2/issue/ABC-1/assignee",
+        "assign ABC-1",
         "  assignee: alice → (none)",
     ]
 
@@ -215,7 +215,7 @@ def test_patch_preview_shortens_long_text(run: Run) -> None:
     result, _, _ = run(["issues", "patch", "ABC-1", "--description", "x" * 200, "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    line = _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1]
+    line = _preview(result.stderr, "update ABC-1")[1]
     assert line.startswith('  description: "aaa')
     assert '…" → "xxx' in line
     assert line.endswith('…"')
@@ -251,8 +251,8 @@ def test_transition_preview_shows_the_status_change(run: Run) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions") == [
-        "POST /rest/api/2/issue/ABC-1/transitions",
+    assert _preview(result.stderr, "transition ABC-1") == [
+        "transition ABC-1",
         "  transition: Start Progress (31)",
         "  status: To Do → In Progress",
         "  resolution: (none) → Fixed",
@@ -266,7 +266,7 @@ def test_patch_preview_compares_whole_values_but_shows_them_short(run: Run) -> N
     result, _, _ = run(["issues", "patch", "ABC-1", "--description", new, "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    line = _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1]
+    line = _preview(result.stderr, "update ABC-1")[1]
     assert "(unchanged)" not in line
     assert " → " in line
 
@@ -287,7 +287,7 @@ def test_patch_preview_names_old_values_the_way_the_new_value_does(
     result, _, _ = run(["issues", "patch", "ABC-1", "--set-json", assignment, "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "PUT /rest/api/2/issue/ABC-1")[1] == f"  {expected}"
+    assert _preview(result.stderr, "update ABC-1")[1] == f"  {expected}"
 
 
 def test_patch_preview_reads_only_fields_it_diffs(tmp_path: Path, run: Run) -> None:
@@ -339,7 +339,7 @@ def test_transition_preview_reuses_the_resolved_transition_for_each_key(jira: In
 
     assert result.exit_code == 0, result.output
     for key in ("ABC-1", "ABC-2"):
-        assert _preview(result.stderr, f"POST /rest/api/2/issue/{key}/transitions")[1:3] == [
+        assert _preview(result.stderr, f"transition {key}")[1:3] == [
             "  transition: Start Progress (31)",
             "  status: To Do → In Progress",
         ]
@@ -379,19 +379,15 @@ def test_a_failed_preview_read_shows_unknown_instead_of_aborting(jira: Invoke) -
         )
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions")[2] == (
-        "  status: To Do → In Progress"
-    )
-    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-2/transitions")[2] == (
-        "  status: (unknown) → In Progress"
-    )
+    assert _preview(result.stderr, "transition ABC-1")[2] == ("  status: To Do → In Progress")
+    assert _preview(result.stderr, "transition ABC-2")[2] == ("  status: (unknown) → In Progress")
 
 
 def test_transition_preview_flags_an_unavailable_id(run: Run) -> None:
     result, _, _ = run(["issues", "transition", "ABC-1", "--id", "99", "--dry-run"])
 
     assert result.exit_code == 0, result.output
-    assert _preview(result.stderr, "POST /rest/api/2/issue/ABC-1/transitions")[1:] == [
+    assert _preview(result.stderr, "transition ABC-1")[1:] == [
         "  transition: 99",
         "  status: To Do → (not available from this status)",
     ]
@@ -433,7 +429,7 @@ def test_create_preview_lists_the_new_values(run: Run) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stderr.splitlines() == [
-        "POST /rest/api/2/issue",
+        "create an issue",
         "  project: ABC",
         "  issuetype: Bug",
         '  summary: "Fix deploy"',
@@ -447,7 +443,7 @@ def test_comment_preview_shows_the_whole_body(run: Run) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stderr.splitlines() == [
-        "POST /rest/api/2/issue/ABC-1/comment",
+        "comment on ABC-1",
         "  comment:",
         "    one",
         "",
@@ -460,7 +456,7 @@ def test_link_preview_reads_in_words(run: Run) -> None:
 
     assert result.exit_code == 0, result.output
     assert result.stderr.splitlines() == [
-        "POST /rest/api/2/issueLink",
+        "link ABC-1 to ABC-2",
         "  reads as: ABC-1 <outward phrase of 'Blocks'> ABC-2",
     ]
 
