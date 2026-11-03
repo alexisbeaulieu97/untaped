@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import os
 import shutil
-import subprocess
-import sys
 import threading
 import tomllib
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from untaped.sdk import ErrorCategory, UsageError
+from untaped.sdk import ErrorCategory
 from untaped_recipe.domain.pack import InstalledPack, PackManifest, parse_ref
 from untaped_recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
-    PackFetchError,
     PackNotFoundError,
     RecipeError,
     RecipeNotFoundError,
@@ -28,9 +22,6 @@ from untaped_recipe.infrastructure import pack_store
 from untaped_recipe.infrastructure.pack_store import (
     PackLibrary,
     changed_hook_files,
-    checkout_commit,
-    fetch_pack_source,
-    is_git_url,
     pack_content_hash,
 )
 
@@ -471,158 +462,6 @@ def test_pack_library_reconcile_reports_stale_index_and_orphan_directory(
     }
 
 
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [
-        ("https://example.test/pack.git", True),
-        ("git@example.test:pack.git", True),
-        ("ssh://example.test/pack.git", True),
-        ("file:///tmp/pack.git", False),
-        ("./local-pack", False),
-        ("ansible/playbook", False),
-    ],
-)
-def test_is_git_url_matches_supported_cli_prefixes(value: str, expected: bool) -> None:
-    assert is_git_url(value) is expected
-
-
-def test_fetch_pack_source_clones_local_file_url(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    _write_pack(
-        repo,
-        manifest_name="ansible",
-        recipes={"playbook": "recipes/playbook/recipe.yml"},
-    )
-    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
-    subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(
-        ["git", "commit", "--no-gpg-sign", "-m", "initial"],
-        cwd=repo,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-
-    checkout = fetch_pack_source(repo.as_uri(), rev=None, dest=tmp_path / "checkout")
-
-    assert checkout == tmp_path / "checkout"
-    assert (checkout / "pyproject.toml").is_file()
-    assert (checkout / "recipes" / "playbook" / "recipe.yml").is_file()
-
-
-def _git_pack_repo(tmp_path: Path) -> tuple[Path, str]:
-    repo = tmp_path / "repo"
-    _write_pack(repo, manifest_name="ansible", recipes={"playbook": "recipes/playbook/recipe.yml"})
-    shutil.rmtree(repo / ".git")
-    git = ["git", "-c", "user.email=test@example.invalid", "-c", "user.name=Test User"]
-    subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(
-        [*git, "commit", "--no-gpg-sign", "-m", "first"],
-        cwd=repo,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    first = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
-    ).stdout.strip()
-    (repo / "later.txt").write_text("later\n", encoding="utf-8")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True)
-    subprocess.run(
-        [*git, "commit", "--no-gpg-sign", "-m", "second"],
-        cwd=repo,
-        check=True,
-        stdout=subprocess.PIPE,
-    )
-    return repo, first
-
-
-def test_fetch_pack_source_checks_out_commit_rev(tmp_path: Path) -> None:
-    repo, first = _git_pack_repo(tmp_path)
-
-    checkout = fetch_pack_source(repo.as_uri(), rev=first, dest=tmp_path / "checkout")
-
-    assert (checkout / "pyproject.toml").is_file()
-    assert not (checkout / "later.txt").exists()
-    assert checkout_commit(checkout) == first
-
-
-def test_checkout_commit_resolves_a_branch_checkout_to_its_sha(tmp_path: Path) -> None:
-    repo, _ = _git_pack_repo(tmp_path)
-    head = subprocess.run(
-        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-    checkout = fetch_pack_source(repo.as_uri(), rev=None, dest=tmp_path / "checkout")
-
-    assert checkout_commit(checkout) == head
-
-
-def test_checkout_commit_reports_a_non_git_directory(tmp_path: Path) -> None:
-    with pytest.raises(PackFetchError, match="rev-parse"):
-        checkout_commit(tmp_path)
-
-
-def _fake_git(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, status: int = 0, stderr: str = ""
-) -> Path:
-    """Put a ``git`` first on ``PATH`` that records each run (argv, env) and exits ``status``.
-
-    Its ``config`` probe (the ssh command lookup) finds nothing and is not recorded.
-    """
-    calls = tmp_path / "git-calls.jsonl"
-    bin_dir = tmp_path / "fake-bin"
-    bin_dir.mkdir()
-    script = bin_dir / "git"
-    script.write_text(
-        f"#!{sys.executable}\n"
-        "import json, os, sys\n"
-        "if sys.argv[1:2] == ['config']:\n    sys.exit(1)\n"
-        f"with open({str(calls)!r}, 'a') as f:\n"
-        "    f.write(json.dumps({'argv': sys.argv[1:], 'env': dict(os.environ),"
-        " 'stdin': sys.stdin.read()}) + '\\n')\n"
-        f"sys.stderr.write({stderr!r})\n"
-        f"sys.exit({status})\n",
-        encoding="utf-8",
-    )
-    script.chmod(0o755)
-    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
-    return calls
-
-
-def _git_calls(calls: Path) -> list[dict[str, Any]]:
-    if not calls.exists():
-        return []
-    return [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
-
-
-def test_fetch_pack_source_rejects_option_like_rev(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _fake_git(tmp_path, monkeypatch)
-
-    with pytest.raises(UsageError, match="rev"):
-        fetch_pack_source(
-            "https://example.invalid/p.git", rev="--upload-pack=x", dest=tmp_path / "d"
-        )
-    assert _git_calls(calls) == []
-
-
-def test_fetch_pack_source_does_not_retry_full_clone_on_auth_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = _fake_git(
-        tmp_path, monkeypatch, status=128, stderr="fatal: Authentication failed for 'https://x/'"
-    )
-
-    with pytest.raises(PackFetchError, match="Authentication failed"):
-        fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
-    assert len(_git_calls(calls)) == 1
-
-
 def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -651,25 +490,6 @@ def test_pack_library_force_replace_keeps_old_pack_when_copy_fails(
     assert (library_dir / "packs.toml").read_text() == index_before
     assert sorted(path.name for path in library_dir.iterdir()) == [".lock", "packs", "packs.toml"]
     assert [path.name for path in (library_dir / "packs").iterdir()] == ["ansible"]
-
-
-def test_fetch_pack_source_runs_git_non_interactive_in_c_locale(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("LC_ALL", "fr_FR.UTF-8")
-    monkeypatch.setenv("LANGUAGE", "fr")
-    calls = _fake_git(tmp_path, monkeypatch)
-
-    fetch_pack_source("https://x/p.git", rev="v1", dest=tmp_path / "d")
-
-    (seen,) = _git_calls(calls)
-    env = seen["env"]
-    assert env["LC_ALL"] == "C"
-    assert env["LANGUAGE"] == "C"
-    assert env["GIT_TERMINAL_PROMPT"] == "0"
-    assert env["GCM_INTERACTIVE"] == "never"
-    assert seen["stdin"] == ""  # /dev/null, never the terminal
 
 
 def test_pack_library_force_replace_keeps_retired_pack_when_swap_and_rollback_fail(

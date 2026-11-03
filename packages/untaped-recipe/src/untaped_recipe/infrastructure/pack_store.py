@@ -14,9 +14,8 @@ from pathlib import Path
 
 import tomlkit
 
-from untaped.sdk import ErrorCategory, UsageError, attribution, not_found
+from untaped.sdk import ErrorCategory, not_found
 from untaped.sdk.storage import atomic_write, file_lock
-from untaped_git.api import GitCommandError, run_git
 from untaped_recipe.domain.hook_project import hook_module_file
 from untaped_recipe.domain.pack import (
     HookEntry,
@@ -31,7 +30,6 @@ from untaped_recipe.errors import (
     AmbiguousRefError,
     HookNotFoundError,
     LocalChangesError,
-    PackFetchError,
     PackNotFoundError,
     PartialRemovalError,
     PathNotFoundError,
@@ -44,9 +42,6 @@ from untaped_recipe.infrastructure.pack_files import (
     read_pack_manifest,
 )
 
-_GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
-_GIT_CLONE_TIMEOUT = 600.0
-_GIT_REV_PARSE_TIMEOUT = 30.0
 _HOOK_ENVIRONMENT_FILES = frozenset(
     {"pyproject.toml", "uv.lock", "uv.toml", ".python-version", "setup.cfg"}
 )
@@ -385,6 +380,10 @@ class PackLibrary:
         self._load_errors = load_errors
         return installed
 
+    def sources(self) -> dict[str, str]:
+        """Return ``{pack name: recorded source}`` from ``packs.toml``, broken packs included."""
+        return {name: entry.source for name, entry in self._read_index().items()}
+
     def load_errors(self) -> dict[str, str]:
         """Return ``{pack name: error}`` for installed packs that failed to load."""
         self.packs()
@@ -583,64 +582,3 @@ def local_edits_message(installed_name: str) -> str:
 
 def _ref_text(ref: PackRef) -> str:
     return f"{ref.pack}/{ref.name}" if ref.pack is not None else ref.name
-
-
-def is_git_url(value: str) -> bool:
-    """Return true when the CLI should treat ``value`` as a git URL."""
-    return value.startswith(_GIT_URL_PREFIXES)
-
-
-def fetch_pack_source(url: str, *, rev: str | None, dest: Path) -> Path:
-    """Clone a pack source URL into ``dest`` and return the checkout path.
-
-    A ``rev`` is tried as a branch/tag with a shallow clone first; only when
-    git reports that no such branch exists (e.g. a commit sha) does it fall
-    back to a full clone plus ``checkout``. Other failures (auth, network)
-    surface immediately.
-    """
-    if rev is not None and (not rev.strip() or rev.startswith("-")):
-        raise UsageError(f"invalid --rev: {rev!r}")
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    clone_args = ["clone", "--depth", "1"]
-    if rev is not None:
-        clone_args.extend(["--branch", rev])
-    clone_args.extend(["--", url, str(dest)])
-    try:
-        _run_git(clone_args)
-    except PackFetchError as exc:
-        if rev is None or not _is_missing_branch_error(str(exc)):
-            raise
-        if dest.exists():
-            shutil.rmtree(dest)
-        _run_git(["clone", "--", url, str(dest)])
-        _run_git(["checkout", "--detach", rev, "--"], cwd=dest)
-    return dest
-
-
-def checkout_commit(checkout: Path) -> str:
-    """Return the full commit SHA checked out at ``checkout``."""
-    try:
-        result = run_git(
-            ["rev-parse", "--verify", "HEAD^{commit}"],
-            cwd=checkout,
-            timeout=_GIT_REV_PARSE_TIMEOUT,
-            capture=True,
-            ceiling=True,
-        )
-    except GitCommandError as exc:
-        raise PackFetchError(str(exc), **attribution(exc)) from exc
-    return result.text.strip()
-
-
-def _is_missing_branch_error(message: str) -> bool:
-    """Whether ``git clone --branch`` failed only because the ref is not a branch/tag."""
-    lowered = message.lower()
-    return "not found in upstream" in lowered or "could not find remote branch" in lowered
-
-
-def _run_git(args: list[str], *, cwd: Path | None = None) -> None:
-    """Run git non-interactively in the C locale (see :func:`_is_missing_branch_error`)."""
-    try:
-        run_git(args, cwd=cwd, timeout=_GIT_CLONE_TIMEOUT)
-    except GitCommandError as exc:
-        raise PackFetchError(str(exc), **attribution(exc)) from exc

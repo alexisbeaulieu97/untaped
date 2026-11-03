@@ -126,6 +126,16 @@ def test_an_annotated_tag_maps_to_its_commit(remote: GitRemote, tmp_path: Path) 
     assert refs == {"HEAD": remote.oid("main"), "refs/tags/v2": remote.oid("main")}
 
 
+def test_an_annotated_tag_asked_by_name_maps_to_its_commit(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    remote.tag("v2", message="release")
+
+    refs = ls_remote(remote.url, ["refs/tags/v2"], root=tmp_path / "s", auth=lambda _: None)
+
+    assert refs == {"refs/tags/v2": remote.oid("main")}
+
+
 def test_an_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
     planted = tmp_path / "planted"
     with pytest.raises(GitError):

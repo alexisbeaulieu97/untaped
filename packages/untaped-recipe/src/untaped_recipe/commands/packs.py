@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,12 +39,15 @@ from untaped_recipe.errors import (
 )
 from untaped_recipe.infrastructure import pack_scaffold
 from untaped_recipe.infrastructure.pack_files import read_pack_manifest
-from untaped_recipe.infrastructure.pack_store import (
-    PackLibrary,
-    changed_hook_files,
-    checkout_commit,
+from untaped_recipe.infrastructure.pack_sources import (
     fetch_pack_source,
     is_git_url,
+    release_unused_sources,
+)
+from untaped_recipe.infrastructure.pack_store import (
+    AddResult,
+    PackLibrary,
+    changed_hook_files,
     local_edits_message,
     pack_content_hash,
     validate_pack,
@@ -150,9 +153,13 @@ class Add(RecipeCommand):
 
     --name sets the installed name, the pack's identity everywhere. A local
     source is recorded as an absolute path; a git source records the
-    requested --rev and the commit it resolved to. A git fetch that times out
-    exits 5. Installing a pack installs code that runs as you: `untaped docs
-    recipe guides hooks`.
+    requested --rev (a branch, a tag, or a commit one of them reaches; the
+    default branch without it) and the commit it resolved to. A git source is
+    fetched through the repo store (`untaped git store`), with the credentials
+    a host's plugin supplies. A rev the remote lacks, or a short commit id
+    that names several commits, exits 1; a git fetch that times out exits 5.
+    Installing a pack installs code that runs as you: `untaped docs recipe
+    guides hooks`.
 
     Examples
     --------
@@ -177,31 +184,23 @@ class Add(RecipeCommand):
         # Record where the pack came from, not where the shell happened to be.
         source = self.source if git else str(Path(self.source).expanduser().absolute())
         with recipe_errors(), tempfile.TemporaryDirectory() as temp_root:
-            source_dir = (
-                fetch_pack_source(source, rev=self.rev, dest=Path(temp_root) / "pack")
-                if git
-                else Path(source)
-            )
-            commit = checkout_commit(source_dir) if git else None
-            manifest = read_pack_manifest(source_dir)
-            # Validate before the pack summary: error output leads, and the
-            # summary follows only on a pack that will actually install.
-            validate_pack(source_dir, manifest)
-            installed_name = self.name or manifest.name
             library = self.library()
-            edited = self.force and library.local_edits(installed_name)
-            if edited and not self.discard_edits:
-                raise LocalChangesError(local_edits_message(installed_name))
-            self._summary(installed_name, manifest, local_edits=edited)
-            added = library.add(
-                source_dir,
-                source=source,
-                rev=self.rev,
-                commit=commit,
-                name=self.name,
-                force=self.force,
-                discard_edits=self.discard_edits,
-            )
+            previous = library.sources()
+            try:
+                source_dir = Path(temp_root) / "pack" if git else Path(source)
+                commit = (
+                    fetch_pack_source(source, rev=self.rev, dest=source_dir, plugin=self.ctx.plugin)
+                    if git
+                    else None
+                )
+                installed_name, added = self._install(library, source, source_dir, commit)
+            except Exception:
+                # Nothing was installed: the URL's store repo stays only for a
+                # pack using it. Best effort, like every release here: an add
+                # of the same URL running at this moment may have to run again.
+                _release_unused(library, [source], plugin=self.ctx.plugin)
+                raise
+            _release_unused(library, [previous.get(installed_name, "")], plugin=self.ctx.plugin)
         return AddOutcome(
             name=installed_name,
             action="updated" if added.replaced else "created",
@@ -209,6 +208,30 @@ class Add(RecipeCommand):
             rev=self.rev,
             commit=commit,
         )
+
+    def _install(
+        self, library: PackLibrary, source: str, source_dir: Path, commit: str | None
+    ) -> tuple[str, AddResult]:
+        """Validate the fetched or local pack in ``source_dir`` and install it."""
+        manifest = read_pack_manifest(source_dir)
+        # Validate before the pack summary: error output leads, and the
+        # summary follows only on a pack that will actually install.
+        validate_pack(source_dir, manifest)
+        installed_name = self.name or manifest.name
+        edited = self.force and library.local_edits(installed_name)
+        if edited and not self.discard_edits:
+            raise LocalChangesError(local_edits_message(installed_name))
+        self._summary(installed_name, manifest, local_edits=edited)
+        added = library.add(
+            source_dir,
+            source=source,
+            rev=self.rev,
+            commit=commit,
+            name=self.name,
+            force=self.force,
+            discard_edits=self.discard_edits,
+        )
+        return installed_name, added
 
     def _summary(self, name: str, manifest: PackManifest, *, local_edits: bool) -> None:
         diag = self.ctx.diag
@@ -251,7 +274,13 @@ class Sync(RecipeCommand):
             failed: dict[str, UntapedError] = {}
 
             def fetch_one(pack: InstalledPack) -> _SyncPlan:
-                return _fetch(library, pack, Path(temp_root), discard=self.discard_edits)
+                return _fetch(
+                    library,
+                    pack,
+                    Path(temp_root),
+                    discard=self.discard_edits,
+                    plugin=self.ctx.plugin,
+                )
 
             fetch = as_recipe_error(fetch_one)
             for name, pack in selected.items():
@@ -333,7 +362,8 @@ class Remove(RecipeCommand):
     """Remove installed packs.
 
     Warns when a library copy has local edits. A `partial` row means removal
-    stopped partway; running it again finishes it.
+    stopped partway; running it again finishes it. The repo store releases a
+    git source no installed pack uses any more.
     """
 
     names: Positional[list[str]] = Field(default_factory=list, description="Installed pack names.")
@@ -346,6 +376,7 @@ class Remove(RecipeCommand):
             library = self.library()
             selected = self.stdin.identifiers(self.names)
             installed = {pack.name: pack for pack in library.packs()}
+            sources = library.sources()
             # A removal that stopped partway leaves a name only reconcile() still sees.
             known = set(installed) | set(library.load_errors()) | set(library.reconcile())
             for name in selected:
@@ -382,21 +413,36 @@ class Remove(RecipeCommand):
                     rows.append(
                         _outcome(RemoveOutcome, name, installed.get(name), action="removed")
                     )
+            # Every source the library had: those still installed are kept.
+            _release_unused(library, sources.values(), plugin=self.ctx.plugin)
         return iter(rows)
 
 
+def _release_unused(library: PackLibrary, released: Iterable[str], *, plugin: object) -> None:
+    """Release the store repos of ``released`` git URLs no pack in ``packs.toml`` uses now.
+
+    An index that cannot be read releases nothing: a repo kept is refetched,
+    one released while a pack uses it is not.
+    """
+    try:
+        installed = list(library.sources().values())
+    except ValueError, OSError:
+        return
+    release_unused_sources(released, installed, plugin=plugin)
+
+
 def _fetch(
-    library: PackLibrary, pack: InstalledPack, temp_root: Path, *, discard: bool
+    library: PackLibrary, pack: InstalledPack, temp_root: Path, *, discard: bool, plugin: object
 ) -> _SyncPlan:
     """Fetch ``pack``'s recorded source and tell whether installing it changes files."""
     if not pack.source:
         raise RecipeError("no recorded source", hint=run_hint(Add.spelled()))
     commit = None
     if is_git_url(pack.source):
-        source_dir = fetch_pack_source(
-            pack.source, rev=pack.rev or None, dest=temp_root / pack.name
+        source_dir = temp_root / pack.name
+        commit = fetch_pack_source(
+            pack.source, rev=pack.rev or None, dest=source_dir, plugin=plugin
         )
-        commit = checkout_commit(source_dir)
     else:
         source_dir = Path(pack.source).expanduser()
         if not source_dir.is_absolute():
