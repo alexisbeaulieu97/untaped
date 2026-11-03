@@ -119,7 +119,8 @@ class Steps:
         self._runner = runner
         self._now = now
         self._checked: dict[str, Checked] = {}
-        """The last check of each step in this run, so ``status`` after ``apply`` reruns none."""
+        """The last check of each step in this run, so the status ``apply`` writes reruns
+        none of the checks its steps just ran."""
 
     # -- entries -------------------------------------------------------------
 
@@ -388,6 +389,9 @@ class Steps:
         self._checked.clear()  # planned before files were placed: what the status reads reruns
         rows: list[ApplyOutcome] = []
         waiting = 0
+        unapplied: dict[tuple[str, str, str], list[str]] = {}
+        """Steps asked for that didn't end applied: noted on their item, so they stay
+        ``pending`` rather than turning ``new``."""
         for plan in plans:
             if plan.found.error is not None:  # unreadable, or its source's clone is stuck
                 rows.append(_row(plan, "failed", plan.detail, error=plan.found.error))
@@ -401,22 +405,18 @@ class Steps:
                 row, waits = self._apply(plan, runner, given=given, ask=ask)
                 rows.append(row)
                 waiting += waits
+                stored = row.action == "skipped" and _report_only(plan.entry.step)
+                if row.action in ("failed", "skipped") and not stored:
+                    unapplied.setdefault(plan.entry.owner, []).append(plan.entry.step.name)
+        for owner, names in unapplied.items():  # once a later step may have made its item row
+            self._store.note_waited(owner, [(name, WAITED) for name in names])
         return rows, waiting
 
     def _apply(
         self, plan: StepPlan, runner: StepRunner, *, given: Mapping[str, object], ask: Ask | None
     ) -> tuple[ApplyOutcome, bool]:
         """Check the step, run it when the check fails (asking its inputs only then), check
-        again; the row, and whether it waits for a person. A step that doesn't end applied is
-        noted on its item, so it stays ``pending`` rather than turning ``new``."""
-        row, waits = self._tried(plan, runner, given=given, ask=ask)
-        if row.action in ("failed", "skipped") and not (waits and _report_only(plan.entry.step)):
-            self._store.note_waited(plan.entry.owner, [(plan.entry.step.name, WAITED)])
-        return row, waits
-
-    def _tried(
-        self, plan: StepPlan, runner: StepRunner, *, given: Mapping[str, object], ask: Ask | None
-    ) -> tuple[ApplyOutcome, bool]:
+        again; the row, and whether it waits for a person."""
         entry, step = plan.entry, plan.entry.step
         script = self._script(entry)
         values = self._values(entry)

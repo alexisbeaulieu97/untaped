@@ -572,3 +572,21 @@ items:
     assert code == 1
     assert "isn't the one the preview showed" in str(rows[0]["detail"])
     assert not probe.mark.exists()
+
+
+def test_a_failed_step_before_an_applied_one_stays_pending(
+    make_remote: MakeRemote, probe: Probe
+) -> None:
+    broken = (
+        "      - name: first\n"
+        f"        check: {{command: {probe.argv('check')}}}\n"
+        f"        run: {probe.argv('broken')}\n"
+    )
+    package = _tool(probe).replace("    steps:\n", "    steps:\n" + broken)
+    subscribe(_source(make_remote, package).url, "--add", "tool")
+    code, rows, _ = _apply("--yes")
+    assert code == 1
+    actions = [(r["entry"], r["action"]) for r in rows]
+    assert actions == [("first", "failed"), ("install", "created")]
+    found = states()
+    assert (found["first"], found["install"]) == ("pending", "applied")
