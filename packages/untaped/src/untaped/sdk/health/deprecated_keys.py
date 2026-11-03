@@ -676,6 +676,20 @@ def old_spellings(model: type[BaseModel], key: str) -> list[str]:
     return sorted(olds, key=lambda old: _rank(mappings, old))
 
 
+def read_spelling(model: type[BaseModel], key: str, data: Mapping[str, Any]) -> str | None:
+    """The spelling of field ``key`` a run reads in one layer of section ``data``.
+
+    The reader's rule (:func:`_spellings`): ``key`` itself when present, even
+    as null, else the first old spelling still read that is present.
+    ``None`` when no spelling a run reads is present.
+    """
+    if _lookup(data, key) is not _MISSING:
+        return key
+    mappings = key_mappings(model)
+    found = _spellings(mappings, mappings.readable, data)
+    return next((keeper for new, keeper, _ in found if new == key), None)
+
+
 def _rank(mappings: KeyMappings, old: str) -> tuple[bool, int, str]:
     """Where ``old`` ranks among a field's old spellings: the reader's choice first.
 
@@ -742,6 +756,7 @@ __all__ = [
     "migration_moves",
     "notify_use",
     "old_spellings",
+    "read_spelling",
     "rename_keys",
     "reset_key_warnings",
     "scan_keys",
