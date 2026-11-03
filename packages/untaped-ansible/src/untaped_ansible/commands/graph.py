@@ -27,6 +27,7 @@ from untaped.sdk import (
     Output,
     Positional,
     Record,
+    Refresh,
     Short,
     Stdin,
     TreeGraph,
@@ -36,7 +37,9 @@ from untaped.sdk import (
     run_hint,
     tree_text,
 )
+from untaped.sdk.contracts import Errored, NoProviderReady, Ok, gather
 from untaped_ansible.application.graph import GraphDirection
+from untaped_ansible.checkouts import Checkout, CheckoutSource
 from untaped_ansible.commands._graph import (
     ALL_REFS,
     LIVE,
@@ -49,7 +52,8 @@ from untaped_ansible.commands._graph import (
     require_repo,
     within,
 )
-from untaped_ansible.commands.source import Refresh
+from untaped_ansible.commands.source import Refresh as SourceRefresh
+from untaped_ansible.domain.checkout_hits import checkout_hits
 from untaped_ansible.domain.containment import find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
 from untaped_ansible.domain.graph_roots import (
@@ -60,7 +64,7 @@ from untaped_ansible.domain.graph_roots import (
     root_from_line,
     root_from_record,
 )
-from untaped_ansible.domain.identity import repo_key
+from untaped_ansible.domain.identity import IdentityResolver, repo_key
 from untaped_ansible.domain.reach import Reach, reach
 from untaped_ansible.domain.renderers import graph_tree, render_graph
 from untaped_ansible.domain.variable_queries import (
@@ -71,12 +75,14 @@ from untaped_ansible.domain.variable_queries import (
 )
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.records import (
+    CheckoutHit,
     Dependency,
     DependencyMatch,
     Dependent,
     ReachedRow,
     VariableUseHit,
 )
+from untaped_ansible.settings import SOURCE_DATA
 
 
 class _Reaching(GraphCommand):
@@ -86,12 +92,21 @@ class _Reaching(GraphCommand):
     target_repo: str | None = Field(None, description=TARGET_REPO)
 
     def reached(
-        self, direction: Literal["deps", "impact"], *, ref: str | None, live: bool, all_refs: bool
+        self,
+        direction: Literal["deps", "impact"],
+        *,
+        ref: str | None,
+        live: bool,
+        all_refs: bool,
+        env: GraphEnv | None = None,
     ) -> list[Reach]:
-        """Each repository reached, after the warnings and the depth hint on stderr."""
+        """Each repository reached, after the warnings and the depth hint on stderr.
+
+        ``env`` is the command's own when it reads the source further.
+        """
         relation: EdgeRelation = "requires" if direction == "deps" else "impacts"
         check_all_refs(ref, all_refs=all_refs)
-        env = self.env(command=direction, live=live, all_refs=all_refs)
+        env = env or self.env(command=direction, live=live, all_refs=all_refs)
         repo = require_repo(env, self.role, target_repo=self.target_repo)
 
         def read() -> _Reached:
@@ -304,14 +319,94 @@ class Uses(_Reaching):
         }
         for selection in selections:
             if selection.key in involved or not involved:
-                self.ctx.diag.hint(run_hint(Refresh.spelled(shlex.quote(selection.label))))
+                self.ctx.diag.hint(run_hint(SourceRefresh.spelled(shlex.quote(selection.label))))
+
+
+class Checkouts(_Reaching):
+    """Show what checks out ROLE's dependents: one row per checkout.
+
+    Asks every installed plugin that fills ansible's CheckoutSource (with
+    its job templates, say) for its checkouts, and keeps those of a
+    dependent's repo. Each one hangs under the dependent at the ref it checks
+    out, its repo's default branch when it names none; one at a ref the
+    source holds no dependent at comes with no dependent (not in the source:
+    an empty cell in a table). A plugin
+    that wasn't asked, failed, or answered from its cache says so on stderr,
+    and the command still exits 0: an empty answer then means nobody was
+    asked, not that nothing checks the dependents out. --refresh and
+    --cached reach the checkouts as well as the source data.
+
+    Examples
+    --------
+    ```console
+    $ untaped ansible impact checkouts acme/base --source platform
+    $ untaped ansible impact checkouts acme/base --refresh --format json
+    ```
+    """
+
+    ref: str | None = Field(
+        None,
+        description="Branch, tag, or SHA of ROLE to find dependents of; omit for every cached ref.",
+    )
+    refresh: Refresh = Refresh(SOURCE_DATA, CheckoutSource.checkouts)
+    output: Output[CheckoutHit] = Output(
+        columns=(
+            key(CheckoutHit).name,
+            key(CheckoutHit).url,
+            key(CheckoutHit).ref,
+            key(CheckoutHit).dependent,
+            key(CheckoutHit).via,
+        )
+    )
+
+    def run(self) -> Iterator[CheckoutHit]:
+        env = self.env(command="impact", live=False, all_refs=False)
+        reached = self.reached("impact", ref=self.ref, live=False, all_refs=False, env=env)
+        rows = [hit.row for hit in reached]
+        self.output.empty(
+            f"No checkouts of {self.role}'s dependents found{within(parse_depth(self.depth))}."
+        )
+        if not rows:
+            return
+        checkouts = self._checkouts()
+        repos = sorted({row.repo for row in rows if row.repo is not None})
+        cached = env.index.cached_ref_metadata_batch(repos, source_key=env.graph_source.key)
+        defaults = {
+            repo_key(repo): next((ref.default_branch for ref in refs if ref.default_branch), None)
+            for repo, refs in cached.items()
+        }
+        resolver = IdentityResolver(github_host=self.github_host)
+        yield from checkout_hits(
+            rows, checkouts, repo_of=resolver.repo_of, default_branches=defaults
+        )
+
+    def _checkouts(self) -> list[Checkout]:
+        """Every provider's checkouts; who wasn't asked, or failed, is said on stderr, uncounted."""
+        try:
+            answers = gather(CheckoutSource.checkouts, refresh=self.refresh.directive)()
+        except NoProviderReady as exc:
+            for plugin, ready in exc.not_ready.items():
+                setting = f": set {ready.spelled}" if ready.spelled else ""
+                self.ctx.diag.hint(f"{plugin} wasn't asked for checkouts: {ready.reason}{setting}")
+            return []
+        found: list[Checkout] = []
+        for answer in answers:
+            if isinstance(answer, Ok):
+                found.extend(answer.value)
+            elif isinstance(answer, Errored):
+                self.ctx.diag.warning(
+                    f"{answer.plugin}: no checkouts: {answer.error}", hint=answer.error.hint
+                )
+            else:
+                self.ctx.diag.hint(f"{answer.plugin} wasn't asked for checkouts: {answer.detail}")
+        return found
 
 
 class ImpactGroup(Group):
-    """What depends on a role: its dependents, or where they use its variables."""
+    """What depends on a role: its dependents, where they use its variables, what runs them."""
 
     runs = Impact
-    commands = (Uses,)
+    commands = (Uses, Checkouts)
 
 
 class Find(GraphCommand):

@@ -145,7 +145,7 @@ def test_dependent_plugins_pin_their_siblings() -> None:
     version = projects["untaped"]["version"]
     siblings = {
         "ansible": ("untaped-git", "untaped-github"),
-        "awx": ("untaped-git", "untaped-lint", "untaped-values"),
+        "awx": ("untaped-ansible", "untaped-git", "untaped-lint", "untaped-values"),
         "dotfiles": ("untaped-git", "untaped-values"),
         "github": ("untaped-git",),
         "lint": ("untaped-git",),

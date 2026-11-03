@@ -231,9 +231,9 @@ def gather[C: Contract, **P, R](
     a caller falling back to another method can say why. ``refresh``
     directs ``@cached`` methods: ``False`` serves cached answers only (none
     stored: ``Skipped(no-cache)``), ``True`` always calls, and ``None``
-    follows the command's ``Refresh`` when it names this method's cache,
-    else serves within the cache's max age (its
-    ``<owner>.caches.<name>.max_age_seconds`` setting). A call refreshing an
+    serves within the cache's max age (its
+    ``<owner>.caches.<name>.max_age_seconds`` setting): a command whose
+    ``Refresh`` names the method passes its ``directive``. A call refreshing an
     answer holds that answer's lock, so a second process asking the same
     provider waits for it. With no ready
     provider at all, and none named that doesn't fill it, it raises

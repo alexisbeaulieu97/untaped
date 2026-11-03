@@ -8,7 +8,7 @@ import pytest
 
 from untaped_lint.testing import assert_clean
 
-pytestmark = pytest.mark.usefixtures("fresh_composition")
+pytestmark = pytest.mark.usefixtures("fresh_composition", "fake_aap")  # live calls reach the fake
 
 
 def test_awx_passes_lint() -> None:

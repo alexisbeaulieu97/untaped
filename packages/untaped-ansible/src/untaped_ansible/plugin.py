@@ -8,6 +8,7 @@ guide.
 from __future__ import annotations
 
 from untaped.sdk import Plugin, StubSkill
+from untaped_ansible.checkouts import CheckoutSource
 from untaped_ansible.commands.graph import Deps, Find, Graph, ImpactGroup
 from untaped_ansible.commands.source import SourceGroup
 from untaped_ansible.commands.source_alias import SourceAliasGroup
@@ -71,16 +72,17 @@ class Ansible(Plugin):
 
     settings = AnsibleSettings
     commands = (SourceGroup, SourceAliasGroup, Deps, ImpactGroup, Find, Graph)
+    offers = (CheckoutSource,)
     sources = SOURCES
     aliases = ALIASES
     index = INDEX_DIR
     source_data = SOURCE_DATA
     skill = StubSkill(
         "Ansible role and project dependencies across GitHub repositories: what a role "
-        "depends on, what depends on it and which of its variables they use, which "
-        "projects reach a repo, and dependency graphs. Use when the work concerns who "
-        "uses a role, the impact of changing one, or requirements.yml or meta/main.yml "
-        "dependencies."
+        "depends on, what depends on it, which of its variables they use and what checks "
+        "them out (job templates, say), which projects reach a repo, and dependency "
+        "graphs. Use when the work concerns who uses a role, the impact of changing one, "
+        "or requirements.yml or meta/main.yml dependencies."
     )
 
 
