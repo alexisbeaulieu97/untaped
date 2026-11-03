@@ -89,7 +89,7 @@ class Pick:
     announced: bool = False
 
     #: The adapters built, by (class, version, caller's settings, run): the settings held by
-    #: the adapter, the run by a weak reference, so a finished run's entry is pruned.
+    #: the adapter, the run by a weak reference, so a finished run's entry goes with it.
     built: dict[tuple[Any, ...], tuple[weakref.ref[object], Any]] = field(default_factory=dict)
 
     @property
@@ -112,12 +112,12 @@ class Pick:
             held = self.built.get(memo)
             if held is not None and held[0]() is run:
                 return held[1]
-            for each in [each for each, (ran, _) in self.built.items() if ran() is None]:
-                del self.built[each]  # a finished child run's
             built = adapter(settings, version)
             built._connector = functools.partial(connect, api, settings)
             weakref.finalize(built, _close, built._clients)
             self.built[memo] = (weakref.ref(run), built)
+        # a finished child run's adapter goes with it, closing its clients
+        weakref.finalize(run, self.built.pop, memo, None)
         return built
 
 
@@ -354,6 +354,8 @@ class _Server:
 
     def _adopt(self, pick: Pick, adapter: type, version: ServerVersion, source: Source) -> None:
         """Make ``adapter`` the pick; warn of its removal when this run found the version."""
+        if (pick.adapter, pick.version) != (adapter, version):
+            pick.announced = False  # a new switch: the next rerun says it
         pick.adapter, pick.version, pick.source = adapter, version, source
         mark = adapter.__dict__.get("stability")
         if isinstance(mark, Deprecated) and source != "cache":

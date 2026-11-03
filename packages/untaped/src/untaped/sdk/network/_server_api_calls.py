@@ -2,8 +2,9 @@
 
 Core builds every client an adapter talks through (``ApiAdapter.connect``)
 and detection's own, and each records the requests it sends here
-(:class:`~untaped.sdk.network.http._Sent`), in the log of the port call
-running now and of every port call around it, and in the invocation's log.
+(:class:`~untaped.sdk.network.http._Sent`): an adapter's in the log of the
+port call running now, of every port call around it, and of the
+invocation; a detection's in its own log alone (:func:`recording_only`).
 After a mismatch, the call's log says whether a write went through during
 the failed call, which decides whether core may run the call again; the
 invocation's log says whether anything took effect before it.

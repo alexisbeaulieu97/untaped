@@ -22,19 +22,22 @@ from core_test_support.server_api import (
     SERVER_API,
     URL,
     V1,
+    About,
     Add,
     Collect,
     Get,
+    Item,
     Items,
     Search,
     Toy,
+    ToyVersion,
     configured,
     route,
     serve,
 )
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import UntapedError
-from untaped.sdk.network import ApiMismatch
+from untaped.sdk.network import ApiMismatch, HttpClient
 from untaped.sdk.network._server_api_calls import (
     CallLog,
     logging_into,
@@ -222,6 +225,51 @@ def test_a_call_begun_before_another_switched_says_the_change_the_switch_did_not
         warnings = [str(each) for each in running.diagnostics]
     assert len(warnings) == 1
     assert CHANGED in warnings[0]
+
+
+@respx.mock
+def test_a_call_begun_before_a_refresh_switched_says_the_version_it_ran_on(toy: Install) -> None:
+    _upgraded()
+    route("GET", "/v1/items", status=404)
+    route("GET", "/v2/items/a", json={"name": "a"})  # before /v2/items, which it starts with
+    route("GET", "/v2/items", json=[{"name": "a"}])
+    with toy.running() as running:
+        items = SERVER_API.port(configured()).items()  # begun on V1: nothing sent yet
+        SERVER_API.port(configured(), refresh=True).item("a")  # detects Toy 3.1: V2
+        assert [each.name for each in items] == ["a", "a"]  # reruns on V2
+        warnings = [str(each) for each in running.diagnostics]
+    assert len(warnings) == 1
+    assert CHANGED in warnings[0]
+
+
+@respx.mock
+def test_a_detection_inside_a_port_call_never_counts_as_its_write(
+    toy: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    other = "https://other.example.com"
+
+    def posting(settings: object, client: HttpClient) -> ToyVersion:
+        with ApiMismatch.watch():
+            return ToyVersion(About.model_validate(client.post_json("/about")).version)
+
+    monkeypatch.setattr(SERVER_API, "detect", posting)
+    for server in (URL, other):
+        respx.post(f"{server}/about").mock(
+            return_value=httpx.Response(200, json={"version": "3.1"})
+        )
+    respx.get(f"{other}/v2/items/b").mock(return_value=httpx.Response(200, json={"name": "b"}))
+    route("GET", "/v1/items/a", status=404)
+    found = route("GET", "/v2/items/a", json={"name": "a"})
+    real = V1.item
+
+    def item(self: V1, name: str) -> Item:
+        SERVER_API.port(configured(url=other)).item("b")  # detects by POST, inside this call
+        return real(self, name)
+
+    monkeypatch.setattr(V1, "item", item)
+    ran = toy.run(Get(name="a"))
+    assert ran.exit == 0
+    assert found.call_count == 1  # rerun: the detection's POST was no write of the call
 
 
 def test_a_detection_inside_a_port_call_records_into_its_own_log_alone() -> None:

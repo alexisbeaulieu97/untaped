@@ -442,7 +442,9 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
         Nothing is sent until the first call: then core checks the plugin is
         set up, finds the version and picks. ``refresh`` is a ``Refresh``
         field's directive naming :attr:`cache` (``True`` detects again now,
-        ``False`` reads only the cache); the override, when set, wins.
+        ``False`` reads only the cache); the override, when set, wins. Ports
+        built from one settings object in one run share their adapters and
+        connections, so pass the command's own ``self.settings``.
         """
         from untaped.sdk.network._server_api_port import Port  # noqa: PLC0415 - no cycle
 
