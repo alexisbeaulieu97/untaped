@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from git_test_support import StoreFor, all_refs, objects
-from untaped_git import store as store_module
+from untaped_git import store_git
 from untaped_git.report import store_report
 from untaped_git.testing import GitRemote, git_shim, trace2_events
 
@@ -91,7 +91,7 @@ def test_a_stalled_repack_is_a_warning(
     marker = tmp_path / "stall"
     marker.touch()
     git_shim(tmp_path / "bin", monkeypatch, stall_maintenance=marker)
-    monkeypatch.setattr(store_module, "MAINTENANCE_TIMEOUT", 1.5)
+    monkeypatch.setattr(store_git, "MAINTENANCE_TIMEOUT", 1.5)
     new = remote.commit("x.txt", "x\n")
 
     delta = store.fetch(branches=["main"])

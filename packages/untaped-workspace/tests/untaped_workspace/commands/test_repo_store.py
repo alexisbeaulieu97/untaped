@@ -174,7 +174,7 @@ def test_a_stalled_backfill_warns_and_status_fetch_resumes_it(
     marker = tmp_path / "stall"
     marker.write_text("1")  # the checkout's own lazy fetch of its tip goes through
     git_shim(tmp_path / "bin", monkeypatch, stall_stdin_fetch=marker)
-    monkeypatch.setattr("untaped_git.store.SLOW_TIMEOUT", 2.0)
+    monkeypatch.setattr("untaped_git.store_prefetch.SLOW_TIMEOUT", 2.0)
 
     created = run(["create", "J-1", "--repo", remote.url])
 
@@ -331,7 +331,7 @@ def test_a_stash_keeps_its_branch_and_the_repo(
     # Any consumer's next use creates nothing, deletes nothing and finishes no release.
     files = sorted(path.name for path in repo.iterdir())
     store = RepoStore.for_url(remote.url, plugin="ansible", error=WorkspaceError)
-    with store._locked():
-        assert store._ensure() is False
+    with store._repo.locked():
+        assert store._repo.ensure() is False
     assert _refs(repo) == ["refs/heads/b1", "refs/stash"]
     assert sorted(path.name for path in repo.iterdir()) == files

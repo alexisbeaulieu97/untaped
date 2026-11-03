@@ -26,7 +26,7 @@ from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, SqliteDependencyIndex
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_git import remote as remote_module
-from untaped_git import store as store_module
+from untaped_git import store_git as store_module
 from untaped_git.api import GitCommandError, GitResult, Released, RepoStore, store_key
 from untaped_git.host_auth import basic_header
 from untaped_git.testing import GitRemote, git_remote
@@ -449,7 +449,7 @@ def test_removing_a_source_while_another_sources_refresh_holds_the_repo_keeps_it
     done = threading.Event()
 
     def refresh_holding_the_lock() -> None:
-        with store._locked():  # what b's fetch holds
+        with store._repo.locked():  # what b's fetch holds
             held.set()
             done.wait(timeout=30)
 

@@ -23,7 +23,8 @@ from untaped_git.records import TreeEntry
 from untaped_git.release import Released, Removed
 from untaped_git.run import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_git.settings import store_root
-from untaped_git.store import Prefetched, RepoStore
+from untaped_git.store import RepoStore
+from untaped_git.store_prefetch import Prefetched
 from untaped_git.url import GitUrl, repo_url_parts, store_key, validate_git_url
 
 __all__ = [
