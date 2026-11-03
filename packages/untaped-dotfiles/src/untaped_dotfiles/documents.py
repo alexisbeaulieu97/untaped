@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import io
 import json
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from typing import Any
 
 from untaped.sdk import yaml_mapping_indent
 from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.hashing import value_hash
+from untaped_dotfiles.merge import Fit, as_is
 from untaped_dotfiles.package import MergeFormat
 
 
@@ -34,14 +36,44 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
     return raw
 
 
-def dump_document(document: MutableMapping[str, Any], *, fmt: MergeFormat, like: str = "") -> str:
-    """Render ``document``; YAML is indented the way ``like`` (the original text) was."""
+def load_values(text: str, *, fmt: MergeFormat, where: str) -> dict[str, Any]:
+    """Parse ``text`` into the values a merge writes, detached from the text.
+
+    TOML values keep their types (a date stays a date; ``plain`` would make it a
+    string) and leave the source's comments and layout behind: the target's
+    layout is kept, the source's is not.
+    """
+    document = load_document(text, fmt=fmt, where=where)
+    if fmt == "toml":
+        unwrapped: dict[str, Any] = document.unwrap()  # type: ignore[attr-defined]
+        return unwrapped
+    detached: dict[str, Any] = plain(document)
+    return detached
+
+
+def fit_for(fmt: MergeFormat) -> Fit:
+    """How a merge shapes a value it writes into a document of ``fmt``.
+
+    In TOML a new table or array of tables gets its own ``[header]`` only at the
+    top or under a ``[header]`` table; under dotted keys (``a.b = 1``), an
+    implicit or split table, or an inline table it is written inline, where a
+    header would capture the keys after it.
+    """
+    return _toml_fit if fmt == "toml" else as_is
+
+
+def dump_document(
+    document: MutableMapping[str, Any], *, fmt: MergeFormat, where: str, like: str = ""
+) -> str:
+    """Render ``document``; YAML is indented the way ``like`` (the original text) was.
+
+    TOML is read back before it is returned, and refused unless it reads back
+    as ``document``, so a layout ``tomlkit`` can't edit never reaches the file.
+    """
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     if fmt == "toml":
-        import tomlkit  # noqa: PLC0415
-
-        return tomlkit.dumps(document)
+        return _dump_toml(document, where=where)
     out = io.StringIO()
     _yaml(like).dump(document, out)
     return out.getvalue()
@@ -52,19 +84,47 @@ def plain(document: Any) -> Any:
     return json.loads(json.dumps(document, default=str))
 
 
-def values(document: MutableMapping[str, Any], *, fmt: MergeFormat) -> dict[str, Any]:
-    """``document``'s values detached from its text: what a merge writes into another one.
+def _toml_fit(parent: MutableMapping[str, Any], value: Any) -> Any:
+    from tomlkit import TOMLDocument  # noqa: PLC0415
+    from tomlkit.items import Table  # noqa: PLC0415
 
-    A TOML document keeps its value types (a date stays a date, where ``plain``
-    would write it as a string) and leaves its comments and layout behind.
-    """
-    if fmt == "toml":
-        from tomlkit import TOMLDocument  # noqa: PLC0415
+    headed = isinstance(parent, TOMLDocument) or (
+        isinstance(parent, Table) and not parent.is_super_table()
+    )
+    return value if headed else _inline(value)
 
-        if isinstance(document, TOMLDocument):
-            return document.unwrap()
-    detached: dict[str, Any] = plain(document)
-    return detached
+
+def _inline(value: Any) -> Any:
+    import tomlkit  # noqa: PLC0415
+
+    if isinstance(value, Mapping):
+        table = tomlkit.inline_table()
+        for key, item in value.items():
+            table[key] = _inline(item)
+        return table
+    if isinstance(value, list):
+        array = tomlkit.array()
+        array.extend(_inline(item) for item in value)
+        return array
+    return value
+
+
+def _dump_toml(document: MutableMapping[str, Any], *, where: str) -> str:
+    import tomlkit  # noqa: PLC0415
+
+    text = tomlkit.dumps(document)
+    try:
+        back = tomlkit.parse(text).unwrap()
+    except Exception:  # tomlkit wrote text it can't read: refused below
+        back = None
+    if back is None or value_hash(back) != value_hash(document.unwrap()):  # type: ignore[attr-defined]
+        raise DotfilesError(
+            f"could not merge into {where}: its layout would move keys the source "
+            "doesn't name; nothing was written",
+            hint="write the target's tables as [headers] instead of dotted keys, then apply again",
+            category="invalid",
+        )
+    return text
 
 
 def _parse(text: str, fmt: MergeFormat) -> Any:

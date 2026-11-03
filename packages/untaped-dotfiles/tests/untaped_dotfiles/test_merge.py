@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import copy
+import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -89,8 +92,11 @@ def test_json_merge_creates_a_missing_target_and_keeps_foreign_keys(tmp_path: Pa
 
 
 def test_dump_document_formats() -> None:
-    assert dump_document({"a": 1}, fmt="json") == '{\n  "a": 1\n}\n'
-    assert dump_document(load_document("a: 1\n", fmt="yaml", where="t"), fmt="yaml") == "a: 1\n"
+    assert dump_document({"a": 1}, fmt="json", where="t") == '{\n  "a": 1\n}\n'
+    assert (
+        dump_document(load_document("a: 1\n", fmt="yaml", where="t"), fmt="yaml", where="t")
+        == "a: 1\n"
+    )
     assert load_document("", fmt="json", where="t") == {}
     assert load_document("   \n", fmt="yaml", where="t") == {}
 
@@ -181,11 +187,64 @@ def test_toml_dotted_keys_and_super_tables_merge_in_place(tmp_path: Path) -> Non
     _, managed = placer.merge(b"a.b = 5\n[x.y]\nz = 9\n", target, fmt="toml")
     assert target.read_text() == "a.b = 5\na.c = 2\n\n[x.y]\nz = 9\n"
     placer.unmerge(target, fmt="toml", managed=managed)
-    assert target.read_text() == "a.c = 2\n\n"
+    assert tomllib.loads(target.read_text()) == {"a": {"c": 2}}
 
 
 def test_toml_documents_load_dump_and_report_errors() -> None:
     assert load_document("", fmt="toml", where="t") == {}
-    assert dump_document(load_document("a = 1\n", fmt="toml", where="t"), fmt="toml") == "a = 1\n"
+    assert (
+        dump_document(load_document("a = 1\n", fmt="toml", where="t"), fmt="toml", where="t")
+        == "a = 1\n"
+    )
     with pytest.raises(DotfilesError, match="t is invalid TOML"):
         load_document("a = = 1\n", fmt="toml", where="t")
+
+
+#: Target and source shapes a merge meets; each is checked against the same merge on plain values.
+_TOML_SHAPES: dict[str, tuple[str, str]] = {
+    "a new table under dotted keys": ("a.b = 1\nother = 2\n", "[a.c]\nd = 1\n"),
+    "a new table under dotted keys in a table": ("[t]\na.b = 1\nk = 2\n", "[t.a.c]\nd = 1\n"),
+    "a new array of tables under dotted keys": ("a.b = 1\nother = 2\n", "[[a.s]]\nh = 1\n"),
+    "a scalar under dotted keys becomes a table": ("a.b = 1\nother = 2\n", "[a.b]\nx = 1\n"),
+    "a table under an implicit table": ("[x.y]\nz = 1\n", "[x.q]\nr = 1\n[x.y]\nz = 2\n"),
+    "an inline table gains a table": ("t = {x = 1}\nk = 2\n", "[t.y]\nz = 1\n"),
+    "an array of tables becomes a scalar": ("[[s]]\nh = 1\n[u]\nv = 1\n", "s = 3\n"),
+    "a table becomes a scalar": ("[a]\nb = 1\n[c]\nd = 1\n", "a = 1\n"),
+    "a scalar becomes a table": ("a = 1\n[c]\nd = 1\n", "[a]\nb = 1\n"),
+    "tables out of order": ("[a]\nx = 1\n[b]\ny = 1\n[a.sub]\nz = 1\n", "[a.sub]\nw = 2\n"),
+    "a table gains keys and a table": ("[n]\nk = 1\n[m]\nj = 1\n", "[n]\nsub.q = 1\nz = 1\n"),
+    "split dotted keys gain a table": ("a.b = 1\na.s = 2\nother = 2\n", "[a.c]\nd = 1\n"),
+    "unicode and dates": ('"clé" = "été"\n', "[t]\nat = 07:32:00\nday = 2024-01-02\n"),
+}
+
+
+def _reference_merge(target: dict[str, Any], source: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(target)
+    merge_into(merged, copy.deepcopy(source))
+    return merged
+
+
+@pytest.mark.parametrize("shape", _TOML_SHAPES, ids=list(_TOML_SHAPES))
+def test_toml_merge_and_unmerge_read_back_as_plain_values_would(shape: str, tmp_path: Path) -> None:
+    before, source = _TOML_SHAPES[shape]
+    target = tmp_path / "config.toml"
+    target.write_text(before)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    target_hash, managed = placer.merge(source.encode(), target, fmt="toml")
+    merged = target.read_text()
+    assert tomllib.loads(merged) == _reference_merge(tomllib.loads(before), tomllib.loads(source))
+    assert placer.observe(target, fmt="toml", managed=managed).hash == target_hash
+    placer.merge(source.encode(), target, fmt="toml")
+    assert target.read_text() == merged
+    placer.unmerge(target, fmt="toml", managed=managed)
+    expected = tomllib.loads(merged)
+    remove_paths(expected, managed)
+    assert tomllib.loads(target.read_text()) == expected
+
+
+def test_toml_that_would_not_read_back_is_refused() -> None:
+    # Without the TOML fit, tomlkit writes `[a.c]` among the dotted keys and captures `other`.
+    document = load_document("a.b = 1\nother = 2\n", fmt="toml", where="t")
+    merge_into(document, {"a": {"c": {"d": 1}}})
+    with pytest.raises(DotfilesError, match="nothing was written"):
+        dump_document(document, fmt="toml", where="t")

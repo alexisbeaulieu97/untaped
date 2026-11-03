@@ -18,13 +18,15 @@ from pathlib import Path
 from typing import Any
 
 from untaped.sdk.storage import atomic_write
-from untaped_dotfiles.documents import dump_document, load_document, plain, values
+from untaped_dotfiles.documents import dump_document, fit_for, load_document, load_values, plain
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
 from untaped_dotfiles.merge import leaf_paths, merge_into, project, remove_paths
 from untaped_dotfiles.models import KeyPath
 from untaped_dotfiles.package import MergeFormat
 from untaped_dotfiles.states import TargetInfo
+
+_SOURCE = "the merge source"
 
 
 class FilesystemPlacer:
@@ -95,24 +97,24 @@ class FilesystemPlacer:
         return content_hash(data)
 
     def parse(self, source: bytes, *, fmt: MergeFormat) -> dict[str, Any]:
-        result: dict[str, Any] = plain(_source(source, fmt=fmt))
+        result: dict[str, Any] = plain(load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE))
         return result
 
     def _merged(
         self, source: bytes, target: Path, *, fmt: MergeFormat
     ) -> tuple[str, MutableMapping[str, Any], dict[str, Any]]:
         """``(original text, merged document, incoming document)``."""
-        incoming = values(_source(source, fmt=fmt), fmt=fmt)
+        incoming = load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE)
         text = target.read_text(encoding="utf-8") if target.is_file() else ""
         existing = load_document(text, fmt=fmt, where=str(target))
-        merge_into(existing, incoming)
+        merge_into(existing, incoming, fit=fit_for(fmt))
         return text, existing, incoming
 
     def merge(
         self, source: bytes, target: Path, *, fmt: MergeFormat
     ) -> tuple[str, tuple[KeyPath, ...]]:
         text, existing, incoming = self._merged(source, target, fmt=fmt)
-        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
+        atomic_write(target, dump_document(existing, fmt=fmt, where=str(target), like=text))
         managed = tuple(leaf_paths(incoming))
         return value_hash(project(plain(existing), managed)), managed
 
@@ -122,15 +124,11 @@ class FilesystemPlacer:
         text = target.read_text(encoding="utf-8")
         existing = load_document(text, fmt=fmt, where=str(target))
         remove_paths(existing, managed)
-        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
+        atomic_write(target, dump_document(existing, fmt=fmt, where=str(target), like=text))
 
     def delete(self, target: Path) -> None:
         if target.is_symlink() or target.is_file():
             target.unlink()
-
-
-def _source(source: bytes, *, fmt: MergeFormat) -> MutableMapping[str, Any]:
-    return load_document(source.decode("utf-8"), fmt=fmt, where="the merge source")
 
 
 def _umask() -> int:

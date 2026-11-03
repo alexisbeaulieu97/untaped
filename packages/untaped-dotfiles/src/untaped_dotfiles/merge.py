@@ -2,29 +2,43 @@
 
 Mappings recurse; scalars and lists in the source replace the target's. Keys
 the source does not mention are untouched. The merge mutates the target
-mapping in place so a comment-preserving YAML document keeps its comments.
+mapping in place so a comment-preserving YAML or TOML document keeps its
+comments; the document's format shapes what it writes (``fit``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, MutableMapping
+from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from typing import Any
 
 from untaped_dotfiles.models import KeyPath
 
+#: ``fit(parent, value)``: ``value`` shaped the way ``parent``'s document can hold it.
+type Fit = Callable[[MutableMapping[str, Any], Any], Any]
 
-def merge_into(target: MutableMapping[str, Any], source: Mapping[str, Any]) -> None:
-    """Merge ``source`` into ``target`` in place."""
+
+def as_is(parent: MutableMapping[str, Any], value: Any) -> Any:
+    """The :data:`Fit` of a document that holds any value as given."""
+    return value
+
+
+def merge_into(
+    target: MutableMapping[str, Any],
+    source: Mapping[str, Any],
+    *,
+    fit: Fit = as_is,
+) -> None:
+    """Merge ``source`` into ``target`` in place; ``fit(parent, value)`` shapes what it writes."""
     for key, value in source.items():
         current = target.get(key)
         if isinstance(value, Mapping) and isinstance(current, MutableMapping):
-            merge_into(current, value)
+            merge_into(current, value, fit=fit)
         elif isinstance(value, Mapping):
             fresh: dict[str, Any] = {}
             merge_into(fresh, value)
-            target[key] = fresh
+            target[key] = fit(target, fresh)
         else:
-            target[key] = value
+            target[key] = fit(target, value)
 
 
 def leaf_paths(source: Mapping[str, Any], prefix: KeyPath = ()) -> Iterator[KeyPath]:
