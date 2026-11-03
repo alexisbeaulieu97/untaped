@@ -3,7 +3,8 @@
 Each runs from the store root with discovery stopped there, so a repository
 around the process's working directory is never read, and asks
 :class:`~untaped_git.hosts.GitHost` for the URL's credentials; core gives its
-proxy. Both reach git at command scope only, so a clone keeps neither.
+proxy. The credential and proxy reach git at command scope only, so a clone
+keeps neither.
 """
 
 from __future__ import annotations
@@ -70,22 +71,19 @@ def clone(
 ) -> None:
     """Clone ``url`` into ``dest`` (absent or an empty folder), on ``branch`` or the remote's HEAD.
 
+    ``dest`` is made absolute first: git runs from ``root``, not from the
+    caller's working directory, and creates the missing folders itself.
+
     A full clone: the working copy is its owner's afterwards, and a partial one
     would fetch missing blobs later with the owner's credentials alone. The
     credential and proxy reach this one command; the clone's config keeps
     neither, nor a credential helper, so its later fetches are the owner's own.
     """
-    target = Path(os.path.abspath(dest))
-    try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise GitError(
-            f"could not create {target.parent}: {exc.strerror or exc}", system=System.LOCAL
-        ) from exc
+    target = os.path.abspath(dest)
     picked = ["--branch", branch] if branch is not None else []
     _remote(
         url,
-        ["clone", "--quiet", *picked, "--", url, str(target)],
+        ["clone", "--quiet", *picked, "--", url, target],
         root=root,
         auth=auth,
         timeout=SLOW_TIMEOUT,

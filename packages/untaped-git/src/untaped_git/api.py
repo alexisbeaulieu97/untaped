@@ -75,12 +75,13 @@ def default_branch(url: str) -> str | None:
 def clone(url: str, dest: Path, *, branch: str | None = None) -> None:
     """Clone ``url`` into ``dest`` as a working copy someone keeps, with untaped's credentials.
 
-    ``dest`` is absent or an empty folder; ``branch`` is checked out, else the
-    remote's default branch. The credential of whoever fills ``GitHost`` for
-    the host and untaped's proxy reach this clone only: no credential helper or
-    header is left in its config, so later fetches are the owner's own (an
-    ssh URL asks no provider). A failure is an ``UntapedError`` carrying git's
-    category. To keep a repository for untaped's own reads, use
-    :class:`RepoStore` instead.
+    ``dest`` is absent or an empty folder, relative to the working directory;
+    ``branch`` (a branch, or a tag for a detached copy) is checked out, else
+    the remote's default branch. The credential of whoever fills ``GitHost``
+    for the host and untaped's proxy reach this clone only: no credential
+    helper or header is left in its config, so later fetches are the owner's
+    own. An ssh URL asks no provider for a credential (its keys are the
+    user's). A failure is an ``UntapedError`` carrying git's category. For
+    untaped's own copy of a repository, use :class:`RepoStore` instead.
     """
     remote.clone(url, dest, branch=branch, root=store_root(), auth=resolve_host)

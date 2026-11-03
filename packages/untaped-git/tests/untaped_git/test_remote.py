@@ -140,10 +140,16 @@ def test_an_annotated_tag_asked_by_name_maps_to_its_commit(
     assert refs == {"refs/tags/v2": remote.oid("main")}
 
 
-def test_an_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
+def test_an_option_shaped_url_is_never_an_option(remote: GitRemote, tmp_path: Path) -> None:
     planted = tmp_path / "planted"
+    # Read as an option, the URL would run its upload-pack against the real repo that follows.
     with pytest.raises(GitError):
-        ls_remote(f"--upload-pack=touch {planted}", [], root=tmp_path / "s", auth=lambda _: None)
+        ls_remote(
+            f"--upload-pack=touch {planted}",
+            [str(remote.path)],
+            root=tmp_path / "s",
+            auth=lambda _: None,
+        )
     assert not planted.exists()
 
 
@@ -207,7 +213,7 @@ def test_the_store_follows_the_home_unless_the_setting_names_a_folder(
 
 
 class _Forge(GitHost, Provider):
-    """Fills ``GitHost`` for ``git.example`` and records the URLs it is asked about."""
+    """Fills ``GitHost`` for ``git.example`` and records the URLs it is asked a credential for."""
 
     asked: ClassVar[list[str]] = []
 
@@ -267,6 +273,38 @@ def test_clone_checks_out_the_branch_asked_for(remote: GitRemote, tmp_path: Path
     api.clone(remote.url, tmp_path / "app", branch="dev")
 
     assert git(tmp_path / "app", "rev-parse", "HEAD", bare=False).strip() == remote.oid("dev")
+    assert git(tmp_path / "app", "symbolic-ref", "--short", "HEAD", bare=False).strip() == "dev"
+
+
+def test_a_tag_gives_a_detached_copy(remote: GitRemote, tmp_path: Path) -> None:
+    remote.tag("v1")
+    remote.commit("later.txt", "later\n")
+
+    api.clone(remote.url, tmp_path / "app", branch="v1")
+
+    assert git(tmp_path / "app", "rev-parse", "HEAD", bare=False).strip() == remote.oid("v1")
+    with pytest.raises(AssertionError):  # no branch: HEAD is detached
+        git(tmp_path / "app", "symbolic-ref", "HEAD", bare=False)
+
+
+def test_a_relative_destination_is_the_caller_s(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    api.clone(remote.url, Path("code") / "app")
+
+    assert (tmp_path / "code" / "app" / "README.md").is_file()
+    assert not (store_root() / "code").exists()
+
+
+def test_an_empty_destination_folder_is_filled(remote: GitRemote, tmp_path: Path) -> None:
+    dest = tmp_path / "app"
+    dest.mkdir()
+
+    api.clone(remote.url, dest)
+
+    assert (dest / "README.md").is_file()
 
 
 def test_clone_sends_the_host_s_credential_and_keeps_none(
@@ -289,8 +327,12 @@ def test_clone_sends_the_host_s_credential_and_keeps_none(
     assert "clone-token" not in kept
 
 
-def test_an_ssh_url_asks_no_provider(tmp_path: Path, forge: list[str]) -> None:
-    with pytest.raises(GitError):  # nothing answers at git.example over ssh
+def test_an_ssh_url_asks_no_provider_for_a_credential(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, forge: list[str]
+) -> None:
+    monkeypatch.setenv("GIT_SSH_COMMAND", "false")  # ssh fails at once, with no network
+
+    with pytest.raises(GitError):
         api.clone("git@git.example:acme/app.git", tmp_path / "app")
 
     assert forge == []
@@ -306,8 +348,11 @@ def test_clone_refuses_a_folder_that_is_not_empty(remote: GitRemote, tmp_path: P
     assert [path.name for path in dest.iterdir()] == ["notes.txt"]
 
 
-def test_a_clone_s_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
+def test_a_clone_s_option_shaped_url_is_never_an_option(
+    remote: GitRemote, tmp_path: Path
+) -> None:
     planted = tmp_path / "planted"
+    # Read as an option, the URL would run its upload-pack against ``dest``, a real repo.
     with pytest.raises(GitError):
-        api.clone(f"--upload-pack=touch {planted}", tmp_path / "app")
+        api.clone(f"--upload-pack=touch {planted}", remote.path)
     assert not planted.exists()
