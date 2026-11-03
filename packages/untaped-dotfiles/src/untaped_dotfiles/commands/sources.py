@@ -25,6 +25,7 @@ from untaped_dotfiles.catalog import Offer, load_packages
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.errors import SourceNotFoundError
 from untaped_dotfiles.package import PackageFile
+from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import ApplyOutcome, Package
 from untaped_dotfiles.settings import DotfilesSettings, PackageChoice, PackageSource
 from untaped_dotfiles.sources import Source, check_name, classify, name_from, resolve_url
@@ -154,6 +155,13 @@ class Subscribe(DotfilesCommand):
         from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
         from untaped_dotfiles.commands.packages import Add  # noqa: PLC0415 - a cycle
 
+        for offer in offers.values():
+            if offer.on and _author_sync_steps(offer):
+                self.ctx.diag.info(
+                    f"{offer.spelled} suggests sync and has steps; a step the author adds or"
+                    " changes later waits for you unless this machine chooses the policy:"
+                    f" {run_hint(Add.spelled(offer.spelled, '--policy', 'sync'))}"
+                )
         self.ctx.diag.hint(run_hint(Apply.spelled() if on else Add.spelled("PKG")))
         return rows
 
@@ -190,9 +198,13 @@ class Unsubscribe(DotfilesCommand):
                     if self.settings.sources
                     else None,
                 )
-            planned = svc.applier.removal(
-                records, keep_files=self.keep_files, clone=clone if self.keep_files else None
-            )
+            steps = svc.steps.forgetting([(name,)])
+            planned = [
+                *svc.applier.removal(
+                    records, keep_files=self.keep_files, clone=clone if self.keep_files else None
+                ),
+                *steps,
+            ]
             changes = {key(DotfilesSettings).sources[name]: None} if in_config else {}
             plan = self.ctx.plugin.plan_settings(changes) if changes else None
             taking = (
@@ -220,6 +232,7 @@ class Unsubscribe(DotfilesCommand):
                 except UntapedError as exc:
                     self.ctx.diag.failure(exc, item=name)
                 svc.store.remove_clone(name)
+            rows += svc.steps.forgetting([(name,)], done=True)
             svc.store.forget_applied((name,))
             remaining = {k: v for k, v in self.settings.sources.items() if k != name}
             self.services(self.settings.model_copy(update={"sources": remaining})).refresh_status()
@@ -236,3 +249,14 @@ def _preview(
         return [*([rows] if rows else []), *(settings() if settings is not None else [])]
 
     return preview
+
+
+def _author_sync_steps(offer: Offer) -> bool:
+    """Whether the author suggests ``sync`` for a package with steps (they follow only a
+    policy this machine chooses)."""
+    package = offer.package
+    return (
+        package is not None
+        and package.policy is Policy.SYNC
+        and any(item.steps for item in package.items.values())
+    )

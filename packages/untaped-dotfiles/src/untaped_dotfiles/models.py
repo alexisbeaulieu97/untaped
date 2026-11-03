@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from untaped.sdk import Key, UtcTimestamp
-from untaped_dotfiles.package import MergeFormat, Mode
+from untaped_dotfiles.package import MergeFormat, Mode, Step
 from untaped_dotfiles.settings import Os
 
 KeyPath = tuple[str, ...]
@@ -70,6 +70,26 @@ class PlacedRecord(BaseModel):
     managed: tuple[KeyPath, ...] = ()
     """``merge`` only: the key paths untaped wrote into the target document."""
     applied_at: UtcTimestamp
+
+
+class StepRecord(BaseModel):
+    """One step as last applied here: what ``status`` checks, and what a changed step differs
+    from. It holds no secret, not even hashed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    step: Annotated[str, Key]
+    """``SOURCE/PKG/ITEM/STEP``."""
+    declared: Step
+    """The step as the package wrote it."""
+    script_hash: str | None = None
+    """A ``script`` step: the script's content hash, part of what was approved."""
+    digest: str
+    """Over ``declared`` and ``script_hash``: a step whose digest differs is ``behind``."""
+    values: dict[str, JsonValue] = {}
+    """The plain top-level input values it used: a changed one counts as asking again."""
+    applied_at: UtcTimestamp
+    checked_at: UtcTimestamp
 
 
 @dataclass(frozen=True)

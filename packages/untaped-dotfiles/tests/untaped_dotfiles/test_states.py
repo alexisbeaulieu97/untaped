@@ -13,6 +13,8 @@ from untaped_dotfiles.states import (
     TargetInfo,
     decide,
     decide_asked,
+    decide_step,
+    decide_step_asked,
     file_state,
     placed_as,
 )
@@ -203,3 +205,52 @@ def test_naming_a_package_applies_it_whatever_its_policy(
     state: str, force: bool, action: str | None
 ) -> None:
     assert decide_asked(state, force=force) == action  # type: ignore[arg-type]
+
+
+# -- steps (7.3) ------------------------------------------------------------------
+
+#: Design 7.3: what ``apply`` does with a step, by state, for ``sync``, ``once`` and
+#: ``manual`` (or nothing chosen).
+_STEP_TABLE = {
+    "pending": ("apply", "apply", "apply"),
+    "new": ("apply", "apply", "report"),
+    "applied": ("skip", "skip", "skip"),
+    "drifted": ("apply", "report", "report"),
+    "behind": ("apply", "skip", "report"),
+    "unmet": ("report", "report", "report"),
+    "orphan": ("remove", "report", "report"),
+    "off": ("report", "report", "report"),
+    "excluded": ("skip", "skip", "skip"),
+    "error": ("report", "report", "report"),
+}
+
+
+@pytest.mark.parametrize(
+    ("state", "policy", "action"),
+    [
+        (state, policy, action)
+        for state, actions in _STEP_TABLE.items()
+        for policy, action in zip(("sync", "once", "manual"), actions, strict=True)
+    ],
+)
+def test_each_cell_of_the_step_policy_table(state: str, policy: str, action: str) -> None:
+    assert decide_step(Policy(policy), state) == action  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("state", "action"),
+    [
+        ("pending", "apply"),
+        ("new", "apply"),
+        ("drifted", "apply"),
+        ("behind", "apply"),
+        ("applied", "skip"),
+        ("excluded", "skip"),
+        ("orphan", "remove"),
+        ("unmet", "report"),
+        ("off", "report"),
+        ("error", "report"),
+    ],
+)
+def test_naming_a_step_applies_it_whatever_the_policy(state: str, action: str) -> None:
+    assert decide_step_asked(state) == action  # type: ignore[arg-type]

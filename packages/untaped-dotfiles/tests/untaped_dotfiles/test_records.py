@@ -126,6 +126,8 @@ _ROW_KEYS: dict[type[BaseModel], list[str]] = {
         "missing",
         "orphan",
         "off",
+        "drifted",
+        "unmet",
         "error",
     ],
     ApplyOutcome: _PLACE_KEYS,

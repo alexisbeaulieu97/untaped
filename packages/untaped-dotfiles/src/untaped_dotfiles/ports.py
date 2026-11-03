@@ -10,7 +10,14 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from untaped_dotfiles.models import CloneRecord, ItemRecord, KeyPath, PlacedRecord, TreeFile
+    from untaped_dotfiles.models import (
+        CloneRecord,
+        ItemRecord,
+        KeyPath,
+        PlacedRecord,
+        StepRecord,
+        TreeFile,
+    )
     from untaped_dotfiles.package import MergeFormat
     from untaped_dotfiles.records import StatusSummary
     from untaped_dotfiles.states import TargetInfo
@@ -95,6 +102,9 @@ class DotfilesStore(Protocol):
         """Serialise the commands that change files, clones or choices across processes."""
         ...
 
+    def steps(self) -> list[StepRecord]: ...
+    def put_step(self, record: StepRecord) -> None: ...
+    def forget_steps(self, prefix: tuple[str, ...]) -> list[StepRecord]: ...
     def write_status(self, summary: StatusSummary) -> None:
         """Write ``status.json`` and the one-line ``attention`` file."""
         ...
