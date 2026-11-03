@@ -395,8 +395,8 @@ class RankProviders:
         doesn't. Raises :class:`UsageError` for a name that doesn't exist.
         ``expected`` (from :meth:`current`) refuses the write with a
         :class:`ConfigError` when the profile's ranking changed since it was read.
-        A ranking already as asked (none, for a removal) writes nothing and is
-        unchanged.
+        Removing a ranking that stores nothing, not even a null, writes
+        nothing; a ranking already as asked is unchanged.
         """
         owner_name, _, name = contract.partition(".")
         if not owner_name or not name:
@@ -417,6 +417,8 @@ class RankProviders:
                 _check_rankable(owner_name, name, method, plugins, doctor_hint=self._doctor_hint)
             )
 
+        changed = had = False
+
         def update(target: str, current: Any) -> str | None:
             if expected is not _UNRESOLVED and _rank_of(current, name, method) != expected:
                 raise ConfigError(
@@ -424,32 +426,43 @@ class RankProviders:
                     "open; nothing was written",
                     category="conflict",
                 )
-            if _rank_of(current, name, method) == (plugins or None):
-                raise _AsAsked(target)
+            nonlocal changed, had
+            had = _rank_of(current, name, method) is not None
+            if not plugins and current is not None and _holds_nothing(current, name, method):
+                raise _NothingStored(target)
             extensions = _ranked(_mapping(current), name, method, plugins)
+            # A removal of what is stored (even null) changes it; the writer says if none was.
+            changed = extensions != current or not plugins
             return json.dumps(extensions) if extensions else None
 
         key = f"{owner_name}.extensions"
         path = f"{key}.{name}.rank.{method}"
+        untouched: list[str] = []
         try:
-            target = self._repo.update_value(key, update, profile=profile, dry_run=dry_run)
-            changed = True
-        except _AsAsked as kept:
+            target = self._repo.update_values(
+                {key: update}, profile=profile, dry_run=dry_run, on_unchanged=untouched.append
+            )
+        except _NothingStored as kept:
             target, changed = kept.target, False
+        changed = changed and not untouched
         if not changed:
             notes.append(("info", f"{path} unchanged in profile {target}"))
             action = "unchanged"
         elif dry_run:
             action = "planned"
         else:
-            done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
-            notes.append(("success", f"{done} for {owner_name}.{name} {method} (profile {target})"))
+            if plugins or had:
+                done = f"ranked {' > '.join(plugins)}" if plugins else "removed the ranking"
+                line = f"{done} for {owner_name}.{name} {method} (profile {target})"
+            else:
+                line = f"removed {path}'s unreadable value from {key} (profile {target})"
+            notes.append(("success", line))
             action = "updated" if plugins else "deleted"
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), tuple(notes))
 
 
-class _AsAsked(Exception):
-    """Raised inside a ranking's update to write nothing: ``target`` already ranks as asked."""
+class _NothingStored(Exception):
+    """Raised inside a ranking's removal to write nothing: ``target`` stores nothing there."""
 
     def __init__(self, target: str) -> None:
         super().__init__(target)
@@ -468,6 +481,22 @@ def _mapping(value: Any) -> dict[str, Any]:
 def _rank_of(extensions: Any, name: str, method: str) -> Any:
     """``name``'s ``method`` ranking in raw ``extensions`` data, ``None`` when it sets none."""
     return _mapping(_mapping(_mapping(extensions).get(name)).get("rank")).get(method)
+
+
+def _holds_nothing(extensions: Any, name: str, method: str) -> bool:
+    """Whether raw ``extensions`` stores nothing, not even a null, at ``name``'s ``method``.
+
+    Every level on the way is absent or a mapping, and the method is absent;
+    a null or malformed value is something stored, which a removal repairs.
+    """
+    value = extensions
+    for part in (name, "rank", method):
+        if not isinstance(value, dict):
+            return False
+        if part not in value:
+            return True
+        value = value[part]
+    return False
 
 
 def _ranked(
