@@ -8,6 +8,7 @@ on; untaped knows no host of its own.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 
 from pydantic import TypeAdapter, ValidationError
@@ -16,6 +17,10 @@ from untaped_ansible.domain.models import DependencyDeclaration, ResolvedDepende
 from untaped_git.api import RepoName, repo_url_parts
 
 _REPO_NAME: TypeAdapter[str] = TypeAdapter(RepoName)
+#: What a segment of a repository name is made of, on GitHub and GitLab alike.
+_SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
+#: A URL to one of these is a file to download, not a repository.
+_ARCHIVES = (".tar.gz", ".tgz", ".tar.bz2", ".tar.xz", ".tar", ".zip")
 
 
 class IdentityResolver:
@@ -45,7 +50,9 @@ class IdentityResolver:
         if ":" not in value:  # a URL has a scheme or is ``user@host:path``
             return repo_name(value)
         host, segments = repo_url_parts(value)
-        if host is None or host not in self._hosts:
+        if host is None or host not in self._hosts or "-" in segments:  # ``/-/``: a web page
+            return None
+        if value.lower().endswith(_ARCHIVES):
             return None
         return repo_name("/".join(segments))
 
@@ -53,9 +60,11 @@ class IdentityResolver:
 def repo_name(value: str) -> str | None:
     """``value`` when it is a repository name (``owner/repo``, ``group/sub/project``).
 
-    A name has two segments or more. A path such as ``./local``, ``../roles``
-    or ``.hidden/role`` is not one (``None``): the first segment never starts with a dot
-    and no segment is ``.`` or ``..`` (``acme/.github`` is a name).
+    A name has two segments or more, each of letters, digits, ``_``, ``.``
+    and ``-``. A path such as ``./local``, ``../roles`` or ``.hidden/role``,
+    and a template such as ``{{ org }}/role``, is not one (``None``): the
+    first segment never starts with a dot and no segment is ``.`` or ``..``
+    (``acme/.github`` is a name).
     """
     try:
         _REPO_NAME.validate_python(value)
@@ -63,6 +72,8 @@ def repo_name(value: str) -> str | None:
         return None
     segments = value.split("/")
     if len(segments) < 2 or segments[0].startswith(".") or {".", ".."} & set(segments):
+        return None
+    if not all(_SEGMENT.fullmatch(segment) for segment in segments):
         return None
     return value
 

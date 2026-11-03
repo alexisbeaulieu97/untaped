@@ -118,7 +118,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
     result = run("source", "refresh", "bad")
 
     assert result.exit_code == 4  # a broken saved source is local setup
-    assert "repo must be a repository name such as owner/name" in result.output
+    assert "repo must be owner/name" in result.output
 
 
 @pytest.mark.parametrize(

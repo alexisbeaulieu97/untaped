@@ -71,6 +71,10 @@ class IncrementalDependencyIndexWriter(Protocol):
 
     def status(self, source_key: str) -> payloads.SourceIndexStatus | None: ...
 
+    def repo_hosts(self) -> frozenset[str]:
+        """The hosts every source's repositories live on, from their stored URLs."""
+        ...
+
     def ref_scans(
         self,
         source_key: str,

@@ -12,7 +12,7 @@ from pathlib import Path
 from threading import Lock
 
 from untaped.sdk import Diagnostics
-from untaped_ansible.domain.identity import repo_key
+from untaped_ansible.domain.identity import repo_key, url_hosts
 from untaped_ansible.domain.payloads import (
     CachedRef,
     IndexedDependency,
@@ -516,22 +516,11 @@ class SqliteDependencyIndex:
                 found.add(str(row["clone_url"]))
         return {repo: tuple(sorted(found)) for repo, found in sorted(urls.items())}
 
-    def repo_urls(self, source_keys: Iterable[str]) -> dict[str, str]:
-        """Each repo ``source_keys`` selected in their last refresh, by name, and its URL."""
-        keys = sorted(set(source_keys))
-        found: dict[str, str] = {}
+    def repo_hosts(self) -> frozenset[str]:
+        """The hosts every source's repositories live on, from their stored URLs."""
         with self._db() as db:
-            for chunk in batched(keys, 400, strict=False):
-                marks = ",".join("?" for _ in chunk)
-                rows = db.execute(
-                    f"""
-                    select source_repo, url from source_repo_metadata
-                    where source_key in ({marks}) order by source_key, source_repo
-                    """,
-                    chunk,
-                ).fetchall()
-                found.update((str(row["source_repo"]), str(row["url"])) for row in rows)
-        return found
+            rows = db.execute("select distinct url from source_repo_metadata").fetchall()
+        return url_hosts(str(row["url"]) for row in rows)
 
     def selecting_sources(self, source_keys: Iterable[str]) -> dict[str, set[str]]:
         """Which of ``source_keys`` selected each repo in their last refresh, by repo key."""

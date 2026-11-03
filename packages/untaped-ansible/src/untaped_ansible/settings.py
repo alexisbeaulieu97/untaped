@@ -54,11 +54,12 @@ class SourceDefinition(BaseModel):
     def _validate_source(self) -> Self:
         if not any((self.orgs, self.teams, self.repos)):
             raise ValueError("a source selects at least one org, team or repo")
-        from untaped_ansible.domain.identity import repo_name  # noqa: PLC0415 - not on every start
+        # A source lists GitHub repos, so a repo it selects is GitHub's owner/name.
+        from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
 
         for repo in self.repos:
-            if repo_name(repo) is None:
-                raise ValueError(f"repo must be a repository name such as owner/name: {repo!r}")
+            if split_repo_id(repo) is None:
+                raise ValueError(f"repo must be owner/name: {repo!r}")
         invalid_ref_kinds = sorted(set(self.ref_kinds) - set(ALLOWED_REF_KINDS))
         if invalid_ref_kinds:
             raise ValueError("ref-kind must be heads or tags")

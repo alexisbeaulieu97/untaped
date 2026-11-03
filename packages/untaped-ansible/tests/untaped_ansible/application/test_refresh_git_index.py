@@ -880,6 +880,30 @@ def test_a_dependency_url_resolves_on_a_host_the_source_s_repos_live_on(h: Harne
     ]
 
 
+def test_a_dependency_url_resolves_on_a_host_another_source_s_repos_live_on(h: Harness) -> None:
+    reqs = "- src: https://ghe.example.com/acme/lib.git\n"
+    h.set_refs("acme/site", ("main", "sha-main", reqs))
+    h.index.commit_source_ref_partial_refresh(
+        "source:ghe",
+        scans=(),
+        touches=(),
+        keep=set(),
+        repo_metadata=(
+            SourceRepoMetadata(
+                source_key="source:ghe",
+                source_repo="acme/lib",
+                default_branch="main",
+                url="https://ghe.example.com/acme/lib.git",
+            ),
+        ),
+    )
+
+    h.run()
+
+    [edge] = h.index.dependencies("acme/site", "main", source_key="source:prod")
+    assert (edge.dependency_repo, edge.unresolved) == ("acme/lib", None)
+
+
 def test_git_refresh_reindexes_unchanged_ref_when_aliases_change(h: Harness) -> None:
     h.set_refs("acme/site", ("main", "sha-main", "- common\n"))
 

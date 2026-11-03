@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.domain.models import DependencyDeclaration
 
@@ -59,6 +61,24 @@ def test_galaxy_names_and_path_like_sources_are_unresolved_but_preserved() -> No
         resolved = resolver.resolve(_dep(source))
         assert resolved.repo is None, source
         assert resolved.unresolved == source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "https://github.com/acme/role/archive/v1.tar.gz",  # Galaxy's tarball src
+        "https://gitlab.example.com/infra/base/-/archive/main/base-main.zip",
+        "https://gitlab.example.com/infra/base/-/tree/main",
+        "git+https://github.com/acme/role.git,v1.0",  # a legacy ``src,version`` string
+        "~/roles/web",
+        "{{ org }}/role",
+        "acme/role@v1",
+    ],
+)
+def test_a_download_a_web_page_or_a_template_is_no_repository(source: str) -> None:
+    resolver = IdentityResolver(hosts={"github.com", "gitlab.example.com"})
+
+    assert resolver.resolve(_dep(source)).repo is None
 
 
 def test_a_url_on_a_host_no_source_holds_is_unresolved() -> None:

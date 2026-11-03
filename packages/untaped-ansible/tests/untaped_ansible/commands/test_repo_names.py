@@ -41,7 +41,7 @@ def _gitlab_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         make_edge(_BASE, _LIB),
         repo_metadata=(_metadata(_WEB), _metadata(_BASE)),
     )
-    state = {"sources": [{"name": "prod", "repos": [_BASE, _WEB]}]}
+    state = {"sources": [{"name": "prod", "orgs": ["infra"]}]}
     use_config(tmp_path, monkeypatch, state)
 
 

@@ -44,7 +44,7 @@ from untaped_ansible.commands._graph_source import (
 )
 from untaped_ansible.commands._source_data import SourceData
 from untaped_ansible.domain.graph import DependencyGraph
-from untaped_ansible.domain.identity import IdentityResolver, url_hosts
+from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
 from untaped_ansible.refresh import GIT_PARALLEL_CAP, Backend, serve_sources
@@ -132,6 +132,7 @@ class GraphCommand(AnsibleCommand):
             )
         sqlite_index = open_index()
         index = dependency_index_for_graph_source(sqlite_index, graph_source)
+        resolvers = GraphResolvers(sqlite_index, aliases=aliases, github_host=github_host)
         return GraphEnv(
             command=command,
             settings=settings,
@@ -144,12 +145,11 @@ class GraphCommand(AnsibleCommand):
             live=live,
             depth=parse_depth(self.depth),
             all_refs=all_refs,
+            resolvers=resolvers,
             live_reads=LiveReads(
                 lambda: github_api(github),
                 wrapped=index,
-                resolver=lambda: graph_resolver(
-                    sqlite_index, graph_source, aliases=aliases, github_host=github_host
-                ),
+                resolver=resolvers.get,
                 settings=settings,
             ),
         )
@@ -170,11 +170,16 @@ class GraphCommand(AnsibleCommand):
         if not _reads_source(env, direction):
             return read()
         wiring = self.wiring(env.sqlite_index, parallel=self.parallel.value, backend=self.backend)
+
+        def served_read() -> T:
+            env.resolvers.forget()  # a refresh may have stored repositories on new hosts
+            return read()
+
         try:
             served = serve_sources(
                 env.graph_source.selections,
                 refresh=self.refresh.directive,
-                read=read,
+                read=served_read,
                 empty=empty,
                 wiring=wiring,
             )
@@ -293,28 +298,38 @@ class GraphEnv:
     all_refs: bool
     live_reads: LiveReads
 
+    resolvers: GraphResolvers
+
     def resolver(self) -> IdentityResolver:
-        """Names a target or dependency: see :func:`graph_resolver`."""
-        return graph_resolver(
-            self.sqlite_index, self.graph_source, aliases=self.aliases, github_host=self.github_host
-        )
+        """Names a target or dependency: see :class:`GraphResolvers`."""
+        return self.resolvers.get()
 
 
-def graph_resolver(
-    index: SqliteDependencyIndex,
-    graph_source: GraphSource,
-    *,
-    aliases: dict[str, str],
-    github_host: str | None,
-) -> IdentityResolver:
-    """Names a target or dependency by the aliases, or by its URL on a known host.
+class GraphResolvers:
+    """One command's resolver: by the aliases, or by a URL on a host repositories live on.
 
-    The hosts are those of the selected sources' repository URLs (read when
-    called, so after a refresh) and GitHub's, where live reads go.
+    The hosts are those of every source's stored repository URLs, as a
+    refresh resolves them, and GitHub's, where live reads go. It is read once
+    and again after the selected sources were served (:meth:`forget`), so a
+    refresh's new hosts count.
     """
-    keys = [selection.key for selection in graph_source.selections]
-    hosts = url_hosts(index.repo_urls(keys).values())
-    return IdentityResolver(aliases, hosts={*hosts, *([github_host] if github_host else [])})
+
+    def __init__(
+        self, index: SqliteDependencyIndex, *, aliases: dict[str, str], github_host: str | None
+    ) -> None:
+        self._index = index
+        self._aliases = aliases
+        self._github_host = github_host
+        self._resolver: IdentityResolver | None = None
+
+    def get(self) -> IdentityResolver:
+        if self._resolver is None:
+            hosts = {*self._index.repo_hosts(), *([self._github_host] if self._github_host else [])}
+            self._resolver = IdentityResolver(self._aliases, hosts=hosts)
+        return self._resolver
+
+    def forget(self) -> None:
+        self._resolver = None
 
 
 class BuiltGraph(NamedTuple):

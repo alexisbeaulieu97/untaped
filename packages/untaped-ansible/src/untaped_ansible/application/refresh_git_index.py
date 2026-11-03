@@ -153,8 +153,8 @@ class RefreshGitSourceIndex:
 
     def __call__(self, source: SourceDefinition, *, source_key: str) -> RefreshResult:
         repos = self._expand_repos(source)
-        # A URL names a repository on a host the source's own repositories live on.
-        hosts = url_hosts(repo.url for repo in repos)
+        # A URL names a repository on a host any source's repositories live on.
+        hosts = self._index.repo_hosts() | url_hosts(repo.url for repo in repos)
         resolver = IdentityResolver(self._aliases, hosts=hosts)
         paths = source.dependency_paths or self._default_dependency_paths
         paths_fingerprint = _dependency_paths_fingerprint(paths)

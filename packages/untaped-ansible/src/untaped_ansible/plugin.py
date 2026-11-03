@@ -42,11 +42,12 @@ class Ansible(Plugin):
     - A repo is its name as its provider lists it: `owner/repo` on GitHub,
       `group/sub/project` on GitLab. Names match in any case (`Acme/Base` is
       `acme/base`).
-    - A URL names a repo when its host is one the selected sources'
-      repositories live on, or the host of `github.server.url`, where live
-      reads go; during a refresh, only the refreshed source's hosts count. A
-      URL on any other host, and a path-like source in a requirements file
-      such as `./local`, stay unresolved.
+    - A URL names the repo at its path when its host is one any refreshed
+      source's repositories live on, or the host of `github.server.url`, where
+      live reads go. A target's URL is read against the hosts known before the
+      command refreshes. A URL on any other host, a download (`.tar.gz`,
+      `.zip`), a web page (`/-/`), a template and a path-like source in a
+      requirements file such as `./local` stay unresolved.
     - A local path's Git remote is read at the top level of a checkout, linked
       worktrees included.
     - Without a source, a local target is read live. With no GitHub token it
