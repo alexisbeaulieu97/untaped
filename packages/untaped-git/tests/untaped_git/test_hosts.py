@@ -15,7 +15,7 @@ from pydantic import SecretStr
 
 from untaped.sdk import ConfigError
 from untaped.sdk.contracts import Provider
-from untaped.sdk.testing import Home, Install, install
+from untaped.sdk.testing import Install, install
 from untaped_git.helper_nonce import KEY_FILE, helper_nonce
 from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.plugin import Git
@@ -105,7 +105,7 @@ def test_a_failing_credential_is_raised() -> None:
 
 
 @pytest.mark.parametrize("url", ["https://github.com/acme/app.git", "git@github.com:acme/app.git"])
-def test_the_credential_rank_decides_between_two_homes(url: str, home: Home) -> None:
+def test_the_credential_rank_decides_between_two_homes(url: str) -> None:
     Forge.homes = {"hub": "github.com", "lab": "github.com"}
     forges = installed("hub", "lab")
     rank("lab", contract="git_host", method="credential")
@@ -118,7 +118,7 @@ def test_the_credential_rank_decides_between_two_homes(url: str, home: Home) -> 
     assert Forge.asked == (["lab"] if url.startswith("https://") else [])  # hub is never asked
 
 
-def test_another_methods_rank_does_not_decide(home: Home) -> None:
+def test_another_methods_rank_does_not_decide() -> None:
     Forge.homes = {"hub": "github.com", "lab": "github.com"}
     forges = installed("hub", "lab")
     rank("lab", contract="git_host", method="proxy")

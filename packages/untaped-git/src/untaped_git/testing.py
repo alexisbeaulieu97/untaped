@@ -1,4 +1,4 @@
-"""Real-git fixtures for tests that fetch (``untaped_git.testing``): a local remote like a host.
+"""Test helpers (``untaped_git.testing``): a local remote like a host, and fake providers.
 
 :func:`git_remote` makes a bare repository that answers at an ``https://``
 URL (the test ``HOME``'s git config rewrites it to the local path), with an
@@ -341,14 +341,20 @@ def host(served: str) -> type[Host]:
 def rank(
     *plugins: str,
     contract: Literal["repo_source", "git_host"] = "repo_source",
-    method: str = "repos",
+    method: str | None = None,
 ) -> None:
     """Rank ``plugins`` (first first) for ``contract.method`` in the test home's ``config.yml``.
 
-    It writes what ``untaped plugin rank git.<contract> <method> ...`` would,
-    replacing the file; install the plugins after, since ``install`` keeps the
-    ranking core keeps in git's section.
+    ``method`` defaults to ``repos`` for ``repo_source`` and is required for
+    ``git_host``. It writes what ``untaped plugin rank git.<contract> <method>
+    ...`` would, and one call writes the whole file, so it holds one ranking;
+    install the plugins after, since ``install`` keeps the ranking core keeps
+    in git's section.
     """
+    if method is None:
+        if contract != "repo_source":
+            raise TypeError(f"rank(contract={contract!r}) needs a method")
+        method = "repos"
     path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

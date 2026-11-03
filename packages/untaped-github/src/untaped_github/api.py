@@ -4,9 +4,8 @@ Ansible uses it for repository inventory, github's port (the GitHub API,
 served for the server's version), reference probing, settings, and
 result/error types. Repo names reach other plugins through the git plugin's
 ``RepoSource`` contract, which github fills (``providers/repos.py``), never
-through this module. The
-closed :data:`__all__` keeps the boundary explicit; everything else under
-``untaped_github`` is private to GitHub.
+through this module. The closed :data:`__all__` keeps the boundary explicit;
+everything else under ``untaped_github`` is private to GitHub.
 """
 
 from __future__ import annotations

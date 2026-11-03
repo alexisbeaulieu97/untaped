@@ -1,6 +1,6 @@
 """``RepoFinder``: what the user typed, resolved over every plugin filling ``RepoSource``.
 
-The providers are fakes named ``github`` and ``gitlab`` (the workspace sources
+The providers are fakes named ``github`` and ``gitlab`` (the repo sources
 design's scenarios); the finder asks them only through ``untaped.sdk.contracts``.
 """
 

@@ -8278,7 +8278,7 @@ sdk untaped_git.testing.make_repo(name)  [experimental]
 sdk untaped_git.testing.rank()  [experimental]
 sdk untaped_git.testing.rank(*plugins)  [experimental]
 sdk untaped_git.testing.rank(contract=) default=repo_source  [experimental]
-sdk untaped_git.testing.rank(method=) default=repos  [experimental]
+sdk untaped_git.testing.rank(method=) default=None  [experimental]
 sdk untaped_git.testing.trace2_events(path)  [experimental]
 sdk untaped_github.api.BatchRepoRefsFailure(*, full_name, reason, kind)
 sdk untaped_github.api.BatchRepoRefsFailure(category=) default=ErrorCategory.UNAVAILABLE

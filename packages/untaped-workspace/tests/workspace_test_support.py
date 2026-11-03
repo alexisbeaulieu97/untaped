@@ -3,7 +3,7 @@
 The fakes (git's own, from ``untaped_git.testing``, and a forge with its own
 record kind) fill git's ``RepoSource`` and ``GitHost`` as plugins workspace
 knows nothing about, as it knows nothing about the real ones:
-``install(WorkspacePlugin, providers={"github": (listing(repo("acme/api")),)})``.
+``install(WorkspacePlugin, providers={"github": (listing(make_repo("acme/api")),)})``.
 Each factory returns a provider class of its own, since core builds a
 provider itself; what the class lists, raises or counted is on the class, so
 a test changes ``github.error`` or reads ``github.calls`` after composing it.
