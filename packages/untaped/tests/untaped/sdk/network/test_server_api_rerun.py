@@ -35,7 +35,12 @@ from core_test_support.server_api import (
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import UntapedError
 from untaped.sdk.network import ApiMismatch
-from untaped.sdk.network._server_api_calls import CallLog, logging_into, record
+from untaped.sdk.network._server_api_calls import (
+    CallLog,
+    logging_into,
+    record,
+    recording_only,
+)
 from untaped.sdk.network.http import _Sent
 from untaped.sdk.testing import Install
 
@@ -198,6 +203,33 @@ def test_a_mismatch_a_port_call_inside_another_passed_through_is_not_handled_aga
         with pytest.raises(ApiMismatch, match=r"Toy 3\.1 answered POST /v2/search"):
             port.item("a")
     assert outer_on_v2.call_count == 0  # the outer call is not rerun on what the inner switched
+
+
+@respx.mock
+def test_a_call_begun_before_another_switched_says_the_change_the_switch_did_not(
+    toy: Install,
+) -> None:
+    _upgraded()
+    respx.post(f"{URL}/v1/items").mock(return_value=httpx.Response(200, text="<html/>"))
+    route("GET", "/v1/items", status=404)
+    route("GET", "/v2/items", json=[{"name": "a"}])
+    with toy.running() as running:
+        port = SERVER_API.port(configured())
+        items = port.items()  # begun on V1: nothing sent yet
+        with pytest.raises(UntapedError, match="the request may have taken effect"):
+            port.add("a")  # meets the change, switches, and fails: it wrote
+        assert [each.name for each in items] == ["a", "a"]  # reruns on V2
+        warnings = [str(each) for each in running.diagnostics]
+    assert len(warnings) == 1
+    assert CHANGED in warnings[0]
+
+
+def test_a_detection_inside_a_port_call_records_into_its_own_log_alone() -> None:
+    outer, detection = CallLog(), CallLog()
+    with logging_into(outer), recording_only(detection):
+        record(_Sent("POST", "/graphql", idempotent=False, outcome="answered", status=200))
+    assert detection.wrote
+    assert not outer.sent
 
 
 def test_a_port_call_inside_another_records_into_both() -> None:

@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 import respx
+from pydantic import BaseModel
 
 from core_test_support.server_api import (
     SERVER_API,
@@ -34,6 +35,7 @@ from core_test_support.server_api import (
 from core_test_support.server_api_legacy import Fetch, Legacy, LegacySettings
 from untaped.sdk.diagnostic import Deprecation
 from untaped.sdk.marks import forget_notices
+from untaped.sdk.network import _server_api_port
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -328,18 +330,55 @@ def test_refresh_detects_once_however_many_ports_ask(install: Installer) -> None
     assert about.call_count == 1
 
 
+def _spy_on_connections(monkeypatch: pytest.MonkeyPatch) -> list[tuple[BaseModel, Any]]:
+    """Each client a server API block builds: the settings it was for, and the client."""
+    built: list[tuple[BaseModel, Any]] = []
+    real = _server_api_port.connect
+
+    def spying(api: Any, settings: BaseModel, headers: Any) -> Any:
+        client = real(api, settings, headers)
+        built.append((settings, client))
+        return client
+
+    monkeypatch.setattr(_server_api_port, "connect", spying)
+    return built
+
+
 @respx.mock
-def test_each_port_talks_with_its_own_settings_on_a_shared_pick(install: Installer) -> None:
+def test_each_settings_talks_through_its_own_client_on_a_shared_pick(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
     serve("3.1")
     _item("/v2")
+    built = _spy_on_connections(monkeypatch)
     strict = configured()
     lax = ToySettings.model_validate({"server": {"url": URL, "verify_tls": False}})
     with install(Toy, settings=strict).running():
-        ports = [SERVER_API.port(strict), SERVER_API.port(lax)]
-        for port in ports:
-            port.item("a")
-        built = [list(port._adapters.values()) for port in ports]
-    assert [[each.settings for each in adapters] for adapters in built] == [[strict], [lax]]
+        for settings in (strict, lax, strict):
+            SERVER_API.port(settings).item("a")
+    adapters = [(settings, client) for settings, client in built[1:]]  # the first detected
+    assert [settings for settings, _ in adapters] == [strict, lax]  # strict's is shared
+    verified = [client._client._transport._pool._ssl_context.verify_mode for _, client in adapters]
+    assert verified[0] != verified[1]
+
+
+@respx.mock
+def test_ports_built_per_call_share_one_client_closed_when_the_run_ends(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve("3.1")
+    _item("/v2")
+    built = _spy_on_connections(monkeypatch)
+    toy = install(Toy, settings=configured())
+    for _ in range(2):
+        assert toy.run(Get(name="a")).exit == 0
+    with toy.running():
+        settings = configured()
+        for _ in range(5):
+            SERVER_API.port(settings).item("a")
+    gc.collect()
+    assert len(built) == 4  # one detection, then one adapter client per run
+    assert [client._client.is_closed for _, client in built] == [True] * 4
 
 
 @respx.mock
@@ -350,7 +389,7 @@ def test_a_finished_runs_picks_and_clients_are_let_go(install: Installer) -> Non
     for _ in range(3):
         assert toy.run(Get(name="a")).exit == 0
     gc.collect()
-    assert [each for each in SERVER_API._picks.values() if each.composition() is not None] == []
+    assert SERVER_API._picks == {}
 
 
 @respx.mock

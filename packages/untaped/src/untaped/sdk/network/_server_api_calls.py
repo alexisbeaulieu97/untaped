@@ -65,3 +65,13 @@ def logging_into(*logs: CallLog) -> Iterator[CallLog]:
         yield logs[-1]
     finally:
         _CALL.reset(token)
+
+
+@contextmanager
+def recording_only(log: CallLog) -> Iterator[CallLog]:
+    """Record the requests sent inside the block into ``log`` alone (a detection's)."""
+    token = _CALL.set((log,))
+    try:
+        yield log
+    finally:
+        _CALL.reset(token)
