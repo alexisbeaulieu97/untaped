@@ -1,10 +1,10 @@
 """Network git goes through the git plugin: no other plugin clones, fetches, pulls or pushes.
 
-The git plugin's repo store and remote queries carry what a host plugin
-supplies (``GitHost`` credentials), untaped's proxy and the store's object
-policy; a plugin that runs ``git clone`` itself gets none of that, so a
-private repo on a host only a plugin answers for fails there alone. This
-test reads every plugin's source but git's and flags an argv that runs a
+The git plugin's repo store, remote queries and working-copy ``clone`` carry
+what a host plugin supplies (``GitHost`` credentials), untaped's proxy and the
+store's object policy; a plugin that runs ``git clone`` itself gets none of
+that, so a private repo on a host only a plugin answers for fails there alone.
+This test reads every plugin's source but git's and flags an argv that runs a
 git command reaching a remote (``clone``, ``fetch``, ``pull``, ``ls-remote``,
 ``push`` and the like): a list or tuple literal, as passed to ``run_git`` or
 ``subprocess``, or the arguments of a call to a function named for git. Its
@@ -34,7 +34,8 @@ SUBCOMMANDS = {
 VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
 #: Modules allowed to run network git themselves, relative to ``packages/``, each with why.
 EXCEPTIONS = {
-    # Dotfiles' managed clones, until the dotfiles redesign moves them onto git.
+    # Dotfiles' managed clones, until the dotfiles redesign moves them onto the store and
+    # untaped_git.api.clone.
     "untaped-dotfiles/src/untaped_dotfiles/git_repos.py",
     # The remote of the user's own checkout, asked with that checkout's own git config.
     "untaped-awx/src/untaped_awx/infrastructure/git_head.py",
