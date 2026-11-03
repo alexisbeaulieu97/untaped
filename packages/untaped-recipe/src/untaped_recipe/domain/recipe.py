@@ -33,10 +33,6 @@ class InputSpec(Input):
     scope: InputScope = "global"
     from_: tuple[str, ...] = Field(default=(), alias="from")
 
-    def is_required(self) -> bool:
-        """Only ``required: true`` makes an input required: without a default, it stays unset."""
-        return self.required
-
     @model_validator(mode="before")
     @classmethod
     def _normalize_input_metadata(cls, value: object) -> object:

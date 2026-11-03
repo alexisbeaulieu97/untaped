@@ -50,7 +50,8 @@ def resolve[S: Input](
     ``given`` is in precedence order (flags, then files, then configuration,
     as the caller has them). A name in ``given`` that neither ``specs`` nor
     ``known`` (names other files in the same run declare) declares is
-    refused. An input that isn't required and has no value is left out.
+    refused. Every input in ``specs`` must end with a value: a consumer whose
+    file can leave one unset leaves it out of ``specs``.
 
     When a required input has no value, ``ask`` answers it (``label`` says
     for what, such as a target). Nothing is asked when ``ask`` is ``None`` or
@@ -73,7 +74,7 @@ def resolve[S: Input](
             values[name] = coerce(spec, source[name], name=name)
         elif spec.default is not None:
             values[name] = coerce(spec, spec.default, name=name)
-        elif spec.is_required():
+        else:
             pending.append(name)
     if not pending:
         return Resolved(values)

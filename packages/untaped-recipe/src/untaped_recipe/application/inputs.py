@@ -158,10 +158,16 @@ def _resolve(
 ) -> dict[str, object]:
     """The values plugin's resolution over ``specs`` (one scope of ``recipe``'s inputs).
 
-    The given values may name the other scope's inputs (``known``). A missing
-    input fails with the ``--var`` hint.
+    The given values may name the other scope's inputs (``known``). An input
+    neither ``required: true`` nor defaulted and given nowhere stays unset, so
+    it is left out; a missing one fails with the ``--var`` hint.
     """
-    resolved = resolve(specs, given, known=recipe.inputs, ask=config.ask, label=label)
+    needed = {
+        name: spec
+        for name, spec in specs.items()
+        if spec.required or spec.default is not None or any(name in each for each in given)
+    }
+    resolved = resolve(needed, given, known=recipe.inputs, ask=config.ask, label=label)
     if resolved.missing:
         raise ValueError(_missing_message(resolved.missing))
     return resolved.values

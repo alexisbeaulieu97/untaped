@@ -210,9 +210,11 @@ _STARTUP_PROBE = (
 #: the row rendering: 124 and 665, 2026-11-02, so the budget goes to 127 and
 #: the total to 668. Splitting the cache into its files, its serving and its
 #: call scope adds three modules, each read by every serve: 127 and 668,
-#: 2026-11-02, so the budget goes to 130 and the total to 671.
-_TOTAL_BUDGET = 671
-_UNTAPED_BUDGET = 130
+#: 2026-11-02, so the budget goes to 130 and the total to 671. The values
+#: plugin adds its package and settings model, as every plugin does: 131 and
+#: 671, 2026-11-03, so the budget goes to 132 and the total to 673.
+_TOTAL_BUDGET = 673
+_UNTAPED_BUDGET = 132
 #: A start composing afresh (the first after an install change) imports each
 #: 12.0 plugin class, as the contracts and declaration cache designs accept,
 #: so it has no budget here: it is a figure the plugin moves watch.

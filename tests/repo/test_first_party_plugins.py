@@ -113,8 +113,10 @@ def test_first_party_plugin_has_a_summary_and_one_stub_skill(
 
 @pytest.mark.parametrize("name", FIRST_PARTY)
 def test_first_party_mounts_under_the_unified_root(
-    candidates: dict[str, PluginCandidate], name: str
+    candidates: dict[str, PluginCandidate], specs: dict[str, type[Plugin]], name: str
 ) -> None:
+    if not specs[name].commands:
+        pytest.skip(f"{name} has no commands, so it mounts none")
     top = _invoke(candidates[name], "--help")
     assert name in top
     own = _invoke(candidates[name], name, "--help")

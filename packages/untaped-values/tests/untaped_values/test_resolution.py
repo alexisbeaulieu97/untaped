@@ -24,13 +24,6 @@ class _Answers:
         return self.answers[name]
 
 
-class _Optional(Input):
-    """A consumer's input that may stay without a value (recipe's ``required: false``)."""
-
-    def is_required(self) -> bool:
-        return False
-
-
 def test_the_first_given_mapping_wins_then_the_default_then_an_answer() -> None:
     specs = {
         "flag": Input(type="int"),
@@ -52,10 +45,6 @@ def test_the_first_given_mapping_wins_then_the_default_then_an_answer() -> None:
 
 def test_the_default_applies_when_nothing_is_given() -> None:
     assert resolve({"n": Input(type="int", default="3")}, []).values == {"n": 3}
-
-
-def test_an_input_that_needs_no_value_is_left_out() -> None:
-    assert resolve({"opt": _Optional()}, [], ask=_Answers()).values == {}
 
 
 def test_a_name_nothing_declares_is_refused_naming_the_declared_ones() -> None:

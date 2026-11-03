@@ -114,8 +114,3 @@ def test_coercion_errors_do_not_echo_values(input_type: str) -> None:
 def test_input_refuses_an_inconsistent_declaration(spec: dict[str, object], match: str) -> None:
     with pytest.raises(ValidationError, match=match):
         Input.model_validate(spec)
-
-
-def test_an_input_without_a_default_is_required() -> None:
-    assert Input().is_required()
-    assert not Input(default="x").is_required()

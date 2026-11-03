@@ -52,10 +52,6 @@ class Input(BaseModel):
         None, description="A `dict` input's value type (unrelated to the plugin's name)."
     )
 
-    def is_required(self) -> bool:
-        """Whether a run must have a value for this input: by default, when it has no default."""
-        return self.default is None
-
     @model_validator(mode="after")
     def _consistent(self) -> Input:
         if self.items is not None and self.type != "list":

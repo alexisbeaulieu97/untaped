@@ -123,9 +123,6 @@ def test_input_spec_is_the_values_input_with_recipes_own_fields() -> None:
 
     assert isinstance(spec, Input)
     assert coerce(spec, "4") == 4
-    assert not spec.is_required()  # no default and no `required: true` leaves it unset
-    assert not InputSpec().is_required()
-    assert InputSpec(required=True).is_required()
 
 
 def test_input_spec_rejects_a_required_input_with_a_default() -> None:
