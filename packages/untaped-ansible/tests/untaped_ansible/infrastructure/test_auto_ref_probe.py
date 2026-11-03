@@ -225,7 +225,7 @@ def _targets(*repos: str) -> list[ProbeTarget]:
         ProbeTarget(
             full_name=repo,
             default_branch="main",
-            clone_url=f"https://github.com/{repo}.git",
+            url=f"https://github.com/{repo}.git",
         )
         for repo in repos
     ]

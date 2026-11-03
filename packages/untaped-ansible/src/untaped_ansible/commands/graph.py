@@ -54,7 +54,7 @@ from untaped_ansible.commands._graph import (
     within,
 )
 from untaped_ansible.commands.source import Refresh as SourceRefresh
-from untaped_ansible.domain.checkout_hits import checkout_hits, github_repo
+from untaped_ansible.domain.checkout_hits import checkout_hits
 from untaped_ansible.domain.containment import find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
 from untaped_ansible.domain.graph_roots import (
@@ -378,12 +378,8 @@ class Checkouts(_Reaching):
             repo_key(repo): next((ref.default_branch for ref in refs if ref.default_branch), None)
             for repo, refs in cached.items()
         }
-        hosts = {host for host in ("github.com", self.github_host) if host}
         yield from checkout_hits(
-            rows,
-            checkouts,
-            repo_of=lambda url: github_repo(url, hosts=hosts),
-            default_branches=defaults,
+            rows, checkouts, repo_of=env.resolver().repo_of, default_branches=defaults
         )
 
     def _checkouts(self) -> list[Checkout]:
@@ -431,7 +427,7 @@ class ImpactGroup(Group):
 class Find(GraphCommand):
     """Find which roots contain a repository downstream, one row per match.
 
-    Roots come from --root, or from --stdin: `owner/repo@ref` lines, or pipe
+    Roots come from --root, or from --stdin: `NAME@ref` lines, or pipe
     records with scm_url/repo_url/repo/full_name and effective_scm_ref/ref.
     Rows from pipe records carry that record's kind, id and name, so they
     join back to their input. Every input record gets its own rows, even
@@ -454,13 +450,13 @@ class Find(GraphCommand):
 
     target: Positional[list[str]] = Field(
         description=(
-            "Repository to find: owner/repo, GitHub URL, or source alias; give several "
+            "Repository to find: its name (owner/repo), its URL, or a source alias; give several "
             "to find any of them."
         )
     )
     root: list[str] = Field(
         default_factory=list,
-        description="Root to search as owner/repo[@ref], GitHub URL, source alias, or local path.",
+        description="Root to search as NAME[@ref], a URL, a source alias, or a local path.",
     )
     stdin: Stdin[Record]
     all_refs: bool = Field(False, description=ALL_REFS)
@@ -513,7 +509,7 @@ class Find(GraphCommand):
             yield _table_path(match, table=table)
 
     def _piped_roots(self) -> list[tuple[GraphRoot, RootInput]]:
-        """Roots from stdin (bare ``owner/repo@ref`` lines or pipe records), with their input.
+        """Roots from stdin (bare ``NAME@ref`` lines or pipe records), with their input.
 
         Identical inputs collapse; records naming one root stay one entry each.
         """

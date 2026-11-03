@@ -10,12 +10,11 @@ the role, so it is left out.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from untaped_ansible.checkouts import Checkout
 from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.records import CheckoutHit, FoundIn, ReachedRow
-from untaped_git.api import repo_url_parts
 
 
 def checkout_hits(
@@ -27,9 +26,9 @@ def checkout_hits(
 ) -> list[CheckoutHit]:
     """One row per checkout and dependent it checks out, those not in the source last.
 
-    ``repo_of`` names the repo a URL is (``None``: not one the source can
-    hold); ``default_branches`` holds each dependent repo's default branch by
-    :func:`repo_key`, where the source knows it.
+    ``repo_of`` names the repo a URL is (``None``: not one on a host the
+    sources' repositories live on); ``default_branches`` holds each dependent
+    repo's default branch by :func:`repo_key`, where the source knows it.
     """
     nodes: dict[str, dict[str | None, FoundIn]] = {}
     for row in reached:
@@ -48,14 +47,6 @@ def checkout_hits(
     return sorted(hits, key=_order)
 
 
-def github_repo(url: str, *, hosts: Collection[str]) -> str | None:
-    """The ``owner/repo`` a clone URL on one of ``hosts`` names (any URL form git takes)."""
-    host, segments = repo_url_parts(url)
-    if host is None or host not in {each.lower() for each in hosts} or len(segments) != 2:
-        return None
-    return "/".join(segments)
-
-
 def _order(hit: CheckoutHit) -> tuple[bool, str, str, str]:
     found = hit.dependent
     if found is None:
@@ -63,4 +54,4 @@ def _order(hit: CheckoutHit) -> tuple[bool, str, str, str]:
     return (False, repo_key(found.repo), found.ref or "", hit.name)
 
 
-__all__ = ["checkout_hits", "github_repo"]
+__all__ = ["checkout_hits"]

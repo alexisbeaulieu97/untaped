@@ -9,6 +9,7 @@ import pytest
 
 from untaped.sdk import HttpStatusError
 from untaped_ansible.application.graph import BuildGraph, GraphRequest
+from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.domain.payloads import (
     CachedRef,
     IndexedDependency,
@@ -87,7 +88,7 @@ def _index(github: Any, **kwargs: Any) -> GithubDependencyIndex:
     return GithubDependencyIndex(
         github=github,
         wrapped=EmptyIndex(),
-        aliases={},
+        resolver=IdentityResolver(hosts={"github.com"}),
         dependency_paths=["roles/requirements.yml"],
         **kwargs,
     )
@@ -323,7 +324,7 @@ def _renamed_default_graph(
     index = GithubDependencyIndex(
         github=github,
         wrapped=StaleDefaultIndex(),
-        aliases={},
+        resolver=IdentityResolver(hosts={"github.com"}),
         dependency_paths=["roles/requirements.yml"],
     )
     request = GraphRequest(

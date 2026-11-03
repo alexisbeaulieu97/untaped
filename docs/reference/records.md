@@ -187,7 +187,7 @@ per row (raw prints an event's `counter` and a log's `line`); with
 
 | Consumer | Reads | Field used |
 |---|---|---|
-| `ansible find --stdin` | any installed plugin's record kind; or `owner/repo@ref` lines | repository from `scm_url`, `repo_url`, `repo` or `full_name`; ref from `effective_scm_ref` or `ref`; identity from `id` and `name` |
+| `ansible find --stdin` | any installed plugin's record kind; or `NAME@ref` lines | repository from `scm_url`, `repo_url`, `repo` or `full_name`; ref from `effective_scm_ref` or `ref`; identity from `id` and `name` |
 
 `ansible graph` writes one `ansible.graph_document`, the JSON graph; `tree`
 (its default) and `mermaid` are its own formats.

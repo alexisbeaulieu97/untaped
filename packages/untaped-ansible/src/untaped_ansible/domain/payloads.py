@@ -50,15 +50,17 @@ class ProbedRepo(BaseModel):
 
 
 class ProbeTarget(BaseModel):
-    """Repository metadata needed by remote ref probe backends."""
+    """A source repository: its name and URL as its provider gives them, and its default branch.
+
+    ``ssh_url`` is the provider's SSH form of ``url``, when it gives one.
+    """
 
     model_config = ConfigDict(frozen=True)
 
     full_name: str
+    url: str
     default_branch: str
-    clone_url: str | None = None
     ssh_url: str | None = None
-    html_url: str | None = None
 
 
 class ProbeFailure(BaseModel):
@@ -133,13 +135,14 @@ class CachedRef(BaseModel):
 
 
 class SourceRepoMetadata(BaseModel):
-    """Cached metadata for one source repository."""
+    """Cached metadata for one source repository; ``url`` is its URL as its provider gives it."""
 
     model_config = ConfigDict(frozen=True)
 
     source_key: str
     source_repo: str
     default_branch: str
+    url: str
 
 
 class RefScanMetadata(BaseModel):

@@ -196,7 +196,6 @@ class Remove(AnsibleCommand):
             index.source_repos(key),
             {repo: sorted(others[source] for source in keys) for repo, keys in selected.items()},
             store=GitSourceStore(plugin=self.ctx.plugin),
-            host=self.github_host,
             dry_run=dry_run,
         )
         if not dry_run and not failures:
@@ -350,15 +349,14 @@ def _release_repos(
     selected: dict[str, list[str]],
     *,
     store: GitSourceStore,
-    host: str | None,
     dry_run: bool,
 ) -> tuple[list[str], list[tuple[str, UntapedError]]]:
-    """Release ``repos`` (``OWNER/NAME`` → clone URLs) no other saved source selects.
+    """Release ``repos`` (name → URLs) no other saved source selects.
 
-    Every repo is also tried at its ``https://<host>/OWNER/NAME.git`` URL, so
-    one the source still selects but whose refs were all pruned is found
-    too; https and ssh URLs of a repo are one store repo. Repos ansible has no
-    part in are skipped. Returns the outcome lines and the failed releases.
+    Each repo is tried at its stored URL and every remote URL its scans
+    fetched; https and ssh URLs of a repo are one store repo. Repos ansible
+    has no part in are skipped. Returns the outcome lines and the failed
+    releases.
     """
     changes: list[str] = []
     failures: list[tuple[str, UntapedError]] = []
@@ -368,8 +366,7 @@ def _release_repos(
             noun = "source" if len(keepers) == 1 else "sources"
             changes.append(f"kept {repo} (selected by {noun} {_and_list(keepers)})")
             continue
-        candidates = [*([f"https://{host}/{repo}.git"] if host else []), *urls]
-        for url in {store_key(url): url for url in candidates}.values():
+        for url in {store_key(url): url for url in urls}.values():
             if dry_run:
                 if store.holds(url):
                     changes.append(f"would release {repo}")

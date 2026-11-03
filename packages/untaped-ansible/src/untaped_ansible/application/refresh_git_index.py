@@ -25,7 +25,7 @@ from untaped_ansible.application.source_refs import (
     pattern_matches,
     source_ref_selections,
 )
-from untaped_ansible.domain.identity import DEFAULT_GITHUB_HOST, IdentityResolver
+from untaped_ansible.domain.identity import IdentityResolver, url_hosts
 from untaped_ansible.domain.models import ParseReport, ParseWarning
 from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import (
@@ -127,7 +127,7 @@ class RefreshGitSourceIndex:
         repo_batch_size: int = 100,
         rate_limit_floor: int = 500,
         progress: ProgressHandle = NO_PROGRESS,
-        github_host: str | None = None,
+        github_web_host: str | None = None,
     ) -> None:
         if clone_protocol not in {"https", "ssh"}:
             raise ValueError("clone_protocol must be 'https' or 'ssh'")
@@ -149,13 +149,16 @@ class RefreshGitSourceIndex:
         self._repo_batch_size = repo_batch_size
         self._rate_limit_floor = rate_limit_floor
         self._progress = progress
-        self._github_host = github_host
+        self._github_web_host = github_web_host
 
     def __call__(self, source: SourceDefinition, *, source_key: str) -> RefreshResult:
         repos = self._expand_repos(source)
+        # A URL names a repository on a host the source's own repositories live on.
+        hosts = url_hosts(repo.url for repo in repos)
+        resolver = IdentityResolver(self._aliases, hosts=hosts)
         paths = source.dependency_paths or self._default_dependency_paths
         paths_fingerprint = _dependency_paths_fingerprint(paths)
-        aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
+        aliases_fingerprint = _aliases_fingerprint(self._aliases, hosts)
         source_fingerprint = source_refresh_fingerprint(
             source,
             repos=repos,
@@ -222,6 +225,8 @@ class RefreshGitSourceIndex:
             for full_name, outcome in self._refresh_repos(
                 tasks,
                 source_key=source_key,
+                resolver=resolver,
+                aliases_fingerprint=aliases_fingerprint,
                 paths=paths,
                 checked_at=checked_at,
                 analyser=analyser,
@@ -359,13 +364,14 @@ class RefreshGitSourceIndex:
         tasks: list[_RepoRefreshTask],
         *,
         source_key: str,
+        resolver: IdentityResolver,
+        aliases_fingerprint: str,
         paths: list[str],
         checked_at: datetime,
         analyser: str,
     ) -> Iterable[tuple[str, _RepoRefreshResult | RepoFailure]]:
         """Run per-repo fetch/parse workers; collect results or failures."""
         paths_fingerprint = _dependency_paths_fingerprint(paths)
-        aliases_fingerprint = _aliases_fingerprint(self._aliases, self._github_host)
         total = len(tasks)
         done = 0
         changed = 0
@@ -376,6 +382,7 @@ class RefreshGitSourceIndex:
                 return self._refresh_repo(
                     task,
                     source_key=source_key,
+                    resolver=resolver,
                     paths=paths,
                     paths_fingerprint=paths_fingerprint,
                     aliases_fingerprint=aliases_fingerprint,
@@ -468,6 +475,7 @@ class RefreshGitSourceIndex:
         task: _RepoRefreshTask,
         *,
         source_key: str,
+        resolver: IdentityResolver,
         paths: list[str],
         paths_fingerprint: str,
         aliases_fingerprint: str,
@@ -508,6 +516,7 @@ class RefreshGitSourceIndex:
             source_key=source_key,
             source_repo=repo.full_name,
             default_branch=task.default_branch,
+            url=repo.url,
         )
         # A ref whose dependencies did not change can still lack its variable
         # analysis (new in this release, or made by another analyser version).
@@ -540,7 +549,6 @@ class RefreshGitSourceIndex:
         parsed_by_sha = {
             sha: _parse_dependency_files(contents, paths) for sha, contents in files_by_sha.items()
         }
-        resolver = IdentityResolver(self._aliases, github_host=self._github_host)
         repo_skipped_files: list[SkippedDependencyFile] = []
         for ref in changed_refs:
             parsed = parsed_by_sha[ref.sha]
@@ -658,7 +666,9 @@ class RefreshGitSourceIndex:
             )
         )
         self._progress.update(phase="expanding source", done=selector_count, total=selector_count)
-        return [repo_candidate(item.model_dump(), fallback=None) for item in inventory]
+        return [
+            repo_candidate(item.model_dump(), web_host=self._github_web_host) for item in inventory
+        ]
 
     def _probe_progress(self, done: int, total: int) -> None:
         self._progress.update(phase="probing refs", done=done, total=total)
@@ -738,17 +748,26 @@ def _skipped_file_key(skipped: SkippedDependencyFile) -> tuple[str, str, str, st
     )
 
 
-def repo_candidate(row: dict[str, object], *, fallback: str | None) -> ProbeTarget:
-    full_name = _str(row.get("full_name")) or fallback
+def repo_candidate(row: dict[str, object], *, web_host: str | None = None) -> ProbeTarget:
+    """A GitHub repository row as a source repository: its URL is its clone URL.
+
+    Without ``clone_url``, the URL comes from ``html_url``, then from
+    ``web_host`` (``github.com`` when unset) and the full name.
+    """
+    full_name = _str(row.get("full_name"))
     if full_name is None:
         raise ValueError("repository metadata missing full_name")
-    default_branch = _str(row.get("default_branch")) or "HEAD"
+    html_url = _str(row.get("html_url"))
+    url = (
+        _str(row.get("clone_url"))
+        or (html_url and f"{html_url.removesuffix('/')}.git")
+        or f"https://{web_host or 'github.com'}/{full_name}.git"
+    )
     return ProbeTarget(
         full_name=full_name,
-        default_branch=default_branch,
-        clone_url=_str(row.get("clone_url")),
+        url=url,
+        default_branch=_str(row.get("default_branch")) or "HEAD",
         ssh_url=_str(row.get("ssh_url")),
-        html_url=_str(row.get("html_url")),
     )
 
 
@@ -759,9 +778,9 @@ def _dependency_paths_fingerprint(paths: list[str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _aliases_fingerprint(aliases: dict[str, str], github_host: str | None = None) -> str:
-    """Fingerprint of everything identity resolution depends on: aliases and GitHub host."""
-    resolution = {"aliases": aliases, "github_host": (github_host or DEFAULT_GITHUB_HOST).lower()}
+def _aliases_fingerprint(aliases: dict[str, str], hosts: Iterable[str]) -> str:
+    """Fingerprint of everything identity resolution depends on: aliases and the URL hosts."""
+    resolution = {"aliases": aliases, "hosts": sorted(hosts)}
     payload = json.dumps(resolution, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
 

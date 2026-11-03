@@ -87,7 +87,10 @@ def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         make_edge("acme/api", _ROLE, ref="v2.1"),
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:prod", source_repo="acme/web", default_branch="main"
+                source_key="source:prod",
+                source_repo="acme/web",
+                default_branch="main",
+                url="https://github.com/acme/web.git",
             ),
         ),
     )

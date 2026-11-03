@@ -225,7 +225,7 @@ def test_source_validation_errors_print_one_readable_line(
     result = run("source", *args)
 
     assert result.exit_code == exit_code
-    assert "error: repo must be owner/name: 'not-a-repo'" in result.stderr
+    assert "error: repo must be a repository name such as owner/name: 'not-a-repo'" in result.stderr
     assert "pydantic" not in result.stderr
     assert "validation error" not in result.stderr
 

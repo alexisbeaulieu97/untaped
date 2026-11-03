@@ -18,13 +18,14 @@ from untaped.sdk import (
     q,
 )
 from untaped_ansible.commands._ansible import AnsibleCommand
+from untaped_ansible.domain.identity import repo_name
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.records import SourceAlias, SourceAliasOutcome
-from untaped_ansible.settings import ALIASES, Alias, alias_map, is_repo_name
+from untaped_ansible.settings import ALIASES, Alias, alias_map
 
 
 class Set(AnsibleCommand):
-    """Map an Ansible role/Galaxy name to a GitHub owner/repo (creates or replaces).
+    """Map an Ansible role/Galaxy name to a repository (creates or replaces).
 
     Requirements files name a role by that name; the alias says which repo it
     is. Aliases apply when a source refreshes, so run `source refresh` after
@@ -38,12 +39,16 @@ class Set(AnsibleCommand):
     """
 
     alias: Positional[str] = Field(description="Alias to set.")
-    repo: Positional[str] = Field(description="Canonical GitHub owner/repo.")
+    repo: Positional[str] = Field(
+        description="The repository, by its provider's name: owner/repo, group/sub/project."
+    )
     output: Output[SourceAliasOutcome]
 
     def run(self) -> SourceAliasOutcome:
-        if not is_repo_name(self.repo):
-            raise UsageError(f"alias target must be a GitHub owner/name repo (got {q(self.repo)})")
+        if repo_name(self.repo) is None:
+            raise UsageError(
+                f"alias target must be a repository name such as owner/name (got {q(self.repo)})"
+            )
         previous = alias_map().get(self.alias)
         action = "unchanged" if previous == self.repo else "updated" if previous else "created"
         if action != "unchanged":

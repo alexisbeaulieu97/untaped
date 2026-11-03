@@ -39,10 +39,14 @@ class Ansible(Plugin):
 
     ## Repos and local targets
 
-    - Repo ids match in any case (`Acme/Base` is `acme/base`).
-    - URLs on the host of `github.server.url` resolve as `github.com` URLs do.
-      Path-like sources in requirements files, such as `./local`, stay
-      unresolved.
+    - A repo is its name as its provider lists it: `owner/repo` on GitHub,
+      `group/sub/project` on GitLab. Names match in any case (`Acme/Base` is
+      `acme/base`).
+    - A URL names a repo when its host is one the selected sources'
+      repositories live on, or the host of `github.server.url`, where live
+      reads go; during a refresh, only the refreshed source's hosts count. A
+      URL on any other host, and a path-like source in a requirements file
+      such as `./local`, stay unresolved.
     - A local path's Git remote is read at the top level of a checkout, linked
       worktrees included.
     - Without a source, a local target is read live. With no GitHub token it

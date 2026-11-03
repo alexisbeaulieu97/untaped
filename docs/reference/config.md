@@ -65,7 +65,7 @@ Kept in `~/.untaped/plugins/ansible/state.yml`.
 | Key | Type | Description |
 |---|---|---|
 | `ansible.sources` | list | Named GitHub search boundary for index refresh and impact queries. |
-| `ansible.aliases` | list | A role or Galaxy name and the GitHub ``owner/repo`` it stands for. |
+| `ansible.aliases` | list | A role or Galaxy name and the repository name it stands for. |
 
 ## `awx`
 

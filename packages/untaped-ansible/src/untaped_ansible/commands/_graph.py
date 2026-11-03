@@ -44,6 +44,7 @@ from untaped_ansible.commands._graph_source import (
 )
 from untaped_ansible.commands._source_data import SourceData
 from untaped_ansible.domain.graph import DependencyGraph
+from untaped_ansible.domain.identity import IdentityResolver, url_hosts
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
 from untaped_ansible.refresh import GIT_PARALLEL_CAP, Backend, serve_sources
@@ -52,9 +53,9 @@ from untaped_github.api import GithubSettings, github_api
 
 CommandName = Literal["graph", "deps", "impact", "find"]
 
-TARGET = "Role or repo: owner/repo, GitHub URL, source alias, or local path."
+TARGET = "Role or repo: its name (owner/repo), its URL, a source alias, or a local path."
 TARGET_REPO = (
-    "owner/repo of a local target; needed for a subdirectory of a checkout, whose remote "
+    "Repository name of a local target; needed for a subdirectory of a checkout, whose remote "
     "is read only at the checkout's top level."
 )
 DEPTH = "Traversal depth, or 'unlimited' (default)."
@@ -146,9 +147,10 @@ class GraphCommand(AnsibleCommand):
             live_reads=LiveReads(
                 lambda: github_api(github),
                 wrapped=index,
-                aliases=aliases,
+                resolver=lambda: graph_resolver(
+                    sqlite_index, graph_source, aliases=aliases, github_host=github_host
+                ),
                 settings=settings,
-                github_host=github_host,
             ),
         )
 
@@ -208,9 +210,8 @@ class GraphCommand(AnsibleCommand):
                 target_path,
                 repo=target_repo_name,
                 ref=ref,
-                aliases=env.aliases,
+                resolver=env.resolver(),
                 dependency_paths=env.settings.dependency_paths,
-                github_host=env.github_host,
             )
             parse_warnings.extend(local.warnings)
 
@@ -283,6 +284,7 @@ class GraphEnv:
     aliases: dict[str, str]
     github_settings: GithubSettings
     github_host: str | None
+    """GitHub's Git host, where live reads go."""
     index: DependencyIndex
     sqlite_index: SqliteDependencyIndex
     graph_source: GraphSource
@@ -290,6 +292,29 @@ class GraphEnv:
     depth: int | None
     all_refs: bool
     live_reads: LiveReads
+
+    def resolver(self) -> IdentityResolver:
+        """Names a target or dependency: see :func:`graph_resolver`."""
+        return graph_resolver(
+            self.sqlite_index, self.graph_source, aliases=self.aliases, github_host=self.github_host
+        )
+
+
+def graph_resolver(
+    index: SqliteDependencyIndex,
+    graph_source: GraphSource,
+    *,
+    aliases: dict[str, str],
+    github_host: str | None,
+) -> IdentityResolver:
+    """Names a target or dependency by the aliases, or by its URL on a known host.
+
+    The hosts are those of the selected sources' repository URLs (read when
+    called, so after a refresh) and GitHub's, where live reads go.
+    """
+    keys = [selection.key for selection in graph_source.selections]
+    hosts = url_hosts(index.repo_urls(keys).values())
+    return IdentityResolver(aliases, hosts={*hosts, *([github_host] if github_host else [])})
 
 
 class BuiltGraph(NamedTuple):
@@ -321,18 +346,18 @@ def check_all_refs(ref: str | None, *, all_refs: bool) -> None:
 
 
 def require_repo(env: GraphEnv, target: str, *, target_repo: str | None = None) -> str:
-    """The ``owner/repo`` TARGET names, or an error saying why there is none."""
-    repo = target_repo or resolve_target_repo(target, env.aliases, github_host=env.github_host)
+    """The repository TARGET names, or an error saying why there is none."""
+    repo = target_repo or resolve_target_repo(target, env.resolver())
     if repo is not None:
         return repo
-    message = f"could not resolve target to a GitHub repo: {q(target)}"
+    message = f"could not resolve target to a repository: {q(target)}"
     if Path(target).expanduser().exists():
         message = (
             f"{message}; the local path is not the top level of a Git checkout "
-            "with a remote pointing at GitHub"
+            "with a remote on a host the sources' repositories live on"
         )
         if env.command != "find":
-            message = f"{message}. Pass --target-repo OWNER/NAME"
+            message = f"{message}. Pass --target-repo NAME"
     raise AnsibleError(message, category="not_found")
 
 

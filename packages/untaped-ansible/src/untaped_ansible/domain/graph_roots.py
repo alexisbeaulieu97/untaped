@@ -1,7 +1,8 @@
-"""Graph roots read from stdin: bare ``owner/repo@ref`` lines or pipe records.
+"""Graph roots read from stdin: bare ``NAME@ref`` lines or pipe records.
 
-A bare line is a repository reference (``owner/repo``, a Git URL, an alias)
-with an optional ``@ref`` after an ``owner/repo`` slug. A pipe record names
+A bare line is a repository reference (a name such as ``owner/repo`` or
+``group/sub/project``, a Git URL, an alias) with an optional ``@ref`` after
+a name. A pipe record names
 its repository in the first present field of :data:`REPO_FIELDS` and its ref
 in the first present field of :data:`REF_FIELDS`; an empty ref means the
 repository's default branch. Its kind, ``id`` and ``name`` are kept as the
@@ -21,7 +22,7 @@ REPO_FIELDS: tuple[str, ...] = ("scm_url", "repo_url", "repo", "full_name")
 REF_FIELDS: tuple[str, ...] = ("effective_scm_ref", "ref")
 """Record fields that may carry a root's ref, in precedence order."""
 
-_SLUG_WITH_REF = re.compile(r"^(?P<repo>[^/@:\s]+/[^/@:\s]+)@(?P<ref>\S.*)$")
+_NAME_WITH_REF = re.compile(r"^(?P<repo>[^/@:\s]+(?:/[^/@:\s]+)+)@(?P<ref>\S.*)$")
 
 
 class GraphRoot(BaseModel):
@@ -44,9 +45,9 @@ class RootInput(BaseModel):
 
 
 def root_from_line(text: str) -> GraphRoot:
-    """Parse ``owner/repo@ref``; anything else is a ref-less reference."""
+    """Parse ``NAME@ref``; anything else is a ref-less reference."""
     line = text.strip()
-    match = _SLUG_WITH_REF.match(line)
+    match = _NAME_WITH_REF.match(line)
     if match is None:
         return GraphRoot(target=line)
     return GraphRoot(target=match["repo"], ref=match["ref"])

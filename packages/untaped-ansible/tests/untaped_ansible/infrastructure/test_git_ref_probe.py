@@ -16,7 +16,7 @@ from untaped_ansible.infrastructure.git_store import GitSourceStore
 from untaped_ansible.settings import AnsibleSettings
 
 _URL = "https://github.com/acme/site.git"
-_TARGET = ProbeTarget(full_name="acme/site", default_branch="main", clone_url=_URL)
+_TARGET = ProbeTarget(full_name="acme/site", default_branch="main", url=_URL)
 
 
 class FakeGit:
@@ -155,12 +155,8 @@ def test_git_probe_reports_progress() -> None:
     git.outputs["https://github.com/acme/b.git"] = {}
     progress: list[tuple[int, int]] = []
     targets = [
-        ProbeTarget(
-            full_name="acme/a", default_branch="main", clone_url="https://github.com/acme/a.git"
-        ),
-        ProbeTarget(
-            full_name="acme/b", default_branch="main", clone_url="https://github.com/acme/b.git"
-        ),
+        ProbeTarget(full_name="acme/a", default_branch="main", url="https://github.com/acme/a.git"),
+        ProbeTarget(full_name="acme/b", default_branch="main", url="https://github.com/acme/b.git"),
     ]
 
     GitRemoteRefProbe(git, clone_protocol="https", concurrency=1).probe(
@@ -203,7 +199,7 @@ def test_git_probe_uses_real_local_ls_remote_subprocess(
 
     commit_sha = _git(["rev-parse", "HEAD"], cwd=worktree).strip()
     branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], cwd=worktree).strip()
-    target = ProbeTarget(full_name="acme/site", default_branch=branch, clone_url=str(bare))
+    target = ProbeTarget(full_name="acme/site", default_branch=branch, url=str(bare))
 
     store = GitSourceStore(plugin=plugin_of(AnsibleSettings))
     report = GitRemoteRefProbe(store, clone_protocol="https", concurrency=1).probe(

@@ -351,6 +351,7 @@ def test_cached_refs_and_metadata_include_default_branch(tmp_path) -> None:
                 source_key="source:prod",
                 source_repo="acme/site",
                 default_branch="trunk",
+                url="https://github.com/acme/site.git",
             ),
         ),
         scanned_at=now,
@@ -677,32 +678,32 @@ def _master(db_path: Path) -> list[tuple[str, str, str]]:
     return sorted((str(kind), str(name), str(sql)) for kind, name, sql in rows)
 
 
-def test_an_index_this_version_only_adds_to_gains_the_new_tables_and_keeps_its_rows(
-    tmp_path,
+@pytest.mark.usefixtures("composed")  # the warning spells source refresh as the run names it
+def test_an_index_from_before_the_repo_url_is_rebuilt(
+    tmp_path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     db_path = tmp_path / "index.sqlite3"
-    v4 = (Path(__file__).parent / "index_schema" / "v4.sql").read_text(encoding="utf-8")
+    v5 = (Path(__file__).parent / "index_schema" / "v5.sql").read_text(encoding="utf-8")
     with closing(sqlite3.connect(db_path)) as db:
         db.executescript(
-            f"begin;\n{v4}\ncreate table schema_meta (\n    id integer primary key check (id = 1),"
+            f"begin;\n{v5}\ncreate table schema_meta (\n    id integer primary key check (id = 1),"
             "\n    additive_since integer not null\n);\n"
-            "insert into schema_meta values (1, 4);\npragma user_version = 4;\ncommit;"
+            "insert into schema_meta values (1, 4);\npragma user_version = 5;\ncommit;"
         )
-    _commit(SqliteDependencyIndex(tmp_path / "fresh.sqlite3"), scans=())
-    with closing(sqlite3.connect(db_path)) as db:
         db.execute(
             "insert into source_repo_metadata "
             "values ('source:prod', 'acme/site', 'acme/site', 'main')"
         )
         db.commit()
+    _commit(SqliteDependencyIndex(tmp_path / "fresh.sqlite3"), scans=())
 
     SqliteDependencyIndex(db_path).status("source:prod")
 
-    # Changing an existing table is not additive: raise ADDITIVE_SINCE then.
+    # A column added to an existing table is not additive: ADDITIVE_SINCE rose with it.
+    assert ADDITIVE_SINCE == SCHEMA_VERSION
     assert _master(db_path) == _master(tmp_path / "fresh.sqlite3")
-    assert _rows(db_path, "source_repo_metadata") == 1
-    assert _count(db_path, "pragma user_version") == SCHEMA_VERSION
-    assert _count(db_path, "select additive_since from schema_meta") == ADDITIVE_SINCE
+    assert _rows(db_path, "source_repo_metadata") == 0
+    assert "rebuilt" in capsys.readouterr().err
 
 
 @pytest.mark.usefixtures("composed")  # the error spells source refresh as the run names it
@@ -727,7 +728,10 @@ def test_repo_lookups_are_case_insensitive_and_keep_display_casing(tmp_path) -> 
         scans=(scan,),
         repo_metadata=(
             SourceRepoMetadata(
-                source_key="source:prod", source_repo="Acme/Base", default_branch="v1"
+                source_key="source:prod",
+                source_repo="Acme/Base",
+                default_branch="v1",
+                url="https://github.com/Acme/Base.git",
             ),
         ),
     )

@@ -15,7 +15,9 @@ from untaped_ansible.errors import DependencyIndexError
 # ``*_repo`` columns keep the display casing. Version 5 added the four
 # ``variable_*`` tables (variable facts per analysed file, which files each
 # commit has, and which commits were analysed), only adding to version 4.
-SCHEMA_VERSION = 5
+# Version 6 added ``source_repo_metadata.url``: each repo's URL as its
+# provider gives it, where node identity and remote URLs come from.
+SCHEMA_VERSION = 6
 #: The oldest schema version this one only adds to (new tables or columns,
 #: never a change to an existing one). Stamped in ``schema_meta`` beside
 #: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
@@ -24,7 +26,7 @@ SCHEMA_VERSION = 5
 #: existing table raises it to the new ``SCHEMA_VERSION``. Foreign keys are
 #: off and an older writer deletes and replaces rows in the tables it knows,
 #: so a table a newer version adds must tolerate rows whose parent is gone.
-ADDITIVE_SINCE = 4
+ADDITIVE_SINCE = 6
 
 SCHEMA_SQL = """
 create table if not exists source_runs (
@@ -78,6 +80,7 @@ create table if not exists source_repo_metadata (
     source_repo text not null,
     source_repo_key text not null,
     default_branch text not null,
+    url text not null,
     primary key (source_key, source_repo)
 );
 

@@ -56,7 +56,7 @@ _diag = Diagnostics()
 def open_index() -> SqliteDependencyIndex:
     """The dependency index of the active settings: the one way the plugin opens it.
 
-    The file is the index place's own layout (``index.v4.sqlite3`` in
+    The file is the index place's own layout (``index.v6.sqlite3`` in
     ``ansible.index_dir``, else in ``plugins/ansible/index/``), held in use
     while the process runs.
     """
@@ -494,14 +494,14 @@ class SqliteDependencyIndex:
         )
 
     def source_repos(self, source_key: str) -> dict[str, tuple[str, ...]]:
-        """The repos ``source_key``'s last refresh selected, ``OWNER/NAME`` → clone URLs it used.
+        """The repos ``source_key``'s last refresh selected, name → every URL it knows them by.
 
-        A repo with no scanned ref has no URL: its refresh never fetched it.
+        Those are each repo's stored URL and the remote URLs its scans fetched.
         """
         with self._db() as db:
             rows = db.execute(
                 """
-                select source_repo, null as clone_url
+                select source_repo, url as clone_url
                 from source_repo_metadata where source_key = ?
                 union
                 select source_repo, clone_url
@@ -515,6 +515,23 @@ class SqliteDependencyIndex:
             if row["clone_url"]:
                 found.add(str(row["clone_url"]))
         return {repo: tuple(sorted(found)) for repo, found in sorted(urls.items())}
+
+    def repo_urls(self, source_keys: Iterable[str]) -> dict[str, str]:
+        """Each repo ``source_keys`` selected in their last refresh, by name, and its URL."""
+        keys = sorted(set(source_keys))
+        found: dict[str, str] = {}
+        with self._db() as db:
+            for chunk in batched(keys, 400, strict=False):
+                marks = ",".join("?" for _ in chunk)
+                rows = db.execute(
+                    f"""
+                    select source_repo, url from source_repo_metadata
+                    where source_key in ({marks}) order by source_key, source_repo
+                    """,
+                    chunk,
+                ).fetchall()
+                found.update((str(row["source_repo"]), str(row["url"])) for row in rows)
+        return found
 
     def selecting_sources(self, source_keys: Iterable[str]) -> dict[str, set[str]]:
         """Which of ``source_keys`` selected each repo in their last refresh, by repo key."""
