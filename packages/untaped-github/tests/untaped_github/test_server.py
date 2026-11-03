@@ -165,9 +165,20 @@ def test_githubs_own_not_found_stays_not_found(recorded: Recorded) -> None:
 
 
 @pytest.mark.parametrize("recorded", RECORDINGS, ids=lambda each: each.id)
-def test_a_404_without_githubs_own_answer_is_a_mismatch(recorded: Recorded) -> None:
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(404, text="<html/>"),
+        # a gateway's own JSON 404: a message, but not GitHub's documentation link
+        httpx.Response(404, json={"message": "no Route matched with those values"}),
+    ],
+    ids=["page", "gateway"],
+)
+def test_a_404_without_githubs_own_answer_is_a_mismatch(
+    recorded: Recorded, answer: httpx.Response
+) -> None:
     settings = _settings(recorded.api).model_copy(update={"server_version": recorded.version})
     with installed().running(), respx.mock(base_url=recorded.api) as mock:
-        mock.get("/user").mock(return_value=httpx.Response(404, text="<html/>"))
+        mock.get("/user").mock(return_value=answer)
         with pytest.raises(ApiMismatch, match=r"user in a way untaped-github does not expect"):
             SERVER_API.port(settings).me()

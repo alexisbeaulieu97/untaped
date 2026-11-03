@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import AbstractContextManager
 from typing import TYPE_CHECKING, Any
@@ -26,8 +27,16 @@ API_VERSION = "2022-11-28"
 
 
 def is_github_error(error: HttpStatusError) -> bool:
-    """GitHub's own error answer carries a ``message`` (``{"message": "Not Found"}``)."""
-    return '"message"' in (error.body or "")
+    """GitHub's own error answer: a ``message`` and the ``documentation_url`` it points to.
+
+    A proxy's or gateway's JSON 404 may carry a ``message`` too; only GitHub
+    adds its documentation link.
+    """
+    try:
+        body = json.loads(error.body or "")
+    except ValueError:
+        return False
+    return isinstance(body, dict) and "message" in body and "documentation_url" in body
 
 
 def _watch() -> AbstractContextManager[None]:

@@ -53,8 +53,8 @@ def github_api(settings: GithubSettings) -> GithubApi:
 
     Every call needs the token, so a missing one fails here, before any
     work, naming ``untaped auth login github``. Nothing is sent until a call;
-    the run closes its connections when it ends, and ports built from one
-    settings object share them.
+    core keeps and closes the connections (no ``with`` block), and ports
+    built from one settings object share them.
     """
     TOKEN.get(settings.server)
     return SERVER_API.port(settings)

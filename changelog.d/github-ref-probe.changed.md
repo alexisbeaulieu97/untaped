@@ -1,4 +1,4 @@
-`untaped_github.api.GithubClient`'s batched ref probes run `concurrency`
+`untaped_github.api.GithubApi`'s batched ref probes run `concurrency`
 chunks at once and report progress through `on_progress(done, total)`. A
 chunk whose request fails for any reason but a GraphQL error gives its repos
 a `request` failure, with the error's `category`, instead of stopping the
