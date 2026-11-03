@@ -119,7 +119,7 @@ class Usage(ResourceCommand):
         with self.awx() as awx:
             targets = template_targets(self.identifiers, self.stdin, by_id=self.by_id)
             scope = scope_for_command(awx, self.spec, scope_values(self.scope))
-            use = ListTemplateUsage(awx.workflow_nodes, awx.repo)
+            use = ListTemplateUsage(awx.api, awx.api)
             for target, target_by_id in targets:
                 try:
                     answer = use(

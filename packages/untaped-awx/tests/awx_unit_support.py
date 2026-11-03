@@ -129,24 +129,6 @@ class _Client:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
-    def paginate_path(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        raise NotImplementedError
-
-    def request_text(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-    ) -> str:
-        raise NotImplementedError
-
     def sub_endpoint_request(
         self,
         spec: ResourceSpec,

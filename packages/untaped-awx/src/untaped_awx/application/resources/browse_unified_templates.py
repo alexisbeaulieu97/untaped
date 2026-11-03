@@ -21,7 +21,7 @@ class GetUnifiedTemplate:
         wanted = list(ids)
         if not wanted:
             return [], []
-        records = list(self._repo.get_by_ids(ids=wanted))
+        records = list(self._repo.unified_templates_by_ids(ids=wanted))
         # Normalise both sides of the comparison: AWX coerces leading
         # zeros in ``?id__in=007`` to ``7``, so the bulk fetch returns
         # ``{"id": 7}``. Without canonicalisation the user's ``"007"``

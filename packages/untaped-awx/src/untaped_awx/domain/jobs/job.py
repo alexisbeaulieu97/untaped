@@ -26,40 +26,27 @@ TERMINAL_STATUSES = frozenset({"successful", "failed", "error", "canceled"})
 
 
 @dataclass(frozen=True)
-class JobRoutes:
-    """Supported status, event and stdout surface for an execution kind."""
+class JobKind:
+    """What an execution kind offers besides its status: events, stdout, relaunch."""
 
-    collection: str
-    events: str | None
+    events: bool = True
+    """Whether its events can be read (a workflow job's progress is its nodes)."""
     stdout: bool = True
     relaunch: bool = False
-    """Whether ``<collection>/<id>/relaunch/`` exists."""
     template_field: str | None = None
     """The field naming the template (or project/source) that ran it."""
-    ui_type: str = "playbook"
-    """The web UI's name for the kind in ``jobs/<ui_type>/<id>/output``."""
 
 
-JOB_ROUTES: dict[str, JobRoutes] = {
-    "job": JobRoutes("jobs", "job_events", relaunch=True, template_field="job_template"),
-    "workflow_job": JobRoutes(
-        "workflow_jobs",
-        None,
-        stdout=False,
-        relaunch=True,
-        template_field="workflow_job_template",
-        ui_type="workflow",
+JOB_KINDS: dict[str, JobKind] = {
+    "job": JobKind(relaunch=True, template_field="job_template"),
+    "workflow_job": JobKind(
+        events=False, stdout=False, relaunch=True, template_field="workflow_job_template"
     ),
-    "project_update": JobRoutes(
-        "project_updates", "events", template_field="project", ui_type="project"
-    ),
-    "inventory_update": JobRoutes(
-        "inventory_updates", "events", template_field="inventory_source", ui_type="inventory"
-    ),
-    "ad_hoc_command": JobRoutes("ad_hoc_commands", "events", relaunch=True, ui_type="command"),
+    "project_update": JobKind(template_field="project"),
+    "inventory_update": JobKind(template_field="inventory_source"),
+    "ad_hoc_command": JobKind(relaunch=True),
 }
-KIND_TO_API_PATH: dict[str, str] = {kind: routes.collection for kind, routes in JOB_ROUTES.items()}
-"""Derived status collection map shared by readers and waiters."""
+"""The execution kinds, by the ``kind`` a :class:`Job` carries."""
 
 
 class Job(BaseModel):

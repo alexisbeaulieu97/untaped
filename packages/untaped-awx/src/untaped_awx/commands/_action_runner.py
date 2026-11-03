@@ -66,7 +66,7 @@ def run_action_selection(
     ``--cancel``, an execution the wait stops watching (timeout, polling
     error, Ctrl-C) is cancelled instead.
     """
-    reads = TemplateReads(ctx.repo, spec)
+    reads = TemplateReads(ctx.api, spec)
     spec, targets = _prepare(ctx, spec, selected, action=action, payload=payload, reads=reads)
     action_spec = next(a for a in spec.actions if a.name == action)
     outcome_model = action_spec.outcome
@@ -101,11 +101,13 @@ def run_action_selection(
         return _action_error(exc, spec, target, payload)
 
     labels = _monitor_labels(targets)
-    abandon = AbandonJobs(ctx.jobs.cancel if waiting.cancel else None, refresher=ctx.monitor.fetch)
+    abandon = AbandonJobs(
+        ctx.api.cancel_job if waiting.cancel else None, refresher=ctx.monitor.fetch
+    )
     outcomes = _submit(
         targets,
         labels,
-        lambda item: RunAction(ctx.repo).execute(spec, item.id, action=action, payload=payload),
+        lambda item: RunAction(ctx.api).execute(spec, item.id, action=action, payload=payload),
         parallel=parallel,
         fail_fast=fail_fast,
         error_detail=safe_error,
@@ -355,7 +357,7 @@ def _monitor(
                 abandon=on_abandon,
             )
         return wait_parallel(
-            ctx.repo,
+            ctx.api,
             launched,
             sleep=ctx.pause,
             stop=ctx.stop,
@@ -461,7 +463,7 @@ def _prepare(
     """Launch-prompt preflight failures are usage errors (exit 2), not API errors."""
     try:
         return prepare_action_targets(
-            ctx.repo, ctx.catalog, spec, selected, action=action, payload=payload, reads=reads
+            ctx.api, ctx.catalog, spec, selected, action=action, payload=payload, reads=reads
         )
     except LaunchPromptError as exc:
         raise UsageError(str(exc)) from exc

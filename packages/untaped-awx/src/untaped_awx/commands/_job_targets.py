@@ -9,7 +9,7 @@ from pydantic import Field
 
 from untaped.sdk import Positional, Stdin
 from untaped_awx.commands._awx import AwxCommand
-from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.domain.jobs.job import JOB_KINDS
 from untaped_awx.errors import AwxError
 from untaped_awx.records import JobRecord, JobRelaunchOutcome, LaunchOutcome, SyncOutcome
 
@@ -60,9 +60,9 @@ def job_targets(job_ids: Sequence[str], stdin: Stdin[Any]) -> tuple[list[str], d
         ident = str(record.get("id"))
         ids.append(ident)
         record_kind = record.get("kind")
-        if record_kind not in JOB_ROUTES:
+        if record_kind not in JOB_KINDS:
             record_kind = record.get("type")
-        if isinstance(record_kind, str) and record_kind in JOB_ROUTES:
+        if isinstance(record_kind, str) and record_kind in JOB_KINDS:
             kinds[ident] = record_kind
     return ids, kinds
 

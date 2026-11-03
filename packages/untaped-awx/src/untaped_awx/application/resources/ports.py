@@ -1,13 +1,13 @@
 """Ports of the resource use cases (the "ports" of hexagonal architecture).
 
 Use cases depend on these — never on concrete infrastructure types — so
-they can be tested with simple stubs. Concrete adapters live in
-``infrastructure/resources/`` and are wired together by the commands.
+they can be tested with simple stubs. The controller's adapter
+(``infrastructure/controller/``) serves them, wired together by the commands.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -158,23 +158,11 @@ class ResourceClient(Protocol):
 
 
 class RawHttpResourceClient(ResourceClient, Protocol):
-    """A :class:`ResourceClient` that also exposes raw URL access.
+    """A :class:`ResourceClient` that also sends a request to a path it is given.
 
-    Use cases that need to construct AWX URLs directly take this wider
-    port instead of :class:`ResourceClient`. Today's callers:
-
-    - :class:`BatchMutationEngine`: forwards its ``client`` to
-      :class:`ApplyStrategy` implementations
-      (``find_existing`` / ``create`` / ``update``), some of which
-      build nested-endpoint URLs (e.g. ``ScheduleApplyStrategy``,
-      ``InventoryChildApplyStrategy``).
-    - :class:`WatchJob` and :class:`PollingJobMonitor`: poll job
-      execution endpoints (``/jobs/<id>/``, ``/jobs/<id>/stdout/``,
-      ``/jobs/<id>/job_events/``) directly.
-
-    New use cases should default to the narrower :class:`ResourceClient`
-    and only widen to this Protocol when ad-hoc URL access is
-    unavoidable.
+    :class:`ApplyStrategy` implementations take it: some write to nested
+    endpoints the spec alone doesn't name (``ScheduleApplyStrategy``,
+    ``InventoryChildApplyStrategy``).
     """
 
     def request(
@@ -186,32 +174,6 @@ class RawHttpResourceClient(ResourceClient, Protocol):
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Escape hatch for strategies that need ad-hoc URLs (e.g. Schedule)."""
-        ...
-
-    def paginate_path(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        """Walk every page of a list endpoint at ``path``.
-
-        ``path`` is relative to the controller API prefix. Use this instead of a
-        single ``request("GET", path, params=…)`` whenever the result
-        could exceed one page — AWX silently truncates at ``page_size``
-        otherwise.
-        """
-        ...
-
-    def request_text(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-    ) -> str:
-        """For non-JSON endpoints (e.g. ``jobs/<id>/stdout/?format=txt_download``)."""
         ...
 
 
@@ -274,7 +236,7 @@ class ProjectPlaybooks(Protocol):
     """The playbooks AWX found in a project's last sync."""
 
     def playbooks(self, project_id: int) -> tuple[str, ...]:
-        """``projects/<id>/playbooks/``: playbook paths relative to the project root."""
+        """The project's playbook paths, relative to its root."""
         ...
 
 
@@ -358,7 +320,7 @@ class StrategyResolver(Protocol):
 
 
 class UnifiedTemplateRepository(Protocol):
-    """Read access to AWX's polymorphic ``/unified_job_templates/`` view.
+    """Read access to every launchable template, whatever its kind.
 
     Aggregates ``JobTemplate``, ``WorkflowJobTemplate``, ``Project``, and
     ``InventorySource`` rows behind a single ``type`` discriminator. No
@@ -366,20 +328,27 @@ class UnifiedTemplateRepository(Protocol):
     handle write paths.
     """
 
-    def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
-        """Bulk-fetch via ``?id__in=…``; one round trip, paginated when
-        the number of ids exceeds the page size."""
+    def unified_templates(
+        self,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Every template ``params`` select, by name unless ``params`` order them."""
+        ...
+
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
+        """The templates with ``ids``, by id: one listing, paged when there are many."""
         ...
 
 
 class WorkflowNodeRepository(Protocol):
     """Access to workflow-job-template nodes.
 
-    Wraps the node collection from both directions: per-workflow via
-    ``workflow_job_templates/<id>/workflow_nodes/`` and
-    collection-wide via ``workflow_job_template_nodes/`` — the
-    DAG of unified-job-template references that AWX executes when the
-    workflow runs. Returned dicts carry the full AWX shape (including
+    Reads the nodes from both directions, a workflow's own and every node
+    across workflows that references a template: the DAG of
+    unified-job-template references that AWX executes when the workflow
+    runs. Returned dicts carry the full AWX shape (including
     ``summary_fields``) so the use case can flatten the referenced
     template's name and type without a second round trip.
     """

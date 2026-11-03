@@ -9,8 +9,8 @@ import pytest
 import yaml
 
 from awx_test_support import run
+from untaped_awx.application.jobs.monitor import PollingJobMonitor
 from untaped_awx.commands import parallel
-from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
 
 
 def _seed_running_job(fake: Any, *, job_id: int = 42) -> None:
@@ -279,9 +279,7 @@ def test_jobs_logs_invalid_grep_pattern_rejected_at_boundary(fake_aap: Any) -> N
 
 def test_jobs_get_with_kind_workflow_job_hits_workflow_jobs_endpoint(fake_aap: Any) -> None:
     """``jobs get --kind workflow_job <id>`` routes to ``workflow_jobs/<id>/``,
-    not the default ``jobs/<id>/`` (which would 404 for workflow_job ids).
-    PollingJobMonitor and WatchJob already understand this kind via
-    ``KIND_TO_API_PATH`` — wiring it through the CLI completes the path."""
+    not the default ``jobs/<id>/`` (which would 404 for workflow_job ids)."""
     fake_aap.seed(
         "workflow_jobs",
         id=999,

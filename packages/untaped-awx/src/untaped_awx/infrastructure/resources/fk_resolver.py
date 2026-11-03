@@ -41,8 +41,8 @@ from untaped_awx.errors import (
     BadRequestError,
     ResourceNotFoundError,
 )
+from untaped_awx.infrastructure.controller.resources import scope_params
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
-from untaped_awx.infrastructure.resources.resource_repo import scope_params
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 if TYPE_CHECKING:

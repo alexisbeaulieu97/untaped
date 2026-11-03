@@ -748,12 +748,12 @@ def test_ctrl_c_during_submission_with_cancel_cancels_executions_already_submitt
 
 
 def _cancel_raises_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.controller import ControllerV2
 
     def interrupt(self: Any, *, kind: str, job_id: int) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(JobRecordRepository, "cancel", interrupt)
+    monkeypatch.setattr(ControllerV2, "cancel_job", interrupt)
 
 
 def test_second_ctrl_c_while_cancelling_still_names_the_executions(
@@ -820,17 +820,17 @@ def test_ctrl_c_while_cancelling_before_the_wait_names_the_executions(
 def test_job_that_ends_before_its_cancel_reports_its_final_status(
     fake_aap: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.controller import ControllerV2
 
     seed(fake_aap)
     fake_aap.next_action_status = "running"
-    real_cancel = JobRecordRepository.cancel
+    real_cancel = ControllerV2.cancel_job
 
     def finish_then_cancel(self: Any, *, kind: str, job_id: int) -> None:
         fake_aap.get_record("jobs", job_id)["status"] = "successful"
         real_cancel(self, kind=kind, job_id=job_id)  # AWX now answers 405
 
-    monkeypatch.setattr(JobRecordRepository, "cancel", finish_then_cancel)
+    monkeypatch.setattr(ControllerV2, "cancel_job", finish_then_cancel)
     result = run(
         ["job-templates", "launch", "deploy", "--wait", "--timeout", "0", "--cancel", "-f", "json"],
     )
@@ -896,7 +896,7 @@ def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
     """``deploy``'s cancel must not wait for ``other``'s watch to end."""
 
     from untaped_awx.application import RunAction
-    from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
+    from untaped_awx.infrastructure.controller import ControllerV2
 
     seed(fake_aap)
     fake_aap.seed("job_templates", id=51, name="other", organization=1)
@@ -914,13 +914,13 @@ def test_cancel_cancels_an_abandoned_execution_while_others_still_run(
         fake_aap.next_action_ignored_fields = {"limit": "web1"}  # deploy's launch only
         args += ["--host-pattern", "web1"]
     cancelled = threading.Event()
-    real_cancel = JobRecordRepository.cancel
+    real_cancel = ControllerV2.cancel_job
 
     def cancel(self: Any, *, kind: str, job_id: int) -> None:
         real_cancel(self, kind=kind, job_id=job_id)
         cancelled.set()
 
-    monkeypatch.setattr(JobRecordRepository, "cancel", cancel)
+    monkeypatch.setattr(ControllerV2, "cancel_job", cancel)
     released_after_cancel: list[bool] = []
 
     def read_job(request: httpx.Request) -> httpx.Response:

@@ -87,7 +87,7 @@ class Nodes(AwxCommand):
         with self.awx() as awx:
             roots = template_targets(self.identifiers, self.stdin, by_id=self.by_id)
             scope = scope_for_command(awx, spec, scope_values(self.scope))
-            use = ListWorkflowNodes(awx.workflow_nodes, awx.repo, warn=awx.diag.warning)
+            use = ListWorkflowNodes(awx.api, awx.api, warn=awx.diag.warning)
             for root, root_by_id in roots:
                 try:
                     nodes.extend(

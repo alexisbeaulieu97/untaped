@@ -151,11 +151,11 @@ def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> Resources:
 
 def _fill(ctx: AwxContext, _key: str, progress: ProgressHandle) -> Filled[Resources]:
     resources = load_controller(
-        client=ctx.repo,
+        client=ctx.api,
         fk=ctx.fk,
         catalog=ctx.catalog,
-        nodes=ctx.workflow_nodes,
-        playbooks=ctx.repo,
+        nodes=ctx.api,
+        playbooks=ctx.api,
         path_of=_path_of,
         progress=progress,
     )
@@ -196,7 +196,7 @@ def _matching(
             continue
         if query.search is not None:
             params["search"] = query.search
-        paths.update(_path_of(each, int(row["id"])) for row in ctx.repo.list(each, params=params))
+        paths.update(_path_of(each, int(row["id"])) for row in ctx.api.list(each, params=params))
     held = {getattr(item.location, "id", None) for item in resources.items}
     return sorted(paths & held)
 

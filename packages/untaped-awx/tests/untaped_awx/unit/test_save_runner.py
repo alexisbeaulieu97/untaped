@@ -67,7 +67,7 @@ def _ctx(specs: list[ResourceSpec]) -> AwxContext:
     return cast(
         AwxContext,
         SimpleNamespace(
-            repo=_Repo(),
+            api=_Repo(),
             fk=_Fk(),
             catalog=_Catalog(specs),
             workflow_nodes=None,

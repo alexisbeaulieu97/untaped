@@ -13,7 +13,13 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped_awx.application.resources.ports import ProjectPlaybooks, RawHttpResourceClient
+from untaped_awx.application.jobs.ports import Executions
+from untaped_awx.application.resources.ports import (
+    ProjectPlaybooks,
+    RawHttpResourceClient,
+    UnifiedTemplateRepository,
+    WorkflowNodeRepository,
+)
 from untaped_awx.domain import Job
 
 
@@ -28,8 +34,20 @@ class AwxPingService(Protocol):
         ...
 
 
-class AwxApi(RawHttpResourceClient, ProjectPlaybooks, AwxPingService, Protocol):
-    """The controller, as awx's commands reach it: resources, raw paths, health and links."""
+class AwxApi(
+    RawHttpResourceClient,
+    ProjectPlaybooks,
+    Executions,
+    UnifiedTemplateRepository,
+    WorkflowNodeRepository,
+    AwxPingService,
+    Protocol,
+):
+    """The controller, as awx's commands reach it.
+
+    Resources, executions and their logs, workflow nodes, unified templates,
+    health and links.
+    """
 
     def job_url(self, job: Job) -> str | None:
         """The web UI page of ``job``'s output; ``None`` for a kind the UI doesn't show."""

@@ -46,7 +46,7 @@ def run_edit(
     fields: Sequence[str] | None = None,
 ) -> list[ApplyOutcome]:
     """Edit one bounded batch and return its outcomes; retain the private session on any failure."""
-    batch = EditResources(spec, selected, SaveResource(ctx.repo, ctx.fk), fields=fields)
+    batch = EditResources(spec, selected, SaveResource(ctx.api, ctx.fk), fields=fields)
     if not selected:
         return []
     # A controlling terminal is required even under --yes and even if stdin is
