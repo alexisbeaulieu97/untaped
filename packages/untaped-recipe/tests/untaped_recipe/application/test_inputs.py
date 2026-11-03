@@ -338,13 +338,13 @@ def test_required_secret_input_prompts_as_a_secret() -> None:
     assert prompt.messages == ["token||secret=True"]
 
 
-def test_missing_required_structured_input_never_prompts() -> None:
+def test_missing_required_dict_input_never_prompts() -> None:
     recipe = RecipeFile.model_validate(
-        {"version": 1, "inputs": {"cols": {"type": "list", "required": True}}}
+        {"version": 1, "inputs": {"labels": {"type": "dict", "required": True}}}
     )
-    prompt = PromptRecorder({"cols": "[]"})
+    prompt = PromptRecorder({"labels": "{}"})
 
-    with pytest.raises(ValueError, match="missing required input: cols; pass --var cols=VALUE"):
+    with pytest.raises(ValueError, match="missing required input: labels; pass --var labels="):
         _resolve(
             recipe,
             Target(path=Path("/work/acme/api")),
@@ -352,6 +352,35 @@ def test_missing_required_structured_input_never_prompts() -> None:
         )
 
     assert prompt.messages == []
+
+
+def test_missing_required_list_input_is_asked_as_comma_separated_text() -> None:
+    recipe = RecipeFile.model_validate(
+        {"version": 1, "inputs": {"ports": {"type": "list", "required": True}}}
+    )
+    prompt = PromptRecorder({"ports": "80, 443"})
+
+    result = _resolve(recipe, Target(path=Path("/work/acme/api")), prompt=prompt)
+
+    assert result.values == {"ports": ["80", "443"]}
+    assert prompt.messages == ["ports||secret=False"]
+
+
+def test_list_and_dict_elements_stay_text_unless_the_recipe_types_them() -> None:
+    recipe = RecipeFile.model_validate(
+        {
+            "version": 1,
+            "inputs": {
+                "ports": {"type": "list"},
+                "replicas": {"type": "dict"},
+                "counts": {"type": "list", "items": "int"},
+            },
+        }
+    )
+
+    assert recipe.inputs["ports"].items == "str"
+    assert recipe.inputs["replicas"].values == "str"
+    assert recipe.inputs["counts"].items == "int"
 
 
 @pytest.mark.parametrize(

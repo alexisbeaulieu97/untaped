@@ -19,21 +19,12 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from untaped_awx.domain import Job, JobEvent, ResourceSpec
-from untaped_awx.domain.suites.suite import VariableSpec
 
 
 class Filesystem(Protocol):
     """Read text files. Decoupled so unit tests can stub it."""
 
     def read_text(self, path: Path) -> str: ...
-
-
-class Prompt(Protocol):
-    """Interactive prompt for variable values. Stubbed in unit tests."""
-
-    def is_interactive(self) -> bool: ...
-
-    def ask(self, spec: VariableSpec) -> str: ...
 
 
 class Launcher(Protocol):
@@ -157,20 +148,6 @@ class Parser(Protocol):
     def parse_yaml(self, text: str) -> Any: ...
 
     def render_body(self, body: str, values: Mapping[str, Any]) -> str: ...
-
-
-class VarsResolver(Protocol):
-    """Resolve declared variables → typed values from CLI / files / prompt."""
-
-    def __call__(
-        self,
-        specs: Mapping[str, VariableSpec],
-        *,
-        cli: Mapping[str, str],
-        files: Iterable[Path],
-        prompt: Prompt,
-        extra_known_names: Iterable[str] = (),
-    ) -> dict[str, Any]: ...
 
 
 class FkPrefetcher(Protocol):

@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 import pytest
 
 from untaped.sdk import ConfigError, UsageError
 from untaped_awx.application.suites.loader import LoadTestSuite
-from untaped_awx.application.suites.ports import Filesystem, Prompt
-from untaped_awx.domain.suites.suite import RefSentinel, VariableSpec
-from untaped_awx.infrastructure.suites import DefaultParser, resolve_variables
+from untaped_awx.application.suites.ports import Filesystem
+from untaped_awx.domain.suites.suite import RefSentinel
+from untaped_awx.infrastructure.suites import DefaultParser
 
 
 class FakeFilesystem(Filesystem):
@@ -22,25 +21,10 @@ class FakeFilesystem(Filesystem):
         return self._files[path]
 
 
-class StubPrompt:
-    """Always non-interactive — no test reaches it without explicit values."""
-
-    def is_interactive(self) -> bool:
-        return False
-
-    def ask(self, spec: VariableSpec) -> str:  # pragma: no cover — never called
-        raise AssertionError("StubPrompt.ask called unexpectedly")
-
-
 def _load(text: str, **kwargs: object) -> object:
     path = Path("/virtual/test.yml")
     fs = FakeFilesystem({path: text})
-    loader = LoadTestSuite(
-        fs,
-        parser=DefaultParser(),
-        vars_resolver=resolve_variables,
-        prompt=cast(Prompt, StubPrompt()),
-    )
+    loader = LoadTestSuite(fs, parser=DefaultParser())
     return loader(path, **kwargs)  # type: ignore[arg-type]
 
 
@@ -73,7 +57,7 @@ def test_jinja2_rendering_with_cli_var() -> None:
         "    launch:\n"
         "      limit: {{ env | to_yaml }}\n"
     )
-    suite = _load(text, cli_vars={"env": "prod"})
+    suite = _load(text, given={"env": "prod"})
     assert suite.cases["c"].launch["limit"] == "prod"  # type: ignore[attr-defined]
 
 
@@ -163,7 +147,7 @@ def test_strict_undefined_on_missing_var() -> None:
         "      limit: {{ unknown_var }}\n"
     )
     with pytest.raises(ConfigError, match="undefined"):
-        _load(text, cli_vars={"env": "prod"})
+        _load(text, given={"env": "prod"})
 
 
 def test_expect_block_is_parsed_and_rendered() -> None:
@@ -217,12 +201,7 @@ def test_filename_stem_used_as_default_name() -> None:
     text = "kind: AwxTestSuite\njobTemplate: y\ncases:\n  c:\n    launch: {}\n"
     path = Path("/virtual/deploy-tests.yml")
     fs = FakeFilesystem({path: text})
-    loader = LoadTestSuite(
-        fs,
-        parser=DefaultParser(),
-        vars_resolver=resolve_variables,
-        prompt=cast(Prompt, StubPrompt()),
-    )
+    loader = LoadTestSuite(fs, parser=DefaultParser())
     suite = loader(path)
     assert suite.name == "deploy-tests"
 

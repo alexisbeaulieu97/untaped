@@ -28,8 +28,8 @@ class Vars(BaseModel):
     3. the input's `default`;
     4. a prompt at a terminal, for an input that must have a value.
 
-    A name the file doesn't declare is refused, and the message lists the
-    declared ones.
+    A name the file doesn't declare is refused as a usage error (exit 2), and
+    the message lists the declared ones.
 
     ## How values are parsed
 
@@ -37,6 +37,9 @@ class Vars(BaseModel):
       A `list` takes a YAML list (`--var 'cols=[name, owner]'`) or
       comma-separated text (`--var cols=name,owner`); a `dict` takes a YAML
       mapping (`--var 'labels={team: core}'`).
+    - A `list`'s elements and a `dict`'s values stay as given (YAML numbers
+      and mappings included, text from comma-separated text) unless the file
+      types them.
     - `--vars-file` values are YAML, so `3.10` becomes `3.1`: quote
       version-like strings.
 
@@ -50,10 +53,10 @@ class Vars(BaseModel):
     ## Prompts
 
     Only an input that must have a value and has none prompts, and only when
-    stdin is a terminal. `list` and `dict` inputs never prompt: when one is
-    missing, nothing prompts. With no terminal, with `--non-interactive` or
-    with a missing `list` or `dict`, the command names every missing input at
-    once.
+    stdin is a terminal. A `list` is answered as comma-separated text. A
+    `dict` never prompts: when one is missing, nothing prompts. With no
+    terminal, with `--non-interactive` or with a missing `dict`, the command
+    names every missing input at once.
     """
 
     var: list[KeyValue] = Field(

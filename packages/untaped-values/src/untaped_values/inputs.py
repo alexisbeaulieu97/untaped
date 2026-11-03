@@ -4,7 +4,8 @@
 consumer subclasses it, narrows ``type`` to its own spellings and adds its own
 fields. :func:`coerce` is the one conversion every consumer uses: one bool
 vocabulary, a ``list`` from YAML or comma-separated text, a ``dict`` from a
-YAML mapping. Its errors never repeat the value, which may be a secret.
+YAML mapping, their elements kept as given unless ``items`` or ``values``
+types them. Its errors never repeat the value, which may be a secret.
 """
 
 from __future__ import annotations
@@ -33,10 +34,11 @@ class Input(BaseModel):
 
     `type` converts a given value: `str` (or `string`), `int`, `float`, `bool`
     (`1/true/yes/on`, `0/false/no/off`), `choice` (one of `choices`), `list`
-    (a YAML list, or comma-separated text; `items` is its element type,
-    default `str`) or `dict` (a YAML mapping; `values` is its value type,
-    default `str`). An input with no `default` and no given value is asked at
-    a terminal, or reported missing. A `secret` input is asked hidden, shown
+    (a YAML list, or comma-separated text; `items` converts its elements) or
+    `dict` (a YAML mapping; `values` converts its values). Without `items` or
+    `values`, elements stay as given: what YAML gives (numbers, mappings),
+    text from comma-separated text. An input with no `default` and no given
+    value is asked at a terminal, or reported missing. A `secret` input is asked hidden, shown
     as `***`, and never placed in a path, a target or a command line.
     """
 
@@ -49,9 +51,13 @@ class Input(BaseModel):
         False, description="Asked hidden, shown as `***`, never in a path or command line."
     )
     choices: tuple[JsonValue, ...] = Field((), description="A `choice` input's allowed values.")
-    items: ScalarType | None = Field(None, description="A `list` input's element type.")
+    items: ScalarType | None = Field(
+        None, description="A `list` input's element type (default: elements as given)."
+    )
     values: ScalarType | None = Field(
-        None, description="A `dict` input's value type (unrelated to the plugin's name)."
+        None,
+        description="A `dict` input's value type (default: values as given; "
+        "unrelated to the plugin's name).",
     )
 
     @model_validator(mode="after")
@@ -120,7 +126,9 @@ def _coerce_list(value: object, spec: Input) -> list[object]:
         value = [item.strip() for item in value.split(",") if item.strip()]
     elif isinstance(value, Mapping | bytes) or not isinstance(value, Sequence):
         raise InputError("cannot coerce value to list")
-    item_type = spec.items or "str"
+    item_type = spec.items
+    if item_type is None:
+        return list(value)
     try:
         return [_coerce_element(item, item_type) for item in value]
     except InputError:
@@ -130,11 +138,14 @@ def _coerce_list(value: object, spec: Input) -> list[object]:
 def _coerce_dict(value: object, spec: Input) -> dict[str, object]:
     if not isinstance(value, Mapping):
         raise InputError("cannot coerce value to dict")
-    value_type = spec.values or "str"
+    value_type = spec.values
     coerced: dict[str, object] = {}
     for key, item in value.items():
         if not isinstance(key, str):
             raise InputError("dict input keys must be strings")
+        if value_type is None:
+            coerced[key] = item
+            continue
         try:
             coerced[key] = _coerce_element(item, value_type)
         except InputError:

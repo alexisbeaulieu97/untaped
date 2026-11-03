@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from untaped.sdk import UsageError
 from untaped.sdk.prompt import PromptChoice
 from untaped_values.api import Input, InputError, Vars, resolve, terminal_ask
 
@@ -47,10 +48,11 @@ def test_the_default_applies_when_nothing_is_given() -> None:
     assert resolve({"n": Input(type="int", default="3")}, []).values == {"n": 3}
 
 
-def test_a_name_nothing_declares_is_refused_naming_the_declared_ones() -> None:
-    with pytest.raises(InputError, match=r"^unknown input: typo; declared: a, b$"):
+def test_a_name_nothing_declares_is_a_usage_error_naming_the_declared_ones() -> None:
+    with pytest.raises(UsageError, match=r"^unknown input: typo; declared: a, b$") as caught:
         resolve({"a": Input(), "b": Input(default="x")}, [{"a": "1"}, {"typo": "x"}])
-    with pytest.raises(InputError, match=r"^unknown inputs: x, y; declared: \(none\)$"):
+    assert caught.value.exit_code == 2
+    with pytest.raises(UsageError, match=r"^unknown inputs: x, y; declared: \(none\)$"):
         resolve({}, [{"y": 1, "x": 2}])
 
 
@@ -68,9 +70,15 @@ def test_without_ask_every_missing_name_is_listed_at_once() -> None:
 
 def test_nothing_is_asked_when_one_missing_input_cannot_be() -> None:
     ask = _Answers(a="1")
-    resolved = resolve({"a": Input(), "cols": Input(type="list")}, [], ask=ask)
-    assert resolved.missing == ("a", "cols")
+    resolved = resolve({"a": Input(), "labels": Input(type="dict")}, [], ask=ask)
+    assert resolved.missing == ("a", "labels")
     assert ask.asked == []
+
+
+def test_a_list_is_asked_and_its_comma_separated_answer_split() -> None:
+    resolved = resolve({"cols": Input(type="list")}, [], ask=_Answers(cols="name, owner"))
+    assert resolved.values == {"cols": ["name", "owner"]}
+    assert resolved.asked == ("cols",)
 
 
 def test_an_answer_is_converted_and_a_bad_one_names_the_input() -> None:
@@ -112,9 +120,13 @@ def test_terminal_ask_hides_a_secret_and_picks_a_choice() -> None:
     assert ask("owner", Input(description="Owning team."), label="") == "typed"
     assert ask("token", Input(secret=True), label="/work/api") == "typed"
     assert ask("env", Input(type="choice", choices=("dev", "prod")), label="") == "prod"
+    assert ask("cols", Input(type="list", description="Columns."), label="") == "typed"
+    assert ask("tags", Input(type="list"), label="") == "typed"
 
     assert terminal.asked == [
         ("text", "owner (Owning team.)"),
         ("secret", "token for /work/api"),
         ("select", "env"),
+        ("text", "cols (Columns.; comma-separated)"),
+        ("text", "tags (comma-separated)"),
     ]

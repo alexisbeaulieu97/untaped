@@ -1,8 +1,8 @@
 """LoadTestSuite: file path → validated :class:`Suite`.
 
 The use case wires injected adapters end-to-end: read file → split
-frontmatter → resolve variable values → render Jinja2 body → parse YAML
-→ validate. Every error names the file.
+frontmatter → resolve variable values (the values plugin's ``resolve``) →
+render Jinja2 body → parse YAML → validate. Every error names the file.
 """
 
 from __future__ import annotations
@@ -13,14 +13,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from untaped.sdk import ConfigError, UsageError, attribution, first_validation_error
-from untaped_awx.application.suites.ports import (
-    Filesystem,
-    Parser,
-    Prompt,
-    VarsResolver,
-)
+from untaped.sdk import ConfigError, UsageError, attribution, first_validation_error, plural
+from untaped_awx.application.suites.ports import Filesystem, Parser
 from untaped_awx.domain.suites.suite import Suite, VariableSpec
+from untaped_values.api import Ask, InputError, resolve
 
 
 class LoadTestSuite:
@@ -29,34 +25,41 @@ class LoadTestSuite:
         filesystem: Filesystem,
         *,
         parser: Parser,
-        vars_resolver: VarsResolver,
-        prompt: Prompt,
+        ask: Ask | None = None,
     ) -> None:
         self._fs = filesystem
         self._parser = parser
-        self._resolve_vars = vars_resolver
-        self._prompt = prompt
+        self._ask = ask
 
     def __call__(
         self,
         path: Path,
         *,
-        cli_vars: Mapping[str, str] | None = None,
-        vars_files: Iterable[Path] = (),
-        extra_known_names: Iterable[str] = (),
+        given: Mapping[str, object] | None = None,
+        known: Iterable[str] = (),
     ) -> Suite:
+        """The suite at ``path``, its variables filled from ``given``, defaults, then answers.
+
+        ``given`` is the ``--vars-file`` values with ``--var`` over them;
+        ``known`` names the variables other suites in the run declare, so a
+        value only they read is accepted here and ignored. A prompt names the
+        file, as ``NAME for FILE``.
+        """
         text = self._fs.read_text(path)
         with _naming(path):
             meta_yaml, body = self._parser.split_frontmatter(text)
             var_specs = self._parse_variable_specs(meta_yaml)
-            values = self._resolve_vars(
-                var_specs,
-                cli=cli_vars or {},
-                files=vars_files,
-                prompt=self._prompt,
-                extra_known_names=extra_known_names,
+            resolved = resolve(
+                var_specs, [given or {}], known=known, ask=self._ask, label=path.name
             )
-            rendered = self._parser.render_body(body, values)
+            if resolved.missing:
+                count = len(resolved.missing)
+                raise UsageError(
+                    f"required {plural(count, 'variable')} not provided: "
+                    f"{', '.join(resolved.missing)}; set them with --var NAME=VALUE "
+                    "or run interactively",
+                )
+            rendered = self._parser.render_body(body, resolved.values)
             data = self._parser.parse_yaml(rendered)
             if not isinstance(data, dict):
                 raise ConfigError(
@@ -128,9 +131,9 @@ class LoadTestSuite:
 
 @contextmanager
 def _naming(path: Path) -> Iterator[None]:
-    """Prefix every config or usage error raised inside with ``path``, keeping its type
-    and attribution."""
+    """Prefix every config, usage or input error raised inside with ``path``, keeping its
+    type and attribution."""
     try:
         yield
-    except (ConfigError, UsageError) as exc:
+    except (ConfigError, UsageError, InputError) as exc:
         raise type(exc)(f"{path}: {exc}", **attribution(exc)) from exc

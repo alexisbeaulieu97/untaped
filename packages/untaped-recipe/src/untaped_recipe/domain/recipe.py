@@ -26,9 +26,13 @@ InputScope = Literal["target", "global"]
 class InputSpec(Input):
     """One declared recipe input: the values plugin's input, plus recipe's own fields."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
     type: Literal["str", "int", "bool", "float", "list", "dict"] = "str"
+    items: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `list` input's element type (default: `str`)."
+    )
+    values: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `dict` input's value type (default: `str`)."
+    )
     required: bool = False
     scope: InputScope = "global"
     from_: tuple[str, ...] = Field(default=(), alias="from")
@@ -39,6 +43,11 @@ class InputSpec(Input):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        # Recipe's list elements and dict values are text unless the recipe types them.
+        if data.get("type") == "list" and data.get("items") is None:
+            data["items"] = "str"
+        if data.get("type") == "dict" and data.get("values") is None:
+            data["values"] = "str"
         raw_from = data.get("from", ())
         if raw_from is None:
             from_values: tuple[str, ...] = ()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from functools import partial
@@ -64,13 +64,15 @@ from untaped_awx.infrastructure.suites.filesystem import (
 )
 from untaped_awx.records import ProvisionOutcome, PruneOutcome, SuiteCase
 from untaped_awx.settings import AwxSettings
+from untaped_values.api import terminal_ask
 
 if TYPE_CHECKING:
-    from untaped.sdk import Context, Terminal
+    from untaped.sdk import Context
     from untaped_awx.application.suites.ports import Filesystem
     from untaped_awx.application.suites.preflight import PreflightLaunch
     from untaped_awx.application.suites.resolver import ResolveCasePayload
     from untaped_awx.domain.suites.temporary_set import TemporarySet
+    from untaped_values.api import Ask, Vars
 
 
 # Heavy imports (jinja2, yaml, the loader/runner) are deferred to the run
@@ -131,31 +133,23 @@ def _expand_paths(paths: Iterable[Path]) -> list[Path]:
 def _load_suites(
     paths: Iterable[Path],
     *,
-    cli_vars: dict[str, str],
-    vars_files: tuple[Path, ...],
-    non_interactive: bool,
-    terminal: Callable[[], Terminal],
+    vars: Vars,
+    ask: Ask | None,
     filesystem: Filesystem | None = None,
 ) -> dict[Path, Suite]:
     """Each file's suite; suite names must be unique (``--case SUITE/CASE`` needs it).
 
-    ``terminal`` asks for a variable no flag or file gives; ``filesystem``
-    reads the files (default: the working tree).
+    ``vars`` gives the variables, ``ask`` answers one it doesn't (``None``:
+    nothing may ask); ``filesystem`` reads the files (default: the working
+    tree).
     """
     from untaped_awx.application.suites.loader import LoadTestSuite  # noqa: PLC0415
     from untaped_awx.infrastructure.suites import (  # noqa: PLC0415
         DefaultParser,
         LocalFilesystem,
-        UiPrompt,
-        resolve_variables,
     )
 
-    loader = LoadTestSuite(
-        filesystem or LocalFilesystem(),
-        parser=DefaultParser(),
-        vars_resolver=resolve_variables,
-        prompt=UiPrompt(terminal, force_non_interactive=non_interactive),
-    )
+    loader = LoadTestSuite(filesystem or LocalFilesystem(), parser=DefaultParser(), ask=ask)
     file_list = list(paths)
     # Pre-pass: build the union of declared variable names across all files
     # so a ``--var foo=bar`` accepted by *some* suite isn't rejected by a
@@ -163,12 +157,11 @@ def _load_suites(
     union_names: set[str] = set()
     for path in file_list:
         union_names.update(loader.parse_specs(path).keys())
+    given = vars.values()
     loaded: dict[Path, Suite] = {}
     seen: dict[str, Path] = {}
     for path in file_list:
-        suite = loader(
-            path, cli_vars=cli_vars, vars_files=vars_files, extra_known_names=union_names
-        )
+        suite = loader(path, given=given, known=union_names)
         if suite.name in seen:
             raise ConfigError(
                 f"suite {q(suite.name)} is defined in both {seen[suite.name]} and {path}",
@@ -181,13 +174,7 @@ def _load_suites(
 
 def _loader(suites: TestSuites, ctx: Context) -> partial[dict[Path, Suite]]:
     """:func:`_load_suites` with the variables ``suites`` gives, asking on ``ctx``'s terminal."""
-    return partial(
-        _load_suites,
-        cli_vars=dict(suites.var),
-        vars_files=tuple(suites.vars_file),
-        non_interactive=suites.non_interactive,
-        terminal=lambda: ctx.terminal,
-    )
+    return partial(_load_suites, vars=suites.vars, ask=terminal_ask(ctx.terminal, suites.vars))
 
 
 def _jt_spec(ctx: AwxContext) -> AwxResourceSpec:

@@ -917,6 +917,7 @@ dependencies = [
     { name = "untaped" },
     { name = "untaped-git" },
     { name = "untaped-lint" },
+    { name = "untaped-values" },
 ]
 
 [package.metadata]
@@ -925,6 +926,7 @@ requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-lint", editable = "packages/untaped-lint" },
+    { name = "untaped-values", editable = "packages/untaped-values" },
 ]
 
 [[package]]

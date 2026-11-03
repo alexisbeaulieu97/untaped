@@ -10,7 +10,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import ExistingFile, KeyValue, Short
+from untaped.sdk import ExistingFile, Short
+from untaped_values.api import Vars
 
 
 class TestSuites(BaseModel):
@@ -82,12 +83,15 @@ class TestSuites(BaseModel):
     Every field of a variable is optional, and a variable without a `default` is
     required. Values come from, highest precedence first: `--var`, `--vars-file`
     (a later file wins), the `default`, then an interactive prompt for a required
-    variable.
+    variable. How values are given, parsed and asked:
+    `untaped docs values guides vars`.
 
     - Without a terminal, or with `--non-interactive`, a missing required
-      variable fails instead of prompting.
-    - A `--var` or vars-file key no suite being read declares is an error; one
-      that only another suite declares is ignored.
+      variable fails instead of prompting, naming every missing one (exit 2).
+    - A `--var` or vars-file key no suite being read declares is an error
+      (exit 2); one that only another suite declares is ignored.
+    - A `list` keeps a YAML list's elements as written; `items` (such as
+      `items: int`) converts each one.
     - Suite variables fill the template only: the extra vars AWX receives are
       each case's `launch.extra_vars`.
 
@@ -188,17 +192,7 @@ class TestSuites(BaseModel):
     the job AWX launched anyway is cancelled (unless `--no-cancel`).
     """
 
-    var: list[KeyValue] = Field(
-        default_factory=list,
-        description="KEY=VALUE (repeatable); wins over --vars-file and the default.",
-    )
-    vars_file: list[Path] = Field(
-        default_factory=list,
-        description="YAML file of variable values (repeatable; a later file wins).",
-    )
-    non_interactive: bool = Field(
-        False, description="Fail on missing required vars instead of prompting."
-    )
+    vars: Vars = Field(default_factory=Vars)
 
 
 class TestCases(BaseModel):
