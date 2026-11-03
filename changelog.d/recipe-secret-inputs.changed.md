@@ -9,6 +9,6 @@ field refusing a secret reads `secret input 'x' cannot be used in field
 cannot be rendered into text`, and an unknown input error, from `--var` or
 `--input-from`, names every unknown input and the declared ones and exits 2
 (usage), as does an `--input-from` naming a global input or whose expression
-doesn't compile. `--var`,
-`--vars-file` and `--non-interactive` list under their own help panel, which
-says `NAME=VALUE` and links `untaped docs values guides vars`.
+doesn't compile. `--var`, `--vars-file` and `--non-interactive` list under
+their own help panel, which says `NAME=VALUE` and links `untaped docs values
+guides vars`.
