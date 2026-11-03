@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from untaped_awx.application import BatchMutationEngine
@@ -119,14 +119,25 @@ class _Client:
     ) -> dict[str, Any]:
         raise NotImplementedError
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def location(self, spec: ResourceSpec, id_: int) -> str:
+        return f"{spec.kind}/{id_}"
+
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        raise NotImplementedError
+
+    def list_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int
+    ) -> Iterator[dict[str, Any]]:
+        raise NotImplementedError
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def inventory_kind(self, inventory_id: int) -> str:
         raise NotImplementedError
 
     def sub_endpoint_request(
@@ -188,7 +199,7 @@ class _MembershipClient(_Client):
         super().__init__(records)
         self.members: dict[tuple[int, str], list[int]] = {}
         self.ignore_membership = False
-        self.nested_posts: list[str] = []
+        self.nested_posts: list[tuple[str, int, str]] = []
 
     def paginate_sub_endpoint(
         self, spec: ResourceSpec, record_id: int, sub_endpoint: str, **kwargs: Any
@@ -210,19 +221,16 @@ class _MembershipClient(_Client):
                 members.append(data["id"])
         return {}
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        return [], 0
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
-        if method == "GET":
-            return {"results": []}
-        assert json is not None
-        self.nested_posts.append(path)
-        return self.create(PROJECT_SPEC, _payload(json)).model_dump()
+        self.nested_posts.append((parent_kind, parent_id, spec.kind))
+        return self.create(PROJECT_SPEC, _payload(body)).model_dump()
 
 
 def _payload(values: dict[str, Any]) -> WritePayload:

@@ -310,7 +310,7 @@ def test_selected_constructed_hydrates_and_freezes_detail_and_membership_routes(
     )
     plan = engine.prepare([doc], mode="patch", existing=[selected])
     assert plan.operations[0].existing["update_cache_timeout"] == 0
-    assert plan.operations[0].spec.api_path == "constructed_inventories"
+    assert plan.operations[0].spec.variant == "constructed"
     result = engine.execute(plan)
     assert result.outcomes[0].action == "updated"
     assert state.members[(10, "input_inventories")] == [12, 11]

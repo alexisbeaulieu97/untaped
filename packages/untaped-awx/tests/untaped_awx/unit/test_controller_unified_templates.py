@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from awx_test_support import RecordingController
+import httpx
+import pytest
+import respx
+
+from awx_test_support import ClientRepository, RecordingController
+from untaped_awx.errors import ResourceNotFoundError
+from untaped_awx.infrastructure import AwxClient
 
 
 def test_templates_are_alphabetical_unless_the_caller_orders_them() -> None:
@@ -26,3 +32,18 @@ def test_no_ids_ask_nothing() -> None:
     api = RecordingController()
     assert list(api.unified_templates_by_ids(ids=[])) == []
     assert api.json_calls == []
+
+
+def test_one_template_is_read_by_id_and_its_404_is_not_found(awx_client: AwxClient) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/unified_job_templates/3/").mock(
+            return_value=httpx.Response(200, json={"id": 3, "type": "job_template"})
+        )
+        mock.get("/api/v2/unified_job_templates/4/").mock(
+            return_value=httpx.Response(404, json={"detail": "Not found."})
+        )
+        repo = ClientRepository(awx_client)
+        assert repo.unified_template(3) == {"id": 3, "type": "job_template"}
+        with pytest.raises(ResourceNotFoundError) as caught:
+            repo.unified_template(4)
+    assert caught.value.kind == "UnifiedJobTemplate"

@@ -12,7 +12,6 @@ INVENTORY_SOURCE_SPEC = AwxResourceSpec(
     kind="InventorySource",
     record=InventorySource,
     cli_name="inventory-sources",
-    api_path="inventory_sources",
     identity_keys=("name",),
     canonical_fields=(
         "description",

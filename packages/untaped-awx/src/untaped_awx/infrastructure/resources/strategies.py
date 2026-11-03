@@ -1,8 +1,8 @@
 """Concrete :class:`ApplyStrategy` implementations.
 
 The default strategy works for any kind whose write path is plain CRUD
-against ``<api_path>/``. Schedule has its own strategy because creates
-must POST against the parent's nested ``/schedules/`` endpoint.
+on its own collection. Schedule has its own strategy because a schedule is
+created under its template.
 
 Strategies bridge the dict-shaped payloads produced by application use
 cases to the typed :class:`ResourceClient` boundary: dicts are wrapped
@@ -20,18 +20,17 @@ from untaped_awx.domain.inventory import (
     CONSTRUCTED_SOURCE_FIELDS,
     inventory_read_only_fields,
 )
-from untaped_awx.domain.kinds import UNIFIED_TEMPLATE_KINDS, snake_kind
+from untaped_awx.domain.kinds import UNIFIED_TEMPLATE_KINDS
 from untaped_awx.domain.payloads import as_dict
 from untaped_awx.errors import AmbiguousIdentityError, BadRequestError
-from untaped_awx.infrastructure.resources.spec import awx_api_path
 
 if TYPE_CHECKING:
     from untaped_awx.application.resources.mutation_refs import PlannedId
-    from untaped_awx.application.resources.ports import FkResolver, RawHttpResourceClient
+    from untaped_awx.application.resources.ports import FkResolver, NestedResourceClient
 
 
 class DefaultApplyStrategy:
-    """Plain CRUD against ``<api_path>/``.
+    """Plain CRUD on the kind's own collection.
 
     Uses AWX's ``<scope_field>__name=<value>`` syntax to find existing
     resources by their identity (so we don't have to pre-resolve scope
@@ -39,7 +38,7 @@ class DefaultApplyStrategy:
     """
 
     def snapshot_existing(
-        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: NestedResourceClient
     ) -> dict[str, Any]:
         return existing
 
@@ -51,7 +50,7 @@ class DefaultApplyStrategy:
         *,
         parent: tuple[str, PlannedId] | None = None,
         parent_resource: Resource | None = None,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         return spec, existing
 
@@ -65,7 +64,7 @@ class DefaultApplyStrategy:
         spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         params: dict[str, str] = {}
@@ -87,7 +86,7 @@ class DefaultApplyStrategy:
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         record = client.create(spec, WritePayload(**payload))
@@ -99,7 +98,7 @@ class DefaultApplyStrategy:
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         record = client.update(spec, existing["id"], WritePayload(**payload))
@@ -107,13 +106,12 @@ class DefaultApplyStrategy:
 
 
 class ScheduleApplyStrategy(DefaultApplyStrategy):
-    """Schedule writes go through the parent's nested endpoint on create.
+    """A schedule is created under its template.
 
-    AWX requires schedule creates at ``/<parent_path>/<parent_id>/schedules/``;
-    updates go through the global ``/schedules/<id>/`` and so reuse
-    :meth:`DefaultApplyStrategy.update`. Identity is ``(name, parent)``
-    where ``parent`` is the polymorphic IdentityRef from
-    ``resource.metadata.parent``.
+    AWX creates a schedule only under its template; updates go through the
+    schedule itself and so reuse :meth:`DefaultApplyStrategy.update`.
+    Identity is ``(name, parent)`` where ``parent`` is the polymorphic
+    IdentityRef from ``resource.metadata.parent``.
     """
 
     def prepare_parent(
@@ -123,7 +121,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         if parent is None:
             raise BadRequestError("schedule identity missing 'parent'")
         result = fk.resolve_polymorphic(as_dict(parent))
-        self._parent_path(result[0])
+        _check_schedule_parent(result[0])
         return result
 
     def find_existing(
@@ -131,7 +129,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         parent = identity.get("parent")
@@ -140,12 +138,12 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         parent_kind, parent_id = identity.get("_prepared_parent") or fk.resolve_polymorphic(
             as_dict(parent)
         )
-        path = self._parent_path(parent_kind)
+        _check_schedule_parent(parent_kind)
         return _find_unique(
             client,
-            path=f"{path}/{parent_id}/schedules/",
+            spec,
+            (parent_kind, parent_id),
             name=str(identity["name"]),
-            kind="Schedule",
             ambiguity_label={"parent": f"{parent_kind}#{parent_id}"},
         )
 
@@ -155,42 +153,37 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         parent = identity.get("parent")
         if parent is None:
             raise BadRequestError("schedule identity missing 'parent' for create")
         parent_kind, parent_id = identity["_prepared_parent"]
-        path = self._parent_path(parent_kind)
-        return client.request(
-            "POST",
-            f"{path}/{parent_id}/schedules/",
-            json={"name": identity["name"], **payload},
+        _check_schedule_parent(parent_kind)
+        return client.create_under(
+            spec, parent_kind, parent_id, {"name": identity["name"], **payload}
         )
 
-    @staticmethod
-    def _parent_path(parent_kind: str) -> str:
-        """Parents are the unified templates; each lives at ``<snake_kind>s``."""
-        if parent_kind not in UNIFIED_TEMPLATE_KINDS:
-            raise BadRequestError(
-                f"schedule parent kind {parent_kind!r} not supported "
-                f"(use one of {sorted(UNIFIED_TEMPLATE_KINDS)})"
-            )
-        return f"{snake_kind(parent_kind)}s"
+
+def _check_schedule_parent(parent_kind: str) -> None:
+    """A schedule's parent is a unified template."""
+    if parent_kind not in UNIFIED_TEMPLATE_KINDS:
+        raise BadRequestError(
+            f"schedule parent kind {parent_kind!r} not supported "
+            f"(use one of {sorted(UNIFIED_TEMPLATE_KINDS)})"
+        )
 
 
 class InventoryChildApplyStrategy(DefaultApplyStrategy):
     """Write path for resources whose parent is an Inventory.
 
-    Used by :data:`HOST_SPEC` and :data:`GROUP_SPEC`. AWX accepts creates
-    against either the global ``/<api_path>/`` (with ``inventory: <id>``
-    in the body) or the nested ``/inventories/<id>/<api_path>/`` (which
-    auto-fills the FK). We use the nested form so the user's spec body
-    never carries ``inventory`` — keeping the body free of a redundant
-    FK that's already implied by ``metadata.parent``. Updates reuse
-    :meth:`DefaultApplyStrategy.update` (the global ``/<api_path>/<id>/``
-    endpoint).
+    Used by :data:`HOST_SPEC` and :data:`GROUP_SPEC`. AWX creates one
+    either in the kind's own collection (with ``inventory: <id>`` in the
+    body) or under its inventory (which fills the FK in). We create it
+    under its inventory, so the user's spec body never carries
+    ``inventory``, a redundant FK ``metadata.parent`` already implies.
+    Updates reuse :meth:`DefaultApplyStrategy.update`.
     """
 
     def prepare_parent(
@@ -203,7 +196,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None:
         inventory_id = (
@@ -213,9 +206,9 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         )
         return _find_unique(
             client,
-            path=f"inventories/{inventory_id}/{awx_api_path(spec)}/",
+            spec,
+            ("Inventory", inventory_id),
             name=str(identity["name"]),
-            kind=spec.kind,
             ambiguity_label={"inventory": str(_parent(identity).name)},
         )
 
@@ -225,27 +218,21 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]:
         inventory_id = identity["_prepared_parent"][1]
-        path = f"inventories/{inventory_id}/{awx_api_path(spec)}/"
         body = {"name": identity["name"], **payload}
-        if spec.kind == "InventorySource":
-            inventory = client.request("GET", f"inventories/{inventory_id}/")
-            if inventory.get("kind") == "constructed":
-                invalid = set(payload) - {*CONSTRUCTED_SOURCE_FIELDS, "source", "name"}
-                if invalid or payload.get("source", "constructed") != "constructed":
-                    raise BadRequestError(
-                        "cannot create an independent source on a constructed inventory"
-                    )
-                generated = _generated_source(client, inventory_id)
-                return client.request(
-                    "PATCH",
-                    f"inventory_sources/{generated['id']}/",
-                    json={k: v for k, v in payload.items() if k in CONSTRUCTED_SOURCE_FIELDS},
+        if spec.kind == "InventorySource" and client.inventory_kind(inventory_id) == "constructed":
+            invalid = set(payload) - {*CONSTRUCTED_SOURCE_FIELDS, "source", "name"}
+            if invalid or payload.get("source", "constructed") != "constructed":
+                raise BadRequestError(
+                    "cannot create an independent source on a constructed inventory"
                 )
-        return client.request("POST", path, json=body)
+            generated = _generated_source(client, spec, inventory_id)
+            settings = {k: v for k, v in payload.items() if k in CONSTRUCTED_SOURCE_FIELDS}
+            return client.update(spec, int(generated["id"]), WritePayload(**settings)).model_dump()
+        return client.create_under(spec, "Inventory", inventory_id, body)
 
     def prepare_state(
         self,
@@ -255,13 +242,13 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         *,
         parent: tuple[str, PlannedId] | None = None,
         parent_resource: Resource | None = None,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         if spec.kind != "InventorySource":
             return spec, existing
         inventory_kind = None
         if parent is not None and isinstance(parent[1], int):
-            inventory_kind = client.request("GET", f"inventories/{parent[1]}/").get("kind", "")
+            inventory_kind = client.inventory_kind(parent[1])
         elif parent_resource is not None:
             inventory_kind = parent_resource.spec.get("kind", "")
         if inventory_kind == "smart" and existing is None:
@@ -274,7 +261,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
                 raise BadRequestError("constructed sources require a constructed inventory")
             return spec, existing
         if existing is None and parent is not None and isinstance(parent[1], int):
-            existing = _generated_source(client, parent[1])
+            existing = _generated_source(client, spec, parent[1])
         invalid = set(resource.spec) - {*CONSTRUCTED_SOURCE_FIELDS, "source"}
         if invalid:
             raise BadRequestError(
@@ -302,27 +289,26 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
 
 
 def _find_unique(
-    client: RawHttpResourceClient,
+    client: NestedResourceClient,
+    spec: ResourceSpec,
+    parent: tuple[str, PlannedId],
     *,
-    path: str,
     name: str,
-    kind: str,
     ambiguity_label: dict[str, str],
 ) -> dict[str, Any] | None:
-    """Resolve a unique record at ``path`` filtered by ``name``.
+    """The one ``spec`` record named ``name`` under ``parent``, if any.
 
-    Requests two records to detect ambiguity (mirrors
-    :meth:`ResourceRepository.find` for the nested-endpoint paths
-    that don't fit the spec-driven CRUD shape).
+    Asks for two records to detect ambiguity, as
+    :meth:`ResourceRepository.find` does for a kind's own collection. A
+    parent the batch has yet to create has nothing under it.
     """
-    page = client.request("GET", path, params={"name": name, "page_size": "2"})
-    results = page.get("results") or []
+    parent_kind, parent_id = parent
+    if not isinstance(parent_id, int):
+        return None
+    results, count = client.named_under(spec, parent_kind, parent_id, name=name)
     if len(results) >= 2:
-        raise AmbiguousIdentityError(
-            kind,
-            {"name": name, **ambiguity_label},
-            match_count=page.get("count"),
-        )
+        identity = {"name": name, **ambiguity_label}
+        raise AmbiguousIdentityError(spec.kind, identity, match_count=count)
     return results[0] if results else None
 
 
@@ -345,7 +331,7 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
     """Freeze constructed proxy routing using the selected inventory ID."""
 
     def snapshot_existing(
-        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: NestedResourceClient
     ) -> dict[str, Any]:
         if existing.get("kind") != "constructed":
             return existing
@@ -362,7 +348,7 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
         *,
         parent: tuple[str, PlannedId] | None = None,
         parent_resource: Resource | None = None,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         kind = existing.get("kind", "") if existing is not None else resource.spec.get("kind", "")
         if existing is not None and "kind" in resource.spec and resource.spec["kind"] != kind:
@@ -372,7 +358,7 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
                 raise BadRequestError("constructed inventories do not support host_filter")
             spec = spec.model_copy(
                 update={
-                    "api_path": "constructed_inventories",
+                    "variant": "constructed",
                     "read_only_fields": (
                         *spec.read_only_fields,
                         *inventory_read_only_fields(spec.kind, {"kind": kind}),
@@ -386,11 +372,11 @@ class InventoryApplyStrategy(DefaultApplyStrategy):
         return spec, existing
 
 
-def _generated_source(client: RawHttpResourceClient, inventory_id: int) -> dict[str, Any]:
+def _generated_source(
+    client: NestedResourceClient, spec: ResourceSpec, inventory_id: int
+) -> dict[str, Any]:
     """Read the one managed source, including after a same-batch inventory create."""
-    sources = (
-        client.request("GET", f"inventories/{inventory_id}/inventory_sources/").get("results") or []
-    )
+    sources = list(client.list_under(spec, "Inventory", inventory_id))
     if len(sources) != 1 or sources[0].get("source") != "constructed":
         raise BadRequestError("constructed inventory has no unique generated source")
     return dict(sources[0])

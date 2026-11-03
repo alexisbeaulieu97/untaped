@@ -6,7 +6,9 @@ lands under the prefix the controller's version calls for (``/api/v2/``, or
 ``/api/controller/v2/`` behind AAP's platform gateway). Every request runs
 inside :meth:`ApiMismatch.watch <untaped.sdk.network.ApiMismatch.watch>`: a
 404 or 405 without AWX's own ``detail`` body, or a 2xx answer that doesn't
-read, says the server no longer answers as this API does.
+read, says the server no longer answers as this API does. So does any 404 on
+a collection (``collection=True``): a served version always has its
+collections, so only a moved path answers one that way.
 """
 
 from __future__ import annotations
@@ -39,6 +41,14 @@ def awx_error(error: HttpStatusError) -> bool:
     return isinstance(body, dict) and isinstance(body.get("detail"), str)
 
 
+def _collection_error(error: HttpStatusError) -> bool:
+    """Whether an answer on a collection is AWX's own: a 405 that :func:`awx_error` recognises.
+
+    A 404 never is: a collection is there on every version that serves it.
+    """
+    return error.status_code == 405 and awx_error(error)
+
+
 class AwxClient:
     """Talks to AAP/AWX REST endpoints under ``prefix`` through one ``http`` client."""
 
@@ -49,8 +59,8 @@ class AwxClient:
 
     @staticmethod
     @contextmanager
-    def _watched() -> Iterator[None]:
-        with ApiMismatch.watch(vendor_error=awx_error):
+    def _watched(*, collection: bool = False) -> Iterator[None]:
+        with ApiMismatch.watch(vendor_error=_collection_error if collection else awx_error):
             yield
 
     def _url(self, path: str) -> str:
@@ -70,20 +80,22 @@ class AwxClient:
         with map_awx_errors(), self._watched():
             return self._http.get_json_dict(self._url("me/"))
 
-    def get_json(self, path: str, **kwargs: Any) -> Any:
+    def get_json(self, path: str, *, collection: bool = False, **kwargs: Any) -> Any:
         """GET ``<prefix><path>`` and return the JSON body."""
-        with self._watched():
+        with self._watched(collection=collection):
             return self._http.get_json(self._url(path), **kwargs)
 
-    def post_json(self, path: str, **kwargs: Any) -> Any:
+    def post_json(self, path: str, *, collection: bool = False, **kwargs: Any) -> Any:
         """POST ``<prefix><path>`` and return the JSON body."""
-        with self._watched():
+        with self._watched(collection=collection):
             return self._http.post_json(self._url(path), **kwargs)
 
-    def request_json(self, method: str, path: str, **kwargs: Any) -> Any:
+    def request_json(
+        self, method: str, path: str, *, collection: bool = False, **kwargs: Any
+    ) -> Any:
         """Generic verb under the prefix. Returns the JSON body
         or ``None`` for empty 204 responses (e.g. DELETE)."""
-        with self._watched():
+        with self._watched(collection=collection):
             return self._http.request_json(method, self._url(path), **kwargs)
 
     def delete(self, path: str) -> int:

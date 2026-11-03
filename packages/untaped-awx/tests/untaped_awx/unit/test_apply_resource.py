@@ -11,7 +11,7 @@ from awx_unit_support import SingleApply
 from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
-    RawHttpResourceClient,
+    NestedResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import Metadata, Resource, ResourceSpec
@@ -195,7 +195,7 @@ def _make_apply(
     catalog_specs: dict[str, ResourceSpec],
     fk_names: dict[tuple[str, str], int],
     strategy: _StubStrategy,
-    client: RawHttpResourceClient | None = None,
+    client: NestedResourceClient | None = None,
     warn: list[str] | None = None,
     allow_unverified: bool = False,
 ) -> SingleApply:
@@ -206,7 +206,7 @@ def _make_apply(
     return SingleApply(
         client=client
         if client is not None
-        else cast(RawHttpResourceClient, _StubClient(existing=strategy.existing)),
+        else cast(NestedResourceClient, _StubClient(existing=strategy.existing)),
         catalog=cast(Catalog, _StubCatalog(catalog_specs)),
         fk=cast(FkResolver, _StubFk(fk_names)),
         strategies=cast(StrategyResolver, _StubStrategies(strategy)),
@@ -313,7 +313,7 @@ def test_write_is_verified_against_the_server_record(
         strategy=_WriteResponseStrategy(
             existing=existing, response={"name": "playbooks", "organization": 1, **response}
         ),
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         warn=warnings,
         allow_unverified=allow_unverified,
     )
@@ -793,7 +793,7 @@ def test_schedule_inventory_fk_uses_parent_organization() -> None:
 
     strategy = _StubStrategy(existing=None)
     apply = SingleApply(
-        client=cast(RawHttpResourceClient, _StubClient()),
+        client=cast(NestedResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog({"Schedule": SCHEDULE_SPEC})),
         fk=cast(FkResolver, _RecordingFk()),
         strategies=cast(StrategyResolver, _StubStrategies(strategy)),
@@ -829,7 +829,7 @@ def test_create_raises_when_response_lacks_id_with_membership() -> None:
             raise NotImplementedError
 
     apply = SingleApply(
-        client=cast(RawHttpResourceClient, _StubClient()),
+        client=cast(NestedResourceClient, _StubClient()),
         catalog=cast(Catalog, _StubCatalog({"Group": GROUP_SPEC})),
         fk=cast(FkResolver, _StubFk({("Host", "web-01"): 101})),
         strategies=cast(StrategyResolver, _StubStrategies(_IdLessStrategy())),
@@ -870,7 +870,7 @@ def test_apply_to_existing_updates_passed_record_and_never_creates() -> None:
         catalog_specs={"JobTemplate": JOB_TEMPLATE_SPEC},
         fk_names={("Organization", "Default"): 1},
         strategy=strategy,
-        client=cast(RawHttpResourceClient, _StubClient(existing=existing)),
+        client=cast(NestedResourceClient, _StubClient(existing=existing)),
     )
     resource = Resource(
         kind="JobTemplate",

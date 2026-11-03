@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.resources.ports import FkResolver, RawHttpResourceClient
+from untaped_awx.application.resources.ports import FkResolver, NestedResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped_awx.infrastructure.resources.specs import (
@@ -23,7 +23,7 @@ class _StubClient:
         self.find_calls: list[tuple[str, dict[str, str]]] = []
         self.create_calls: list[tuple[str, dict[str, Any]]] = []
         self.update_calls: list[tuple[str, int, dict[str, Any]]] = []
-        self.request_calls: list[tuple[str, str, dict[str, Any]]] = []
+        self.nested_calls: list[tuple[str, str, int, str, dict[str, Any]]] = []
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
         self.find_calls.append((spec.kind, params))
@@ -39,18 +39,18 @@ class _StubClient:
         self.update_calls.append((spec.kind, id_, body))
         return ServerRecord(id=id_, **body)
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        self.nested_calls.append(("find", parent_kind, parent_id, spec.kind, {"name": name}))
+        found = [self.find_result] if self.find_result else []
+        return found, len(found)
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
-        self.request_calls.append((method, path, json or {}))
-        if method == "GET":
-            return {"results": [self.find_result] if self.find_result else []}
-        return {"id": 200, "name": (json or {}).get("name", "")}
+        self.nested_calls.append(("create", parent_kind, parent_id, spec.kind, body))
+        return {"id": 200, "name": body.get("name", "")}
 
 
 class _StubFk:
@@ -77,7 +77,7 @@ def test_default_strategy_uses_scope_field_name_lookup() -> None:
     s.find_existing(
         JOB_TEMPLATE_SPEC,
         {"name": "deploy", "organization": "Default"},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk()),
     )
     assert client.find_calls[0][1] == {
@@ -93,7 +93,7 @@ def test_default_strategy_create_calls_client_create() -> None:
         JOB_TEMPLATE_SPEC,
         {"name": "deploy", "playbook": "x.yml"},
         {"name": "deploy"},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk()),
     )
     assert result["id"] == 100
@@ -107,13 +107,13 @@ def test_default_strategy_update_uses_existing_id() -> None:
         JOB_TEMPLATE_SPEC,
         {"id": 99, "name": "deploy"},
         {"description": "updated"},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls[0] == ("JobTemplate", 99, {"description": "updated"})
 
 
-def test_schedule_strategy_create_uses_parent_endpoint() -> None:
+def test_schedule_strategy_creates_under_its_parent() -> None:
     client = _StubClient()
     fk = _StubFk(parent_id=42)
     s = ScheduleApplyStrategy()
@@ -128,12 +128,11 @@ def test_schedule_strategy_create_uses_parent_endpoint() -> None:
                 SCHEDULE_SPEC, {"parent": parent}, fk=cast(FkResolver, fk)
             ),
         },
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, fk),
     )
-    method, path, json = client.request_calls[-1]
-    assert method == "POST"
-    assert path == "job_templates/42/schedules/"
+    action, parent_kind, parent_id, kind, json = client.nested_calls[-1]
+    assert (action, parent_kind, parent_id, kind) == ("create", "JobTemplate", 42, "Schedule")
     assert json["name"] == "nightly"
     assert json["rrule"] == "FREQ=DAILY"
 
@@ -145,26 +144,24 @@ def test_schedule_strategy_update_uses_global_endpoint() -> None:
         SCHEDULE_SPEC,
         {"id": 7, "name": "nightly"},
         {"rrule": "FREQ=WEEKLY"},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls[0] == ("Schedule", 7, {"rrule": "FREQ=WEEKLY"})
 
 
-def test_schedule_strategy_find_uses_parent_endpoint() -> None:
+def test_schedule_strategy_finds_under_its_parent() -> None:
     client = _StubClient(find_result={"id": 5, "name": "nightly"})
     s = ScheduleApplyStrategy()
     parent = IdentityRef(kind="JobTemplate", name="deploy", organization="Default")
     found = s.find_existing(
         SCHEDULE_SPEC,
         {"name": "nightly", "parent": parent},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk(parent_id=42)),
     )
     assert found == {"id": 5, "name": "nightly"}
-    method, path, _ = client.request_calls[0]
-    assert method == "GET"
-    assert path == "job_templates/42/schedules/"
+    assert client.nested_calls == [("find", "JobTemplate", 42, "Schedule", {"name": "nightly"})]
 
 
 def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
@@ -177,23 +174,18 @@ def test_schedule_strategy_rejects_unknown_parent_kind() -> None:
 
 
 class _MultiResultClient:
-    """Stub that returns N results from `request` GET — for ambiguity tests."""
+    """Stub whose by-name lookup answers N results — for ambiguity tests."""
 
     def __init__(self, results: list[dict[str, Any]], count: int | None = None) -> None:
         self._results = results
         self._count = count if count is not None else len(results)
-        self.request_calls: list[tuple[str, str, dict[str, str]]] = []
+        self.lookups: list[tuple[str, int, str, str]] = []
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        self.request_calls.append((method, path, dict(params or {})))
-        return {"count": self._count, "results": self._results}
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        self.lookups.append((parent_kind, parent_id, spec.kind, name))
+        return self._results, self._count
 
     def find(self, *a: Any, **kw: Any) -> dict[str, Any] | None:
         raise NotImplementedError
@@ -221,7 +213,7 @@ def test_schedule_strategy_raises_on_ambiguous_lookup() -> None:
         s.find_existing(
             SCHEDULE_SPEC,
             {"name": "nightly", "parent": parent},
-            client=cast(RawHttpResourceClient, client),
+            client=cast(NestedResourceClient, client),
             fk=cast(FkResolver, _StubFk(parent_id=42)),
         )
     assert excinfo.value.kind == "Schedule"
@@ -229,10 +221,7 @@ def test_schedule_strategy_raises_on_ambiguous_lookup() -> None:
     # The parent is materialized as kind#id in the identity payload so
     # the message is unambiguous about *which* parent the lookup hit.
     assert "name" in excinfo.value.identity
-    method, path, params = client.request_calls[0]
-    assert method == "GET"
-    assert path == "job_templates/42/schedules/"
-    assert params["page_size"] == "2"
+    assert client.lookups == [("JobTemplate", 42, "Schedule", "nightly")]
 
 
 def test_schedule_strategy_rejects_missing_parent() -> None:
@@ -243,6 +232,6 @@ def test_schedule_strategy_rejects_missing_parent() -> None:
             SCHEDULE_SPEC,
             {},
             {"name": "x", "parent": None},
-            client=cast(RawHttpResourceClient, client),
+            client=cast(NestedResourceClient, client),
             fk=cast(FkResolver, _StubFk()),
         )

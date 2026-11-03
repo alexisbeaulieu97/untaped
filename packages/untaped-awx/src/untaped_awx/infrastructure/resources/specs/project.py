@@ -12,7 +12,6 @@ PROJECT_SPEC = AwxResourceSpec(
     kind="Project",
     record=Project,
     cli_name="projects",
-    api_path="projects",
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",

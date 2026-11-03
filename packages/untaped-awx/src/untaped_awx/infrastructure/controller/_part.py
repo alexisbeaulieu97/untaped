@@ -18,7 +18,9 @@ class ControllerPart(ABC):
 
     Each part builds the paths of its area; the adapter supplies the client
     (under its version's prefix) and the page size. Paths are relative to
-    the prefix.
+    the prefix. A call to a collection says so (``collection=True``): a
+    served version always has its collections, so a 404 there is a mismatch,
+    while a 404 on a record is the record gone.
     """
 
     #: Results requested per list page (``awx.page_size``).
@@ -36,11 +38,12 @@ class ControllerPart(ABC):
         *,
         params: Mapping[str, str] | None = None,
         json: dict[str, Any] | None = None,
+        collection: bool = False,
     ) -> dict[str, Any]:
-        """One request, its JSON answer."""
+        """One request, its JSON answer; ``collection``: ``path`` is a collection."""
         with map_awx_errors():
             return self._client.request_json(  # type: ignore[no-any-return]
-                method, path, params=params, json=json
+                method, path, params=params, json=json, collection=collection
             )
 
     def _paginate(
@@ -49,8 +52,12 @@ class ControllerPart(ABC):
         *,
         params: Mapping[str, str] | None = None,
         limit: int | None = None,
+        collection: bool = False,
     ) -> Iterator[dict[str, Any]]:
-        """Every item of the list at ``path``, page after page (``limit`` caps them)."""
+        """Every item of the list at ``path``, page after page (``limit`` caps them).
+
+        ``collection``: ``path`` is a collection, so a 404 on it is a mismatch.
+        """
         with map_awx_errors():
             yield from paginate(
                 self._client,
@@ -58,6 +65,7 @@ class ControllerPart(ABC):
                 params=dict(params or {}),
                 page_size=self._page_size,
                 limit=limit,
+                collection=collection,
             )
 
     def _text(self, path: str, *, params: Mapping[str, str] | None = None) -> str:

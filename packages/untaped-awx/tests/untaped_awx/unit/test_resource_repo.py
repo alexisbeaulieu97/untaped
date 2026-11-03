@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
 
 from awx_test_support import ClientRepository
 from untaped.sdk.network import ApiMismatch
+from untaped_awx.domain import WritePayload
 from untaped_awx.errors import (
     AmbiguousIdentityError,
     AwxApiError,
     BadRequestError,
     PartialWriteError,
+    ResourceNotFoundError,
 )
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
+from untaped_awx.infrastructure.controller.resources import COLLECTIONS
+from untaped_awx.infrastructure.resources.specs import (
+    ALL_SPECS,
+    HOST_SPEC,
+    INVENTORY_SPEC,
+    JOB_TEMPLATE_SPEC,
+    SCHEDULE_SPEC,
+)
+
+_NOT_FOUND = httpx.Response(404, json={"detail": "Not found."})
 
 
 def test_find_returns_unique_record(awx_client: AwxClient) -> None:
@@ -269,3 +282,88 @@ def test_playbooks_rejects_an_answer_that_is_not_a_list(awx_client: AwxClient) -
         )
         with pytest.raises(BadRequestError, match="not a list"):
             ClientRepository(awx_client).playbooks(3)
+
+
+def test_every_catalog_kind_has_a_collection() -> None:
+    assert {spec.kind for spec in ALL_SPECS} <= COLLECTIONS.keys()
+
+
+def test_a_404_on_a_collection_is_a_mismatch_even_in_awx_words(awx_client: AwxClient) -> None:
+    """A collection is there on every version that serves it, so its 404 is a gone path."""
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/").mock(return_value=_NOT_FOUND)
+        mock.post("/api/v2/job_templates/").mock(return_value=_NOT_FOUND)
+        repo = ClientRepository(awx_client)
+        with pytest.raises(ApiMismatch):
+            list(repo.list(JOB_TEMPLATE_SPEC))
+        with pytest.raises(ApiMismatch):
+            repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
+        with pytest.raises(ApiMismatch):
+            repo.create(JOB_TEMPLATE_SPEC, WritePayload(name="deploy"))
+
+
+def test_a_405_on_a_collection_is_awx_refusing_only_in_awx_words(awx_client: AwxClient) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        refused = mock.post("/api/v2/job_templates/")
+        repo = ClientRepository(awx_client)
+        refused.mock(return_value=httpx.Response(405, json={"detail": "Method not allowed."}))
+        with pytest.raises(AwxApiError):
+            repo.create(JOB_TEMPLATE_SPEC, WritePayload(name="deploy"))
+        refused.mock(return_value=httpx.Response(405, text="<html>no</html>"))
+        with pytest.raises(ApiMismatch):
+            repo.create(JOB_TEMPLATE_SPEC, WritePayload(name="deploy"))
+
+
+def test_a_record_404_in_awx_words_is_not_found(awx_client: AwxClient) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/7/").mock(return_value=_NOT_FOUND)
+        with pytest.raises(ResourceNotFoundError):
+            ClientRepository(awx_client).get(JOB_TEMPLATE_SPEC, 7)
+
+
+def test_a_constructed_inventory_is_read_and_written_through_its_own_collection(
+    awx_client: AwxClient,
+) -> None:
+    constructed = INVENTORY_SPEC.model_copy(update={"variant": "constructed"})
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/inventories/10/").mock(
+            return_value=httpx.Response(200, json={"id": 10, "name": "inv", "kind": "constructed"})
+        )
+        mock.get("/api/v2/constructed_inventories/10/").mock(
+            return_value=httpx.Response(200, json={"id": 10, "update_cache_timeout": 5})
+        )
+        patch = mock.patch("/api/v2/constructed_inventories/10/").mock(
+            return_value=httpx.Response(200, json={"id": 10, "name": "inv"})
+        )
+        repo = ClientRepository(awx_client)
+        assert repo.get(INVENTORY_SPEC, 10).model_dump()["update_cache_timeout"] == 5
+        repo.update(constructed, 10, WritePayload(update_cache_timeout=0))
+    assert patch.call_count == 1
+
+
+def test_children_are_found_listed_and_created_under_their_parent(awx_client: AwxClient) -> None:
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        named = mock.get("/api/v2/inventories/4/hosts/", params={"name": "web"}).mock(
+            return_value=httpx.Response(200, json={"count": 1, "results": [{"id": 9}]})
+        )
+        listed = mock.get("/api/v2/job_templates/3/schedules/").mock(
+            return_value=httpx.Response(200, json={"results": [{"id": 1}], "next": None})
+        )
+        created = mock.post("/api/v2/inventories/4/hosts/").mock(
+            return_value=httpx.Response(201, json={"id": 10, "name": "db"})
+        )
+        mock.get("/api/v2/inventories/4/").mock(
+            return_value=httpx.Response(200, json={"id": 4, "kind": "constructed"})
+        )
+        repo = ClientRepository(awx_client)
+        assert repo.named_under(HOST_SPEC, "Inventory", 4, name="web") == ([{"id": 9}], 1)
+        assert list(repo.list_under(SCHEDULE_SPEC, "JobTemplate", 3)) == [{"id": 1}]
+        assert repo.create_under(HOST_SPEC, "Inventory", 4, {"name": "db"})["id"] == 10
+        assert repo.inventory_kind(4) == "constructed"
+    assert named.calls[0].request.url.params["page_size"] == "2"
+    assert json.loads(created.calls[0].request.content) == {"name": "db"}
+    assert listed.call_count == 1
+
+
+def test_a_record_is_located_by_its_collection(awx_client: AwxClient) -> None:
+    assert ClientRepository(awx_client).location(HOST_SPEC, 9) == "hosts/9"
