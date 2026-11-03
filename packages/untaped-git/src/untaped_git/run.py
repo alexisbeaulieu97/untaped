@@ -289,8 +289,9 @@ def run_git(
     or (with ``check``) exits non-zero. ``git_dir`` names the repository
     with ``--git-dir`` (required for a bare one; see the module docstring).
     ``retry_transient`` retries transport failures up to ``attempts`` times
-    with 1s, 2s, ... backoff; use it only for idempotent network commands
-    (fetch, ls-remote). ``config`` sets command-scope git settings, as
+    with 1s, 2s, ... backoff; use it only for network commands a retry can
+    repeat (fetch, ls-remote, and clone, whose failure removes what it
+    wrote). ``config`` sets command-scope git settings, as
     ``git -c key=value`` would but outside argv, so error messages still name
     the subcommand; ``auth_config`` does the same for settings that carry a
     secret (a credential header): they go in a private include file, never
