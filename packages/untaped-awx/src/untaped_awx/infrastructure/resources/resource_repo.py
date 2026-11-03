@@ -74,7 +74,8 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
     A 401 (:class:`ConfigError`) is wrapped too, so the row keeps its ID;
     it stays the cause, and the mutation engine still aborts the batch on it.
     So is an :class:`ApiMismatch`: the record write already went through, so
-    the call can't run again on another adapter, and the row names the record.
+    the call can't run again on another adapter, and the row names the record;
+    core's re-detection and its hint naming a pinned version are given up here.
     The error keeps its cause's category, system and hint.
     """
     try:

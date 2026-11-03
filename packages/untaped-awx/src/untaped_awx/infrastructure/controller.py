@@ -65,8 +65,8 @@ def _answers(client: HttpClient, path: str) -> bool:
 def detect(settings: AwxSettings, client: HttpClient) -> ControllerVersion:
     """Asks the platform gateway's `ping/`, then the controller's.
 
-    Behind the gateway it is AAP; without it, a release below 9 is AAP's
-    controller (4.x), and one from 9 up is AWX.
+    Behind the gateway it is AAP; without it, a release below 9 is an AAP
+    controller (4.x, or Tower 3.x), and one from 9 up is AWX.
     """
     del settings
     with ApiMismatch.watch():

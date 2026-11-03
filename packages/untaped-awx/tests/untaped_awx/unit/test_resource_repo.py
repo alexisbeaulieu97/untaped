@@ -7,7 +7,13 @@ import pytest
 import respx
 
 from awx_test_support import ClientRepository
-from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
+from untaped.sdk.network import ApiMismatch
+from untaped_awx.errors import (
+    AmbiguousIdentityError,
+    AwxApiError,
+    BadRequestError,
+    PartialWriteError,
+)
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
@@ -196,6 +202,34 @@ def test_writes_route_survey_to_its_endpoint(awx_client: AwxClient) -> None:
     assert post_survey.call_count == 1
     assert clear.call_count == 1
     assert created.model_dump()["survey_spec"] == survey
+
+
+def test_a_mismatch_after_the_record_write_keeps_the_record_id(awx_client: AwxClient) -> None:
+    """The record landed, so a mismatch on its survey can't rerun: the row names the record."""
+    from untaped_awx.domain import WritePayload
+
+    survey = {"name": "s", "description": "", "spec": []}
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.post("/api/v2/job_templates/").mock(
+            return_value=httpx.Response(201, json={"id": 7, "name": "deploy"})
+        )
+        mock.post("/api/v2/job_templates/7/survey_spec/").mock(
+            return_value=httpx.Response(404, text="<html>not here</html>")
+        )
+        repo = ClientRepository(awx_client)
+        with pytest.raises(PartialWriteError) as caught:
+            repo.create(JOB_TEMPLATE_SPEC, WritePayload(name="deploy", survey_spec=survey))
+    assert caught.value.record_id == 7
+    assert isinstance(caught.value.__cause__, ApiMismatch)
+
+
+def test_scoped_names_is_empty_on_a_mismatch(awx_client: AwxClient) -> None:
+    """The "did you mean" pool never hides the lookup failure it decorates."""
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/job_templates/").mock(
+            return_value=httpx.Response(404, text="<html>not here</html>")
+        )
+        assert ClientRepository(awx_client).scoped_names(JOB_TEMPLATE_SPEC) == ()
 
 
 def test_sub_documents_reads_no_record(awx_client: AwxClient) -> None:
