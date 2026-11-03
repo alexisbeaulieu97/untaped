@@ -88,9 +88,9 @@ class Pick:
     #: Whether a rerun said the server changed: one warning per switch, whichever thread reruns.
     announced: bool = False
 
-    #: The adapters built, by (class, version, caller's settings, run): the settings held by
-    #: the adapter, the run by a weak reference, so a finished run's entry goes with it.
-    built: dict[tuple[Any, ...], tuple[weakref.ref[object], Any]] = field(default_factory=dict)
+    #: The adapters built, by (class, version, caller's settings, run): the adapter holds the
+    #: settings, and a finished run's entry goes with the run, so neither id is reused here.
+    built: dict[tuple[Any, ...], Any] = field(default_factory=dict)
 
     @property
     def chosen(self) -> tuple[Any, ServerVersion | None]:
@@ -109,13 +109,12 @@ class Pick:
         run = current_run()
         memo = (adapter, version, id(settings), id(run))
         with self.lock:
-            held = self.built.get(memo)
-            if held is not None and held[0]() is run:
-                return held[1]
-            built = adapter(settings, version)
+            built = self.built.get(memo)
+            if built is not None:
+                return built
+            built = self.built[memo] = adapter(settings, version)
             built._connector = functools.partial(connect, api, settings)
             weakref.finalize(built, _close, built._clients)
-            self.built[memo] = (weakref.ref(run), built)
         # a finished child run's adapter goes with it, closing its clients
         weakref.finalize(run, self.built.pop, memo, None)
         return built

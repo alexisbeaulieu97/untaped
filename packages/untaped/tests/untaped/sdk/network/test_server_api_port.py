@@ -33,6 +33,7 @@ from core_test_support.server_api import (
     serve,
 )
 from core_test_support.server_api_legacy import Fetch, Legacy, LegacySettings
+from untaped.runtime.run import child_run
 from untaped.sdk.diagnostic import Deprecation
 from untaped.sdk.marks import forget_notices
 from untaped.sdk.network import _server_api_port
@@ -379,6 +380,22 @@ def test_ports_built_per_call_share_one_client_closed_when_the_run_ends(
     gc.collect()
     assert len(built) == 4  # one detection, then one adapter client per run
     assert [client._client.is_closed for _, client in built] == [True] * 4
+
+
+@respx.mock
+def test_a_child_runs_client_closes_when_the_child_run_ends(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve("3.1")
+    _item("/v2")
+    built = _spy_on_connections(monkeypatch)
+    with install(Toy, settings=configured()).running():
+        settings = configured()
+        SERVER_API.port(settings).item("a")
+        with child_run():
+            SERVER_API.port(settings).item("a")  # the child's own adapter and client
+        closed = [client._client.is_closed for _, client in built]
+    assert closed == [True, False, True]  # detection's, the parent's (still running), the child's
 
 
 @respx.mock

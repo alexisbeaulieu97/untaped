@@ -243,6 +243,27 @@ def test_a_call_begun_before_a_refresh_switched_says_the_version_it_ran_on(toy: 
 
 
 @respx.mock
+def test_each_switch_in_one_run_says_itself(toy: Install) -> None:
+    _upgraded()
+    route("GET", "/v1/items/a", json={"name": "a"})  # before /v1/items, which it starts with
+    route("GET", "/v1/items", status=404)
+    respx.get(f"{URL}/v2/items/a").mock(
+        side_effect=[httpx.Response(200, json={"name": "a"}), httpx.Response(404, text="<html/>")]
+    )
+    route("GET", "/v2/items", json=[{"name": "a"}])
+    with toy.running() as running:
+        items = SERVER_API.port(configured()).items()  # begun on V1
+        SERVER_API.port(configured(), refresh=True).item("a")  # detects Toy 3.1: V2
+        list(items)  # meets the change: says 1.4 to 3.1, reruns on V2
+        serve("1.4")  # the server goes back
+        SERVER_API.port(configured()).item("a")  # meets it on V2: says 3.1 to 1.4, reruns on V1
+        warnings = [str(each) for each in running.diagnostics]
+    assert len(warnings) == 2
+    assert CHANGED in warnings[0]
+    assert "changed from Toy 3.1 to Toy 1.4" in warnings[1]
+
+
+@respx.mock
 def test_a_detection_inside_a_port_call_never_counts_as_its_write(
     toy: Install, monkeypatch: pytest.MonkeyPatch
 ) -> None:
