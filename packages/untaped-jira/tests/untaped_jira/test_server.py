@@ -48,7 +48,6 @@ def _server_info(deployment: str, numbers: list[int]) -> httpx.Response:
     ("text", "version"),
     [
         ("Jira Data Center 11.2.1", JiraVersion(Deployment.DATA_CENTER, Release((11, 2, 1)))),
-        ("Jira Server 8.20.30", JiraVersion(Deployment.SERVER, Release((8, 20, 30)))),
         ("Jira Cloud", JiraVersion(Deployment.CLOUD)),
     ],
 )
@@ -58,6 +57,13 @@ def test_a_versions_text_reads_back_as_itself(text: str, version: JiraVersion) -
 
 def test_a_bare_release_is_a_data_center_one() -> None:
     assert str(JiraVersion.parse(" 11.2 ")) == "Jira Data Center 11.2"
+
+
+def test_a_self_hosted_jira_has_a_release_and_cloud_none() -> None:
+    with pytest.raises(ValueError, match="self-hosted Jira has a release"):
+        JiraVersion(Deployment.DATA_CENTER)
+    with pytest.raises(ValueError, match="self-hosted Jira has a release"):
+        JiraVersion(Deployment.CLOUD, Release((1,)))
 
 
 def test_text_that_names_no_jira_is_refused() -> None:
@@ -94,9 +100,14 @@ def test_detect_reads_each_recorded_server_info(recorded_versions: tuple[JiraVer
 
 @respx.mock
 @pytest.mark.parametrize(
-    ("deployment", "expected"), [("Server", "Jira Server 9.12.0"), ("Cloud", "Jira Cloud")]
+    ("deployment", "expected"),
+    [
+        ("Server", "Jira Data Center 9.12.0"),
+        ("DataCenter", "Jira Data Center 9.12.0"),
+        ("Cloud", "Jira Cloud"),
+    ],
 )
-def test_detect_tells_server_and_cloud_apart(deployment: str, expected: str) -> None:
+def test_detect_tells_self_hosted_and_cloud_apart(deployment: str, expected: str) -> None:
     respx.get(f"{BASE}/rest/api/2/serverInfo").mock(
         return_value=_server_info(deployment, [9, 12, 0])
     )
@@ -128,7 +139,7 @@ def test_a_recorded_data_center_is_detected_once_and_served(install: Installer) 
     ("answer", "runs"),
     [
         (_server_info("Cloud", [1001, 0, 0]), "Jira Cloud"),
-        (_server_info("DataCenter", [7, 6, 1]), "Jira Data Center 7.6.1"),
+        (_server_info("Server", [7, 6, 1]), "Jira Data Center 7.6.1"),
     ],
     ids=["cloud", "data center 7"],
 )
@@ -138,7 +149,7 @@ def test_a_jira_no_adapter_serves_is_refused(
     exit_code, stderr, _ = _detected(install, answer)
     assert exit_code == 4
     assert stderr[0] == (
-        "error: untaped-jira supports Jira Data Center and Server 8 and later; "
+        "error: untaped-jira supports Jira Data Center 8 and later; "
         f"the jira server at {BASE} runs {runs}"
     )
 

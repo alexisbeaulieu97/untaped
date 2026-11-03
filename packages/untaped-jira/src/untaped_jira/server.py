@@ -1,10 +1,12 @@
 """Which Jira a server is: its version, and how jira detects it.
 
 :class:`JiraVersion` is what one server runs (``Jira Data Center 11.2.1``,
-``Jira Server 9.12.0``, ``Jira Cloud``): its text is how people read it and
-how ``jira.server_version`` sets it. :func:`detect` asks the server.
-Adapters (:mod:`untaped_jira.data_center`) choose by it;
-:mod:`untaped_jira.server_api` declares the block.
+``Jira Cloud``): its text is how people read it and how
+``jira.server_version`` sets it. :func:`detect` asks the server. A Jira
+Server install reports itself as Data Center does and speaks the same API,
+so it reads as ``Jira Data Center``. Adapters
+(:mod:`untaped_jira.data_center`) choose by it; :mod:`untaped_jira.server_api`
+declares the block.
 """
 
 from __future__ import annotations
@@ -22,30 +24,32 @@ if TYPE_CHECKING:
     from untaped.sdk.network import HttpClient
     from untaped_jira.settings import JiraSettings
 
+_DATA_CENTER = "Jira Data Center"
+
 
 class Deployment(StrEnum):
-    """How a Jira is run: by Atlassian (Cloud) or by its owner (Data Center, Server)."""
+    """How a Jira is run: by Atlassian (Cloud) or by its owner (Data Center)."""
 
     CLOUD = "cloud"
     DATA_CENTER = "data-center"
-    SERVER = "server"
-
-
-_SELF_HOSTED = {Deployment.DATA_CENTER: "Jira Data Center", Deployment.SERVER: "Jira Server"}
 
 
 @dataclass(frozen=True)
 class JiraVersion(ServerVersion):
-    """A Jira: ``Jira Cloud``, ``Jira Data Center 11.2.1`` or ``Jira Server 9.12.0``."""
+    """A Jira: ``Jira Cloud``, or ``Jira Data Center 11.2.1``."""
 
     deployment: Deployment
     #: The release a self-hosted Jira runs; Cloud reports none worth reading.
     release: Release | None = None
 
+    def __post_init__(self) -> None:
+        if (self.release is None) != (self.deployment is Deployment.CLOUD):
+            raise ValueError("a self-hosted Jira has a release, and Jira Cloud has none")
+
     def __str__(self) -> str:
-        if self.deployment is Deployment.CLOUD:
+        if self.release is None:
             return "Jira Cloud"
-        return f"{_SELF_HOSTED[self.deployment]} {self.release}"
+        return f"{_DATA_CENTER} {self.release}"
 
     @classmethod
     def parse(cls, text: str) -> Self:
@@ -53,11 +57,8 @@ class JiraVersion(ServerVersion):
         text = " ".join(text.split())
         if text == "Jira Cloud":
             return cls(Deployment.CLOUD)
-        for deployment, name in _SELF_HOSTED.items():
-            if text.startswith(f"{name} "):
-                return cls(deployment, Release.parse(text.removeprefix(f"{name} ")))
         try:
-            return cls(Deployment.DATA_CENTER, Release.parse(text))
+            return cls(Deployment.DATA_CENTER, Release.parse(text.removeprefix(f"{_DATA_CENTER} ")))
         except ValueError:
             raise ValueError(
                 f"a Jira version reads like 'Jira Data Center 11.2.1', not {text!r}"
@@ -67,7 +68,7 @@ class JiraVersion(ServerVersion):
 class ServerInfo(BaseModel):
     """The two fields of ``GET /rest/api/2/serverInfo`` detection reads."""
 
-    deployment_type: str = Field(alias="deploymentType")
+    deployment_type: str = Field(default="Server", alias="deploymentType")
     version_numbers: Release = Field(alias="versionNumbers")
 
 
@@ -84,13 +85,9 @@ def detect(settings: JiraSettings, client: HttpClient) -> JiraVersion:
     del settings
     with ApiMismatch.watch(vendor_error=is_jira_error):  # a 404 page or another body: not a Jira
         info = ServerInfo.model_validate(client.get_json_dict("/rest/api/2/serverInfo"))
-    match info.deployment_type:
-        case "Cloud":
-            return JiraVersion(Deployment.CLOUD)
-        case "Server":
-            return JiraVersion(Deployment.SERVER, info.version_numbers)
-        case _:
-            return JiraVersion(Deployment.DATA_CENTER, info.version_numbers)
+    if info.deployment_type == "Cloud":
+        return JiraVersion(Deployment.CLOUD)
+    return JiraVersion(Deployment.DATA_CENTER, info.version_numbers)  # Server and Data Center
 
 
 __all__ = [

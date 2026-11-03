@@ -226,7 +226,7 @@ def test_patch_assignee_me_resolves_the_authenticated_user(jira: Invoke) -> None
     assert json.loads(route.calls[0].request.content) == {"name": "jdoe"}
 
 
-def test_patch_dry_run_shows_the_edit_and_assignee_requests(jira: Invoke) -> None:
+def test_patch_dry_run_shows_the_edit_and_the_assignment(jira: Invoke) -> None:
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         mock.get("/rest/api/2/myself").mock(return_value=httpx.Response(200, json={"name": "jdoe"}))
         mock.get("/rest/api/2/issue/ABC-1").mock(

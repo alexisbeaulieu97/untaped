@@ -31,6 +31,7 @@ from untaped.sdk import (
     plural,
     q,
 )
+from untaped.sdk.network import ApiMismatch
 from untaped_jira.changes import (
     change_line,
     comment_lines,
@@ -44,10 +45,10 @@ from untaped_jira.commands._jira import (
     AsksFirst,
     JiraCommand,
     JiraWrite,
-    PreviewRequest,
+    PreviewChange,
     SendsDirectly,
+    change_lines,
     issue_keys,
-    request_lines,
 )
 from untaped_jira.errors import JiraError, JiraTransitionError
 from untaped_jira.keys import browse_url, validate_issue_key
@@ -148,10 +149,10 @@ class Patch(_Fields, AsksFirst):
         settings = self.settings
         edit, assign = self._requests()
 
-        def preview(jira: JiraApi) -> list[PreviewRequest]:
+        def preview(jira: JiraApi) -> list[PreviewChange]:
             names = referenced_fields(edit) + (["assignee"] if assign is not None else [])
             current = jira.current(key, names).fields if names else {}
-            requests: list[PreviewRequest] = []
+            requests: list[PreviewChange] = []
             if edit is not None:
                 requests.append((f"update {key}", payload_changes(edit, current)))
             if assign is not None:
@@ -166,7 +167,7 @@ class Patch(_Fields, AsksFirst):
             if assign is not None:
                 try:
                     jira.assign(key, assign.username)
-                except JiraError as err:
+                except (JiraError, ApiMismatch) as err:
                     if edit is None:
                         raise
                     raise JiraError(
@@ -342,10 +343,10 @@ class Transition(JiraCommand):
 
     def _preview(self, jira: JiraApi, plans: Sequence[tuple[str, TransitionRow]]) -> list[str]:
         with self.ctx.diag.progress("Reading current values"):
-            requests: list[PreviewRequest] = [
+            requests: list[PreviewChange] = [
                 (f"transition {key}", self._changes(jira, key, plan)) for key, plan in plans
             ]
-        return request_lines(requests)
+        return change_lines(requests)
 
     def _changes(self, jira: JiraApi, key: str, transition: TransitionRow) -> list[str]:
         """A transition's lines: one read of the issue's status and resolution.

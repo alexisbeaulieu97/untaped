@@ -13,8 +13,8 @@ from untaped_jira.server_api import SERVER_API
 from untaped_jira.settings import JiraSettings
 
 #: One change a write would make, as previewed: what it does (``update ABC-1``) and its lines.
-PreviewRequest = tuple[str, list[str]]
-Preview = Sequence[PreviewRequest] | Callable[[JiraApi], Sequence[PreviewRequest]]
+PreviewChange = tuple[str, list[str]]
+Preview = Sequence[PreviewChange] | Callable[[JiraApi], Sequence[PreviewChange]]
 
 #: A compact row per issue; a detail view prints one issue's own fields.
 ISSUE_COLUMNS = (
@@ -82,9 +82,9 @@ class JiraWrite(JiraCommand):
 
         def lines() -> list[str]:
             if not callable(preview):
-                return request_lines(preview)
+                return change_lines(preview)
             with self.ctx.diag.progress("Reading current values"):
-                return request_lines(preview(jira))
+                return change_lines(preview(jira))
 
         if not self._go_ahead(lines, replaces=replaces):
             return planned
@@ -98,7 +98,7 @@ class AsksFirst(JiraWrite):
     confirm: Confirm
 
     def _go_ahead(self, preview: Callable[[], list[str]], *, replaces: bool) -> bool:
-        return self.confirm("Send this request to Jira?", preview=preview, needed=replaces)
+        return self.confirm("Send this change to Jira?", preview=preview, needed=replaces)
 
 
 class SendsDirectly(JiraWrite):
@@ -111,7 +111,7 @@ class SendsDirectly(JiraWrite):
         return self.dry_run.go_ahead(preview)
 
 
-def request_lines(requests: Sequence[PreviewRequest]) -> list[str]:
+def change_lines(requests: Sequence[PreviewChange]) -> list[str]:
     """Each change a write would make (``update ABC-1``), then its lines indented under it."""
     return [
         line
