@@ -31,6 +31,9 @@ from untaped_ansible.refresh import format_skipped_dependency_file, ignored_coll
 from untaped_ansible.settings import AnsibleSettings
 from untaped_github.api import GithubApi, github_token_found
 
+#: Concurrent GitHub reads of a live build; live reads go when sources read through the store.
+_LIVE_READ_PARALLEL = 8
+
 
 class LiveReads:
     """One live GitHub read index shared by every root of a graph command.
@@ -61,7 +64,7 @@ class LiveReads:
                 wrapped=self._wrapped,
                 resolver=self._resolver(),
                 dependency_paths=self._settings.dependency_paths,
-                concurrency=self._settings.probe_parallel,
+                concurrency=_LIVE_READ_PARALLEL,
             )
         return self._index
 

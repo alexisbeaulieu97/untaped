@@ -8,6 +8,8 @@ name, issuing ``Repo`` records (and ``RepoSelector`` records from a
 provider's own selector), and ``RepoFinder`` resolves a typed name or
 URL to one of them (``typed_repo`` names a URL with no provider asked);
 ``ls_remote`` and ``default_branch`` query a remote with those credentials,
+``probe_refs`` reads many remotes' refs through their host's probe (``GitHost.probe_refs``)
+or ``ls-remote``,
 and ``clone`` makes a working copy with them that its owner keeps;
 ``check_names`` says why a branch or tag name is one the store refuses.
 ``run_git`` runs any other git command the hardened way (no prompts, secrets
@@ -26,6 +28,7 @@ from untaped_git import remote
 from untaped_git.delta import RefDelta, RefMove
 from untaped_git.hosts import Credential, GitHost, HostAuth, resolve_host
 from untaped_git.namespace import check_names
+from untaped_git.probe import HostBudget, ProbedRepo, ProbeResult, RefProbe, probe_refs
 from untaped_git.records import TreeEntry
 from untaped_git.release import Released, Removed
 from untaped_git.repo_finder import RepoFinder
@@ -50,9 +53,13 @@ __all__ = [
     "GitResult",
     "GitUrl",
     "HostAuth",
+    "HostBudget",
     "Prefetched",
+    "ProbeResult",
+    "ProbedRepo",
     "RefDelta",
     "RefMove",
+    "RefProbe",
     "Released",
     "Removed",
     "Repo",
@@ -68,6 +75,7 @@ __all__ = [
     "git_toplevel",
     "looks_like_url",
     "ls_remote",
+    "probe_refs",
     "repo_url_parts",
     "run_git",
     "store_key",

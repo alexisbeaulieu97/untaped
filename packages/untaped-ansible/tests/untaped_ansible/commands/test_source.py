@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar
@@ -14,6 +14,7 @@ import pytest
 import respx
 
 from ansible_index_support import (
+    BAD_CREDENTIALS,
     PLATFORM,
     RATE_LIMIT_EXCEEDED,
     REQS,
@@ -29,18 +30,15 @@ from ansible_index_support import (
 )
 from ansible_test_support import read_state, run, use_config
 from untaped.runtime.settings import get_settings
-from untaped.sdk import Failure, Message, Progress
+from untaped.sdk import Failure, Message, Progress, UntapedError
 from untaped.sdk.testing import progress_clock
 from untaped_ansible import refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult
-from untaped_ansible.domain.payloads import (
-    GRAPHQL_RATE_LIMIT_FALLBACK,
-    GRAPHQL_TRANSIENT_FALLBACK,
-    RepoFailure,
-)
+from untaped_ansible.domain.payloads import RepoFailure
 from untaped_ansible.errors import RepoStoreError
-from untaped_ansible.infrastructure import GithubRefProbe, GitSourceStore
-from untaped_ansible.settings import AnsibleSettings
+from untaped_ansible.infrastructure import GitSourceStore
+from untaped_git import api as git_api
+from untaped_git.api import HostBudget
 
 
 def _graphql_repo_node(repo: str, *, sha: str) -> dict[str, object]:
@@ -63,11 +61,13 @@ def _mock_refresh_repos(
     *,
     missing: tuple[str, ...] = (),
     rate_limit_remaining: int = 4900,
+    on_probe: Callable[[], object] | None = None,
 ) -> None:
     """Mock source-refresh expansion (REST) and the GraphQL ref probe.
 
     ``repos`` maps ``owner/name`` to the sha of its single ``heads/main``
-    ref; ``missing`` repos expand fine but probe as NOT_FOUND.
+    ref; ``missing`` repos expand fine but probe as NOT_FOUND. ``on_probe``
+    runs as GitHub answers the probe.
     """
     names = sorted([*repos, *missing])
     mock_expansion(mock, names)
@@ -89,7 +89,14 @@ def _mock_refresh_repos(
     payload: dict[str, object] = {"data": data}
     if errors:
         payload["errors"] = errors
-    mock.post("/graphql").mock(return_value=httpx.Response(200, json=payload))
+    response = httpx.Response(200, json=payload)
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if on_probe is not None:
+            on_probe()
+        return response
+
+    mock.post("/graphql").mock(side_effect=answer)
 
 
 def _flaky_graphql(request: httpx.Request) -> httpx.Response:
@@ -125,12 +132,25 @@ class _SeedGitCache:
         contents = {_blob(content): content for content in self.files.values()}
         return {blob: contents[blob] for blob in blobs}
 
-    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
+
+@pytest.fixture(autouse=True)
+def _remote(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """``git ls-remote``: each repo's ``main`` is ``sha-NAME``; a ``flaky`` one is unreachable.
+
+    Returns the URLs it was asked for.
+    """
+    asked: list[str] = []
+
+    def ls_remote(url: str, patterns: Sequence[str] = ()) -> dict[str, str]:
+        asked.append(url)
         name = url.removesuffix(".git").rsplit("/", maxsplit=1)[-1]
+        if name == "flaky":
+            raise UntapedError(f"cannot reach {url}", category="unavailable", system="git")
         return {"HEAD": f"sha-{name}", "refs/heads/main": f"sha-{name}"}
 
-    def default_branch(self, url: str) -> str | None:
-        return "main"
+    monkeypatch.setattr(git_api, "ls_remote", ls_remote)
+    monkeypatch.setattr(git_api, "default_branch", lambda url: "main")
+    return asked
 
 
 def _blob(content: str) -> str:
@@ -387,11 +407,10 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
     assert captured["clone_protocol"] == "https"
     assert captured["aliases"] == {"common": "acme/common"}
     assert captured["concurrency"] == 8
-    assert captured["backend"] == "auto"
 
 
-def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
-    tmp_path: Path, monkeypatch
+def test_source_refresh_reading_refs_with_ls_remote_skips_unchanged_fetches(
+    tmp_path: Path, monkeypatch, _remote: list[str]
 ) -> None:
     use_config(tmp_path, monkeypatch, prod(), token=True)
     _seed_unchanged_scan(monkeypatch, {"acme/site": "sha-site"})
@@ -399,10 +418,12 @@ def test_source_refresh_git_backend_skips_unchanged_fetch_and_graphql(
 
     with respx.mock(base_url="https://api.github.com", assert_all_called=True) as mock:
         mock_expansion(mock, ["acme/site"])
-        result = run("source", "refresh", "prod", "--backend", "git")
+        mock.post("/graphql").mock(return_value=RATE_LIMIT_EXCEEDED)
+        result = run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert "refreshed source prod: 1 repo, 1 ref" in result.stderr
+    assert _remote == ["https://github.com/acme/site.git"]
 
 
 def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
@@ -413,7 +434,7 @@ def test_source_refresh_partial_failure_exits_nonzero_and_saves_successes(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/ok": "sha-ok"}, missing=("acme/gone",))
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        result = run("source", "refresh", "prod")
 
     assert result.exit_code == 1
     assert result.stdout == ""
@@ -482,7 +503,7 @@ def test_source_refresh_reports_dependency_file_warnings(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        result = run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert warning in result.stderr
@@ -501,7 +522,7 @@ def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monk
 
     with respx.mock(base_url="https://api.github.com") as mock:
         _mock_refresh_repos(mock, {"acme/site": "sha-site"})
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        result = run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
     assert (
@@ -513,20 +534,20 @@ def test_source_refresh_warns_about_a_ref_the_store_refuses(tmp_path: Path, monk
 def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
     tmp_path: Path, monkeypatch
 ) -> None:
-    graphql = {"source_refresh_backend": "graphql"}
-    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True, ansible=graphql)
+    """GitHub's 502 sends acme/flaky to ``ls-remote``, which cannot reach it either."""
+    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True)
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
-    use_config(tmp_path, monkeypatch, prod("acme/ok", "acme/flaky"), token=True, ansible=graphql)
+    use_config(tmp_path, monkeypatch, prod("acme/ok", "acme/flaky"), token=True)
     get_settings.cache_clear()
     monkeypatch.setattr(refresh, "GitSourceStore", _NoFetchGitCache)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         mock_expansion(mock, ["acme/ok", "acme/flaky"])
         mock.post("/graphql").mock(side_effect=_flaky_graphql)
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        result = run("source", "refresh", "prod")
 
     assert result.exit_code == 5  # a transient probe failure: retry later
-    assert "error: acme/flaky: transient ref probe failed: HTTP 502" in result.stderr
+    assert "error: acme/flaky: ref probe failed: cannot reach" in result.stderr
     assert (
         "hint: rerun `untaped ansible source refresh prod`; unchanged repos skip Git fetch "
         "and dependency scan work"
@@ -537,10 +558,9 @@ def test_source_refresh_transient_probe_failure_prints_safe_rerun_hint(
 def test_source_refresh_failures_report_their_own_and_the_run_s_category(
     tmp_path: Path, monkeypatch
 ) -> None:
-    graphql = {"source_refresh_backend": "graphql"}
-    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True, ansible=graphql)
+    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True)
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
-    use_config(tmp_path, monkeypatch, prod("acme/ok", "acme/flaky"), token=True, ansible=graphql)
+    use_config(tmp_path, monkeypatch, prod("acme/ok", "acme/flaky"), token=True)
     get_settings.cache_clear()
     monkeypatch.setattr(refresh, "GitSourceStore", _NoFetchGitCache)
     monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
@@ -548,7 +568,7 @@ def test_source_refresh_failures_report_their_own_and_the_run_s_category(
     with respx.mock(base_url="https://api.github.com") as mock:
         mock_expansion(mock, ["acme/ok", "acme/flaky"])
         mock.post("/graphql").mock(side_effect=_flaky_graphql)
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        result = run("source", "refresh", "prod")
 
     errors = [
         line for line in map(json.loads, result.stderr.splitlines()) if line["level"] == "error"
@@ -564,19 +584,20 @@ def test_source_refresh_failures_report_their_own_and_the_run_s_category(
     ("repos", "graphql", "warning"),
     [
         (
-            ("acme/flaky", "acme/ok"),
-            {"side_effect": _flaky_graphql},
-            "warning: 1 repo fell back to git ls-remote after transient",
+            ("acme/a", "acme/b"),
+            {"return_value": httpx.Response(502, text="Bad Gateway")},
+            "warning: 2 repos fell back to git ls-remote, one network call per repo: "
+            "github could not probe it (ref probe failed: ",
         ),
         (
             ("acme/a", "acme/b"),
             {"return_value": RATE_LIMIT_EXCEEDED},
-            "warning: 2 repos fell back to git ls-remote after GitHub GraphQL rate limit "
-            "exhaustion",
+            "warning: 2 repos fell back to git ls-remote, one network call per repo: "
+            "github's probe failed: ",
         ),
     ],
 )
-def test_source_refresh_default_backend_recovers_probe_failures_with_git_fallback(
+def test_source_refresh_reads_what_the_host_s_probe_could_not_with_ls_remote(
     tmp_path: Path,
     monkeypatch,
     repos: tuple[str, ...],
@@ -594,7 +615,7 @@ def test_source_refresh_default_backend_recovers_probe_failures_with_git_fallbac
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
     assert warning in result.stderr
-    assert "failed acme/" not in result.stderr
+    assert "error: acme/" not in result.stderr
     for repo in repos:
         assert open_index(tmp_path).ref_scans("source:prod", repo, [("heads", "main")])
 
@@ -620,64 +641,70 @@ def test_source_refresh_budget_pause_exits_nonzero_without_repo_failures(
     tmp_path: Path, monkeypatch
 ) -> None:
     use_config(tmp_path, monkeypatch, prod("acme/a", "acme/b"), token=True)
+    monkeypatch.setenv("UNTAPED_DIAGNOSTICS", "json")
+    reset = datetime(2030, 1, 1, tzinfo=UTC)
+    budget = HostBudget(
+        plugin="github", host="github.com", remaining=200, reset_at=reset, exhausted=True
+    )
     fake_refresh(
         monkeypatch,
         result=RefreshResult(
             source_key="",
             completed=False,
-            pause_reason="GitHub GraphQL rate limit is low: 200 points remaining",
+            pause_reason="the ref probe budget is spent on github.com (200 left)",
             repos=2,
             refs=1,
             edges=1,
-            rate_limit_remaining=200,
+            budgets=(budget,),
         ),
     )
 
     result = run("source", "refresh", "prod")
 
-    assert result.exit_code == 5  # paused at the rate-limit floor: retry later
+    assert result.exit_code == 5  # paused once the budget was spent: retry later
     assert result.stdout == ""
-    assert "failed acme/" not in result.stderr
-    assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
-    assert "rerun to resume; finished repos are skipped" in result.stderr
+    [error] = [
+        line for line in map(json.loads, result.stderr.splitlines()) if line["level"] == "error"
+    ]
+    assert error["message"] == "the ref probe budget is spent on github.com (200 left)"
+    assert error["system"] == "github"
+    assert error["hint"] == "rerun to resume; finished repos are skipped"
+    assert error["details"]["retry_at"] == reset.isoformat()
 
 
-def test_source_refresh_global_graphql_error_exits_once_without_per_repo_failures(
-    tmp_path: Path, monkeypatch
+def test_source_refresh_refused_probe_exits_once_without_per_repo_failures(
+    tmp_path: Path, monkeypatch, _remote: list[str]
 ) -> None:
     use_config(tmp_path, monkeypatch, prod("acme/gone", "acme/ok"), token=True)
 
     with respx.mock(base_url="https://api.github.com") as mock:
         mock_expansion(mock, ["acme/gone", "acme/ok"])
-        mock.post("/graphql").mock(return_value=RATE_LIMIT_EXCEEDED)
-        result = run("source", "refresh", "prod", "--backend", "graphql")
+        mock.post("/graphql").mock(return_value=BAD_CREDENTIALS)
+        result = run("source", "refresh", "prod")
 
-    assert result.exit_code == 5  # rate limited: retry later
+    assert result.exit_code == 4  # a rejected token
     assert result.stdout == ""
-    assert result.stderr.count("github graphql rate limit exceeded") == 1
-    assert "API rate limit exceeded" in result.stderr
-    assert "failed acme/" not in result.stderr
+    assert result.stderr.count("Bad credentials") == 1
+    assert "error: acme/" not in result.stderr
     assert "refresh failed for all" not in result.stderr
+    assert _remote == []
 
 
 @pytest.mark.parametrize(("floor", "warned"), [(None, True), (100, False)])
-def test_source_refresh_progress_and_low_rate_limit_warning_on_stderr(
+def test_source_refresh_progress_and_spent_budget_warning_on_stderr(
     tmp_path: Path, monkeypatch, floor: int | None, warned: bool
 ) -> None:
-    ansible = {} if floor is None else {"source_refresh_rate_limit_floor": floor}
-    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True, ansible=ansible)
+    github = {} if floor is None else {"ref_probe": {"rate_limit_floor": floor}}
+    use_config(tmp_path, monkeypatch, prod("acme/ok"), token=True, github=github)
     _seed_unchanged_scan(monkeypatch, {"acme/ok": "sha-ok"})
 
-    probe = GithubRefProbe.probe
-
     with progress_clock() as clock, respx.mock(base_url="https://api.github.com") as mock:
-
-        def slow_probe(self: GithubRefProbe, *args: Any, **kwargs: Any) -> Any:
-            clock.advance(2)  # a slow probe: past the quiet period
-            return probe(self, *args, **kwargs)
-
-        monkeypatch.setattr(GithubRefProbe, "probe", slow_probe)
-        _mock_refresh_repos(mock, {"acme/ok": "sha-ok"}, rate_limit_remaining=200)
+        _mock_refresh_repos(
+            mock,
+            {"acme/ok": "sha-ok"},
+            rate_limit_remaining=200,
+            on_probe=lambda: clock.advance(2),  # a slow probe: past the quiet period
+        )
         result = run("source", "refresh", "prod")
 
     assert result.exit_code == 0, result.output
@@ -690,36 +717,27 @@ def test_source_refresh_progress_and_low_rate_limit_warning_on_stderr(
         (None, None, None, "done"),
     ]
     assert shown[2].message.endswith(" · fetching changes 1/1 · 0 changed (2s)")
-    low = "warning: GitHub GraphQL rate limit is low: 200 points remaining"
-    assert (low in result.stderr) is warned
+    spent = "warning: the ref probe budget on github.com is spent: 200 left"
+    assert (spent in result.stderr) is warned
 
 
-def test_warn_probe_fallbacks_groups_known_and_unknown_reasons() -> None:
+def test_warn_probe_fallbacks_groups_repos_by_reason() -> None:
+    reasons = ["busy", "busy", "gone", "slow", "late", "late"]
     result = RefreshResult(
         source_key="source:prod",
         repos=0,
         refs=0,
         edges=0,
-        probe_fallbacks={
-            "acme/a": GRAPHQL_RATE_LIMIT_FALLBACK,
-            "acme/b": GRAPHQL_TRANSIENT_FALLBACK,
-            "acme/c": GRAPHQL_TRANSIENT_FALLBACK,
-            "acme/d": "future_reason",
-            "acme/e": "future_reason",
-        },
+        probe_fallbacks={f"acme/{index}": reason for index, reason in enumerate(reasons)},
     )
 
     warnings: list[str] = []
-    refresh.warn_refresh(result, AnsibleSettings(), warnings.append)
+    refresh.warn_refresh(result, warnings.append)
 
-    stderr = "".join(f"warning: {line}\n" for line in warnings)
-    assert "warning: 1 repo fell back to git ls-remote after GitHub GraphQL rate limit" in stderr
-    assert "large fallbacks can be much slower" in stderr
-    assert "warning: 2 repos fell back to git ls-remote after transient" in stderr
-    assert (
-        "warning: 2 repos fell back to git ls-remote for 1 unrecognized fallback reason:" in stderr
-    )
-    assert "future_reason (2)" in stderr
+    assert warnings == [
+        "6 repos fell back to git ls-remote, one network call per repo: "
+        "busy (2); late (2); gone (1); and 1 other reason"
+    ]
 
 
 def test_source_status_table_shows_its_default_columns(tmp_path: Path, monkeypatch) -> None:

@@ -184,6 +184,7 @@ PLATFORM = {"sources": [{"name": "platform", "repos": ["acme/site"]}]}
 RATE_LIMIT_EXCEEDED = httpx.Response(
     403, json={"message": "API rate limit exceeded for user ID 123."}
 )
+BAD_CREDENTIALS = httpx.Response(401, json={"message": "Bad credentials"})
 
 
 def prod(*repos: str) -> dict[str, object]:
@@ -259,12 +260,8 @@ def mock_expansion(mock: respx.MockRouter, names: tuple[str, ...] | list[str]) -
 
 
 def capture_git_refresh(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    """Replace the git refresh use case and probe; returns their captured wiring."""
+    """Replace the git refresh use case; returns its captured wiring."""
     captured: dict[str, Any] = {}
-
-    class FakeAutoRefProbe:
-        def __init__(self, graphql: object, git: object, *, backend: str) -> None:
-            captured["backend"] = backend
 
     class FakeGitRefresh:
         def __init__(self, **kwargs: Any) -> None:
@@ -273,7 +270,6 @@ def capture_git_refresh(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def __call__(self, source: Any, *, source_key: str) -> RefreshResult:
             return RefreshResult(source_key=source_key, repos=1, refs=1, edges=0, changed_refs=1)
 
-    monkeypatch.setattr(refresh, "AutoRefProbe", FakeAutoRefProbe)
     monkeypatch.setattr(refresh, "RefreshGitSourceIndex", FakeGitRefresh)
     return captured
 
@@ -287,6 +283,7 @@ def table(result: Result) -> tuple[list[str], list[list[str]]]:
 
 
 __all__ = [
+    "BAD_CREDENTIALS",
     "PLATFORM",
     "RATE_LIMIT_EXCEEDED",
     "REQS",

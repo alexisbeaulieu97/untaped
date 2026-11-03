@@ -34,10 +34,9 @@ class SourceData(BaseModel):
     `--ref-scan-default`), or by `ansible.default_source` when neither is
     given; an unknown name there fails naming the setting. Repeated `--source`
     and inline selectors add up, and repeating the same inline selectors
-    reuses their cached scan. `--refresh`, `--cached` and
-    `--backend` need a boundary (`--source`, `--org`, `--team`, `--repo` or
-    `ansible.default_source`); `--path` and the ref selectors do not count on
-    their own.
+    reuses their cached scan. `--refresh` and `--cached` need a boundary
+    (`--source`, `--org`, `--team`, `--repo` or `ansible.default_source`);
+    `--path` and the ref selectors do not count on their own.
 
     ## When a source refreshes
 
@@ -62,19 +61,10 @@ class SourceData(BaseModel):
     the repos, and exit 0 unless the answer is empty, until `--refresh` or
     `source refresh` completes a whole refresh.
 
-    After a refresh paused by GitHub's GraphQL budget
-    (`source refresh` says how it resumes), the source is not marked refreshed:
-    reads serve the cached data with a warning whose `retry_at` is GitHub's
-    reset time.
-
-    ## Backends
-
-    `ansible.source_refresh_backend`, or `--backend`, picks how refs are probed.
-    `auto` uses GraphQL and, when its primary rate limit is exhausted, falls back
-    to `git ls-remote` for the remaining repos with a warning giving the count:
-    one network call per repo, so much slower. A transient GraphQL failure for
-    one repo also retries over `git ls-remote` first. The `git` backend replaces
-    only the probe: private sources still need GitHub credentials.
+    After a refresh paused because a host's probe budget was spent
+    (`source refresh` says how refs are probed and how it resumes), the source
+    is not marked refreshed: reads serve the cached data with a warning whose
+    `retry_at` is when the budget resets.
 
     ## The cache
 

@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from untaped.sdk import ConfigError, System, experimental
 from untaped.sdk.contracts import Answers, Contract, Errored, Ok, gather
+from untaped_git.probe import RefProbe
 from untaped_git.url import url_host
 
 
@@ -50,9 +51,10 @@ class Credential(BaseModel):
 class GitHost(Contract):
     """Git hosts untaped has credentials for.
 
-    A provider knows one Git host: its name, and credentials for its URLs.
-    untaped asks ``credential`` only of the provider it chose for the URL's
-    host by ``home()``.
+    A provider knows one Git host: its name, and credentials for its URLs,
+    and may probe many of its repositories' refs at once (``probe_refs``).
+    untaped asks ``credential`` and ``probe_refs`` only of the provider it
+    chose for the URL's host by ``home()``.
     """
 
     @abstractmethod
@@ -62,6 +64,19 @@ class GitHost(Contract):
     @abstractmethod
     def credential(self, url: str) -> Credential | None:
         """Credentials for the full ``url`` (per-organisation tokens), or ``None``."""
+
+    def probe_refs(
+        self, urls: list[str], *, kinds: list[str], default_branch_only: bool, parallel: int
+    ) -> RefProbe:
+        """Each of ``urls``' refs of ``kinds``, or only its default branch, in few requests.
+
+        Optional: a host without it is read with ``git ls-remote``. A URL it
+        cannot read carries its ``failure``; one failing as anything but
+        ``not_found`` is read with ``ls-remote`` instead. ``parallel`` is how
+        many requests the caller allows at once. Fill ``remaining``,
+        ``reset_at`` and ``exhausted`` when the host spends a budget.
+        """
+        raise NotImplementedError
 
 
 @dataclass(frozen=True, slots=True)

@@ -13,12 +13,10 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal
 
 from untaped.sdk import (
     Failure,
     PluginHandle,
-    Service,
     UntapedError,
     command_line,
     most_severe,
@@ -29,19 +27,9 @@ from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
 )
-from untaped_ansible.domain.payloads import (
-    GRAPHQL_RATE_LIMIT_FALLBACK,
-    GRAPHQL_TRANSIENT_FALLBACK,
-    SkippedDependencyFile,
-)
+from untaped_ansible.domain.payloads import SkippedDependencyFile
 from untaped_ansible.errors import AnsibleError
-from untaped_ansible.infrastructure import (
-    AutoRefProbe,
-    GithubRefProbe,
-    GitRemoteRefProbe,
-    GitSourceStore,
-    SqliteDependencyIndex,
-)
+from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
 from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, SourceDefinition
 from untaped_github.api import GithubSettings, github_api, github_web_host
 
@@ -50,8 +38,8 @@ GIT_PARALLEL_CAP = 32
 
 #: Failed repos a partial refresh names before ``and N more``.
 _MAX_LISTED_REPOS = 10
-
-Backend = Literal["auto", "graphql", "git"]
+#: Distinct fallback reasons a warning names before ``and N more``.
+_MAX_LISTED_REASONS = 3
 
 
 @dataclass(frozen=True)
@@ -82,7 +70,6 @@ class RefreshWiring:
     warn: Callable[[str], None]
     """Where the refresh's warnings go: the command's ``diag.warning``."""
     concurrency: int
-    backend: Backend | None = None
 
 
 @dataclass
@@ -106,8 +93,8 @@ def serve_sources[T](
     """Refresh what ``refresh`` asks for of ``selections``, then answer ``read()``.
 
     Each key's freshness is first brought in line with the index
-    (:func:`sync_freshness`). The refresh's warnings (rate limit, skipped
-    refs and files, ignored collections, probe fallbacks) print once per
+    (:func:`sync_freshness`). The refresh's warnings (spent probe budgets,
+    skipped refs and files, ignored collections, probe fallbacks) print once per
     refresh, failed ones included, unless ``warnings`` is false; ``record``
     collects what each refresh returned or raised, for a caller that reports
     more (and prints the warnings itself, with :func:`warn_refresh`).
@@ -127,7 +114,7 @@ def serve_sources[T](
     finally:
         if warnings:
             for result in record.results.values():
-                warn_refresh(result, wiring.settings, wiring.warn)
+                warn_refresh(result, wiring.warn)
 
 
 def sync_freshness(key: str, index: SqliteDependencyIndex) -> None:
@@ -172,7 +159,6 @@ def _filler(
             github_settings=wiring.github_settings,
             plugin=wiring.plugin,
             concurrency=wiring.concurrency,
-            backend=wiring.backend,
             progress=progress,
         )
         error = _fill_error(result)
@@ -181,7 +167,7 @@ def _filler(
         return result.model_copy(
             update={
                 "partial": _partial_failure(result),
-                "retry_at": _retry_at(result, wiring.settings),
+                "retry_at": _retry_at(result),
                 "summary": fill_summary(result),
             }
         )
@@ -199,12 +185,17 @@ def _fill_error(result: RefreshResult) -> AnsibleError | None:
 
 
 def _pause_error(result: RefreshResult) -> AnsibleError:
-    """A refresh paused at the GraphQL rate-limit floor; resuming skips the finished repos."""
-    reset = result.rate_limit_reset_at
+    """A refresh paused once a host's probe budget was spent; resuming skips finished repos.
+
+    The error is the spent host's plugin's, and ``retry_at`` the time every
+    spent budget has reset.
+    """
+    spent = [budget for budget in result.budgets if budget.exhausted]
+    reset = _retry_at(result)
     return AnsibleError(
         result.pause_reason or "source refresh paused before completion",
         category="unavailable",
-        system=Service(GithubSettings),
+        system=spent[0].plugin if spent else None,
         hint="rerun to resume; finished repos are skipped",
         details={} if reset is None else {"retry_at": reset.isoformat()},
     )
@@ -240,16 +231,14 @@ def _partial_failure(result: RefreshResult) -> Failure | None:
     return Failure.from_exception(error)
 
 
-def _retry_at(result: RefreshResult, settings: AnsibleSettings) -> datetime | None:
-    """GitHub's reset time when the refresh spent the budget below the floor, else ``None``.
+def _retry_at(result: RefreshResult) -> datetime | None:
+    """When every spent probe budget has reset, else ``None``.
 
-    Every GraphQL answer carries a reset time; only a spent budget makes it
-    the time to come back.
+    A probe answer may carry a reset time; only a spent budget makes it the
+    time to come back.
     """
-    remaining = result.rate_limit_remaining
-    if remaining is None or remaining >= settings.source_refresh_rate_limit_floor:
-        return None
-    return result.rate_limit_reset_at
+    resets = [b.reset_at for b in result.budgets if b.exhausted and b.reset_at is not None]
+    return max(resets, default=None)
 
 
 def fill_summary(result: RefreshResult) -> str:
@@ -261,13 +250,12 @@ def fill_summary(result: RefreshResult) -> str:
     )
 
 
-def warn_refresh(
-    result: RefreshResult, settings: AnsibleSettings, warn: Callable[[str], None]
-) -> None:
-    """The refresh's warning groups: rate limit, skipped refs and files, collections, probes."""
-    remaining = result.rate_limit_remaining
-    if remaining is not None and remaining < settings.source_refresh_rate_limit_floor:
-        warn(f"GitHub GraphQL rate limit is low: {remaining} points remaining")
+def warn_refresh(result: RefreshResult, warn: Callable[[str], None]) -> None:
+    """The refresh's warning groups: probe budgets, skipped refs and files, collections, probes."""
+    for budget in result.budgets:
+        if budget.exhausted:
+            left = "" if budget.remaining is None else f": {budget.remaining} left"
+            warn(f"the ref probe budget on {budget.host} is spent{left}")
     _warn_skipped_files(result, warn)
     message = ignored_collections_warning(result.ignored_collections)
     if message is not None:
@@ -285,21 +273,15 @@ def refresh_source(
     github_settings: GithubSettings,
     plugin: PluginHandle,
     concurrency: int,
-    backend: Backend | None = None,
     progress: ProgressHandle = NO_PROGRESS,
 ) -> RefreshResult:
     """Run a git-backed source refresh with fully wired adapters."""
     # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
     protocol = github_settings.git_protocol
     github = github_api(github_settings)
-    git = GitSourceStore(plugin=plugin)
-    selected_backend = backend or settings.source_refresh_backend
-    graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)
-    git_probe = GitRemoteRefProbe(git, clone_protocol=protocol, concurrency=settings.probe_parallel)
     return RefreshGitSourceIndex(
         github=github,
-        git=git,
-        probe=AutoRefProbe(graphql_probe, git_probe, backend=selected_backend),
+        git=GitSourceStore(plugin=plugin),
         index=index,
         aliases=aliases,
         default_dependency_paths=settings.dependency_paths,
@@ -307,37 +289,23 @@ def refresh_source(
         concurrency=concurrency,
         ref_scan_default=settings.ref_scan_default,
         repo_batch_size=settings.source_refresh_repo_batch_size,
-        rate_limit_floor=settings.source_refresh_rate_limit_floor,
         progress=progress,
         github_web_host=github_web_host(github_settings.api_url),
     )(source, source_key=source_key)
 
 
 def _warn_probe_fallbacks(result: RefreshResult, warn: Callable[[str], None]) -> None:
-    """Warn when GraphQL probing fell back to per-repo Git ls-remote calls."""
+    """One warning for the repos read with ``git ls-remote`` although their host has a probe."""
     if not result.probe_fallbacks:
         return
-    counts = Counter(result.probe_fallbacks.values())
-    rate_limited = counts.pop(GRAPHQL_RATE_LIMIT_FALLBACK, 0)
-    if rate_limited:
-        warn(
-            f"{plural(rate_limited, 'repo')} fell back to git ls-remote after "
-            "GitHub GraphQL rate limit exhaustion; large fallbacks can be much slower "
-            "because Git probing runs one network subprocess per repo",
-        )
-    transient = counts.pop(GRAPHQL_TRANSIENT_FALLBACK, 0)
-    if transient:
-        warn(
-            f"{plural(transient, 'repo')} fell back to git ls-remote after transient "
-            "GitHub GraphQL probe failures",
-        )
-    unknown = sum(counts.values())
-    if unknown:
-        reasons = ", ".join(f"{reason} ({count})" for reason, count in sorted(counts.items()))
-        warn(
-            f"{plural(unknown, 'repo')} fell back to git ls-remote for "
-            f"{plural(len(counts), 'unrecognized fallback reason')}: {reasons}",
-        )
+    counts = Counter(result.probe_fallbacks.values()).most_common()
+    shown = "; ".join(f"{reason} ({count})" for reason, count in counts[:_MAX_LISTED_REASONS])
+    more = len(counts) - _MAX_LISTED_REASONS
+    reasons = f"{shown}; and {plural(more, 'other reason')}" if more > 0 else shown
+    warn(
+        f"{plural(len(result.probe_fallbacks), 'repo')} fell back to git ls-remote, one "
+        f"network call per repo: {reasons}"
+    )
 
 
 def ignored_collections_warning(names: Iterable[str]) -> str | None:

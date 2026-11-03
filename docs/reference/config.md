@@ -49,11 +49,8 @@ Kept in `~/.untaped/plugins/untaped/state.yml`.
 | `ansible.index_dir` | path (optional) | unset | `UNTAPED_ANSIBLE__INDEX_DIR` | Folder of the SQLite index of refreshed source data, an absolute path; the file in it is `index.v<layout>.sqlite3`, one per layout. Unset: `plugins/ansible/index/` under the untaped home. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
-| `ansible.source_refresh_backend` | `auto` \| `graphql` \| `git` | `auto` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | Ref probe backend for source refresh. |
 | `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. 1 to 32. |
-| `ansible.probe_parallel` | integer | `8` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | Concurrent ref probes during source refresh. 1 to 32. |
-| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos committed per source refresh batch. 1 or more. |
-| `ansible.source_refresh_rate_limit_floor` | integer | `500` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | Stop a refresh (resumable) when the GraphQL budget drops below this. 0 or more. |
+| `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos probed and committed per source refresh batch; a refresh pauses between batches once a host's probe budget is spent. 1 or more. |
 | `ansible.dependency_paths` | list | `roles/requirements.yml`; `roles/requirements.yaml`; `requirements.yml`; `requirements.yaml`; `meta/requirements.yml`; `meta/requirements.yaml`; `meta/main.yml`; `meta/main.yaml` | `UNTAPED_ANSIBLE__DEPENDENCY_PATHS` | Dependency files scanned in each repo. |
 | `ansible.caches.source_data.max_age_seconds` | integer | `86400` | `UNTAPED_ANSIBLE__CACHES__SOURCE_DATA__MAX_AGE_SECONDS` | Seconds source data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 | `ansible.caches.checkout_source_checkouts.max_age_seconds` | integer | `3600` | `UNTAPED_ANSIBLE__CACHES__CHECKOUT_SOURCE_CHECKOUTS__MAX_AGE_SECONDS` | Seconds checkouts is served before untaped checks upstream; 0 checks every time. 0 or more. |
@@ -107,6 +104,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `git.store_dir` | path (optional) | unset | `UNTAPED_GIT__STORE_DIR` | Root of the repo store: one shared bare repository per remote, under `<store_dir>/<host>/<path>.git`; an absolute path. Unset: `plugins/git/store/` under the home. |
+| `git.probe_parallel` | integer | `8` | `UNTAPED_GIT__PROBE_PARALLEL` | How many remotes a ref probe reads at once: ls-remote calls, and the requests a host's own batch probe runs together. 1 to 32. |
 | `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
 | `git.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_GIT__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
@@ -122,6 +120,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists as repos you can name in commands. With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists as repos you can name. |
+| `github.ref_probe.rate_limit_floor` | integer | `500` | `UNTAPED_GITHUB__REF_PROBE__RATE_LIMIT_FLOOR` | Stop probing refs once GitHub's GraphQL budget drops below this; a source refresh pauses there and resumes where it stopped. 0 or more. |
 | `github.caches.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS` | Seconds repo data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 | `github.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
@@ -170,6 +169,9 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
 | `ansible.index_path` | `UNTAPED_ANSIBLE__INDEX_PATH` | none | deleted in 12.0; ansible.index_dir names the folder that holds the index |
+| `ansible.probe_parallel` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | none | deleted in 12.0; use git.probe_parallel |
+| `ansible.source_refresh_backend` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | none | deleted in 12.0; each repo's host probes its refs, else git ls-remote does |
+| `ansible.source_refresh_rate_limit_floor` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | none | deleted in 12.0; the plugin that probes a host sets that host's budget floor |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | none | deleted in 12.0; use ansible.caches.source_data.max_age_seconds |
 | `awx.base_url` | `UNTAPED_AWX__BASE_URL` | `awx.server.url` | retired |
 | `github.base_url` | `UNTAPED_GITHUB__BASE_URL` | `github.server.url` | retired |

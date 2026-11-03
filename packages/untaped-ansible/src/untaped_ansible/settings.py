@@ -76,6 +76,13 @@ class AnsibleSettings(BaseModel):
         "index_path": Retired(
             note="deleted in 12.0; ansible.index_dir names the folder that holds the index"
         ),
+        "source_refresh_backend": Retired(
+            note="deleted in 12.0; each repo's host probes its refs, else git ls-remote does"
+        ),
+        "probe_parallel": Retired(note="deleted in 12.0; use git.probe_parallel"),
+        "source_refresh_rate_limit_floor": Retired(
+            note="deleted in 12.0; the plugin that probes a host sets that host's budget floor"
+        ),
     }
 
     model_config = ConfigDict(frozen=True)
@@ -99,22 +106,16 @@ class AnsibleSettings(BaseModel):
         default="all",
         description="Refs a source scans: `all` refs or each repo's default branch.",
     )
-    source_refresh_backend: Literal["auto", "graphql", "git"] = Field(
-        default="auto", description="Ref probe backend for source refresh."
-    )
     git_fetch_parallel: int = Field(
         default=8, ge=1, le=32, description="Default `--parallel` of a source refresh."
     )
-    probe_parallel: int = Field(
-        default=8, ge=1, le=32, description="Concurrent ref probes during source refresh."
-    )
     source_refresh_repo_batch_size: int = Field(
-        default=100, ge=1, description="Repos committed per source refresh batch."
-    )
-    source_refresh_rate_limit_floor: int = Field(
-        default=500,
-        ge=0,
-        description="Stop a refresh (resumable) when the GraphQL budget drops below this.",
+        default=100,
+        ge=1,
+        description=(
+            "Repos probed and committed per source refresh batch; a refresh pauses between "
+            "batches once a host's probe budget is spent."
+        ),
     )
     dependency_paths: list[str] = Field(
         default_factory=lambda: list(DEFAULT_DEPENDENCY_PATHS),

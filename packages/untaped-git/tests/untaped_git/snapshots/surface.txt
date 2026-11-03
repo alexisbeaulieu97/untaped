@@ -2,9 +2,11 @@
 cfg git.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
+cfg git.extensions.git_host.rank.probe_refs string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_selector string[] default=[]  [experimental]
+cfg git.probe_parallel integer(maximum=32,minimum=1) default=8
 cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cli untaped git
@@ -37,6 +39,35 @@ contract git.Credential(password, username)
 contract git.Credential.password string(format=password)
 contract git.Credential.username string
 contract git.Credential.verify_tls boolean|string(format=path) default=true
+contract git.Failure(category, message, system)
+contract git.Failure.category choice=auth
+contract git.Failure.category choice=config
+contract git.Failure.category choice=conflict
+contract git.Failure.category choice=failed
+contract git.Failure.category choice=interrupted
+contract git.Failure.category choice=invalid
+contract git.Failure.category choice=not_found
+contract git.Failure.category choice=permission
+contract git.Failure.category choice=unavailable
+contract git.Failure.category choice=usage
+contract git.Failure.category string
+contract git.Failure.details object default={}
+contract git.Failure.exit_code integer default=1
+contract git.Failure.hint string? default=None
+contract git.Failure.item string? default=None
+contract git.Failure.message string
+contract git.Failure.retryable boolean default=false
+contract git.Failure.system string
+contract git.ProbedRepo(url)  [experimental]
+contract git.ProbedRepo.default_branch string? default=None  [experimental]
+contract git.ProbedRepo.failure Failure? default=None  [experimental]
+contract git.ProbedRepo.refs object default={}  [experimental]
+contract git.ProbedRepo.url string  [experimental]
+contract git.RefProbe()  [experimental]
+contract git.RefProbe.exhausted boolean default=false  [experimental]
+contract git.RefProbe.remaining integer? default=None  [experimental]
+contract git.RefProbe.repos ProbedRepo[] default=[]  [experimental]
+contract git.RefProbe.reset_at string(format=date-time)? default=None  [experimental]
 contract git.Repo(name, url)  [experimental]
 contract git.Repo.archived boolean default=false  [experimental]
 contract git.Repo.default_branch string? default=None  [experimental]
@@ -54,6 +85,7 @@ contract git.Source.record object default={}
 contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
+contract git.git_host.probe_refs(urls: string[], *, kinds: string[], default_branch_only: boolean, parallel: integer) -> RefProbe  [experimental]
 contract git.repo_source abstract=repos  [experimental]
 contract git.repo_source.repos() -> Repo[]  [experimental]
 contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
@@ -116,6 +148,15 @@ sdk untaped_git.api.GitUrl
 sdk untaped_git.api.HostAuth(plugin, credential)
 sdk untaped_git.api.HostAuth.credential
 sdk untaped_git.api.HostAuth.plugin
+sdk untaped_git.api.HostBudget(*, plugin, host)
+sdk untaped_git.api.HostBudget(exhausted=) default=false
+sdk untaped_git.api.HostBudget(remaining=) default=None
+sdk untaped_git.api.HostBudget(reset_at=) default=None
+sdk untaped_git.api.HostBudget.exhausted
+sdk untaped_git.api.HostBudget.host
+sdk untaped_git.api.HostBudget.plugin
+sdk untaped_git.api.HostBudget.remaining
+sdk untaped_git.api.HostBudget.reset_at
 sdk untaped_git.api.Prefetched(store)
 sdk untaped_git.api.Prefetched.run(argv)
 sdk untaped_git.api.Prefetched.run(capture=) default=true
@@ -123,6 +164,23 @@ sdk untaped_git.api.Prefetched.run(check=) default=true
 sdk untaped_git.api.Prefetched.run(locale_c=) default=true
 sdk untaped_git.api.Prefetched.run(stdin=) default=None
 sdk untaped_git.api.Prefetched.run(timeout=) default=None
+sdk untaped_git.api.ProbeResult()
+sdk untaped_git.api.ProbeResult(budgets=) default=[]
+sdk untaped_git.api.ProbeResult(fallbacks=) default={}
+sdk untaped_git.api.ProbeResult(repos=) default={}
+sdk untaped_git.api.ProbeResult.budgets
+sdk untaped_git.api.ProbeResult.fallbacks
+sdk untaped_git.api.ProbeResult.repos
+sdk untaped_git.api.ProbedRepo base=untaped.sdk.Record  [experimental]
+sdk untaped_git.api.ProbedRepo extra=forbid  [experimental]
+sdk untaped_git.api.ProbedRepo(*, url)  [experimental]
+sdk untaped_git.api.ProbedRepo(default_branch=) default=None  [experimental]
+sdk untaped_git.api.ProbedRepo(failure=) default=None  [experimental]
+sdk untaped_git.api.ProbedRepo(refs=) default={}  [experimental]
+sdk untaped_git.api.ProbedRepo.default_branch  [experimental]
+sdk untaped_git.api.ProbedRepo.failure  [experimental]
+sdk untaped_git.api.ProbedRepo.refs  [experimental]
+sdk untaped_git.api.ProbedRepo.url  [experimental]
 sdk untaped_git.api.RefDelta()
 sdk untaped_git.api.RefDelta(added@1=) default=<computed>
 sdk untaped_git.api.RefDelta(moved@2=) default=<computed>
@@ -133,6 +191,17 @@ sdk untaped_git.api.RefDelta.pruned
 sdk untaped_git.api.RefMove(old, new)
 sdk untaped_git.api.RefMove.new
 sdk untaped_git.api.RefMove.old
+sdk untaped_git.api.RefProbe base=untaped.sdk.Record  [experimental]
+sdk untaped_git.api.RefProbe extra=forbid  [experimental]
+sdk untaped_git.api.RefProbe()  [experimental]
+sdk untaped_git.api.RefProbe(exhausted=) default=false  [experimental]
+sdk untaped_git.api.RefProbe(remaining=) default=None  [experimental]
+sdk untaped_git.api.RefProbe(repos=) default=[]  [experimental]
+sdk untaped_git.api.RefProbe(reset_at=) default=None  [experimental]
+sdk untaped_git.api.RefProbe.exhausted  [experimental]
+sdk untaped_git.api.RefProbe.remaining  [experimental]
+sdk untaped_git.api.RefProbe.repos  [experimental]
+sdk untaped_git.api.RefProbe.reset_at  [experimental]
 sdk untaped_git.api.Released()
 sdk untaped_git.api.Released(branches@3=) default=[]
 sdk untaped_git.api.Released(foreign_worktrees@2=) default=[]
@@ -252,6 +321,12 @@ sdk untaped_git.api.git_toplevel(timeout=) default=30.0
 sdk untaped_git.api.looks_like_url(ident)  [experimental]
 sdk untaped_git.api.ls_remote(patterns@2=) default=[]
 sdk untaped_git.api.ls_remote(url)
+sdk untaped_git.api.probe_refs(default_branch_only=) default=false
+sdk untaped_git.api.probe_refs(default_branches=) default=None
+sdk untaped_git.api.probe_refs(kinds=) default=["heads","tags"]
+sdk untaped_git.api.probe_refs(on_progress=) default=None callback(2)
+sdk untaped_git.api.probe_refs(parallel=) default=None
+sdk untaped_git.api.probe_refs(urls)
 sdk untaped_git.api.repo_url_parts(url)
 sdk untaped_git.api.run_git(args, *, timeout)
 sdk untaped_git.api.run_git(attempts=) default=3

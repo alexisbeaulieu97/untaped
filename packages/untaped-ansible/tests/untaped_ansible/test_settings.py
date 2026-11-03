@@ -28,11 +28,7 @@ _SOURCE = {"name": "prod", "repos": ["acme/site"]}
         (AnsibleSettings, {"ref_scan_default": "main"}),
         (AnsibleSettings, {"git_fetch_parallel": 0}),
         (AnsibleSettings, {"git_fetch_parallel": 33}),
-        (AnsibleSettings, {"probe_parallel": 0}),
-        (AnsibleSettings, {"probe_parallel": 33}),
-        (AnsibleSettings, {"source_refresh_backend": "mercurial"}),
         (AnsibleSettings, {"source_refresh_repo_batch_size": 0}),
-        (AnsibleSettings, {"source_refresh_rate_limit_floor": -1}),
     ],
 )
 def test_models_reject_out_of_range_values(model: type[BaseModel], values: dict[str, Any]) -> None:
@@ -60,11 +56,18 @@ def test_source_definition_is_frozen_and_normalized() -> None:
 _DELETED = {
     "stale_after_seconds": "deleted in 12.0; use ansible.caches.source_data.max_age_seconds",
     "index_path": "deleted in 12.0; ansible.index_dir names the folder that holds the index",
+    "source_refresh_backend": (
+        "deleted in 12.0; each repo's host probes its refs, else git ls-remote does"
+    ),
+    "probe_parallel": "deleted in 12.0; use git.probe_parallel",
+    "source_refresh_rate_limit_floor": (
+        "deleted in 12.0; the plugin that probes a host sets that host's budget floor"
+    ),
 }
 
 
 def test_the_deleted_settings_say_what_replaced_them() -> None:
-    """The index's folder and its source data's cache setting."""
+    """The index's folder, its source data's cache setting and the ref probe's settings."""
     deleted = key_mappings(AnsibleSettings).deleted
 
     assert {key: entry.reason() for key, entry in deleted.items()} == _DELETED

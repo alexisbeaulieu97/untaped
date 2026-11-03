@@ -6,7 +6,7 @@ import hashlib
 import json
 import sqlite3
 import threading
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from untaped.sdk import UntapedError
+from untaped.sdk import Failure, UntapedError
 from untaped_ansible.application import refresh_git_index
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
@@ -25,10 +25,6 @@ from untaped_ansible.application.refresh_git_index import (
 from untaped_ansible.domain.payloads import (
     CachedRef,
     GitRef,
-    ProbedRepo,
-    ProbeFailure,
-    ProbeReport,
-    ProbeTarget,
     RefScan,
     SkippedRef,
     SourceRepoMetadata,
@@ -37,6 +33,7 @@ from untaped_ansible.domain.variables import analyse
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.settings import SourceDefinition
+from untaped_git.api import HostBudget, ProbedRepo, ProbeResult
 
 _REQS = "roles/requirements.yml"
 _OVERLAP_TIMEOUT = 5.0
@@ -53,7 +50,7 @@ class FakeGitHub:
 
     def __init__(self) -> None:
         self.repository_calls: list[tuple[str, str]] = []
-        self.repo_default_branches: dict[str, str] = {}
+        self.repo_default_branches: dict[str, str | None] = {}
         self.org_repos: dict[str, list[str]] = {}
         self.team_repos: dict[str, list[str]] = {}
         self.org_error: Exception | None = None
@@ -66,12 +63,13 @@ class FakeGitHub:
     def list_org_repos(self, org: str) -> list[dict[str, object]]:
         if self.org_error is not None:
             raise self.org_error
-        return [self._row(name) for name in self.org_repos.get(org, [f"{org}/site"])]
+        names = self.org_repos.get(org, [f"{org}/site"])
+        return [self._row(name, self.repo_default_branches.get(name, "main")) for name in names]
 
     def list_team_repos(self, org: str, team_slug: str) -> list[dict[str, object]]:
         return [self._row(name) for name in self.team_repos.get(f"{org}/{team_slug}", [])]
 
-    def _row(self, full_name: str, default_branch: str = "main") -> dict[str, object]:
+    def _row(self, full_name: str, default_branch: str | None = "main") -> dict[str, object]:
         return {
             "full_name": full_name,
             "default_branch": default_branch,
@@ -81,42 +79,79 @@ class FakeGitHub:
 
 
 class FakeRefProbe:
-    """Dict-backed RefProbe: refs and failures keyed by full repo name."""
+    """git's ``probe_refs`` answered from dicts keyed by full repo name.
+
+    ``remaining`` and ``exhausted`` are the host's budget after each probe.
+    """
 
     def __init__(self) -> None:
         self.refs: dict[str, list[GitRef]] = {}
         self.default_branches: dict[str, str | None] = {}
         self.failures: dict[str, str] = {}
-        self.rate_limit_remaining: int | None = None
+        self.fallbacks: dict[str, str] = {}
+        self.remaining: int | None = None
+        self.exhausted = False
+        self.reset_at: datetime | None = None
         self.calls: list[tuple[tuple[str, ...], tuple[str, ...], str]] = []
+        self.known: list[dict[str, str] | None] = []
 
-    def probe(
+    def __call__(
         self,
-        repos: Sequence[ProbeTarget],
+        urls: Sequence[str],
         *,
         kinds: Sequence[str],
-        mode: str = "all",
-        on_progress: Callable[[int, int], None] | None = None,
-    ) -> ProbeReport:
-        names = tuple(repo.full_name for repo in repos)
-        self.calls.append((names, tuple(kinds), mode))
-        probed: dict[str, ProbedRepo] = {}
-        failures: dict[str, ProbeFailure] = {}
-        for repo in names:
+        default_branch_only: bool,
+        default_branches: Mapping[str, str] | None,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> ProbeResult:
+        names = {url: _full_name(url) for url in urls}
+        mode = "default_branch" if default_branch_only else "all"
+        self.calls.append((tuple(names.values()), tuple(kinds), mode))
+        self.known.append(None if default_branches is None else dict(default_branches))
+        rows: dict[str, ProbedRepo] = {}
+        for url, repo in names.items():
             if repo in self.failures:
-                failures[repo] = ProbeFailure(kind="chunk", reason=self.failures[repo])
+                rows[url] = _failed_row(url, self.failures[repo], "failed")
             elif repo not in self.refs:
-                failures[repo] = ProbeFailure(kind="missing", reason="repository not found")
+                rows[url] = _failed_row(url, "repository not found", "not_found")
             else:
-                probed[repo] = ProbedRepo(
+                rows[url] = ProbedRepo(
+                    url=url,
                     default_branch=self.default_branches.get(repo, "main"),
-                    refs=tuple(ref for ref in self.refs[repo] if ref.kind in kinds),
+                    refs={
+                        f"refs/{ref.kind}/{ref.name}": ref.sha
+                        for ref in self.refs[repo]
+                        if ref.kind in kinds
+                    },
                 )
         if on_progress is not None:
             on_progress(len(names), len(names))
-        return ProbeReport(
-            repos=probed, failures=failures, rate_limit_remaining=self.rate_limit_remaining
+        budgets = (
+            ()
+            if self.remaining is None
+            else (
+                HostBudget(
+                    plugin="hub",
+                    host="github.com",
+                    remaining=self.remaining,
+                    reset_at=self.reset_at,
+                    exhausted=self.exhausted,
+                ),
+            )
         )
+        fallbacks = {
+            url: self.fallbacks[repo] for url, repo in names.items() if repo in self.fallbacks
+        }
+        return ProbeResult(repos=rows, fallbacks=fallbacks, budgets=budgets)
+
+
+def _full_name(url: str) -> str:
+    return url.removesuffix(".git").split("github.com", 1)[1].lstrip("/:")
+
+
+def _failed_row(url: str, message: str, category: str) -> ProbedRepo:
+    error = UntapedError(message, category=category, system="hub")
+    return ProbedRepo(url=url, failure=Failure.from_exception(error))
 
 
 def _repo_name(url: str) -> str:
@@ -326,7 +361,7 @@ def test_pruning_is_scoped_to_succeeded_repos(h: Harness) -> None:
     h.probe.failures["acme/b"] = "boom"
     second = h.run(source)
 
-    assert _failures(second) == [("acme/b", "boom")]
+    assert _failures(second) == [("acme/b", "ref probe failed: boom")]
     assert not h.cached("acme/a", "extra")
     assert not h.dependents("acme/extra-base")
     assert h.cached("acme/b")
@@ -342,7 +377,7 @@ def test_probe_failure_skips_repo_without_git_work_and_records_failure(h: Harnes
     result = h.run(_repos("acme/gone", "acme/site"))
 
     assert (result.repos, result.refs) == (2, 1)
-    assert _failures(result) == [("acme/gone", "repository not found")]
+    assert _failures(result) == [("acme/gone", "ref probe failed: repository not found")]
     assert all("gone" not in url for url in h.git.urls)
     assert h.dependents("acme/base")
 
@@ -390,7 +425,10 @@ def test_all_repos_failed_skips_commit_and_keeps_index_untouched(h: Harness) -> 
 
     result = h.run(source)
 
-    assert _failures(result) == [("acme/a", "probe boom"), ("acme/b", "git fetch failed for b")]
+    assert _failures(result) == [
+        ("acme/a", "ref probe failed: probe boom"),
+        ("acme/b", "git fetch failed for b"),
+    ]
     after = h.index.status("source:prod")
     assert after is not None
     assert after.scanned_at == before.scanned_at
@@ -490,6 +528,39 @@ def test_default_branch_comes_from_probe_with_expansion_fallback(h: Harness) -> 
     assert h.metadata("acme/old") == {CachedRef(name="main", kind="heads", default_branch="main")}
 
 
+def test_the_probe_gets_each_repo_s_url_and_the_default_branches_the_listing_knows(
+    h: Harness,
+) -> None:
+    """A repo listed without a default branch (``HEAD``) leaves the probe to ask its remote."""
+    h.set_refs("acme/site", ("trunk", "sha-trunk"))
+    h.set_refs("acme/bare", ("main", "sha-bare"))
+    h.github.org_repos["acme"] = ["acme/site", "acme/bare"]
+    h.github.repo_default_branches.update({"acme/site": "trunk", "acme/bare": None})
+
+    h.run()
+
+    assert h.probe.known == [{"https://github.com/acme/site.git": "trunk"}]
+
+
+def test_repos_read_with_ls_remote_are_named_with_why(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-site"))
+    h.probe.fallbacks["acme/site"] = "hub could not probe it (busy)"
+
+    result = h.run()
+
+    assert result.probe_fallbacks == {"acme/site": "hub could not probe it (busy)"}
+
+
+def test_a_spent_budget_after_the_last_batch_completes_the_refresh(h: Harness) -> None:
+    h.set_refs("acme/site", ("main", "sha-site"))
+    h.probe.remaining, h.probe.exhausted = 10, True
+
+    result = h.run()
+
+    assert (result.completed, result.pause_reason) == (True, None)
+    assert [budget.exhausted for budget in result.budgets] == [True]
+
+
 def test_expansion_dedupes_overlapping_selectors_with_explicit_repo_precedence(
     h: Harness,
 ) -> None:
@@ -546,7 +617,6 @@ def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
     [
         ({"clone_protocol": "git"}, "clone_protocol"),
         ({"repo_batch_size": 0}, "repo_batch_size"),
-        ({"rate_limit_floor": -1}, "rate_limit_floor"),
     ],
 )
 def test_git_refresh_rejects_invalid_options(
@@ -556,18 +626,19 @@ def test_git_refresh_rejects_invalid_options(
         h.use_case(**overrides)
 
 
-# --- progress and GraphQL budget --------------------------------------------
+# --- progress and the probe budget ------------------------------------------
 
 
-def test_refresh_reports_progress_events_and_probe_rate_limit(h: Harness) -> None:
+def test_refresh_reports_progress_events_and_the_probe_budget(h: Harness) -> None:
     h.set_refs("acme/a", ("main", "sha-a"))
     h.set_refs("acme/b", ("main", "sha-b"))
-    h.probe.rate_limit_remaining = 2400
+    h.probe.remaining = 2400
     progress = _Progress()
 
     result = h.run(_repos("acme/a", "acme/b"), progress=progress)
 
-    assert result.rate_limit_remaining == 2400
+    [budget] = result.budgets
+    assert (budget.host, budget.remaining, budget.exhausted) == ("github.com", 2400, False)
     phases = [(phase, done, total) for _, phase, done, total in progress.updates]
     assert phases[0] == ("expanding source", 2, 2)
     assert ("probing refs", 2, 2) in phases
@@ -591,23 +662,23 @@ class _Progress:
         self.updates.append((message, phase, done, total))
 
 
-def test_refresh_pauses_on_low_graphql_budget_and_resumes_remaining_repos(h: Harness) -> None:
+def test_refresh_pauses_once_a_host_s_budget_is_spent_and_resumes(h: Harness) -> None:
     h.set_refs("acme/a", ("main", "sha-a", _base(repo="acme/base-a")))
     h.set_refs("acme/b", ("main", "sha-b", _base(repo="acme/base-b")))
-    h.configure(repo_batch_size=1, rate_limit_floor=500)
+    h.configure(repo_batch_size=1)
     source = _repos("acme/a", "acme/b")
-    h.probe.rate_limit_remaining = 200
+    h.probe.remaining, h.probe.exhausted = 200, True
 
     first = h.run(source)
 
     assert first.completed is False
-    assert first.pause_reason == "GitHub GraphQL rate limit is low: 200 points remaining"
+    assert first.pause_reason == "the ref probe budget is spent on github.com (200 left)"
     assert first.failures == ()
     assert h.index.status("source:prod") is None
     assert h.cached("acme/a")
     assert not h.cached("acme/b")
 
-    h.probe.rate_limit_remaining = 1200
+    h.probe.remaining, h.probe.exhausted = 1200, False
     second = h.run(source)
 
     assert (second.completed, second.failures, second.refs) == (True, (), 2)
@@ -626,18 +697,18 @@ def test_refresh_retries_failed_repos_after_budget_pause_without_double_probe(
     for repo in ("acme/a", "acme/b", "acme/c"):
         h.set_refs(repo, ("main", f"sha-{repo}", _base(repo=repo)))
     h.probe.failures["acme/b"] = "temporary probe failure"
-    h.probe.rate_limit_remaining = 200
-    h.configure(repo_batch_size=2, rate_limit_floor=500)
+    h.probe.remaining, h.probe.exhausted = 200, True
+    h.configure(repo_batch_size=2)
     source = _repos("acme/a", "acme/b", "acme/c")
 
     first = h.run(source)
 
     assert first.completed is False
-    assert _failures(first) == [("acme/b", "temporary probe failure")]
+    assert _failures(first) == [("acme/b", "ref probe failed: temporary probe failure")]
     assert [h.cached(repo) for repo in ("acme/a", "acme/b", "acme/c")] == [True, False, False]
 
     del h.probe.failures["acme/b"]
-    h.probe.rate_limit_remaining = 1200
+    h.probe.remaining, h.probe.exhausted = 1200, False
     second = h.run(source)
 
     assert (second.completed, second.failures, second.refs) == (True, (), 3)
@@ -652,17 +723,17 @@ def test_resumed_refresh_can_complete_with_later_failures_after_prior_success(
     h: Harness,
 ) -> None:
     h.set_refs("acme/a", ("main", "sha-a", _base(repo="acme/a")))
-    h.configure(repo_batch_size=1, rate_limit_floor=500)
+    h.configure(repo_batch_size=1)
     source = _repos("acme/a", "acme/b")
-    h.probe.rate_limit_remaining = 200
+    h.probe.remaining, h.probe.exhausted = 200, True
 
     assert h.run(source).completed is False
-    h.probe.rate_limit_remaining = 1200
+    h.probe.remaining, h.probe.exhausted = 1200, False
     h.probe.failures["acme/b"] = "temporary probe failure"
     second = h.run(source)
 
     assert second.completed is True
-    assert _failures(second) == [("acme/b", "temporary probe failure")]
+    assert _failures(second) == [("acme/b", "ref probe failed: temporary probe failure")]
     assert h.probe.calls == [
         (("acme/a",), ("heads", "tags"), "all"),
         (("acme/b",), ("heads", "tags"), "all"),
@@ -715,15 +786,15 @@ def test_partial_refresh_commit_persists_progress_in_same_adapter_call(tmp_path:
 def test_partial_refresh_prunes_removed_repos_only_after_completion(h: Harness) -> None:
     for name in "abc":
         h.set_refs(f"acme/{name}", ("main", f"sha-{name}", _base(repo=f"acme/base-{name}")))
-    h.configure(repo_batch_size=1, rate_limit_floor=500)
+    h.configure(repo_batch_size=1)
     h.run(_repos("acme/a", "acme/b"))
 
-    h.probe.rate_limit_remaining = 200
+    h.probe.remaining, h.probe.exhausted = 200, True
     assert h.run(_repos("acme/a", "acme/c")).completed is False
     assert h.cached("acme/b")
     assert h.dependents("acme/base-b")
 
-    h.probe.rate_limit_remaining = 1200
+    h.probe.remaining, h.probe.exhausted = 1200, False
     assert h.run(_repos("acme/a", "acme/c")).completed is True
     assert not h.cached("acme/b")
     assert not h.dependents("acme/base-b")
