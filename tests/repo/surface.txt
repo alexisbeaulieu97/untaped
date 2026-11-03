@@ -6622,6 +6622,7 @@ sdk untaped.sdk.PluginHandle.committed(root=) default=None
 sdk untaped.sdk.PluginHandle.dir
 sdk untaped.sdk.PluginHandle.home
 sdk untaped.sdk.PluginHandle.name
+sdk untaped.sdk.PluginHandle.plan_settings(changes)  [experimental]
 sdk untaped.sdk.Positional()
 sdk untaped.sdk.PreviewItem
 sdk untaped.sdk.Progress extra=forbid
@@ -6653,6 +6654,12 @@ sdk untaped.sdk.SettingKey(model)
 sdk untaped.sdk.SettingKey(parts@2=) default=[]
 sdk untaped.sdk.SettingKey.model_of(setting)
 sdk untaped.sdk.SettingKey.path_of(setting)
+sdk untaped.sdk.SettingsPlan  [experimental]
+sdk untaped.sdk.SettingsPlan.preview()  [experimental]
+sdk untaped.sdk.SettingsPlan.write()  [experimental]
+sdk untaped.sdk.SettingsWritten(outcomes, target)  [experimental]
+sdk untaped.sdk.SettingsWritten.outcomes  [experimental]
+sdk untaped.sdk.SettingsWritten.target  [experimental]
 sdk untaped.sdk.Short(flag)
 sdk untaped.sdk.Short.flag
 sdk untaped.sdk.Source extra=forbid

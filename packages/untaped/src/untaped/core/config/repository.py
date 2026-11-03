@@ -17,7 +17,8 @@ import yaml
 from pydantic import BaseModel, SecretStr, TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 
-from untaped.core.config.models import OldSpelling
+from untaped.core.config.models import OldSpelling, Typed
+from untaped.core.config.ports import Update
 from untaped.core.settings import NAME, CoreSettings
 from untaped.runtime.config_file import (
     mutate_config,
@@ -305,7 +306,7 @@ class SettingsFileRepository:
     def update_value(
         self,
         key: str,
-        update: Callable[[str, Any], str | None],
+        update: Update,
         *,
         profile: str | None = None,
         dry_run: bool = False,
@@ -315,9 +316,10 @@ class SettingsFileRepository:
 
         ``update(target, current)`` receives the target profile's name and
         the key's raw value in that profile's own data (``None`` when unset),
-        and returns the raw string to store or ``None`` to remove the key. The
-        string is validated against the leaf's annotation (lax mode:
-        ``true``/``no`` for bools, numbers, literals, paths); string and secret
+        and returns the raw string to store (or a :class:`Typed` value, validated
+        as Python data) or ``None`` to remove the key. The string is validated
+        against the leaf's annotation (lax mode: ``true``/``no`` for bools,
+        numbers, literals, paths); string and secret
         fields keep the exact input. Only the key's own section is
         re-validated, so an unrelated invalid section never blocks a repair.
         It runs inside the locked mutation, so a concurrent writer's change is
@@ -337,46 +339,67 @@ class SettingsFileRepository:
 
     def update_values(
         self,
-        updates: Mapping[str, Callable[[str, Any], str | None]],
+        updates: Mapping[str, Update],
         *,
         profile: str | None = None,
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
+        home_only_to_base: bool = False,
     ) -> str:
         """:meth:`update_value` for several keys as one change, under one config lock.
 
         Every ``update`` runs first, then each key's section is validated with
         all of them in place, so keys that are only valid together (a server's
         URL and its TLS setting) are written together; one refused value or
-        one raising ``update`` writes nothing. Returns the target profile name.
+        one raising ``update`` writes nothing. ``home_only_to_base`` writes a
+        key no profile may set to the base instead of refusing it: a plugin's
+        own write names no place, so such a key lands where every run reads
+        it. Returns the profile the other keys land in.
         """
         descriptors = {key: self.descriptor(key) for key in updates}
+        based = {
+            key
+            for key, descriptor in descriptors.items()
+            if home_only_to_base and self._project is None and profile_refusal(descriptor)
+        }
         resolved: str | None = None
 
-        for descriptor in descriptors.values():
-            self._check_writable(descriptor, profile)
+        for key, descriptor in descriptors.items():
+            self._check_writable(descriptor, DEFAULT_PROFILE if key in based else profile)
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
-            target_data, resolved = self._write_target(data, profile)
+            target_data, written = self._write_target(data, profile)
+            resolved = written
+            targets = {
+                key: (data, DEFAULT_PROFILE) if key in based else (target_data, written)
+                for key in updates
+            }
             for key, update in updates.items():
                 descriptor = descriptors[key]
-                self._carry_old_map(target_data, descriptor, on_spelling_removed)
+                where, name = targets[key]
+                self._carry_old_map(where, descriptor, on_spelling_removed)
                 olds = self._old_paths(descriptor)
-                raw_value = update(resolved, self._own(target_data, descriptor))
+                raw_value = update(name, self._own(where, descriptor))
                 if raw_value is None:
-                    unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
+                    unset_at_path(where, descriptor.path, keep=descriptor.entry_depth)
                 else:
-                    value = _coerce_value(key, descriptor, raw_value)
-                    set_at_path(target_data, descriptor.path, value)
-                _remove_spellings(target_data, olds, on_spelling_removed)
+                    set_at_path(where, descriptor.path, _stored(key, descriptor, raw_value))
+                _remove_spellings(where, olds, on_spelling_removed)
             for key, descriptor in descriptors.items():
-                try:
-                    self._validate_section(data, descriptor, profile=resolved)
-                except ValidationError as exc:
-                    raise ConfigError(
-                        f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
-                    ) from exc
+                # A key sent to the base is read under the profile the others land in too.
+                for reader in dict.fromkeys((targets[key][1], written)):
+                    try:
+                        self._validate_section(data, descriptor, profile=reader)
+                    except ValidationError as exc:
+                        blamed = _blamed(descriptors, exc) or key
+                        read = (
+                            "" if reader == targets[key][1] else f" (as profile {reader} reads it)"
+                        )
+                        raise ConfigError(
+                            f"invalid value for {blamed!r}{read}: {_issue(blamed, exc)}",
+                            category="invalid",
+                        ) from exc
 
         self._mutate(_apply, dry_run=dry_run)
         # ``_mutate`` always runs ``_apply``, which sets ``resolved`` from
@@ -387,6 +410,10 @@ class SettingsFileRepository:
     def coerced(self, key: str, raw_value: str) -> Any:
         """``raw_value`` (as ``config set`` takes it) as the value a write would store."""
         return _coerce_value(key, self.descriptor(key), raw_value)
+
+    def typed(self, key: str, value: object) -> Any:
+        """A plugin's own Python ``value`` as the value a write would store."""
+        return _typed_value(key, self.descriptor(key), value)
 
     def own_value(self, key: str, *, profile: str | None = None) -> Any:
         """``key``'s raw value in ``profile``'s own data, as :meth:`update_value` passes it.
@@ -662,6 +689,29 @@ def _remove_spellings(
     return removed
 
 
+def _stored(key: str, descriptor: FieldDescriptor, given: str | Typed) -> Any:
+    """What a write stores for ``given``: text as ``config set`` takes it, or a typed value."""
+    if isinstance(given, Typed):
+        return _typed_value(key, descriptor, given.value)
+    return _coerce_value(key, descriptor, given)
+
+
+def _typed_value(key: str, descriptor: FieldDescriptor, value: object) -> Any:
+    """Validate a plugin's own Python ``value`` against the setting's type; return its YAML form.
+
+    A model keeps only the fields its caller set, as :func:`_coerce_value`
+    keeps a model typed as text.
+    """
+    adapter: TypeAdapter[Any] = TypeAdapter(descriptor.annotation)
+    try:
+        validated = adapter.validate_python(value)
+    except ValidationError as exc:
+        raise ConfigError(
+            f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
+        ) from exc
+    return _dumped(adapter, validated, descriptor)
+
+
 def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
     """Validate a CLI-supplied string against the leaf type; return its YAML form.
 
@@ -689,6 +739,11 @@ def _coerce_value(key: str, descriptor: FieldDescriptor, raw_value: str) -> Any:
         raise ConfigError(
             f"invalid value for {key!r}: {_issue(key, exc)}", category="invalid"
         ) from exc
+    return _dumped(adapter, value, descriptor)
+
+
+def _dumped(adapter: TypeAdapter[Any], value: Any, descriptor: FieldDescriptor) -> Any:
+    """A validated ``value`` as the file holds it."""
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     # A model's defaults stay unwritten, as if the value had been typed into the file;
@@ -724,6 +779,18 @@ def _shown(value: Any) -> str:
     if isinstance(value, list):
         return "<list>"
     return yaml.safe_dump(value, default_flow_style=True).removesuffix("\n...\n").strip()
+
+
+def _blamed(descriptors: Mapping[str, FieldDescriptor], exc: ValidationError) -> str | None:
+    """The written key the first issue of ``exc`` is in (the deepest), ``None`` when none is.
+
+    Keys written together are validated together, so one key's section can
+    fail on another written key's value.
+    """
+    errors = exc.errors()
+    loc = tuple(str(part) for part in errors[0]["loc"]) if errors else ()
+    within = [key for key, each in descriptors.items() if loc[: len(each.path)] == each.path]
+    return max(within, key=lambda key: len(descriptors[key].path), default=None)
 
 
 def _issue(key: str, exc: ValidationError) -> str:
