@@ -77,10 +77,9 @@ class Services:
             for entry in self.steps.entries(selections)
             if include_excluded or entry.excluded is None
         ]
-        placed = [p.target for p in placements if p.target is not None and not p.orphan]
         repos = [
             entry
-            for entry in self.repos.entries(selections, files=placed)
+            for entry in self.repos.entries(selections, placements=placements)
             if include_excluded or entry.excluded is None
         ]
         return files.joined(*self.steps.status_rows(steps)).joined(*self.repos.status_rows(repos))

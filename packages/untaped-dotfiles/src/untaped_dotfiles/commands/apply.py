@@ -122,8 +122,11 @@ class Apply(DotfilesCommand):
             self._report_stuck(steps, stuck)
             listed = [e for e in svc.steps.entries(selections) if e.excluded is None]
             step_plans = svc.steps.failing(svc.steps.plan(listed, follow=follow), stuck)
-            files = [p.target for p in placements if p.target is not None and not p.orphan]
-            copies = [e for e in svc.repos.entries(selections, files=files) if e.excluded is None]
+            copies = [
+                e
+                for e in svc.repos.entries(selections, placements=placements)
+                if e.excluded is None
+            ]
             repo_plans = svc.repos.plan(copies)
             planned = [
                 *svc.applier.planned(steps),

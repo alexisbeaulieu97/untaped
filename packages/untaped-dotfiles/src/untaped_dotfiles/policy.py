@@ -132,8 +132,8 @@ class Policy(StrEnum):
     checkout whose `origin` is the entry's URL), `foreign` (something else is
     there: reported, never touched), `orphan` (cloned for an entry the
     package dropped, or whose target an input moved: forgotten), `off`,
-    `excluded` or `error` (also when its target holds, or sits in, another
-    copy's target, or holds a file's target: nothing is cloned there).
+    `excluded` or `error` (also a copy to clone whose target holds, or sits
+    in, another copy's target, or holds a file's target: it isn't cloned).
     `remove` and `unsubscribe` forget a copy untaped cloned and leave it in
     place; turning an item on again keeps knowing it.
 

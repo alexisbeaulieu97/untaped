@@ -186,7 +186,7 @@ def test_a_moved_target_clones_anew_and_says_so(make_remote: MakeRemote, user_ho
     code, rows = _repo_rows(["apply", "--yes", "--var", "dir=two"])
     assert code == 0
     assert {r["entry"]: r["action"] for r in rows} == {
-        "~/{{ dir }}/app": "created",
+        "~/two/app": "created",
         "~/one/app": "unchanged",
     }
     moved = next(r for r in rows if r["entry"] == "~/one/app")
@@ -273,3 +273,72 @@ def test_copies_whose_targets_overlap_are_not_cloned(
     assert code == 1 and [r["action"] for r in rows] == ["failed", "failed"]
     assert "overlaps the working copy at ~/Projects/app/sub" in str(rows[0]["detail"])
     assert not (user_home / "Projects/app").exists()
+
+
+def test_a_target_waiting_on_an_input_keeps_its_copy(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    _subscribed(
+        make_remote,
+        app.url,
+        target="~/{{ dir }}/app",
+        extra="inputs:\n  dir: {description: Where projects go}\n",
+    )
+    assert _repo_rows(["apply", "--yes", "--var", "dir=one"])[0] == 0
+    ran = installed().cli(["config", "unset", "dotfiles.sources.dotfiles.packages.code.inputs.dir"])
+    assert int(ran.exit) == 0, ran.stderr
+    assert states()["~/one/app"] == "applied"
+    code, rows = _repo_rows(["apply", "--yes"])
+    assert code == 0 and [r["action"] for r in rows] == ["unchanged"]
+    assert states()["~/one/app"] == "applied"
+
+
+def test_a_name_no_repo_source_lists_fails_its_row(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    _subscribed(make_remote, "acme/app")
+    result = run(["apply", "--yes", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    row = next(r for r in json_rows(result) if r["kind"] == "repo")
+    assert row["action"] == "failed"
+    assert row["error"]["category"] == "not_found"  # type: ignore[index]
+
+
+def test_a_copy_inside_another_package_s_copy_is_not_cloned(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    source = make_remote(
+        packages={
+            "outer": _package(app.url),
+            "inner": _package(app.url, target="~/Projects/app/sub"),
+        },
+        files={},
+    )
+    subscribe(source.url, "--add", "outer")
+    assert _repo_rows(["apply", "--yes"])[0] == 0
+    assert run(["add", "inner"]).exit_code == 0
+    code, rows = _repo_rows(["apply", "inner", "--yes"])
+    assert code == 1 and rows[0]["action"] == "failed"
+    assert "overlaps the working copy at ~/Projects/app" in str(rows[0]["detail"])
+    assert not (user_home / "Projects/app/sub").exists()
+    sub = user_home / "Projects/app/sub"  # nested by hand: both there, neither an error
+    sub.mkdir()
+    git(sub, "init", "-q")
+    git(sub, "remote", "add", "origin", app.url)
+    found = states()
+    assert found["~/Projects/app"] == found["~/Projects/app/sub"] == "applied"
+
+
+def test_a_file_excluded_here_doesn_t_hold_a_copy_back(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    package = _package(app.url) + (
+        "    files:\n      - {path: envrc, target: ~/Projects/app/.envrc, os: [windows]}\n"
+    )
+    source = make_remote(packages={"code": package}, files={"envrc": "use nix\n"})
+    subscribe(source.url, "--add", "code")
+    assert states(["--excluded"])["~/Projects/app"] == "pending"
+    assert _repo_rows(["apply", "--yes"])[0] == 0

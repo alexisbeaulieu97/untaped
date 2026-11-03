@@ -4,7 +4,8 @@ Policy doesn't apply. ``apply`` clones a working copy whose target is absent,
 through the git plugin (its credentials and proxy, no helper left behind);
 after that untaped never moves it. A checkout of the entry's URL already
 there counts as applied (a repo name: a checkout whose ``origin`` ends in that
-name, so ``status`` asks no repo source), and anything else there is
+name, so ``status`` asks no repo source; a bare name matches any owner's repo
+of that name), and anything else there is
 ``foreign`` and never touched. ``remove`` and ``unsubscribe`` forget the rows
 and leave the copies.
 """
@@ -17,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, run_hint
+from untaped.sdk import ErrorCategory, Failure, UntapedError, run_hint
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.models import RepoRecord
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome, EntryStatus
@@ -34,7 +35,7 @@ from untaped_git.api import (
 
 if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Offer, Selection
-    from untaped_dotfiles.inventory import Inventory
+    from untaped_dotfiles.inventory import Inventory, Placement
     from untaped_dotfiles.package import Repo
     from untaped_dotfiles.ports import DotfilesStore
 
@@ -60,6 +61,8 @@ class RepoEntry:
     excluded: str | None = None
     off: bool = False
     orphan: bool = False
+    shown: str = ""
+    """The target as the person reads it (``~/...``), or as written while it waits."""
     moved_to: str = ""
     """For an ``orphan``: where the entry clones now, when an input moved its target."""
     overlaps: str = ""
@@ -107,13 +110,46 @@ class Repos:
     # -- entries -------------------------------------------------------------
 
     def entries(
-        self, selections: Sequence[Selection] | None = None, *, files: Iterable[Path] = ()
+        self,
+        selections: Sequence[Selection] | None = None,
+        *,
+        placements: Sequence[Placement] = (),
     ) -> list[RepoEntry]:
         """The ``repos:`` entries of the items that are on in ``selections`` (every package
         that is on when ``None``), plus the rows of copies untaped cloned for an entry the
         package dropped (``orphan``) or whose package or item is off now (``off``).
-        ``files``: the targets files are placed at, which no copy may hold."""
+        ``placements``: the files placed with them, whose targets no copy to clone may hold.
+        """
         records = {r.target: r for r in self._store.repos()}
+        found = self._listed(selections, records)
+        everyone = found if selections is None else self._listed(None, records)
+        files = [
+            p.target
+            for p in placements
+            if p.target is not None and p.excluded is None and not p.orphan
+        ]
+        found = self._overlapping(found, everyone, files)
+        listed = {str(e.target) for e in found if e.target is not None}
+        moved: dict[tuple[str, str], list[str]] = {}
+        for e in found:
+            if e.target is not None and e.record is None:
+                moved.setdefault(("/".join(e.owner), e.repo.url), []).append(e.shown)
+        wanted = {(o.source.name, o.name, i): o for o, i in self._inventory.wanted(selections)}
+        off = self._inventory.off_scope(selections)
+        for record in records.values():
+            if record.target not in listed:
+                entry = self._unlisted(record, wanted, off)
+                if entry is not None and entry.orphan:
+                    targets = moved.get((record.item, record.given), [])
+                    entry = replace(entry, moved_to=targets[0] if len(targets) == 1 else "")
+                found.extend([entry] if entry is not None else [])
+        return found
+
+    def _listed(
+        self, selections: Sequence[Selection] | None, records: Mapping[str, RepoRecord]
+    ) -> list[RepoEntry]:
+        """The entries of the items that are on; one waiting on an input keeps the copy cloned
+        for it before (its record), as a file's record stays while an input has no value."""
         found: list[RepoEntry] = []
         machine = self._inventory.machine
         for offer, item in self._inventory.wanted(selections):
@@ -128,45 +164,49 @@ class Repos:
                 except UntapedError as exc:
                     raise DotfilesError(str(exc)) from exc
                 record = records.get(str(target)) if target is not None else None
-                found.append(
-                    RepoEntry(offer, item, repo, target, waits or "", record, excluded=excluded)
-                )
-        found = self._overlapping(found, files)
-        listed = {str(e.target) for e in found if e.target is not None}
-        moved = {("/".join(e.owner), e.repo.url): self._shown(e) for e in found}
-        wanted = {(o.source.name, o.name, i): o for o, i in self._inventory.wanted(selections)}
-        off = self._inventory.off_scope(selections)
-        for record in records.values():
-            if record.target not in listed:
-                entry = self._unlisted(record, wanted, off)
-                if entry is not None and entry.orphan:
-                    entry = replace(entry, moved_to=moved.get((record.item, record.given), ""))
-                found.extend([entry] if entry is not None else [])
+                entry = RepoEntry(offer, item, repo, target, waits or "", record, excluded=excluded)
+                found.append(entry if target is None else replace(entry, shown=self._show(target)))
+        taken = {str(e.target) for e in found if e.target is not None}
+        for at, entry in enumerate(found):
+            if entry.target is not None:
+                continue
+            for record in records.values():
+                owned = record.item == "/".join(entry.owner) and record.given == entry.repo.url
+                if owned and record.target not in taken:
+                    target = Path(record.target)
+                    found[at] = replace(
+                        entry, target=target, waits="", record=record, shown=self._show(target)
+                    )
+                    taken.add(record.target)
+                    break
         return found
 
-    def _shown(self, entry: RepoEntry) -> str:
-        return entry.repo.target if entry.target is None else self._inventory.shown(entry.target)
+    def _show(self, target: Path) -> str:
+        return self._inventory.shown(target)
 
-    def _overlapping(self, entries: list[RepoEntry], files: Iterable[Path]) -> list[RepoEntry]:
-        """``entries`` with the copies whose targets nest in another copy's target, or hold a
-        file's target, marked: none of them is cloned."""
-        active = [e for e in entries if e.excluded is None and e.target is not None]
+    def _overlapping(
+        self, entries: list[RepoEntry], everyone: Sequence[RepoEntry], files: Iterable[Path]
+    ) -> list[RepoEntry]:
+        """``entries`` with what each copy's target overlaps: another copy's target of any
+        package that is on (at, above or under it), or a file's target under it. A copy that
+        overlaps is not cloned; one already there stays as it is."""
+        active = [e for e in everyone if e.excluded is None and e.target is not None]
         placed = [Path(f) for f in files]
         marked: list[RepoEntry] = []
         for entry in entries:
-            if not any(entry is a for a in active):
+            if entry.excluded is not None or entry.target is None:
                 marked.append(entry)
                 continue
-            assert entry.target is not None
+            mine = entry.target
             others = [
                 o
                 for o in active
-                if o is not entry and o.target is not None and _nested(entry.target, o.target)
+                if o.target is not None
+                and (o.owner, o.repo) != (entry.owner, entry.repo)
+                and _nested(mine, o.target)
             ]
-            overlaps = ", ".join(f"{self._shown(o)} ({'/'.join(o.owner)})" for o in others)
-            inside = tuple(
-                self._inventory.shown(f) for f in placed if _nested(entry.target, f, under=True)
-            )
+            overlaps = ", ".join(f"{o.shown} ({'/'.join(o.owner)})" for o in others)
+            inside = tuple(self._show(f) for f in placed if _nested(mine, f, under=True))
             marked.append(replace(entry, overlaps=overlaps, files=inside))
         return marked
 
@@ -201,9 +241,11 @@ class Repos:
         from untaped_dotfiles.package import Repo  # noqa: PLC0415 - only for a row's own entry
 
         target = Path(record.target)
-        shown = self._inventory.shown(target)
+        shown = self._show(target)
         repo = Repo(url=record.given, target=shown, branch=record.branch)
-        return RepoEntry(offer, item, repo, target, record=record, orphan=orphan, off=off)
+        return RepoEntry(
+            offer, item, repo, target, record=record, orphan=orphan, off=off, shown=shown
+        )
 
     # -- states --------------------------------------------------------------
 
@@ -217,18 +259,16 @@ class Repos:
             if entry.moved_to:
                 return RepoFound("orphan", f"its target moved to {entry.moved_to}")
             return RepoFound("orphan", "the package no longer has it")
-        if entry.overlaps:
-            return _conflict(
-                f"{entry.repo.target} overlaps the working copy at {entry.overlaps}; "
-                "neither is cloned"
-            )
         if entry.target is None:
             return RepoFound("pending", entry.waits)
-        target = entry.target
-        found = self._found(entry, target)
+        found = self._found(entry, entry.target)
+        if entry.overlaps and found.state == "pending":
+            return _conflict(
+                f"{entry.shown} overlaps the working copy at {entry.overlaps}, so it isn't cloned"
+            )
         if entry.files and found.state != "applied" and found.error is None:
             return _conflict(
-                f"files are placed in {entry.repo.target} ({', '.join(entry.files)}), "
+                f"files are placed in {entry.shown} ({', '.join(entry.files)}), "
                 "so it can't be cloned there"
             )
         return found
@@ -294,7 +334,7 @@ class Repos:
                     package=entry.offer.name,
                     item=entry.item,
                     kind="repo",
-                    entry=entry.repo.target,
+                    entry=entry.shown or entry.repo.target,
                     policy=None,
                     state=found.state,
                     detail=found.detail,
@@ -318,11 +358,13 @@ class Repos:
             try:
                 url = self._url(entry)
             except UntapedError as exc:
+                if exc.category == ErrorCategory.USAGE:  # a name no repo source lists
+                    exc = DotfilesError(str(exc), category="not_found", hint=exc.hint)
                 found = RepoFound("error", str(exc), _failure(exc))
                 plans.append(RepoPlan(entry, found, "report", str(exc)))
                 continue
             branch = f" ({entry.repo.branch})" if entry.repo.branch else ""
-            detail = f"clones {url}{branch} into {self._shown(entry)}"
+            detail = f"clones {url}{branch} into {entry.shown}"
             plans.append(RepoPlan(entry, found, action, detail, url))
         return plans
 
@@ -440,12 +482,13 @@ def _same_repo(url: str, other: str) -> bool:
     host, path = repo_url_parts(url)
     other_host, other_path = repo_url_parts(other)
     if host is None and other_host is None and path and other_path:
-        return _folded(path) == _folded(other_path)
+        return path == other_path  # a local path: case matters where the filesystem says
     return store_key(url) == store_key(other)
 
 
 def _named(origin: str, name: str) -> bool:
-    """Whether ``origin``'s path ends in the repo ``name`` (``owner/name`` or a bare name)."""
+    """Whether ``origin``'s path ends in the repo ``name`` (``owner/name`` or a bare name),
+    case-folded as forges fold names. A bare name matches any owner's repo of that name."""
     _, path = repo_url_parts(origin)
     parts = [part for part in name.split("/") if part]
     return (
@@ -483,7 +526,7 @@ def _row(
         package=entry.offer.name,
         item=entry.item,
         kind="repo",
-        entry=entry.repo.target,
+        entry=entry.shown or entry.repo.target,
         action=action,
         state=plan.found.state,
         detail=detail,
