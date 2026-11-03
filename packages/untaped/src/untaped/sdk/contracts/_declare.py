@@ -341,7 +341,8 @@ class Contract(ABC):  # noqa: B024 - every method has a default
         record its fill takes (``self.own(selector, GithubRepoSelector)``), and
         ``item`` must then have been issued from a ``cls`` record. Without
         ``cls`` it is the provider's ``T``, read from any record ``T`` takes
-        (one of its subclasses, too). Either way ``item`` must have been
+        (one of its subclasses, too), never from a record its record bridges
+        take. Either way ``item`` must have been
         issued by this provider's plugin and its record must still validate
         strictly: anything else is an ``invalid`` error. A provider whose
         ``T`` is the owner's model gets ``item`` back when ``cls`` is not
@@ -366,7 +367,7 @@ class Contract(ABC):  # noqa: B024 - every method has a default
                 system=binding.plugin,
             )
         wanted = binding.kind_of(cls) or cls.__qualname__
-        if named and source.kind != wanted:
+        if source.kind != wanted if named else source.kind in _other_records(binding, cls):
             raise UntapedError(
                 f"this record was issued from {source.kind or 'a kind-less record'}, "
                 f"not from {wanted}",
@@ -382,6 +383,15 @@ class Contract(ABC):  # noqa: B024 - every method has a default
                 system=binding.plugin,
                 hint=f"ask {binding.plugin} for it again; its record shape changed since",
             ) from None
+
+
+def _other_records(binding: Binding, item: type) -> set[str]:
+    """The kinds of the records a provider's record bridges take that aren't ``item`` (nor its)."""
+    return {
+        kind
+        for model, kind in binding.record_kinds.items()
+        if kind and not (isinstance(model, type) and issubclass(model, item))
+    }
 
 
 def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
@@ -761,14 +771,15 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
         # an old spelling is never asked: the new method is the bridge
-        role = (
-            None
-            if _renamed_to(name, value, public) is not None
-            else _bridge_role(value, hints, item_param, item)
-        )
+        old_spelling = _renamed_to(name, value, public) is not None
+        role = None if old_spelling else _bridge_role(value, hints, item_param, item)
         if role == "item":
             bridges.append(name)
-        if role != "record" and any(_names_provider_record(hint) for hint in hints.values()):
+        if (
+            not old_spelling
+            and role != "record"
+            and any(_names_provider_record(hint) for hint in hints.values())
+        ):
             raise TypeError(
                 f"{where}.{name}: ProviderRecord is a record bridge's one parameter only: "
                 "a method of a contract with T, taking just it and returning an Issued model"
@@ -863,7 +874,7 @@ def _fill_takes(provider: type[Contract], name: str) -> type[Record] | None:
     function = inspect.unwrap(vars(holder)[name])
     try:
         hints = get_type_hints(function)
-    except NameError as exc:
+    except Exception as exc:  # NameError mostly; any annotation that won't evaluate
         raise ContractError(
             f"{function.__qualname__}'s annotations don't resolve at run time ({exc}): import "
             "the record it takes outside TYPE_CHECKING",

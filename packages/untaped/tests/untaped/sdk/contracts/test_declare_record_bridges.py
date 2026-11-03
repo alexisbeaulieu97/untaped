@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import warnings
 from abc import abstractmethod
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Annotated
@@ -40,7 +41,8 @@ from untaped.sdk.contracts import (
     Skipped,
     gather,
 )
-from untaped.sdk.contracts._declare import contract_of
+from untaped.sdk.contracts._declare import bridge_takes, contract_of
+from untaped.sdk.marks import deprecated
 from untaped.sdk.testing import Install, assert_fills, compose_with
 
 if TYPE_CHECKING:
@@ -328,6 +330,9 @@ def test_a_provider_with_its_own_t_fills_a_record_bridge_too(install: Installer)
         assert isinstance(provider, LentCards)
         [card] = provider.cards()
         assert provider.own(card) == Lent(name="Dune")  # the default reads its T
+        selector = Pick(source=Source(plugin="lend", kind=SHELF_PICK, record={"shelves": ["d"]}))
+        with pytest.raises(UntapedError, match=r"from lend\.shelf_pick, not from lend\.lent"):
+            provider.own(selector)  # never its selector read as its T
     with compose_with(Counter, Lender):
         assert_fills(LentCards, samples=[Lent(name="Dune"), ShelfPick(shelves=["d"])])
 
@@ -367,8 +372,21 @@ def test_own_refuses_a_record_that_no_longer_reads(install: Installer) -> None:
         _provider("lend").instance.own(stale, ShelfPick)
 
 
-def test_a_fill_whose_annotation_does_not_resolve_says_so(install: Installer) -> None:
-    with install(Counter, providers={"hidden": (HiddenPicks,)}).running():
+class MissingPicks(Cards, Provider):
+    """Names a record its module doesn't have, so its annotation raises AttributeError."""
+
+    def to_pick(self, item: json.Missing) -> Pick:  # type: ignore[name-defined]
+        return Pick()
+
+    def cards(self) -> list[Card]:
+        return []
+
+
+@pytest.mark.parametrize("provider", [HiddenPicks, MissingPicks])
+def test_a_fill_whose_annotation_does_not_resolve_says_so(
+    install: Installer, provider: type[Cards]
+) -> None:
+    with install(Counter, providers={"hidden": (provider,)}).running():
         info = contract_of(Cards)
         assert info is not None
         [entry] = [each for each in offers(info) if each.plugin == "hidden"]
@@ -410,3 +428,38 @@ def test_named_plugins_answer_each_its_own_skip(install: Installer) -> None:
         ("plain", Reason.not_filled),
         ("shut", Reason.not_configured),
     }
+
+
+@experimental
+class Shelves[T: Record = Card](Contract):
+    """An owner that renamed its record bridge ``to_pick`` to ``as_pick``."""
+
+    def as_pick(self, item: ProviderRecord) -> Pick:
+        """A provider's own selector as a pick."""
+        raise NotImplementedError
+
+    @deprecated(removed_in=14, replacement=as_pick)
+    @warnings.deprecated("Shelves.to_pick is deprecated; use `as_pick`")
+    def to_pick(self, item: ProviderRecord) -> Pick:
+        raise NotImplementedError
+
+    @abstractmethod
+    def cards(self) -> list[Card]:
+        """Every card."""
+
+
+class OldShelves(Shelves, Provider):
+    """Released before the rename: it fills ``to_pick``."""
+
+    def to_pick(self, item: ShelfPick) -> Pick:
+        return Pick()
+
+    def cards(self) -> list[Card]:
+        return []
+
+
+def test_a_record_bridge_renames_as_any_method_and_its_old_fill_still_routes() -> None:
+    info = contract_of(Shelves)
+    assert info is not None
+    assert info.methods["as_pick"].bridge and not info.methods["to_pick"].bridge
+    assert bridge_takes(OldShelves, info, "as_pick") is ShelfPick
