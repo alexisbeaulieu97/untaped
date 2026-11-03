@@ -15,7 +15,8 @@ section validated once per run and pick, on first read, so after every root
 option applies), the install's plugins through
 ``installed_plugins()`` (read once, on first use), the home and the themed
 terminal (each resolved on first use: a home that doesn't resolve fails the
-read that needs it, through the run's own sink). The run's output
+read that needs it, through the run's own sink), and core's writer of a
+plugin's own settings (``Run.plan_settings``). The run's output
 (``untaped.runtime.run_output.RunOutput``) and its policy, ``UNTAPED_DIAGNOSTICS``
 read once, are built with it.
 """
@@ -52,6 +53,7 @@ from untaped.sdk.projects import untaped_home
 
 if TYPE_CHECKING:
     from untaped.runtime.declaration import Declaration
+    from untaped.sdk._settings_plan import SettingsPlan
     from untaped.sdk._ui import Ui
 
 
@@ -81,6 +83,13 @@ def composition_of(
 
 def _given(home: Path) -> Callable[[], Path]:
     return lambda: home
+
+
+def _plan_settings(section: str, changes: Mapping[tuple[str, ...], object]) -> SettingsPlan:
+    """Core's planner of a plugin's writes to its own settings (``PluginHandle.plan_settings``)."""
+    from untaped.core.config.plan import plan_settings  # noqa: PLC0415 - core imports the runtime
+
+    return plan_settings(section, changes)
 
 
 def _section_reader() -> Callable[[str, type[BaseModel]], BaseModel]:
@@ -124,6 +133,7 @@ def start_run(*, home: Path | None = None, profiles: str | Sequence[str] = ()) -
         terminal=terminal,
         profiles=pick_names(profiles),
         policy_cell=PolicyCell(OutputPolicy(forced=forced_diagnostics())),
+        plan_settings=_plan_settings,
     )
     output.bind(run)
     return run

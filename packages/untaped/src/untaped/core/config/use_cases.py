@@ -23,6 +23,7 @@ from untaped.core.config.models import (
     SettingEntry,
     SettingOutcome,
     Source,
+    Typed,
     display_default,
     display_value,
 )
@@ -30,7 +31,9 @@ from untaped.core.config.ports import SettingsReader, SettingsWriter
 from untaped.runtime.profile_resolver import DEFAULT_PROFILE, current_pick
 from untaped.runtime.section_models import ContractName, ExtensionSettings
 from untaped.sdk._replacement import replacement_text
+from untaped.sdk._run import current_run
 from untaped.sdk._schema import FieldDescriptor
+from untaped.sdk._settings_plan import SettingsWritten
 from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
 from untaped.sdk.health.deprecated_keys import rename_keys
 from untaped.sdk.marks import Deprecated, owner, removal_text, stability_name
@@ -39,6 +42,7 @@ from untaped.sdk.words import removal_phrase
 
 if TYPE_CHECKING:
     from untaped.runtime.render import MessageKind
+    from untaped.sdk._output import PreviewItem
     from untaped.sdk.contracts._declare import ContractInfo
 
 _UNRESOLVED: Any = object()
@@ -235,6 +239,102 @@ class SetSettings:
             outcome = SettingOutcome(key=key, profile=target, action=action)
             changes.append(SettingChange(outcome, (("success", line),)))
         return tuple(changes)
+
+
+class PlannedSettings:
+    """A plugin's changes to its own section, validated and not yet written (a ``SettingsPlan``).
+
+    What :meth:`untaped.sdk.PluginHandle.plan_settings` returns: the same
+    write as :class:`SetSettings`, with typed values, run once on a copy of
+    the file to plan and again on the file to write.
+    """
+
+    def __init__(self, repo: Callable[[], SettingsWriter], changes: Mapping[str, object]) -> None:
+        """Validate ``changes`` (full keys; ``None`` unsets) against the file; write nothing.
+
+        ``repo`` builds the writer each step reads the file through, so the
+        write never reads what the plan cached. Raises :class:`UsageError`
+        for a ``--profile`` naming several profiles and :class:`ConfigError`
+        for a value or key ``config set`` refuses.
+        """
+        self._changes = dict(changes)
+        self._repo = repo
+        repo_now = repo()
+        had: dict[str, bool] = {}
+        landed: dict[str, str] = {}
+        removed: list[str] = []
+        repo_now.update_values(
+            self._updates(had, landed),
+            dry_run=True,
+            on_spelling_removed=removed.append,
+            home_only_to_base=True,
+        )
+        self._lines = [
+            *(
+                self._line(repo_now, key, value, landed[key], had=had[key])
+                for key, value in self._changes.items()
+            ),
+            *(f"remove {old}, an old spelling{_landed(landed)}" for old in removed),
+        ]
+
+    def _updates(
+        self, had: dict[str, bool], landed: dict[str, str]
+    ) -> dict[str, Callable[[str, Any], str | Typed | None]]:
+        def updater(key: str, value: object) -> Callable[[str, Any], Typed | None]:
+            def update(target: str, current: Any) -> Typed | None:
+                had[key] = current is not None
+                landed[key] = target
+                return None if value is None else Typed(value)
+
+            return update
+
+        return {key: updater(key, value) for key, value in self._changes.items()}
+
+    @staticmethod
+    def _line(repo: SettingsWriter, key: str, value: object, target: str, *, had: bool) -> str:
+        where = _where(target)
+        if value is None:
+            return f"unset {key} in {where}" if had else f"{key} is not set in {where}"
+        descriptor = repo.descriptor(key)
+        shown = (
+            "***"
+            if descriptor.holds_secret
+            else display_value(descriptor, repo.typed(key, value), reveal_secrets=False)
+        )
+        # JSON, so the text "true" and the bool true read apart
+        text = json.dumps(shown, separators=(",", ":"), ensure_ascii=False)
+        return f"set {key} to {text} in {where}"
+
+    def preview(self) -> list[PreviewItem]:
+        """One line per change, in order."""
+        return list(self._lines)
+
+    def write(self) -> SettingsWritten:
+        """Write every change as one under the lock, validated again against the file as it is."""
+        repo = self._repo()
+        holders = {key: _holder(repo, key) for key in self._changes}
+        had: dict[str, bool] = {}
+        landed: dict[str, str] = {}
+        removed: list[str] = []
+        target = repo.update_values(
+            self._updates(had, landed), on_spelling_removed=removed.append, home_only_to_base=True
+        )
+        outcomes: list[SettingOutcome] = []
+        for key, value in self._changes.items():
+            action = "updated" if value is not None else "deleted" if had[key] else "unchanged"
+            outcomes.append(SettingOutcome(key=key, profile=landed[key], action=action))
+            if action != "unchanged":
+                for _, text in _still_read(key, landed[key], holders[key]):
+                    current_run().diag.info(text)
+        for old in removed:
+            current_run().diag.info(f"removed {old}, an old spelling{_landed(landed)}")
+        return SettingsWritten(outcomes=tuple(outcomes), target=target)
+
+
+def _landed(landed: Mapping[str, str]) -> str:
+    """`` in profile P`` when a plan's keys all landed in one place, as its old spellings did."""
+    places = set(landed.values())
+    return f" in {_where(places.pop())}" if len(places) == 1 else ""
 
 
 _EXTENSIONS = TypeAdapter(dict[ContractName, ExtensionSettings])

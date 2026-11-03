@@ -21,7 +21,7 @@ from pydantic import BaseModel, SecretStr
 from pydantic_core import PydanticUndefined
 
 from untaped.runtime.redaction import redact_url_password
-from untaped.sdk._keys import ENTRY_NAME, ENTRY_NAME_RULE, map_value_type
+from untaped.sdk._keys import ENTRY_NAME, ENTRY_NAME_RULE, map_value_type, nested_model
 
 if TYPE_CHECKING:
     from pydantic.fields import FieldInfo
@@ -215,12 +215,11 @@ def walk_settings(
         annotation = unwrap_optional(field.annotation)
         path = (*_prefix, name)
 
-        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        nested = nested_model(field.annotation)
+        if nested is not None:
             inner = frozenset(each[1:] for each in placed if len(each) > 1 and each[0] == name)
             entries.extend(
-                walk_settings(
-                    annotation, path, include_collections=include_collections, _home=inner
-                )
+                walk_settings(nested, path, include_collections=include_collections, _home=inner)
             )
             continue
 

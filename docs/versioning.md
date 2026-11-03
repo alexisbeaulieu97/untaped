@@ -107,6 +107,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `surface.txt` it writes.
 - `untaped.sdk.testing.deprecation_of`, which tells a linter whether a name
   a plugin imports carries a deprecation mark.
+- Writing a plugin's own settings: `PluginHandle.plan_settings`,
+  `SettingsPlan` and `SettingsWritten` in `untaped.sdk`.
 - Stores: `Dir(layout=)`, `holders`, `RefHolder`, `RefTarget` and the
   `HomeOnly` mark in `untaped.sdk`, `Cache(follows=)`, and
   `assert_schema_pinned` and `write_reference` in `untaped.sdk.testing`. The

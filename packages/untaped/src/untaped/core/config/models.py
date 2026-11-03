@@ -24,6 +24,13 @@ from untaped.sdk.words import removal_phrase
 
 
 @dataclass(frozen=True)
+class Typed:
+    """A value a write takes as Python data (a plugin's own), not as text ``config set`` parses."""
+
+    value: object
+
+
+@dataclass(frozen=True)
 class Source:
     """Where a setting's effective value is coming from.
 

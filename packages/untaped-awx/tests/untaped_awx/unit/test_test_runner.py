@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import threading
 import time
 from collections.abc import Callable
@@ -273,10 +274,12 @@ def _make_runner(
     )
 
 
+@pytest.mark.skipif(
+    signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    reason="SIGINT is ignored here (a background job), so it never interrupts",
+)
 def test_parallel_interrupt_stops_watchers_and_cancels_queued_cases() -> None:
     """Ctrl-C sets the stop event, skips queued launches, and keeps launched jobs."""
-    import signal
-
     from untaped_awx.errors import WaitCancelledError
 
     stop = threading.Event()

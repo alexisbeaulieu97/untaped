@@ -674,6 +674,10 @@ def test_an_interrupt_that_missed_the_fix_child_ends_it(
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="an executable script stands in for Python")
+@pytest.mark.skipif(
+    signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    reason="SIGINT is ignored here (a background job), and the child inherits that",
+)
 def test_ctrl_c_lets_the_fix_child_finish_its_cleanup(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

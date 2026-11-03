@@ -109,8 +109,13 @@ class RunBulkApply:
         resolved: list[ResolvedTarget],
         parallel: int = 1,
         on_progress: Callable[[int, int], None] | None = None,
+        on_abort: Callable[[], None] | None = None,
     ) -> list[TargetPlan]:
-        """Return a plan or error row for every resolved target, planning in parallel."""
+        """Return a plan or error row for every resolved target, planning in parallel.
+
+        ``on_abort`` runs when planning is interrupted, before waiting for the
+        targets still being planned: it should end their hooks.
+        """
         plans: dict[int, TargetPlan] = {}
 
         def record(index: int, plan: TargetPlan) -> None:
@@ -123,6 +128,7 @@ class RunBulkApply:
             range(len(resolved)),
             concurrency=max(1, parallel),
             on_each=record,
+            on_abort=on_abort,
         )
         return [plans[index] for index in range(len(resolved))]
 

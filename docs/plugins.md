@@ -10,9 +10,8 @@ script, config command or profile command. See the [Glossary](../CONTRIBUTING.md
 A plugin imports from `untaped` only the SDK (`untaped.sdk` and its groups,
 such as `untaped.sdk.contracts` for [contracts](./contracts.md)) and
 `untaped.core.api`; [SDK stability](./reference/conventions.md#sdk-stability)
-lists them. Any plugin,
-first-party or not, may also import another plugin's declared `api` module,
-under the rules in
+lists them. Any plugin, first-party or not, may also import another plugin's
+declared `api` module, under the rules in
 [Depending on another plugin](./reference/conventions.md#depending-on-another-plugin).
 
 [`examples/untaped-hello`](../examples/untaped-hello) in the repository is a
@@ -55,14 +54,14 @@ module-name = "untaped_acme"
 module-root = "src"
 ```
 
-The module settings bind the `src/untaped_acme` layout to the project.
-Package data below that module root ships in the wheel.
+The module settings bind the `src/untaped_acme` layout to the project; package
+data below that module root ships in the wheel.
 
 A plugin has one name, lowercase words joined by single hyphens (`@` is kept
 for later): `untaped-<name>` on PyPI, `untaped_<name>` to import, and `<name>`
 as entry point, config section, command group and data directory. Names core
-holds, such as `untaped`, `config` or `profiles`, are quarantined (`duplicate-name`).
-The entry point names the plugin class in a leaf module
+holds, such as `untaped`, `config` or `profiles`, are quarantined
+(`duplicate-name`). The entry point names the plugin class in a leaf module
 (`untaped_acme.plugin:Acme`); a class composition refuses is quarantined
 (`bad-plugin-class`) with every problem it names. Anything else, an 11.x
 `PluginSpec` or a function returning a class included, is quarantined
@@ -220,7 +219,10 @@ one as `setting_name(key(AcmeSettings).greeting)`, which follows a renamed
 plugin, never as a literal; `[name]` names a map's entry
 (`key(AcmeSettings).servers["main"].url`). A plugin reads and writes only
 its own section; `untaped.http.*` and `untaped.ui.*` are untaped's own, and
-`untaped config set` rejects state fields.
+`untaped config set` rejects state fields. A command writes its own through
+`self.ctx.plugin.plan_settings({key(AcmeSettings).greeting: "hi"})`
+(experimental; `None` unsets): checked, nothing written; `self.confirm(...,
+preview=plan.preview)` prints it; `write()` writes where `config set` does.
 
 The root supplies `--profile`, `--verbose`, `--quiet` and `--deprecated`. Raise
 an `UntapedError` from `run` and the root prints its standard diagnostics and
@@ -233,15 +235,15 @@ service (`Service(YourSettings, part="cache")` for a part of it) or a
 and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (a `DoctorCheck` the plugin class holds) returns a
-`DoctorResult`; the row is named after its check, so the result needs
-no id. Its `fix` is the `untaped` command that repairs a failed or
-warned row, without the program name: a command named by its class
-(`Refresh.spelled()`, `Set.spelled(key(AcmeSettings).url, "<URL>")`), which
-follows the command when it is renamed, a string split like a shell would, or
-an argv list. Write a value the user supplies as a `<NAME>` placeholder.
-`doctor` emits it as the row's `fix` argv, prefixed with `--profile NAME`
-unless it names one, so it runs as is. Set `automatic=True` only on a fix that meets the rule in the
-`DoctorResult` docstring.
+`DoctorResult`, its row named after its check. Its `fix` is the `untaped`
+command that repairs a failed or warned row, without the program name: a
+command named by its class (`Refresh.spelled()`,
+`Set.spelled(key(AcmeSettings).url, "<URL>")`), which follows a rename, a
+string split like a shell would, or an argv list; a value the user supplies is
+a `<NAME>` placeholder. `doctor` emits it as the row's `fix` argv, prefixed
+with `--profile NAME` unless it names one, so it runs as is. Set
+`automatic=True` only on a fix that meets the rule in the `DoctorResult`
+docstring.
 
 ## Keeping what users create
 
@@ -367,25 +369,24 @@ Add `pytest_plugins = ["untaped.sdk.testing.plugin"]` to your top-level
 `conftest.py` for an isolated `HOME`, config and environment in every test.
 Call `untaped_lint.testing.assert_clean(NAME)` (from `untaped[lint]`, see
 [Lint](./lint.md)) from the plugin's own tests, and
-`untaped.sdk.testing.assert_surface(Acme)` to keep its commands, settings
-and contracts from losing a line by accident (experimental).
+`untaped.sdk.testing.assert_surface(Acme)` to keep its commands, settings and
+contracts from losing a line by accident (experimental).
 `untaped.sdk.testing.invoke_root(["acme", "hello"])` runs `untaped acme hello`
 in-process against the installed plugins; it returns the exit code, the
 captured output and `diagnostics`, the typed stderr lines the command emitted
 (progress lines only under `--verbose`, or when the test advances the clock
-with `untaped.sdk.testing.manual_clock()`).
-A plugin class (`class Hello(Plugin)`) is tested through the fixtures (see
+with `untaped.sdk.testing.manual_clock()`). A plugin class (`class
+Hello(Plugin)`) is tested through the fixtures (see
 `examples/untaped-hello/tests`): `install(Hello, settings=...)` composes it
 into the test's home; `.run(Greet())` and `.cli("hello say ada")` return a
-`Ran`; `with hello.running() as run:` runs a block as a command of that
-install runs, and `run.diagnostics` are the typed lines the block itself
-shows, as `Ran.diagnostics` are a command's (a command run inside reports on
-its own `Ran`), and `run.http` is the factory a client class takes
+`Ran`; `with hello.running() as run:` runs a block as a command of that install
+runs, and `run.diagnostics` are the typed lines the block itself shows, as
+`Ran.diagnostics` are a command's (a command run inside reports on its own
+`Ran`), and `run.http` is the factory a client class takes
 (`JiraClient(settings, http=run.http)`); `clock`, `terminal` (absent until
-scripted) and `credentials` are the clock, terminal and password store
-commands meet; and `check(install(Hello))` guards its composition checks.
-To waive a rule on one line, see
-[Enforcement](./reference/conventions.md#enforcement).
+scripted) and `credentials` are the clock, terminal and password store commands
+meet; and `check(install(Hello))` guards its composition checks. To waive a
+rule on one line, see [Enforcement](./reference/conventions.md#enforcement).
 
 `untaped lint` reports each deprecated name your code imports or your provider
 fills (`uses-deprecated`), old names included, which type checkers can't see.
@@ -395,6 +396,5 @@ under `[tool.mypy]` (as `untaped plugin new` writes) and pyright with
 `reportDeprecated`.
 
 Exercise root config, profile, skill, pipe and error paths too.
-`untaped plugin list`, `untaped acme --help` and `untaped doctor` show
-the composed surface and any quarantine reason: a malformed plugin is
-quarantined so the other plugins still boot.
+`untaped plugin list`, `untaped acme --help` and `untaped doctor` show the
+composed surface and why a plugin is quarantined (the others still boot).

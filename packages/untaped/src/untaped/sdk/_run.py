@@ -24,13 +24,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, JsonValue
 
-from untaped.sdk._keys import SettingKey
+from untaped.sdk._keys import SettingKey, map_value_type, nested_model
 
 if TYPE_CHECKING:
     from rich.text import Text
 
+    from untaped.sdk._settings_plan import SettingsPlan
     from untaped.sdk._terminal import Terminal
     from untaped.sdk._theme import ThemeSpec
     from untaped.sdk._ui import Ui
@@ -97,6 +98,15 @@ def _unspelled(spelled: SpelledCommand) -> str:
 def _no_remover(plugin: str, rows: str, key: str) -> str | None:
     """No command removes a row in a run that composed no declaration."""
     return None
+
+
+type SettingsPlanner = Callable[[str, Mapping[tuple[str, ...], object]], SettingsPlan]
+"""Core's planner of a plugin's writes to its own section: the section, each path's new value."""
+
+
+def _no_planner(section: str, changes: Mapping[tuple[str, ...], object]) -> SettingsPlan:
+    """A run the runtime didn't start has no settings writer."""
+    raise NoRunError("this run writes no settings: the runtime's start_run gives one a writer")
 
 
 #: The attribute core's section class of a plugin's settings model holds that model under.
@@ -302,6 +312,8 @@ class Run:
     #: sink of its ``diag`` follows: a child run sharing its parent's output
     #: holds its parent's cell, so the two never disagree.
     policy_cell: PolicyCell = field(default_factory=PolicyCell, repr=False)
+    #: Core's writer of a plugin's own settings (:meth:`PluginHandle.plan_settings`).
+    plan_settings: SettingsPlanner = field(default=_no_planner, repr=False)
 
     @property
     def home(self) -> Path:
@@ -506,6 +518,69 @@ class PluginHandle:
         from untaped.sdk.projects import plugin_committed_path  # noqa: PLC0415 - projects' cost
 
         return plugin_committed_path(self.name, name, root=Path() if root is None else root)
+
+    def plan_settings(
+        self, changes: Mapping[SettingKey, JsonValue | BaseModel | None]
+    ) -> SettingsPlan:
+        """Plan writes to this plugin's own settings: checked now, written by ``write()``.
+
+        Each key is a ``key(Model)`` of this plugin's settings model, an entry
+        of a map included (``key(Model).sources[name]``); its value is the new
+        value (JSON data, or a model for a map's entry, whose unset fields stay
+        unwritten), or ``None`` to unset the key or entry. The changes are validated together
+        against ``config.yml`` now, and nothing is written. They land where
+        ``config set`` writes (the profile ``--profile`` names, else the
+        base), except a ``HomeOnly`` key, which always goes to the base.
+
+        Raises :class:`TypeError` for a key that isn't one of this plugin's,
+        :class:`ValueError` for two keys where one is inside the other, and
+        the config error ``config set`` gives for a value it refuses. The
+        check on keys catches a mistake; it is no wall between plugins.
+        Experimental (marked in ``untaped.sdk._settings_plan``, so a run pays
+        for no marks).
+        """
+        run = current_run()
+        paths: dict[tuple[str, ...], object] = {}
+        for setting, value in changes.items():
+            path = self._own_path(run, setting)
+            within = next((each for each in paths if _nested(each, path)), None)
+            if within is not None:
+                # Applied in order, the second would undo or misreport the first.
+                raise ValueError(
+                    f"{'.'.join(path)} and {'.'.join(within)} overlap: plan the entry or "
+                    "the settings inside it, not both"
+                )
+            paths[path] = value
+        return run.plan_settings(self.name, paths)
+
+    def _own_path(self, run: Run, setting: object) -> tuple[str, ...]:
+        """``setting``'s path in this plugin's section; :class:`TypeError` for anyone else's."""
+        if not isinstance(setting, SettingKey):
+            raise TypeError(f"plan_settings takes key(Model) keys, not {setting!r}")
+        try:
+            owner = run.composition.owner_of_settings(SettingKey.model_of(setting))
+        except LookupError:
+            owner = None
+        if owner != self.name:
+            raise TypeError(
+                f"{setting!r} is not a setting of {self.name}: a plugin writes only its own"
+            )
+        path = SettingKey.path_of(setting)
+        if not path:
+            raise TypeError(f"{setting!r} names the whole section: name one setting in it")
+        holder = SettingKey(SettingKey.model_of(setting), path[:-1])._annotation()
+        if nested_model(setting._annotation()) is not None and map_value_type(holder) is None:
+            raise TypeError(
+                f"{setting!r} is a model, set by the settings inside it: name one of them "
+                "(a whole model is written only as a map's entry)"
+            )
+        return path
+
+
+def _nested(one: tuple[str, ...], other: tuple[str, ...]) -> bool:
+    """Whether one path is the other or lies inside it."""
+    shorter = min(len(one), len(other))
+    return one[:shorter] == other[:shorter]
 
 
 def plugin_of(model: type[BaseModel]) -> PluginHandle:

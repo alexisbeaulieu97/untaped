@@ -32,14 +32,12 @@ from pydantic import BaseModel, ConfigDict
 
 import untaped.sdk._process_groups as groups
 from untaped.sdk.errors import ErrorCategory, UntapedError
-from untaped.sdk.marks import experimental
 
 __all__ = ["ProcessResult", "RunningProcess", "run_process", "start_process"]
 
 type Ended = Literal["exited", "timed_out", "stopped"]
 
 
-@experimental
 class ProcessResult(BaseModel):
     """How a child run by :func:`run_process` ended, and what it wrote.
 
@@ -48,8 +46,6 @@ class ProcessResult(BaseModel):
     timeout stopped it and ``stopped`` when ``stop`` or untaped's own
     interrupt did; ``returncode`` is ``None`` for both. ``stdout`` and
     ``stderr`` hold what was read before the end.
-
-    First consumer: core's ``run_git``; then untaped-recipe's hook worker (#579).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -61,7 +57,6 @@ class ProcessResult(BaseModel):
     duration_s: float
 
 
-@experimental
 def run_process(
     argv: Sequence[str],
     *,
@@ -81,8 +76,6 @@ def run_process(
     output open. A program that cannot start raises ``OSError``, an empty
     ``argv`` ``ValueError``; any exception in the calling thread stops the
     group, then is raised again.
-
-    First consumer: core's ``run_git``; then untaped-recipe's hook worker (#579).
     """
     if not argv:
         raise ValueError("run_process: argv is empty")
@@ -199,15 +192,12 @@ def _result(
     )
 
 
-@experimental
 class RunningProcess:
     """A long-lived child with three pipes; :meth:`close` ends it and its group.
 
     The owner reads ``stdout`` and ``stderr`` and closes them once it sees end
     of file; :meth:`close` closes only ``stdin``. Safe from any thread.
     :func:`start_process` makes one; it has no public constructor.
-
-    First consumer: untaped-recipe's hook worker (#579).
     """
 
     _process: subprocess.Popen[bytes]
@@ -259,7 +249,9 @@ class RunningProcess:
     def close(self) -> int | None:
         """Close stdin, give the child one grace to exit, then stop whatever is left of its group.
 
-        Idempotent; returns the child's exit status, or ``None`` when it could
+        Once untaped's own signal reached the group, the grace counts from
+        that signal, so closing several children in turn still takes one
+        grace in all. Idempotent; returns the child's exit status, or ``None`` when it could
         not be reaped: SIGKILL could not end it (a process stuck in the
         kernel), or another interrupt cut the stop short. The stop runs even
         when the grace is interrupted.
@@ -270,8 +262,11 @@ class RunningProcess:
                     self._closed = True
                     with contextlib.suppress(OSError):
                         self.stdin.close()
+                    # One grace in all: what is left of it once a signal started the clock.
+                    age = groups.clock_age(self._process.pid)
+                    grace = groups.GRACE_S if age is None else max(0.0, groups.GRACE_S - age)
                     with contextlib.suppress(subprocess.TimeoutExpired):
-                        self._process.wait(timeout=groups.GRACE_S)
+                        self._process.wait(timeout=grace)
                 finally:
                     if not groups.emptied(self._process):
                         groups.stop(self._process)
@@ -284,7 +279,6 @@ class RunningProcess:
         self.close()
 
 
-@experimental
 def start_process(
     argv: Sequence[str], *, cwd: Path | None = None, env: Mapping[str, str] | None = None
 ) -> RunningProcess:
@@ -296,8 +290,6 @@ def start_process(
     program cannot start, ``ValueError`` for an empty ``argv``, and an
     ``interrupted`` :class:`~untaped.sdk.errors.UntapedError` on a worker
     thread once untaped is stopping.
-
-    First consumer: untaped-recipe's hook worker (#579).
     """
     if not argv:
         raise ValueError("start_process: argv is empty")

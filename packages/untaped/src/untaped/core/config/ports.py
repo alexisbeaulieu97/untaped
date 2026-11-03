@@ -8,9 +8,15 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
-from untaped.core.config.models import OldSpelling
+from untaped.core.config.models import OldSpelling, Typed
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk.marks import Stability
+
+type Update = Callable[[str, Any], str | Typed | None]
+"""A key's change in a write: given the target and the key's own value there, its new value.
+
+The text ``config set`` takes, a :class:`Typed` value, or ``None`` to remove the key.
+"""
 
 
 class SettingsReader(Protocol):
@@ -41,11 +47,12 @@ class SettingsWriter(Protocol):
     def provenance(self) -> dict[tuple[str, ...], str]: ...
     def own_value(self, key: str, *, profile: str | None = None) -> Any: ...
     def written_file(self) -> Path: ...
+    def typed(self, key: str, value: object) -> Any: ...
 
     def update_value(
         self,
         key: str,
-        update: Callable[[str, Any], str | None],
+        update: Update,
         *,
         profile: str | None = None,
         dry_run: bool = False,
@@ -53,11 +60,12 @@ class SettingsWriter(Protocol):
     ) -> str: ...
     def update_values(
         self,
-        updates: Mapping[str, Callable[[str, Any], str | None]],
+        updates: Mapping[str, Update],
         *,
         profile: str | None = None,
         dry_run: bool = False,
         on_spelling_removed: Callable[[str], None] | None = None,
+        home_only_to_base: bool = False,
     ) -> str: ...
     def unset_value(
         self,
@@ -69,4 +77,4 @@ class SettingsWriter(Protocol):
     ) -> tuple[bool, str]: ...
 
 
-__all__ = ["SettingsReader", "SettingsWriter"]
+__all__ = ["SettingsReader", "SettingsWriter", "Update"]
