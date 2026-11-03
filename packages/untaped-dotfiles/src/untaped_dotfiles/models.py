@@ -55,6 +55,9 @@ class PlacedRecord(BaseModel):
     """The source-relative path placed (a folder entry's child, or the entry's path)."""
     entry: str
     """The package file entry's ``path`` (a folder for its children)."""
+    declared: str = ""
+    """The entry's target as the package wrote it (``{{ input }}`` unrendered): the same
+    declaration placing elsewhere means an input moved it."""
     placed_as: Mode
     fmt: MergeFormat | None = None
     """``merge`` only: the format untaped wrote, so taking it back writes the file the same way."""

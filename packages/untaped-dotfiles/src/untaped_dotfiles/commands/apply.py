@@ -37,7 +37,7 @@ from untaped_dotfiles.package import PackageInput
 from untaped_dotfiles.records import ApplyOutcome
 from untaped_dotfiles.settings import DotfilesSettings
 from untaped_dotfiles.sources import current, resolve_url
-from untaped_values.api import Vars, resolve, terminal_ask
+from untaped_values.api import InputError, Vars, coerce, resolve, terminal_ask
 
 
 class Apply(DotfilesCommand):
@@ -113,8 +113,13 @@ class Apply(DotfilesCommand):
             planned = svc.applier.planned(steps)
             todo = [s for s in steps if s.action in ("apply", "remove") or s.converts]
             moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
+            question = (
+                f"Apply {plural(len(todo), 'entry', 'entries')}?"
+                if todo or moving
+                else "Keep these answers in config.yml?"
+            )
             if not self.confirm(
-                f"Apply {plural(len(todo), 'entry', 'entries')}?",
+                question,
                 preview=lambda: _preview(planned, kept),
                 needed=bool(todo or moving or kept is not None),
             ):
@@ -146,20 +151,27 @@ class Apply(DotfilesCommand):
         default, then an answer at a terminal; what the flags or a prompt
         gave is kept in ``config.yml`` once confirmed (the returned plan).
         """
-        offers = _offers(selections)
+        offers = [offer for offer in _offers(selections) if offer.on]
         given = self.vars.values()
         declared = {name for offer in offers for name in _declared(offer)}
         if given and not offers:
-            raise UsageError(f"no package in this run declares {', '.join(sorted(given))}")
+            raise UsageError(
+                f"no package in this run declares {', '.join(sorted(given))}: none of them is on",
+                hint="turn a package on with `untaped dotfiles add` first",
+            )
         ask = terminal_ask(self.ctx.terminal, self.vars)
         changes: dict[Any, JsonValue] = {}
         for offer in offers:
             specs = _plain(offer)
-            mine = {name: value for name, value in given.items() if name in specs}
+            mine = _flagged(offer, given)
             answers = offer.choice.inputs if offer.choice is not None else {}
             config = {name: value for name, value in answers.items() if name in specs}
-            found = resolve(specs, [mine, config], known=declared, ask=ask, label=offer.spelled)
-            svc.inventory.answer(offer, found.values)
+            try:
+                found = resolve(specs, [mine, config], known=declared, ask=ask, label=offer.spelled)
+            except InputError as exc:  # this machine's answer no longer fits its input
+                svc.inventory.fail(offer, exc)
+                continue
+            svc.inventory.answer(offer, found.values, asked=(*mine, *found.asked))
             for name in (*mine, *found.asked):
                 value = cast("JsonValue", found.values[name])
                 if config.get(name) != value:
@@ -323,9 +335,13 @@ def _failing(steps: list[Step], stuck: dict[str, UntapedError]) -> list[Step]:
     out: list[Step] = []
     for step in steps:
         exc = stuck.get(step.placement.source.name)
-        if exc is not None and step.action in ("apply", "remove") and step.found.error is None:
+        changes = step.action in ("apply", "remove") or step.converts
+        if exc is not None and changes and step.found.error is None:
+            # a link to convert waits too: its clone doesn't move, and what it shows may be
+            # an edit the clone holds
             error = Failure.from_exception(exc, message=str(exc))
-            step = replace(step, found=replace(step.found, error=error), detail=str(exc))
+            found = replace(step.found, error=error, converts=False)
+            step = replace(step, found=found, detail=str(exc))
         out.append(step)
     return out
 
@@ -334,8 +350,9 @@ def _replanned(svc: Services, steps: list[Step], *, force: bool, follow: bool) -
     svc.evaluator.reset()
     applying = {s.placement.key for s in steps if s.action == "apply"}
     fresh = svc.applier.plan_apply([s.placement for s in steps], force=force, follow=follow)
+    diffs = {s.placement.key: s.diff for s in steps}
     return [
-        replace(s, action="apply", detail="moved with the clone")
+        replace(s, action="apply", detail="moved with the clone", diff=diffs.get(s.placement.key))
         if s.action == "skip" and s.placement.key in applying
         else s
         for s in fresh
@@ -350,6 +367,26 @@ def _offers(selections: Sequence[Selection]) -> list[Offer]:
         if offer.package is not None:
             seen.setdefault(offer.spelled, offer)
     return list(seen.values())
+
+
+def _flagged(offer: Offer, given: dict[str, object]) -> dict[str, object]:
+    """The ``--var``/``--vars-file`` values ``offer`` declares, coerced; a secret, or a value
+    that doesn't fit its input, exits 2."""
+    assert offer.package is not None
+    mine: dict[str, object] = {}
+    for name, value in given.items():
+        spec = offer.package.inputs.get(name)
+        if spec is None:
+            continue
+        if spec.secret:
+            raise UsageError(
+                f"input {q(name)} of {offer.spelled} is a secret: it is never kept in config.yml"
+            )
+        try:
+            mine[name] = coerce(spec, value, name=name)
+        except InputError as exc:
+            raise UsageError(f"{offer.spelled}: {exc}") from exc
+    return mine
 
 
 def _declared(offer: Offer) -> list[str]:

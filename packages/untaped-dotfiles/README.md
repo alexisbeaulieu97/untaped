@@ -117,7 +117,8 @@ docstring of
 with something left (an entry its policy only reports, or one waiting on
 an input), 1 when an entry failed, and 2 without a terminal and without
 `--yes`. A timer treats 3 as routine news, not a failure; the
-`attention` file below says what waits:
+`attention` file below counts what waits, and `untaped dotfiles status`
+lists it:
 
 ```ini
 # ~/.config/systemd/user/untaped-dotfiles.service

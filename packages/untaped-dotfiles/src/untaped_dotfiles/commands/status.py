@@ -14,9 +14,10 @@ from untaped_dotfiles.records import EntryStatus
 class Status(DotfilesCommand):
     """Show the state of every file entry of the packages that are on, offline.
 
-    It fetches nothing, so `behind` is as of the last fetch. Without
-    SELECTORS it also lists what untaped placed for a package or item that
-    is off now (`off`), and rewrites status.json and attention. An entry
+    It fetches nothing, so `behind` is as of the last fetch. It also lists
+    what untaped placed for a package or item that is off now (`off`): in
+    every subscribed source without SELECTORS, else in the ones named. Without
+    SELECTORS it rewrites status.json and attention. An entry
     that could not be read exits 1. The policy guide (linked from the
     dotfiles README) explains each state and what `apply` does with it.
     """

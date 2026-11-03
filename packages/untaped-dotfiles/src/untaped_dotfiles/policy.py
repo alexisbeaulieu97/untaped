@@ -22,8 +22,8 @@ class Policy(StrEnum):
 
     ## States of a file entry
 
-    - `pending`: on, never placed here (or just turned on again), target
-      absent.
+    - `pending`: on, never placed here (or just asked for again: turned on,
+      or an input its target names answered), target absent.
     - `foreign`: the same, with a file untaped didn't write in the way.
       Placing it keeps that file aside under `dotfiles.kept_dir`.
     - `new`: the author added it after the item was first applied here.
@@ -36,10 +36,12 @@ class Policy(StrEnum):
     - `conflict`: both `behind` and `modified`.
     - `missing`: placed before, the target is gone.
     - `orphan`: placed before, the package no longer places it: a file left a
-      folder entry, the entry was dropped, an input moved its target, or the
-      package file left the source.
+      folder entry, the entry or its item was dropped, the author changed its
+      target, an input moved its target, or the package file left the source.
     - `off`: placed before, and its package or item is off now (turned off in
-      `config.yml` by hand); `untaped dotfiles remove` takes it back.
+      `config.yml` by hand); `untaped dotfiles remove` takes it back. What a
+      source deleted from `config.yml` by hand placed is no longer listed:
+      subscribe it again to take it back.
     - `excluded`: left out by `os`, `only` or `unless` on this machine. A
       file placed before it was left out stays as it is.
     - `error`: could not be read (a git or filesystem failure); the row's
@@ -48,8 +50,9 @@ class Policy(StrEnum):
       counts as an `error` in the status files; a disputed target keeps what
       was placed there until one package lets it go.
 
-    An entry whose target names an input with no value waits for one, and
-    what it placed before stays as it is.
+    An entry whose target names an input with no value waits for one (a
+    person answers it: `apply` reports it), and what it placed before stays
+    as it is.
 
     ## What `apply` does
 
@@ -70,8 +73,10 @@ class Policy(StrEnum):
 
     "report" leaves the entry for a person and makes `apply` exit 3; `once`
     skips quietly, since it means "apply, then leave alone". An `orphan`
-    whose target an input moved is taken back whatever the policy, in the
-    run that places the new target: this machine asked for it.
+    whose target an input moved (the package declares the same target) is
+    taken back whatever the policy, in the run that places the new target:
+    this machine asked for it. A target the author changed is an `orphan`
+    and a `new` entry like any other.
 
     `apply SELECTOR...` and `apply --all` place what they name whatever its
     policy: `pending`, `foreign`, `new`, `behind` and `missing` entries are

@@ -206,9 +206,8 @@ def _off_detail(placement: Placement) -> str:
     offer = placement.offer
     which = "package" if not offer.on else "item"
     spelled = offer.spelled if not offer.on else placement.spelled
-    return (
-        f"placed earlier; the {which} is off now: {run_hint(Remove.spelled(spelled))} takes it back"
-    )
+    remove = run_hint(Remove.spelled(spelled))
+    return f"placed earlier; the {which} is off now; to take it back, {remove}"
 
 
 @dataclass(frozen=True)
@@ -247,10 +246,11 @@ class StatusReader:
                     error=found.error,
                 )
             )
+            waits = found.error is not None or (
+                placement.target is None and placement.excluded is None
+            )  # an error, or an input nothing answers: only a person settles it
             actions.append(
-                "report"
-                if found.error is not None
-                else decide(placement.policy, found.state, moved=placement.moved)
+                "report" if waits else decide(placement.policy, found.state, moved=placement.moved)
             )
         return Reading(rows, actions)
 

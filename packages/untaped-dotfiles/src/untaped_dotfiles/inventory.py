@@ -67,7 +67,8 @@ class Placement:
     moved: bool = False
     """An ``orphan`` whose entry places elsewhere now: an input moved its target."""
     asked: bool = False
-    """The new place of a ``moved`` entry: ``pending`` rather than ``new``."""
+    """Asked for this run, so ``pending`` rather than ``new``: the new place of a ``moved``
+    entry, or a target that names an input a flag or a prompt answered."""
     off: bool = False
     """A placed record whose package or item is off now."""
 
@@ -118,10 +119,22 @@ class Inventory:
         self._home = home.resolve()
         self._machine = machine
         self._answers: dict[str, dict[str, object]] = {}
+        self._asked: dict[str, frozenset[str]] = {}
+        self._failed: dict[str, UntapedError] = {}
 
-    def answer(self, offer: Offer, values: dict[str, object]) -> None:
-        """Use ``values`` for ``offer``'s inputs this run, over this machine's answers."""
+    def answer(self, offer: Offer, values: dict[str, object], *, asked: Iterable[str] = ()) -> None:
+        """Use ``values`` for ``offer``'s inputs this run, over this machine's answers.
+
+        ``asked``: the names a flag or a prompt answered this run; an entry
+        whose target names one was asked for (``pending``, not ``new``).
+        """
         self._answers[offer.spelled] = dict(values)
+        self._asked[offer.spelled] = frozenset(asked)
+
+    def fail(self, offer: Offer, error: UntapedError) -> None:
+        """Report ``offer`` as ``error`` this run (an answer that doesn't fit its input): its
+        files stay as they are and the other packages go on."""
+        self._failed[offer.spelled] = error
 
     def values(self, offer: Offer) -> dict[str, object]:
         """``offer``'s plain top-level input values here: this run's answers, this machine's,
@@ -192,6 +205,11 @@ class Inventory:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
+            failed = self._failed.get(offer.spelled)
+            if failed is not None:
+                if (offer.spelled, failed) not in problems:
+                    problems.append((offer.spelled, failed))
+                continue
             try:
                 placed, waiting = self._item(offer, item)
             except UntapedError as exc:
@@ -229,8 +247,14 @@ class Inventory:
         """``found``, plus a placement for each record it no longer places: ``orphan``
         (``moved`` when an input moved it), ``excluded`` or ``off``."""
         placed_keys = {p.key for p in found}
-        bases = {(*p.owner, p.entry): _base(p.target, p.entry, p.path) for p in found if p.target}
-        asked: set[tuple[str, str, str, str]] = set()
+        bases = {
+            (*p.owner, p.entry, p.declared): _base(p.target, p.entry, p.path)
+            for p in found
+            if p.target
+        }
+        """Where each declaration places now: a record of the same declaration placed
+        elsewhere was moved by an input; one whose declaration changed is the author's edit."""
+        asked: set[tuple[str, str, str, str, str]] = set()
         for record in self._store.placed():
             owner = (record.source, record.package, record.item)
             owned = resolved.get(owner)
@@ -238,17 +262,22 @@ class Inventory:
                 continue  # a disputed target keeps its file until the dispute is settled
             if owned is None:
                 offer = off.get(owner) or off.get((record.source, record.package, ""))
-                if offer is not None and not offer.item_on(record.item):
+                if offer is None:
+                    continue
+                if not offer.item_on(record.item):
                     found.append(self._from_record(record, offer, off=True))
+                elif offer.package is not None and record.item not in offer.package.items:
+                    found.append(self._from_record(record, offer, orphan=True))  # item left
                 continue
             at = (*owner, record.entry)
             if at not in held:
-                base = bases.get(at)
+                declared = (*at, record.declared)
+                base = bases.get(declared)
                 moved = base is not None and base != _base(
                     Path(record.target), record.entry, record.path
                 )
                 if moved:
-                    asked.add(at)
+                    asked.add(declared)
                 found.append(self._from_record(record, owned, orphan=True, moved=moved))
                 continue
             excluded = held[at]
@@ -262,7 +291,9 @@ class Inventory:
                     found = [p for p in found if p is not excluded]
         if asked:
             found = [
-                replace(p, asked=True) if not p.orphan and (*p.owner, p.entry) in asked else p
+                replace(p, asked=True)
+                if not p.orphan and (*p.owner, p.entry, p.declared) in asked
+                else p
                 for p in found
             ]
         return found
@@ -328,6 +359,7 @@ class Inventory:
         self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
     ) -> Placement:
         target, unanswered = self._render(offer, file.target)
+        names = placeholders(file.target, field="target")
         return Placement(
             offer=offer,
             item=item,
@@ -341,6 +373,7 @@ class Inventory:
             chosen=chosen,
             fmt=file.merge_format,
             unanswered=unanswered,
+            asked=not self._asked.get(offer.spelled, frozenset()).isdisjoint(names),
         )
 
     def _render(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:

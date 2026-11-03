@@ -144,9 +144,12 @@ class Applier:
                 notes.append(_size(after))
             elif record is None:
                 notes.append("yours is kept aside first")
+        diff = _diff(before, after, p.shown)
+        if before is not None and before != after and diff is None:
+            notes.append(f"binary, {plural(len(after), 'byte')}")
         if p.mode == "link" and p.placed_as == "copy" and record is None:
             notes.append(f"{p.policy} places a copy")
-        return replace(step, detail="; ".join(notes), diff=_diff(before, after, p.shown))
+        return replace(step, detail="; ".join(notes), diff=diff)
 
     # -- executing -----------------------------------------------------------
 
@@ -207,7 +210,8 @@ class Applier:
             done = converted.get(step.placement.key)
             if done is not None:
                 if row.action in ("created", "updated", "failed"):
-                    row = row.model_copy(update={"detail": f"became a copy; {row.detail}"})
+                    detail = "; ".join(filter(None, ("became a copy", row.detail)))
+                    row = row.model_copy(update={"detail": detail})
                 elif step.action == "report" and done.action != "failed":
                     row = done.model_copy(update={"detail": f"{done.detail}; {row.detail}"})
                 else:
@@ -322,6 +326,7 @@ class Applier:
                 item=p.item,
                 path=p.path,
                 entry=p.entry,
+                declared=p.declared,
                 placed_as=mode,
                 fmt=p.fmt,
                 source_commit=found.commit,

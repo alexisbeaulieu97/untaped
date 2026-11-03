@@ -36,7 +36,7 @@ from untaped_dotfiles.records import (
 )
 from untaped_dotfiles.settings import DotfilesSettings, InputValue, ItemChoice, PackageChoice
 from untaped_dotfiles.states import FileState, placed_as
-from untaped_values.api import Vars, coerce
+from untaped_values.api import InputError, Vars, coerce
 
 SELECTORS = "Packages or items: PKG, PKG/ITEM, SOURCE/PKG or SOURCE/PKG/ITEM."
 
@@ -64,8 +64,8 @@ class Add(DotfilesCommand):
     its package on with every other item off when the package was off (said
     in one line). `--policy` makes the policy this machine's choice for the
     package or item. A package this machine can't use (its `os`, `only` or
-    `unless`) exits 2, naming why. Turning something on counts as asking: the
-    next `apply` places it whatever the policy.
+    `unless`) exits 2, naming why. Turning something on, or answering its
+    inputs, counts as asking: the next `apply` places it whatever the policy.
 
     `--var` and `--vars-file` answer plain top-level inputs ahead, kept in
     `config.yml`: a value goes to every package named that declares the name,
@@ -96,6 +96,7 @@ class Add(DotfilesCommand):
                 choices[at] = (offer, self._turned_on(selection, current, notes))
             answered = self._answered(choices)
             turned = [s for s in chosen if not _was_on(s)]
+            asked = [s for s in chosen if not _was_on(s) or s.offer.spelled in answered]
             changes = {
                 _package_key(offer): choice
                 for offer, choice in choices.values()
@@ -112,7 +113,7 @@ class Add(DotfilesCommand):
             if not self.dry_run.go_ahead(preview=plan.preview):
                 return iter(rows)
             plan.write()
-            for selection in turned:  # turned on again: its entries are asked for, not new
+            for selection in asked:  # turned on or answered: its entries are asked for, not new
                 svc.store.forget_applied(_owner(selection))
             updated = {at: choice for at, (_, choice) in choices.items()}
             self.services(_with_choices(self.settings, updated)).refresh_status()
@@ -154,7 +155,10 @@ class Add(DotfilesCommand):
                         f"input {q(name)} of {offer.spelled} is a secret: it is never kept in "
                         "config.yml"
                     )
-                inputs[name] = cast("InputValue", coerce(spec, value, name=name))
+                try:
+                    inputs[name] = cast("InputValue", coerce(spec, value, name=name))
+                except InputError as exc:
+                    raise UsageError(f"{offer.spelled}: {exc}") from exc
                 answered.setdefault(offer.spelled, []).append(name)
             choices[at] = (offer, choice.model_copy(update={"inputs": inputs}))
         unknown = sorted(set(given) - declared)
