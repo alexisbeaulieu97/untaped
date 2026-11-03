@@ -272,6 +272,20 @@ def test_plugin_rank_removing_what_isnt_there_changes_nothing() -> None:
     assert "shelf" not in config_path().read_text()
 
 
+@pytest.mark.parametrize(
+    "stored",
+    ["extensions: {}", "extensions: null", "extensions: {book_source: {}}"],
+)
+def test_plugin_rank_removing_a_ranking_that_isnt_set_leaves_the_file(stored: str) -> None:
+    """What it reports matches the file: a ranking not set is unchanged, and nothing is written."""
+    write_config(f"format_version: 2\nshelf:\n  {stored}\n")
+    before = config_path().read_text()
+    result = _run(["plugin", "rank", "shelf.book_source", "books", "-f", "json"], *_all())
+    assert json.loads(result.stdout)["action"] == "unchanged"
+    assert "removed the ranking" not in result.stderr
+    assert config_path().read_text() == before
+
+
 def test_plugin_rank_reports_unchanged_updated_and_deleted() -> None:
     def action(*argv: str) -> str:
         argv_ = ["plugin", "rank", "shelf.book_source", *argv, "-f", "json"]

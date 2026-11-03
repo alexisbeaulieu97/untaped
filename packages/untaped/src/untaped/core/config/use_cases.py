@@ -395,6 +395,8 @@ class RankProviders:
         doesn't. Raises :class:`UsageError` for a name that doesn't exist.
         ``expected`` (from :meth:`current`) refuses the write with a
         :class:`ConfigError` when the profile's ranking changed since it was read.
+        A ranking already as asked (none, for a removal) writes nothing and is
+        unchanged.
         """
         owner_name, _, name = contract.partition(".")
         if not owner_name or not name:
@@ -414,23 +416,26 @@ class RankProviders:
             notes.extend(
                 _check_rankable(owner_name, name, method, plugins, doctor_hint=self._doctor_hint)
             )
-        changed = False
 
         def update(target: str, current: Any) -> str | None:
-            nonlocal changed
             if expected is not _UNRESOLVED and _rank_of(current, name, method) != expected:
                 raise ConfigError(
                     f"{owner_name}.{name} {method} changed in profile {target} while it was "
                     "open; nothing was written",
                     category="conflict",
                 )
+            if _rank_of(current, name, method) == (plugins or None):
+                raise _AsAsked(target)
             extensions = _ranked(_mapping(current), name, method, plugins)
-            changed = extensions != current and bool(extensions or current)
             return json.dumps(extensions) if extensions else None
 
         key = f"{owner_name}.extensions"
         path = f"{key}.{name}.rank.{method}"
-        target = self._repo.update_value(key, update, profile=profile, dry_run=dry_run)
+        try:
+            target = self._repo.update_value(key, update, profile=profile, dry_run=dry_run)
+            changed = True
+        except _AsAsked as kept:
+            target, changed = kept.target, False
         if not changed:
             notes.append(("info", f"{path} unchanged in profile {target}"))
             action = "unchanged"
@@ -441,6 +446,14 @@ class RankProviders:
             notes.append(("success", f"{done} for {owner_name}.{name} {method} (profile {target})"))
             action = "updated" if plugins else "deleted"
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), tuple(notes))
+
+
+class _AsAsked(Exception):
+    """Raised inside a ranking's update to write nothing: ``target`` already ranks as asked."""
+
+    def __init__(self, target: str) -> None:
+        super().__init__(target)
+        self.target = target
 
 
 def _removed_note(spellings: list[str]) -> str:
