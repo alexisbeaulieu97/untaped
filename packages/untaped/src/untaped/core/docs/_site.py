@@ -145,13 +145,13 @@ class Site:
             if fill.contract == target
         )
 
-    def provided(self, target: str) -> list[KindDecl]:
-        """The own records of contract ``target``'s composed providers, which its bridge reads."""
+    def provided(self, target: str, bridge: str) -> list[KindDecl]:
+        """The own records contract ``target``'s composed providers' fills of ``bridge`` take."""
         items = [
-            fill.item
+            takes
             for plugin in self.declaration.plugins
             for fill in plugin.fills
-            if fill.contract == target and fill.item is not None
+            if fill.contract == target and (takes := fill.takes.get(bridge)) is not None
         ]
         return [kind for item in items if (kind := self.kind_of_target(item)) is not None]
 

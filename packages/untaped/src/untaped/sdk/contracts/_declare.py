@@ -24,6 +24,7 @@ from datetime import timedelta
 from typing import (
     TYPE_CHECKING,
     Any,
+    Literal,
     TypeVar,
     cast,
     get_args,
@@ -67,6 +68,13 @@ _BINDING = "_untaped_binding"
 _PARAMETERS = "__untaped_parameter_problems__"
 
 
+#: A record bridge's parameter in a contract: one of the provider's own records. A
+#: provider's fill annotates it with the record it takes (``item: GithubRepoSelector``),
+#: which routes piped rows, ``assert_fills`` samples and the record's kind; ``Any``
+#: underneath, so that narrower annotation type-checks as an override.
+type ProviderRecord = Any
+
+
 class ContractError(TypeError):
     """A contract declaration that breaks a rule; ``reason`` is the stable code."""
 
@@ -105,12 +113,17 @@ class Method:
     function: Callable[..., Any]
     #: The resolved annotations, ``T`` left as the contract's type parameter.
     hints: Mapping[str, Any]
+    #: Takes a provider's record and returns an issued one: the item bridge (it takes
+    #: ``T`` and returns the owner's model) or a record bridge (it takes a
+    #: :data:`ProviderRecord`; a provider's fill names which of its records).
     bridge: bool
     #: The answer cache of a ``@cached`` method.
     cache: Cache | None
     #: Returns a list: an invalid row is dropped and the rest kept. Any other
     #: method's invalid item fails the answer.
     listing: bool
+    #: The item bridge: it takes ``T``, so a provider whose ``T`` is its own record fills it.
+    item_bridge: bool = False
 
 
 @dataclass(frozen=True)
@@ -144,11 +157,23 @@ class Binding:
     #: threads may not see the run that names them.
     item_kind: str = ""
     owner_kind: str = ""
+    #: The kinds of the records its record bridges take and issue, read when bound too.
+    record_kinds: Mapping[type, str] = field(default_factory=dict, compare=False)
 
     @property
     def owns_item(self) -> bool:
         """Whether the provider's ``T`` is the owner's model (nothing to bridge)."""
         return self.item is None or self.item is self.contract.item
+
+    def kind_of(self, model: type) -> str:
+        """``model``'s kind, from the run or as read when bound (``""``: none known)."""
+        if (found := kind_of(model)) is not None:
+            return found
+        if model is self.item:
+            return self.item_kind
+        if model is self.contract.item:
+            return self.owner_kind
+        return self.record_kinds.get(model, "")
 
 
 def snake_case(name: str) -> str:
@@ -237,6 +262,11 @@ def _served[F: Callable[..., Any]](fn: F, cache: Cache, name: str) -> F:
 
 
 def _stamp(provider: Contract, item: Any, result: Any) -> Any:
+    """``result`` with ``source`` naming the provider and the record ``item`` it was issued from.
+
+    The kind is ``item``'s model's; the record is its dump, left empty when
+    ``item`` is the result's own model (a provider of the owner's model).
+    """
     if not isinstance(result, Issued):
         return result  # the SDK's validation after the call names the problem
     binding = binding_of(provider)
@@ -245,11 +275,11 @@ def _stamp(provider: Contract, item: Any, result: Any) -> Any:
             f"{type(provider).__qualname__} is not bound to a plugin, so it can't stamp a source",
             hint="ask for providers through untaped.sdk.contracts (gather, select_one)",
         )
-    if binding.owns_item or not isinstance(item, BaseModel):
-        kind = kind_of(type(result)) or binding.owner_kind
+    if not isinstance(item, BaseModel) or type(item) is type(result):
+        kind = binding.kind_of(type(result))
         record: dict[str, Any] = {}
     else:
-        kind = kind_of(type(item)) or binding.item_kind
+        kind = binding.kind_of(type(item))
         record = item.model_dump(mode="json", by_alias=True, round_trip=True)
     source = Source(plugin=binding.plugin, kind=kind, record=record)
     return result.model_copy(update={"source": source})
@@ -298,11 +328,37 @@ class Contract(ABC):  # noqa: B024 - every method has a default
             return self._settings_ready()
         return None
 
-    def own(self, item: Issued) -> Record:
-        """The provider's own record ``item`` was issued from (rehydrated from ``source``)."""
+    @overload
+    def own(self, item: Issued) -> Record: ...
+
+    @overload
+    def own[R: Record](self, item: Issued, cls: type[R]) -> R: ...
+
+    def own(self, item: Issued, cls: type[Record] | None = None) -> Record:
+        """The provider's own record ``item`` was issued from (rehydrated from ``source``).
+
+        ``cls`` is the record expected; a record bridge's caller names the
+        record its fill takes (``self.own(selector, GithubRepoSelector)``), and
+        ``item`` must then have been issued from a ``cls`` record. Without
+        ``cls`` it is the provider's ``T``, read from any record ``T`` takes
+        (one of its subclasses, too), never from a record its record bridges
+        take. Either way ``item`` must have been
+        issued by this provider's plugin and its record must still validate
+        strictly: anything else is an ``invalid`` error. A provider whose
+        ``T`` is the owner's model gets ``item`` back when ``cls`` is not
+        given.
+        """
         binding = binding_of(self)
-        if binding is None or binding.owns_item or binding.item is None:
-            return item
+        named = cls is not None
+        if cls is None:
+            if binding is None or binding.owns_item or binding.item is None:
+                return item
+            cls = binding.item
+        elif binding is None:
+            raise UntapedError(
+                f"{type(self).__qualname__} is not bound to a plugin, so it can't read a source",
+                hint="ask for providers through untaped.sdk.contracts (gather, select_one)",
+            )
         source = item.source
         if source is None or source.plugin != binding.plugin:
             raise UntapedError(
@@ -310,16 +366,32 @@ class Contract(ABC):  # noqa: B024 - every method has a default
                 category="invalid",
                 system=binding.plugin,
             )
+        wanted = binding.kind_of(cls) or cls.__qualname__
+        if source.kind != wanted if named else source.kind in _other_records(binding, cls):
+            raise UntapedError(
+                f"this record was issued from {source.kind or 'a kind-less record'}, "
+                f"not from {wanted}",
+                category="invalid",
+                system=binding.plugin,
+            )
         try:
-            return binding.item.model_validate_json(json.dumps(source.record), strict=True)
+            return cls.model_validate_json(json.dumps(source.record), strict=True)
         except ValidationError as exc:
             raise UntapedError(
-                f"this {kind_of(binding.item)} record no longer reads: "
-                f"{first_validation_error(exc)}",
+                f"this {wanted} record no longer reads: {first_validation_error(exc)}",
                 category="invalid",
                 system=binding.plugin,
                 hint=f"ask {binding.plugin} for it again; its record shape changed since",
             ) from None
+
+
+def _other_records(binding: Binding, item: type) -> set[str]:
+    """The kinds of the records a provider's record bridges take that aren't ``item`` (nor its)."""
+    return {
+        kind
+        for model, kind in binding.record_kinds.items()
+        if kind and not (isinstance(model, type) and issubclass(model, item))
+    }
 
 
 def _per_profile[V](holder: object, attribute: str, load: Callable[[], V]) -> V:
@@ -699,18 +771,27 @@ def _declare(cls: type[Contract], *, shell: bool) -> ContractInfo:
                 owner = functools.partial(_owner_of, cls)
                 cache._declared(f"{snake_case(cls.__name__)}_{name}", owner)
         # an old spelling is never asked: the new method is the bridge
-        is_bridge = _renamed_to(name, value, public) is None and _is_bridge(
-            value, hints, item_param, item
-        )
-        if is_bridge:
+        old_spelling = _renamed_to(name, value, public) is not None
+        role = None if old_spelling else _bridge_role(value, hints, item_param, item)
+        if role == "item":
             bridges.append(name)
+        if (
+            not old_spelling
+            and role != "record"
+            and any(_names_provider_record(hint) for hint in hints.values())
+        ):
+            raise TypeError(
+                f"{where}.{name}: ProviderRecord is a record bridge's one parameter only: "
+                "a method of a contract with T, taking just it and returning an Issued model"
+            )
         methods[name] = Method(
             name=name,
             function=value,
             hints=types.MappingProxyType(hints),
-            bridge=is_bridge,
+            bridge=role is not None,
             cache=cache,
             listing=get_origin(hints["return"]) is list,
+            item_bridge=role == "item",
         )
         setattr(value, _CONTRACT_OF, cls)
     if len(bridges) > 1:
@@ -737,17 +818,73 @@ def _owner_of(cls: type[Contract]) -> str:
     return owner_of(cast("ContractInfo", contract_of(cls)))  # asked once ``cls`` is declared
 
 
-def _is_bridge(
+def _bridge_role(
     function: Callable[..., Any],
     hints: Mapping[str, Any],
     param: TypeVar | None,
     item: type[Issued] | None,
-) -> bool:
-    """Whether a method is the bridge: its one parameter is ``T``, its return the owner's model."""
+) -> Literal["item", "record"] | None:
+    """Whether a method is a bridge, and which: it takes one record and returns an issued one.
+
+    The item bridge takes ``T`` and returns the owner's model; a record
+    bridge takes a :data:`ProviderRecord` (the provider's fill names which of
+    its records) and returns an ``Issued`` model. Only a contract with ``T``
+    has bridges.
+    """
     if param is None:
-        return False
+        return None
     parameters = list(inspect.signature(function).parameters)[1:]
-    return len(parameters) == 1 and hints.get(parameters[0]) is param and hints["return"] is item
+    if len(parameters) != 1:
+        return None
+    takes, returns = hints.get(parameters[0]), hints["return"]
+    if takes is param and returns is item:
+        return "item"
+    if takes is ProviderRecord and isinstance(returns, type) and issubclass(returns, Issued):
+        return "record"
+    return None
+
+
+def _names_provider_record(hint: object) -> bool:
+    """Whether ``hint`` is or holds :data:`ProviderRecord`."""
+    return hint is ProviderRecord or any(_names_provider_record(arg) for arg in get_args(hint))
+
+
+def bridge_takes(provider: type[Contract], info: ContractInfo, name: str) -> type[Record] | None:
+    """The record ``provider``'s fill of bridge ``name`` takes (``None``: it takes none of its own).
+
+    The item bridge takes the provider's ``T`` (none when ``T`` is the owner's
+    model); a record bridge takes the record its fill's parameter is annotated
+    with, a ``Record`` subclass: ``None`` when it doesn't fill it, or names no
+    such record. Raises :class:`ContractError` (``unresolved-item-type``) when
+    that annotation doesn't resolve at run time (a name imported only under
+    ``TYPE_CHECKING``, say).
+    """
+    if info.methods[name].item_bridge:
+        found = item_type(provider, info)
+        return None if found is info.item else found
+    if not fills(provider, info, name):
+        return None
+    return _fill_takes(provider, name)
+
+
+@functools.cache
+def _fill_takes(provider: type[Contract], name: str) -> type[Record] | None:
+    """The ``Record`` subclass ``provider``'s fill of ``name`` annotates its parameter with."""
+    holder = next(klass for klass in provider.__mro__ if name in vars(klass))
+    function = inspect.unwrap(vars(holder)[name])
+    try:
+        hints = get_type_hints(function)
+    except Exception as exc:  # NameError mostly; any annotation that won't evaluate
+        raise ContractError(
+            f"{function.__qualname__}'s annotations don't resolve at run time ({exc}): import "
+            "the record it takes outside TYPE_CHECKING",
+            reason="unresolved-item-type",
+        ) from None
+    parameters = list(inspect.signature(function).parameters)[1:]
+    takes = hints.get(parameters[0]) if parameters else None
+    if isinstance(takes, type) and issubclass(takes, Record) and takes is not Record:
+        return takes
+    return None
 
 
 def _check_cache(where: str, contract: str, name: str, cache: Cache, returns: object) -> None:

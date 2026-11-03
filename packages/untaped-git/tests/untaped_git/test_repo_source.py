@@ -13,10 +13,10 @@ from datetime import timedelta
 import pytest
 
 from git_test_support import composed
-from untaped.sdk import home
-from untaped.sdk.contracts import gather
-from untaped.sdk.testing import ManualClock
-from untaped_git.api import RepoSource, looks_like_url
+from untaped.sdk import Record, home
+from untaped.sdk.contracts import Provider, gather
+from untaped.sdk.testing import ManualClock, piped_through
+from untaped_git.api import Repo, RepoSelector, RepoSource, looks_like_url
 from untaped_git.testing import conformance, host, listing, make_repo
 
 
@@ -33,6 +33,36 @@ def test_a_provider_listing_one_name_twice_does_not_conform() -> None:
     )
     with pytest.raises(AssertionError, match="repos share a name: acme/api"):
         conformance(github())
+
+
+class GroupSelector(Record):
+    """A forge's own selector: the groups whose repos to take."""
+
+    groups: list[str]
+
+
+class Groups(RepoSource, Provider):
+    """Lists the owner's repos and issues selectors from its own."""
+
+    def to_selector(self, item: GroupSelector) -> RepoSelector:
+        return RepoSelector()
+
+    def repos(self) -> list[Repo]:
+        return [make_repo("infra/platform/base")]
+
+
+def test_a_provider_of_repos_issues_a_selector_from_its_own_record() -> None:
+    """A provider whose ``T`` is ``Repo`` fills the record bridge ``to_selector``; the piped
+    selector comes back as a ``git.repo_selector`` carrying the provider's own record."""
+    with composed({"gitlab": (Groups,)}):
+        selector = piped_through(RepoSource.to_selector, GroupSelector(groups=["infra"]))
+    assert isinstance(selector, RepoSelector)
+    assert selector.source is not None
+    assert selector.source.model_dump() == {
+        "plugin": "gitlab",
+        "kind": "gitlab.group_selector",
+        "record": {"groups": ["infra"]},
+    }
 
 
 def test_a_git_host_provider_has_nothing_to_conform_to() -> None:

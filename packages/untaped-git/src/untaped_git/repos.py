@@ -1,4 +1,4 @@
-"""Repos named by the plugins that list them: the ``git.repo`` record, the ``RepoSource`` contract.
+"""Repos named by the plugins that list them: ``git.repo``, ``git.repo_selector``, ``RepoSource``.
 
 The git plugin never knows where a repo comes from: every installed plugin
 that fills :class:`RepoSource` (a forge's plugin, say) answers, and
@@ -13,10 +13,10 @@ from abc import abstractmethod
 from datetime import timedelta
 from typing import Annotated
 
-from pydantic import StringConstraints, ValidationError
+from pydantic import Field, StringConstraints, ValidationError
 
 from untaped.sdk import Issued, Record, UsageError, experimental, first_validation_error, q
-from untaped.sdk.contracts import Contract, cached
+from untaped.sdk.contracts import Contract, ProviderRecord, cached
 from untaped_git.url import GitUrl, repo_url_parts
 
 #: A repo's name as a user types it: path segments without blanks (``acme/api``).
@@ -35,6 +35,19 @@ class Repo(Issued):
 
 
 @experimental
+class RepoSelector(Issued):
+    """Which of a provider's repos to take; ``source`` carries the provider's own selector.
+
+    ``match`` holds full-name patterns (``infra/*``) for a provider with no
+    selector of its own; a provider that has one (orgs and teams, say) issues
+    it through :meth:`RepoSource.to_selector` and reads it back with
+    ``self.own(selector, ItsSelector)``.
+    """
+
+    match: list[str] = Field(default_factory=list)
+
+
+@experimental
 class RepoSource[T: Record = Repo](Contract):
     """Where the repos you can name in untaped commands come from.
 
@@ -43,6 +56,14 @@ class RepoSource[T: Record = Repo](Contract):
 
     def to_repo(self, item: T) -> Repo:
         """Turn the provider's own record into a Repo (only when ``T`` is not Repo)."""
+        raise NotImplementedError
+
+    def to_selector(self, item: ProviderRecord) -> RepoSelector:
+        """Turn the provider's own selector record into a RepoSelector (optional).
+
+        Annotate the parameter with the selector record it takes; core stamps
+        it into the result's ``source``.
+        """
         raise NotImplementedError
 
     @cached(max_age=timedelta(hours=6), label="repos")

@@ -1,15 +1,16 @@
 """Proving a provider fills its contract: the checks behind ``assert_fills``.
 
-For each sample of the provider's own record type ``T``: it survives a JSON
-round trip through ``T``; it issues as the owner's model the way the SDK
-issues every answer; and each bridge (the method taking ``T`` and returning
-the owner's model) turns it into a valid owner record whose ``source`` names
-the provider and carries the sample back.
+Each sample is a record the provider issues from: its ``T``, or the record
+one of its record bridges takes. It survives a JSON round trip through its
+model; a ``T`` that is the owner's model issues as the SDK issues every
+answer; and each bridge the provider fills that takes the sample's model (the
+item bridge for ``T``, a record bridge for the record its fill names) turns it
+into a valid issued record whose ``source`` names the provider and reads back
+as the sample through ``own``.
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -17,32 +18,67 @@ from pydantic import TypeAdapter, ValidationError
 
 from untaped.runtime.contracts.registry import BoundProvider
 from untaped.sdk.contracts._cache import return_type
-from untaped.sdk.contracts._declare import Binding, fills
+from untaped.sdk.contracts._declare import Binding, bridge_takes
 from untaped.sdk.contracts._gather import issue
-from untaped.sdk.errors import first_validation_error
-from untaped.sdk.records import Issued, Record, kind_of
+from untaped.sdk.errors import UntapedError, first_validation_error
+from untaped.sdk.records import Issued, Record
 
 
 def fills_problems(provider: BoundProvider, samples: Sequence[object]) -> list[str]:
-    """What breaks when ``provider`` handles each sample of its ``T``; empty when nothing does."""
+    """What breaks when ``provider`` handles each sample; empty when nothing does.
+
+    A sample that is a model instance goes to the bridges taking its model; a
+    mapping is read as the provider's ``T``.
+    """
     binding = provider.binding
-    item = binding.item
-    if item is None:
-        return []
+    if binding.item is None:
+        return []  # a contract without ``T`` issues nothing a provider bridges
+    takes = _bridges_taking(provider)
     problems: list[str] = []
     for index, sample in enumerate(samples, 1):
         label = f"sample {index}"
-        try:
-            record = sample if isinstance(sample, item) else item.model_validate(sample)
-        except ValidationError as exc:
-            problems.append(f"{label} is not a {item.__qualname__}: {first_validation_error(exc)}")
+        model = _model_of(sample, binding, takes)
+        if model is None:
+            known = ", ".join(each.__qualname__ for each in dict.fromkeys(takes.values()))
+            problems.append(
+                f"{label} is a {type(sample).__qualname__}, which no bridge of "
+                f"{type(provider.instance).__qualname__} takes"
+                + (f" (it takes {known})" if known else "")
+            )
             continue
-        problems += _round_trip(item, record, label)
-        if binding.owns_item:
+        try:
+            record = sample if isinstance(sample, model) else model.model_validate(sample)
+        except ValidationError as exc:
+            problems.append(f"{label} is not a {model.__qualname__}: {first_validation_error(exc)}")
+            continue
+        problems += _round_trip(model, record, label)
+        if model is binding.item and binding.owns_item:
             problems += _issues(binding, record, label)
         else:
-            problems += _bridges(provider, record, label)
+            names = [name for name, each in takes.items() if issubclass(model, each)]
+            problems += _bridges(provider, names, record, label)
     return problems
+
+
+def _bridges_taking(provider: BoundProvider) -> dict[str, type[Record]]:
+    """Each bridge ``provider`` fills, and the record it takes."""
+    info = provider.binding.contract
+    cls = type(provider.instance)
+    found: dict[str, type[Record]] = {}
+    for name, method in info.methods.items():
+        if method.bridge and (takes := bridge_takes(cls, info, name)) is not None:
+            found[name] = takes
+    return found
+
+
+def _model_of(
+    sample: object, binding: Binding, takes: dict[str, type[Record]]
+) -> type[Record] | None:
+    """The record model ``sample`` is checked as: its own when a bridge takes it, else ``T``."""
+    if isinstance(sample, Record) and not isinstance(sample, binding.item or Record):
+        fitting = [each for each in takes.values() if isinstance(sample, each)]
+        return type(sample) if fitting else None
+    return binding.item
 
 
 def _round_trip(model: type[Record], record: Record, label: str) -> list[str]:
@@ -67,13 +103,10 @@ def _issues(binding: Binding, record: Record, label: str) -> list[str]:
     return []
 
 
-def _bridges(provider: BoundProvider, record: Record, label: str) -> list[str]:
+def _bridges(provider: BoundProvider, names: list[str], record: Record, label: str) -> list[str]:
     binding = provider.binding
-    info = binding.contract
     problems: list[str] = []
-    for name, method in info.methods.items():
-        if not method.bridge or not fills(type(provider.instance), info, name):
-            continue
+    for name in names:
         call = f"{name}({label})"
         try:
             result = getattr(provider.instance, name)(record)
@@ -81,16 +114,15 @@ def _bridges(provider: BoundProvider, record: Record, label: str) -> list[str]:
         except Exception as exc:
             problems.append(f"{call}: {_message(exc)}")
             continue
-        source = getattr(issued, "source", None)
-        if not isinstance(issued, Issued) or source is None:
+        if not isinstance(issued, Issued) or issued.source is None:
             continue
-        if source.plugin != binding.plugin or source.kind != (kind_of(type(record)) or ""):
-            problems.append(f"{call}: source names {source.plugin} {source.kind}")
+        if issued.source.plugin != binding.plugin:
+            problems.append(f"{call}: source names {issued.source.plugin}")
             continue
         try:
-            again = type(record).model_validate_json(json.dumps(source.record), strict=True)
-        except ValidationError as exc:
-            problems.append(f"{call}: source.record doesn't read back: {_message(exc)}")
+            again = provider.instance.own(issued, type(record))
+        except UntapedError as exc:
+            problems.append(f"{call}: source.record doesn't read back: {exc}")
             continue
         if again != record:
             problems.append(f"{call}: source.record differs from the sample")

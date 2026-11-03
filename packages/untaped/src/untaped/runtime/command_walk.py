@@ -133,6 +133,7 @@ class _Seen:
     writes: list[str] = field(default_factory=list)
     stdin: list[str] = field(default_factory=list)
     stdin_via: str | None = None
+    stdin_via_bridge: str | None = None
     output: type[BaseModel] | None = None
     formats: tuple[str, ...] = ()
     streams: bool = False
@@ -191,6 +192,7 @@ class CommandWalk:
             streams=seen.streams,
             stdin=tuple(seen.stdin),
             stdin_via=seen.stdin_via,
+            stdin_via_bridge=seen.stdin_via_bridge,
             inputs=tuple(seen.inputs),
             writes=tuple(seen.writes),
             guides=tuple(dict.fromkeys(seen.guides)),
@@ -570,10 +572,14 @@ class CommandWalk:
             return
         self.seen.stdin.extend(target_of(model) for model in models)
         if default.via is not None:
-            self.seen.stdin_via = self._via(where, default.via, tuple(models))
+            via = self._via(where, default.via, tuple(models))
+            if via is not None:
+                self.seen.stdin_via, self.seen.stdin_via_bridge = via
 
-    def _via(self, where: str, via: object, models: tuple[type[BaseModel], ...]) -> str | None:
-        """The contract whose bridge ``Stdin(via=)`` names, if it names one returning ``R``."""
+    def _via(
+        self, where: str, via: object, models: tuple[type[BaseModel], ...]
+    ) -> tuple[str, str] | None:
+        """The contract and bridge ``Stdin(via=)`` names, if it names one returning ``R``."""
         from untaped.sdk.contracts._declare import method_contract  # noqa: PLC0415
 
         try:
@@ -597,7 +603,7 @@ class CommandWalk:
                 f"{returned.__name__} rows, which it doesn't accept",
             )
             return None
-        return target_of(info.cls)
+        return target_of(info.cls), method.name
 
     def _refresh_field(self, where: str, default: Refresh) -> str | None:
         """Check the caches ``default`` names; the help of its flags, or ``None`` on a problem.

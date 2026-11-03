@@ -111,6 +111,8 @@ class CommandDecl(_Frozen):
     stdin: tuple[str, ...] = ()
     #: The contract whose bridge ``Stdin(via=)`` reads its providers' own rows through.
     stdin_via: str | None = None
+    #: That bridge's method name (``to_repo``, or a record bridge's, ``to_selector``).
+    stdin_via_bridge: str | None = None
     #: The kinds of the documents it reads and writes (``File[M]``).
     inputs: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
@@ -308,8 +310,10 @@ class FillDecl(_Frozen):
     contract: str
     #: The provider's docstring's first line: what it fills the point with.
     summary: str = ""
-    #: The provider's own record (its ``T``), which a ``Stdin(via=)`` bridge reads; ``None``: none.
-    item: str | None = None
+    #: The provider's own record each bridge it fills takes, by method (``to_repo`` its ``T``
+    #: when not the owner's model, a record bridge the record its fill names), which a
+    #: ``Stdin(via=)`` of that bridge reads.
+    takes: dict[str, str] = {}
 
 
 class UseDecl(_Frozen):
