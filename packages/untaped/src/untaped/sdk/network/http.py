@@ -675,8 +675,9 @@ class HttpFactory:
     instead.
 
     Experimental while the HTTP client's place outside core is designed
-    (#1058). First consumer: a plugin's client class that is not a server
-    API's adapter.
+    (#1058). First consumer: git's host auth (``http_of(...).proxy_for``)
+    and github's Git host (``self.ctx.http.trust``), through ``http_of`` and
+    ``self.ctx.http``; no plugin imports the name.
     """
 
     _owner: Callable[[type[BaseModel]], str]
