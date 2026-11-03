@@ -336,3 +336,37 @@ def test_drops_only_the_sections_it_empties(_isolated_config: Path) -> None:
         "format_version: 2\nprofiles:\n  other:\n    del: {}\n"
         "  work:\n    del:\n      parallel: 3\n"
     )
+
+
+class SpelledProfile(BaseModel):
+    """Section ``spl``: two old spellings still read and a retired one, all one hop away."""
+
+    renamed_keys: ClassVar[dict[str, str]] = {"old_groups": "groups", "legacy_groups": "groups"}
+    retired_keys: ClassVar[dict[str, str]] = {"a_groups": "groups"}
+
+    groups: dict[str, str] = {}
+
+
+def _spelled(*args: str) -> CliResult:
+    return CliInvoker().invoke(config_root(make_plugin("spl", settings=SpelledProfile)), list(args))
+
+
+def test_migrate_keeps_the_spelling_runs_read_over_a_retired_one(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nspl:\n"
+        "  a_groups: {team: retired}\n"
+        "  legacy_groups: {team: legacy}\n"
+        "  old_groups: {team: old}\n",
+    )
+    read = _spelled("get", "spl.groups", "--format", "json")
+    assert json.loads(read.stdout)["value"] == {"team": "legacy"}  # the closest read spelling
+
+    result = _spelled("migrate", "--format", "json")
+
+    assert result.exit_code == 0, result.output
+    rows = {row["from"]: (row["action"], row["to"]) for row in json.loads(result.stdout)}
+    assert rows["spl.legacy_groups"] == ("renamed", "spl.groups")
+    assert rows["spl.a_groups"][0] == rows["spl.old_groups"][0] == "dropped"
+    after = _spelled("get", "spl.groups", "--format", "json")
+    assert json.loads(after.stdout)["value"] == {"team": "legacy"}

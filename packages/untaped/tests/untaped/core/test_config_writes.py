@@ -1,6 +1,7 @@
 """The config write use cases: what they write, and the lines they return instead of printing."""
 
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -21,6 +22,15 @@ class DemoSettings(BaseModel):
     page_size: int = Field(50, gt=0)
 
 
+class SpelledSettings(BaseModel):
+    """A setting with an old spelling still read and a retired one."""
+
+    renamed_keys: ClassVar[dict[str, str]] = {"old_size": "size"}
+    retired_keys: ClassVar[dict[str, str]] = {"a_size": "size"}
+
+    size: int = 1
+
+
 class PairServer(BaseModel):
     url: str
     org: str
@@ -38,6 +48,7 @@ def _config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     cfg = tmp_path / "config.yml"
     register_profile_settings("demo", DemoSettings)
     register_profile_settings("pair", PairSettings)
+    register_profile_settings("spelled", SpelledSettings)
     monkeypatch.setenv("UNTAPED_HOME", str(cfg.parent))
     return cfg
 
@@ -180,3 +191,13 @@ def test_set_settings_unsets_a_key_the_profile_set(_config: Path) -> None:
     assert change.outcome.action == "deleted"
     assert change.notes == (("success", "unset pair.retries in profile default"),)
     assert not read_config_dict(_config).get("pair")
+
+
+def test_a_retired_spelling_is_no_ones_value(_config: Path) -> None:
+    """A write's ``expected`` and a prompt's default see what a run reads, never a retired key."""
+    _config.write_text("format_version: 2\nspelled: {a_size: 9}\n", encoding="utf-8")
+    repo = SettingsFileRepository()
+    assert repo.own_value("spelled.size") is None
+
+    _config.write_text("format_version: 2\nspelled: {a_size: 9, old_size: 5}\n", encoding="utf-8")
+    assert SettingsFileRepository().own_value("spelled.size") == 5
