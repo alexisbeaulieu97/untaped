@@ -54,7 +54,11 @@ def _at(root: MutableMapping[str, Any], path: KeyPath) -> MutableMapping[str, An
 
 
 def leaf_paths(source: Mapping[str, Any], prefix: KeyPath = ()) -> Iterator[KeyPath]:
-    """The key paths ``merge_into`` writes: every non-mapping value, and every empty mapping."""
+    """The key paths ``merge_into`` writes: every non-mapping value, and every empty mapping.
+
+    An empty mapping manages only that a mapping is there: the keys a target
+    holds under it are the target's (:func:`project`, :func:`remove_paths`).
+    """
     for key, value in source.items():
         path = (*prefix, str(key))
         if isinstance(value, Mapping) and value:
@@ -77,12 +81,25 @@ def lookup(document: Mapping[str, Any], path: KeyPath) -> Any:
 
 
 def project(document: Mapping[str, Any], paths: tuple[KeyPath, ...]) -> list[Any]:
-    """The values at ``paths``, in order, ``None`` where a path is absent."""
-    return [None if (found := lookup(document, path)) is _ABSENT else found for path in paths]
+    """The values at ``paths``, in order, ``None`` where a path is absent.
+
+    A mapping at a path (an empty mapping the source writes) is ``{}``, whatever
+    keys the target holds in it.
+    """
+    return [_projected(lookup(document, path)) for path in paths]
+
+
+def _projected(found: Any) -> Any:
+    if found is _ABSENT:
+        return None
+    return {} if isinstance(found, Mapping) else found
 
 
 def remove_paths(document: MutableMapping[str, Any], paths: tuple[KeyPath, ...]) -> None:
-    """Delete the keys at ``paths`` in place; a mapping left empty by that is deleted too."""
+    """Delete the keys at ``paths`` in place; a mapping left empty by that is deleted too.
+
+    A mapping at a path that still holds keys is kept: they are the target's.
+    """
     for path in paths:
         _remove(document, path)
 
@@ -99,4 +116,6 @@ def _remove(node: MutableMapping[str, Any], path: KeyPath) -> None:
             _remove(child, tuple(rest))
             if child:
                 return
+    elif isinstance(node[head], Mapping) and node[head]:
+        return
     del node[head]

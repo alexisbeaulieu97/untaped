@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -282,3 +283,59 @@ def test_a_toml_merge_tomlkit_would_lose_a_key_in_is_refused(tmp_path: Path) -> 
     with pytest.raises(DotfilesError, match="nothing was written"):
         placer.merge(b"[[d.b]]\nz = 1\n", target, fmt="toml")
     assert target.read_text() == before
+
+
+def test_a_yaml_source_date_is_written_as_a_date_and_taken_back(tmp_path: Path) -> None:
+    target = tmp_path / "t.yaml"
+    target.write_text("keep: 1\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    source = b"when: 2001-12-14\nat: 2001-12-14t21:59:43.10-05:00\nname: x\n"
+    target_hash, managed = placer.merge(source, target, fmt="yaml")
+    assert target.read_text() == (
+        "keep: 1\nwhen: 2001-12-14\nat: 2001-12-14T21:59:43.100000-05:00\nname: x\n"
+    )  # unquoted: the program reading it sees a date and a timestamp
+    assert placer.observe(target, fmt="yaml", managed=managed).hash == target_hash
+    placer.unmerge(target, fmt="yaml", managed=managed)
+    assert target.read_text() == "keep: 1\n"
+
+
+def test_yaml_source_values_hash_as_before_without_dates() -> None:
+    text = "a: &on true\nb: *on\n1: one\nn: 0x1f\nf: 1.50\nl: [x, {y: 2}]\n"
+    loaded = load_document(text, fmt="yaml", where="t")
+    assert documents.load_values(text, fmt="yaml", where="t") == documents.plain(loaded)
+    assert list(leaf_paths(documents.load_values(text, fmt="yaml", where="t")))[2] == ("1",)
+
+
+@pytest.mark.parametrize(
+    ("fmt", "target", "source"),
+    [
+        ("json", '{"a": {"x": 1}}', b'{"a": {}}'),
+        ("yaml", "a:\n  x: 1\n", b"a: {}\n"),
+        ("toml", "[a]\nx = 1\n", b"a = {}\n"),
+        ("toml", "[a]\nx = 1\n", b"[a]\n"),
+    ],
+)
+def test_an_empty_source_mapping_leaves_the_targets_keys_under_it(
+    fmt: str, target: str, source: bytes, tmp_path: Path
+) -> None:
+    path = tmp_path / f"t.{fmt}"
+    path.write_text(target)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    target_hash, managed = placer.merge(source, path, fmt=fmt)  # type: ignore[arg-type]
+    assert managed == (("a",),)
+    edited = path.read_text().replace("1", "2")
+    path.write_text(edited)
+    observed = placer.observe(path, fmt=fmt, managed=managed)  # type: ignore[arg-type]
+    assert observed.hash == target_hash  # a.x is the target's: editing it changes nothing
+    placer.unmerge(path, fmt=fmt, managed=managed)  # type: ignore[arg-type]
+    assert load_document(path.read_text(), fmt=fmt, where="t") == {"a": {"x": 2}}  # type: ignore[arg-type]
+
+
+def test_an_empty_mapping_the_merge_creates_is_taken_back(tmp_path: Path) -> None:
+    path = tmp_path / "t.json"
+    path.write_text('{"keep": 1}')
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    _, managed = placer.merge(b'{"a": {}}', path, fmt="json")
+    assert json.loads(path.read_text()) == {"keep": 1, "a": {}}
+    placer.unmerge(path, fmt="json", managed=managed)
+    assert json.loads(path.read_text()) == {"keep": 1}
