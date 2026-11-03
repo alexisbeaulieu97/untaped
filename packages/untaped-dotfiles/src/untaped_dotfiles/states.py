@@ -33,9 +33,6 @@ FileState = Literal[
 ]
 """``error``: the path could not be read (a git or filesystem failure); the row's error says why."""
 
-#: How a table draws a :data:`FileState`: waiting, or in trouble.
-FILE_STATE_ROLES = Status(warning=("pending", "new"), error=("conflict", "error"))
-
 Action = Literal["apply", "skip", "report", "remove"]
 """What ``apply`` does for one path; ``report`` leaves it for a person."""
 
@@ -90,6 +87,63 @@ def decide_asked(state: FileState, *, force: bool) -> Action | None:
     if state in ("modified", "conflict"):
         return "apply" if force else None
     if state in ("off", "error"):
+        return "report"
+    return "skip"
+
+
+StepState = Literal[
+    "pending",
+    "new",
+    "applied",
+    "drifted",
+    "behind",
+    "unmet",
+    "orphan",
+    "off",
+    "excluded",
+    "error",
+]
+"""A step's state (the policy guide explains each): ``pending``, ``new`` and ``behind`` are
+known without running anything; ``applied``, ``drifted`` and ``unmet`` come from running
+the check as last applied."""
+
+EntryState = FileState | StepState
+"""The state of a file or a step."""
+
+#: How a table draws an :data:`EntryState`: waiting, or in trouble.
+ENTRY_STATE_ROLES = Status(
+    warning=("pending", "new", "drifted", "unmet"), error=("conflict", "error")
+)
+
+#: What ``apply`` with no selector does with a step, under ``sync``, ``once`` and ``manual``
+#: (``remove`` forgets the step: nothing it did is undone).
+_STEP_TABLE: dict[StepState, tuple[Action, Action, Action]] = {
+    "pending": ("apply", "apply", "apply"),
+    "new": ("apply", "apply", "report"),
+    "applied": ("skip", "skip", "skip"),
+    "drifted": ("apply", "report", "report"),
+    "behind": ("apply", "skip", "report"),
+    "unmet": ("report", "report", "report"),
+    "orphan": ("remove", "report", "report"),
+    "off": ("report", "report", "report"),
+    "excluded": ("skip", "skip", "skip"),
+    "error": ("report", "report", "report"),
+}
+
+
+def decide_step(policy: Policy, state: StepState) -> Action:
+    """What ``apply`` with no selector does with a step in ``state``; ``policy`` is the one
+    the machine chose, else ``manual``."""
+    return _STEP_TABLE[state][_COLUMN[policy]]
+
+
+def decide_step_asked(state: StepState) -> Action:
+    """What ``apply SELECTOR`` (or ``--all``) does with a step, whatever the policy."""
+    if state in ("pending", "new", "drifted", "behind"):
+        return "apply"
+    if state == "orphan":
+        return "remove"
+    if state in ("unmet", "off", "error"):
         return "report"
     return "skip"
 

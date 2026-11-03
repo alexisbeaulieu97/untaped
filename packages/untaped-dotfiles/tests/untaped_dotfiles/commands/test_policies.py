@@ -25,6 +25,7 @@ from untaped.sdk.testing import ScriptedTerminal
 pytestmark = pytest.mark.usefixtures("dotfiles_env")
 
 _CONFIG = Path(".config/fish/config.fish")
+_EMAIL = "git_email=a@example.com"
 
 
 def _inputs(source: str, package: str) -> dict[str, object]:
@@ -235,7 +236,7 @@ def test_a_changed_input_moves_a_target_whatever_the_policy(
     make_remote: MakeRemote, user_home: Path
 ) -> None:
     subscribe(make_remote().url, "--add", "git")
-    as_json(["add", "git", "--policy", "manual", "--var", "git_profile=work"])
+    as_json(["add", "git", "--policy", "manual", "--var", "git_profile=work", "--var", _EMAIL])
     as_json(["apply", "--yes"])
     assert (user_home / ".config/git/work.inc").is_file()
     result = run(["apply", "--yes", "--var", "git_profile=home", "--format", "json"])
@@ -280,7 +281,7 @@ def _snapshot(home: Path) -> dict[str, bytes]:
 def test_a_dry_run_fetches_but_writes_nothing(make_remote: MakeRemote, user_home: Path) -> None:
     remote = make_remote()
     subscribe(remote.url, "--add", "starship", "--add", "git")
-    as_json(["apply", "--yes", "--var", "git_profile=home"])
+    as_json(["apply", "--yes", "--var", "git_profile=home", "--var", _EMAIL])
     before = _snapshot(user_home)
     publish(remote, {"starship.toml": "changed\n"})
     result = run(["apply", "--dry-run", "--var", "git_profile=work"])

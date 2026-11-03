@@ -13,7 +13,7 @@ from untaped_dotfiles.commands.packages import Add, Remove, Show
 from untaped_dotfiles.commands.sources import Subscribe, Unsubscribe
 from untaped_dotfiles.commands.status import Status
 from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings
-from untaped_dotfiles.store import CHANGING, CLONED, ITEMS, PLACED
+from untaped_dotfiles.store import CHANGING, CLONED, ITEMS, PLACED, STEPS
 
 
 class Dotfiles(Plugin):
@@ -25,6 +25,7 @@ class Dotfiles(Plugin):
     cloned = CLONED
     items = ITEMS
     placed = PLACED
+    steps = STEPS
     changing = CHANGING
     clones = CLONES
     kept = KEPT

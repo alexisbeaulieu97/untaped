@@ -251,6 +251,9 @@ each state with `checked_at`, `total`, `apply` (the entries the next
 settle), and `attention`, one line holding that last count, for prompt
 segments. `dotfiles apply` rows carry a `diff` field (not a column): the
 target's content before and after, a new file's whole content included.
+`dotfiles status` and `dotfiles apply` rows have a `kind`: `file`, or
+`step` (its `entry` is the step's name, with no `mode` or `target_path`);
+`status.json` counts steps' `drifted` and `unmet` states too.
 
 ## git
 

@@ -10,14 +10,16 @@ from pathlib import Path
 
 from untaped.sdk import Command, ConfigError, UntapedError, key, run_hint
 from untaped_dotfiles.applier import Applier
-from untaped_dotfiles.catalog import Catalog, Offer, gone_error
-from untaped_dotfiles.inventory import Inventory
+from untaped_dotfiles.catalog import Catalog, Offer, Selection, gone_error
+from untaped_dotfiles.inventory import Inventory, Placement
 from untaped_dotfiles.models import Machine
 from untaped_dotfiles.placer import FilesystemPlacer
 from untaped_dotfiles.records import ApplyOutcome, Package
 from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings, Os
 from untaped_dotfiles.sources import Clones, Sources
-from untaped_dotfiles.status import Evaluator, StatusReader
+from untaped_dotfiles.status import Evaluator, Reading, StatusReader
+from untaped_dotfiles.step_runner import StepRunner
+from untaped_dotfiles.steps import Steps
 from untaped_dotfiles.store import StateDotfilesStore
 
 _OS: dict[str, Os] = {"darwin": "macos", "linux": "linux", "windows": "windows"}
@@ -55,13 +57,31 @@ class Services:
     evaluator: Evaluator
     reader: StatusReader
     applier: Applier
+    steps: Steps
+
+    def reading(
+        self,
+        placements: Sequence[Placement],
+        selections: Sequence[Selection] | None,
+        *,
+        include_excluded: bool = False,
+    ) -> Reading:
+        """The status rows of ``placements`` and of the steps of ``selections`` (every package
+        that is on when ``None``); a step's stored check runs here."""
+        files = self.reader.read(placements)
+        steps = [
+            entry
+            for entry in self.steps.entries(selections)
+            if include_excluded or entry.excluded is None
+        ]
+        return files.joined(*self.steps.status_rows(steps))
 
     def refresh_status(self) -> None:
         """Rewrite status.json and attention after a change, so a prompt segment is current."""
         self.catalog.forget()
         self.evaluator.reset()
         resolved = self.inventory.placements()
-        reading = self.reader.read(resolved.placements)
+        reading = self.reading(resolved.placements, None)
         problems = len(resolved.problems) + len(self.catalog.problems)
         self.store.write_status(self.reader.summary(reading, problems=problems))
 
@@ -95,6 +115,7 @@ class DotfilesCommand(Command[DotfilesSettings]):
             evaluator=evaluator,
             reader=StatusReader(evaluator, now=utc_now),
             applier=Applier(store, placer, inventory, evaluator, now=utc_now),
+            steps=Steps(inventory, store, StepRunner(home=home), now=utc_now),
         )
 
     def report(self, problems: Sequence[tuple[str, UntapedError]]) -> None:

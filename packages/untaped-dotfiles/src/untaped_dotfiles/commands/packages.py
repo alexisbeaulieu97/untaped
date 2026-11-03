@@ -247,10 +247,12 @@ class Remove(DotfilesCommand):
                 key(DotfilesSettings).sources[source].packages[package]: choice
                 for (source, package), choice in updated.items()
             }
-            if not changes and not records:
+            owners = [_owner(selection) for selection in chosen]
+            steps = svc.steps.forgetting(owners)
+            if not changes and not records and not steps:
                 self.ctx.diag.info(f"already off: {', '.join(s.spelled for s in chosen)}")
                 return iter([])
-            planned = svc.applier.removal(records, keep_files=self.keep_files)
+            planned = [*svc.applier.removal(records, keep_files=self.keep_files), *steps]
             plan = self.ctx.plugin.plan_settings(changes) if changes else None
             spelled = ", ".join(s.spelled for s in chosen)
 
@@ -271,8 +273,9 @@ class Remove(DotfilesCommand):
                 return iter(rows)
             if plan is not None:
                 plan.write()
-            for selection in chosen:
-                svc.store.forget_applied(_owner(selection))
+            rows += svc.steps.forgetting(owners, done=True)
+            for owner in owners:
+                svc.store.forget_applied(owner)
             self.services(_with_choices(self.settings, updated)).refresh_status()
         self.ctx.diag.success(f"turned off {spelled}")
         return iter(rows)
