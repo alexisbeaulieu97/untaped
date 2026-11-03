@@ -178,7 +178,7 @@ class ServerApiDecl(_Frozen):
     detect: str = ""
     #: The adapters, in the order core tries them.
     adapters: tuple[AdapterDecl, ...] = ()
-    #: The block's own mark (``experimental`` while the SDK's server API is).
+    #: The block's own mark, if any.
     stability: StabilityDecl | None = None
 
 
