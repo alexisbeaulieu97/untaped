@@ -119,6 +119,10 @@ def test_a_stalled_repack_is_a_warning(
     assert fetches and all("maintenance" not in argv for argv in fetches)
 
 
+@pytest.mark.skipif(
+    signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
+    reason="SIGINT is ignored here (a background job), so it never interrupts",
+)
 def test_interrupting_maintenance_kills_its_children(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

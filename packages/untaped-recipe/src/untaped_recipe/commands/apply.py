@@ -287,6 +287,7 @@ class Apply(RecipeCommand):
                     resolved=resolved,
                     parallel=workers,
                     on_progress=lambda done, total: progress.update(done=done, total=total),
+                    on_abort=executor.stop,
                 )
 
     def _prompt(self) -> PromptFunc | None:

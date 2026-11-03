@@ -80,6 +80,10 @@ class HookExecutor:
         self._resolver = resolver
         self._workers = workers
 
+    def stop(self) -> None:
+        """Stop every hook worker now, so an interrupted run does not wait out a hook."""
+        self._workers.close()
+
     def transform(
         self,
         hook: str,
