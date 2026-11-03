@@ -280,3 +280,9 @@ a finding. `lint --stdin` reads `--format pipe` records of any kind: each is
 checked by the rules that read its kind (`untaped.installed_plugin` from
 `plugin list`). A rule over a repository's files reads `lint.tree`
 (`root`, `paths`), which the run builds and never prints.
+
+## values
+
+`values` has no commands and writes no records. Its secret inputs show as
+`***` in the rows of the commands that take them (`recipe apply`'s
+`inputs`, for one).

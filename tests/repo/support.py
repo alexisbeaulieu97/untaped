@@ -37,6 +37,7 @@ FIRST_PARTY = (
     "jira",
     "lint",
     "recipe",
+    "values",
     "workspace",
 )
 

@@ -25,6 +25,7 @@ from untaped_recipe.infrastructure.file_writer import ApplyWriteError, flush_cha
 from untaped_recipe.infrastructure.hook_executor import HookExecutor
 from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import UvHookWorkerPool
+from untaped_values.api import Input
 
 
 def _runner() -> RunBulkApply:
@@ -400,7 +401,7 @@ def test_bulk_plan_resolves_per_target_inputs_and_dedupes_repeated_targets(
                 "token": {
                     "type": "str",
                     "scope": "global",
-                    "sensitive": True,
+                    "secret": True,
                     "required": True,
                 },
             },
@@ -449,7 +450,7 @@ def test_bulk_plan_error_rows_preserve_resolved_input_display(
                 "token": {
                     "type": "str",
                     "scope": "global",
-                    "sensitive": True,
+                    "secret": True,
                     "required": True,
                 },
             },
@@ -538,9 +539,9 @@ def test_bulk_plan_prompts_in_target_order_before_planning_targets_in_parallel(
         target.mkdir()
     log: list[str] = []
 
-    def prompt(message: str, *, sensitive: bool) -> object:
-        log.append(message)
-        return Path(message.removeprefix("service for ")).name
+    def ask(name: str, spec: Input, *, label: str) -> object:
+        log.append(f"{name} for {label}")
+        return Path(label).name
 
     plans = RunBulkApply(_BarrierPlanner(len(targets), log)).plan(
         recipe=recipe,
@@ -548,7 +549,7 @@ def test_bulk_plan_prompts_in_target_order_before_planning_targets_in_parallel(
         local_hook_project=None,
         targets=[Target(path=target) for target in targets],
         inputs={},
-        prompt=prompt,
+        ask=ask,
         parallel=len(targets),
     )
 

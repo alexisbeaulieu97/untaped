@@ -19,6 +19,7 @@ from untaped_recipe.hook_worker import handle_request
 from untaped_recipe.infrastructure.file_writer import flush_changes
 from untaped_recipe.infrastructure.hook_executor import HookExecutor
 from untaped_recipe.infrastructure.hook_resolver import HookResolver
+from untaped_values.api import InputError
 
 
 class InlineWorkers:
@@ -550,24 +551,24 @@ def test_apply_recipe_if_absent_uses_rendered_dest(tmp_path: Path) -> None:
             id="rendered-dest-absolute",
         ),
         pytest.param(
-            {"name": {"type": "str", "sensitive": True}},
+            {"name": {"type": "str", "secret": True}},
             {"name": "secret"},
             {},
-            "sensitive input 'name' cannot be used in path field 'dest'",
-            id="sensitive-input",
+            "secret input 'name' cannot be used in field 'dest'",
+            id="secret-input",
         ),
         pytest.param(
             {"name": {"type": "list"}},
             {"name": ["a"]},
             {},
-            "structured input 'name' cannot be rendered; hooks receive it natively",
+            "structured input 'name' cannot be used in field 'dest'",
             id="structured-input",
         ),
         pytest.param(
             {},
             {},
             {"unknown_tokens": "keep"},
-            "template input 'name' is not defined",
+            "input 'name' in field 'dest' has no value",
             id="strict-even-when-body-keeps-unknown-tokens",
         ),
     ],
@@ -594,7 +595,7 @@ def test_apply_recipe_rejects_unsafe_rendered_path_fields(
         }
     )
 
-    with pytest.raises(ValueError, match=re.escape(match)):
+    with pytest.raises((ValueError, InputError), match=re.escape(match)):
         _planner(tmp_path)(recipe=recipe, recipe_dir=recipe_dir, target=target, inputs=inputs)
 
 

@@ -16,12 +16,6 @@ from untaped_recipe.domain.pack import (
 from untaped_recipe.domain.plan import HookDebugResult, HookWorkerCallResult, Verdict
 
 
-class PromptFunc(Protocol):
-    """Prompt callback asking for a missing required input on a terminal."""
-
-    def __call__(self, message: str, *, sensitive: bool) -> object: ...
-
-
 class HookWorkerPort(Protocol):
     """Request/response transport for external hook execution."""
 

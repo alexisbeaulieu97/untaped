@@ -12,13 +12,16 @@ import pytest
 
 from untaped_recipe.domain import templates
 from untaped_recipe.hook_worker import HookHelpers, render_template
+from untaped_values.api import renderer_file
 
-HELPERS_FILE = Path(inspect.getfile(HookHelpers))
+HELPERS_FILE = Path(inspect.getfile(HookHelpers.__mro__[1]))  # the worker's own helpers
 
 
 def test_one_renderer_serves_domain_and_hooks() -> None:
+    """The planner, the hook helpers and the worker all render with the values plugin's file."""
     assert templates.render_template is render_template
-    assert Path(inspect.getfile(render_template)) == HELPERS_FILE
+    assert HookHelpers().render_template("{{ a }}", {"a": "1"}) == "1"
+    assert Path(inspect.getfile(templates._renderer().render_template)) == renderer_file()
 
 
 def test_render_template_replaces_defined_inputs() -> None:
@@ -39,7 +42,7 @@ def test_render_template_handles_unknown_bare_names() -> None:
 def test_render_template_rejects_structured_values() -> None:
     with pytest.raises(
         ValueError,
-        match="structured input 'cols' cannot be rendered; hooks receive it natively",
+        match="structured input 'cols' cannot be rendered into text",
     ):
         render_template("cols={{ cols }}", {"cols": ["a", "b"]})
 

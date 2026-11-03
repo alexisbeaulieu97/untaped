@@ -13,18 +13,16 @@ from pathlib import Path
 from typing import Any, TextIO
 
 
-def _load_sibling(name: str) -> Any:  # pragma: no cover - script mode only
-    """Load a sibling worker module by file path under a private module name.
+def _load_file(name: str, path: Path) -> Any:  # pragma: no cover - script mode only
+    """Load the module at ``path`` under a private module name.
 
     The worker runs with ``python -P`` so its directory is not on ``sys.path``;
-    loading siblings by path keeps a pack's own modules from shadowing them
+    loading by path keeps a pack's own modules from shadowing the worker's
     (and them from shadowing the pack's).
     """
     import importlib.util  # noqa: PLC0415
 
-    spec = importlib.util.spec_from_file_location(
-        f"_untaped_recipe_worker_{name}", Path(__file__).with_name(f"{name}.py")
-    )
+    spec = importlib.util.spec_from_file_location(f"_untaped_recipe_worker_{name}", path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load worker module {name}")
     module = importlib.util.module_from_spec(spec)
@@ -36,9 +34,13 @@ def _load_sibling(name: str) -> Any:  # pragma: no cover - script mode only
 if __package__:
     from untaped_recipe._worker import helpers as hook_helpers
     from untaped_recipe._worker import worker_protocol as protocol
+    from untaped_recipe.domain.templates import render_template
 else:  # pragma: no cover - used when executed as a script in a hook env.
-    protocol = _load_sibling("worker_protocol")
-    hook_helpers = _load_sibling("helpers")
+    # Siblings beside this file; the renderer at the path the client passes
+    # (the values plugin's ``renderer_file()``), which a pack's environment can't import.
+    protocol = _load_file("worker_protocol", Path(__file__).with_name("worker_protocol.py"))
+    hook_helpers = _load_file("helpers", Path(__file__).with_name("helpers.py"))
+    render_template = _load_file("renderer", Path(sys.argv[1])).render_template
 
 
 def handle_request(request: dict[str, Any]) -> dict[str, Any]:
@@ -48,7 +50,7 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any]:
     module_name = _required_str(request, protocol.MODULE)
     with redirect_stdout(sys.stderr):
         module = importlib.import_module(module_name)
-    helpers = hook_helpers.HookHelpers()
+    helpers = hook_helpers.HookHelpers(render_template)
     if kind == protocol.TRANSFORM:
         transform = getattr(module, "transform", None)
         if transform is None:

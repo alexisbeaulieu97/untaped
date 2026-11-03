@@ -8,7 +8,8 @@ from typing import cast
 
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
-from untaped_recipe._worker.helpers import HookHelpers, render_template
+from untaped_recipe._worker.helpers import HookHelpers
+from untaped_recipe.domain.templates import render_template
 
 PathSegment = str | Mapping[str, object]
 

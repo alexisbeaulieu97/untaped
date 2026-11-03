@@ -276,6 +276,8 @@ record recipe.CopyStep.type choice=copy
 record recipe.CopyStep.type string
 record recipe.InputSpec
 record recipe.InputSpec()
+record recipe.InputSpec.choices any[]
+record recipe.InputSpec.choices default=[]
 record recipe.InputSpec.default any?
 record recipe.InputSpec.default default=None
 record recipe.InputSpec.description default=""
@@ -294,8 +296,8 @@ record recipe.InputSpec.scope choice=global
 record recipe.InputSpec.scope choice=target
 record recipe.InputSpec.scope default=global
 record recipe.InputSpec.scope string
-record recipe.InputSpec.sensitive boolean
-record recipe.InputSpec.sensitive default=false
+record recipe.InputSpec.secret boolean
+record recipe.InputSpec.secret default=false
 record recipe.InputSpec.type choice=bool
 record recipe.InputSpec.type choice=dict
 record recipe.InputSpec.type choice=float
@@ -323,7 +325,7 @@ record recipe.RecipeInput.default any
 record recipe.RecipeInput.description string
 record recipe.RecipeInput.name string
 record recipe.RecipeInput.required boolean
-record recipe.RecipeInput.sensitive boolean
+record recipe.RecipeInput.secret boolean
 record recipe.RecipeInput.type string
 record recipe.RecipeStep
 record recipe.RecipeStep.exclude string[]

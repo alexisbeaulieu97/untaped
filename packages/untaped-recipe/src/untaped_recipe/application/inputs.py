@@ -1,15 +1,17 @@
-"""Resolve recipe inputs for one apply invocation and target."""
+"""Resolve recipe inputs for one apply invocation and target.
+
+The values plugin owns the shared part: conversion, precedence, the refusal of
+undeclared names, asking and redaction. Recipe adds what only it has: global
+and per-target scope, and per-target values derived by a recipe's ``from``
+candidates or ``--input-from``.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
-
-import yaml
 
 from untaped.sdk import UsageError
-from untaped_recipe.application.ports import PromptFunc
 from untaped_recipe.application.targets import Target
 from untaped_recipe.domain.input_jinja import (
     UNRESOLVED,
@@ -21,9 +23,7 @@ from untaped_recipe.domain.input_jinja import (
 )
 from untaped_recipe.domain.recipe import InputSpec, RecipeFile
 from untaped_recipe.errors import RecipeError
-
-REDACTED = "***"
-_UNSET = object()
+from untaped_values.api import Ask, coerce, redact, resolve
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class InputResolutionConfig:
     fixed_values: Mapping[str, object] = field(default_factory=dict)
     cli_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
     recipe_sources: Mapping[str, CompiledInputSource] = field(default_factory=dict)
-    prompt: PromptFunc | None = None
+    ask: Ask | None = None
 
 
 _STRUCTURED = frozenset({"list", "dict"})
@@ -52,11 +52,17 @@ def prepare_input_resolution(
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
-    prompt: PromptFunc | None = None,
+    ask: Ask | None = None,
 ) -> InputResolutionConfig:
-    """Validate and compile invocation-level input resolution settings."""
-    _validate_config(recipe, fixed_values=fixed_values, input_from=input_from)
-    typed_fixed_values = _coerce_fixed_values(recipe, fixed_values)
+    """Validate and compile invocation-level input resolution settings.
+
+    Every ``--var``/``--vars-file`` value is converted here, once, so a bad
+    one fails the whole run before any target, and a name the recipe doesn't
+    declare is refused.
+    """
+    _validate_input_from(recipe, fixed_values=fixed_values, input_from=input_from)
+    given = {name: spec for name, spec in recipe.inputs.items() if name in fixed_values}
+    typed_fixed_values = resolve(given, [fixed_values], known=recipe.inputs).values
     cli_sources = {
         name: _compile_named_source(name, (expression,)) for name, expression in input_from.items()
     }
@@ -69,7 +75,7 @@ def prepare_input_resolution(
         fixed_values=typed_fixed_values,
         cli_sources=cli_sources,
         recipe_sources=recipe_sources,
-        prompt=prompt,
+        ask=ask,
     )
 
 
@@ -82,14 +88,8 @@ def validate_recipe_input_sources(recipe: RecipeFile) -> None:
 
 def resolve_global_values(recipe: RecipeFile, config: InputResolutionConfig) -> dict[str, object]:
     """Resolve invocation-global input values once before target planning."""
-    values: dict[str, object] = {}
-    for name, spec in recipe.inputs.items():
-        if spec.scope != "global":
-            continue
-        value = _resolve_one(name, spec, target=None, config=config)
-        if value is not _UNSET:
-            values[name] = value
-    return values
+    specs = {name: spec for name, spec in recipe.inputs.items() if spec.scope == "global"}
+    return _resolve(specs, [config.fixed_values], recipe=recipe, config=config, label="")
 
 
 def resolve_target_inputs(
@@ -99,83 +99,88 @@ def resolve_target_inputs(
     config: InputResolutionConfig,
     global_values: Mapping[str, object],
 ) -> InputResolutionResult:
-    """Resolve all declared inputs for one target."""
-    values: dict[str, object] = {}
-    for name, spec in recipe.inputs.items():
-        if spec.scope == "global":
-            if name in global_values:
-                values[name] = global_values[name]
+    """Resolve all declared inputs for one target.
+
+    Per target, a value comes from ``--var``/``--vars-file``, then
+    ``--input-from`` (which must resolve), then the recipe's ``from``
+    candidates (which fall through), then the default, then an answer.
+    """
+    specs = {name: spec for name, spec in recipe.inputs.items() if spec.scope == "target"}
+    derived_cli: dict[str, object] = {}
+    derived_recipe: dict[str, object] = {}
+    for name, spec in specs.items():
+        if name in config.fixed_values:
             continue
-        value = _resolve_one(name, spec, target=target, config=config)
-        if value is not _UNSET:
-            values[name] = value
-    return InputResolutionResult(values=values, display_values=redact_inputs(recipe.inputs, values))
-
-
-def redact_inputs(
-    specs: Mapping[str, InputSpec],
-    values: Mapping[str, object],
-) -> dict[str, object]:
-    """Return declared input values with sensitive entries redacted."""
-    redacted: dict[str, object] = {}
-    for name, value in values.items():
-        spec = specs.get(name)
-        if spec is None:
+        cli_source = config.cli_sources.get(name)
+        if cli_source is not None:
+            rendered = _derive_source_value(cli_source, target)
+            if rendered is UNRESOLVED:
+                raise ValueError(
+                    f"--input-from for input {name!r} did not resolve for target: {target.path}"
+                )
+            derived_cli[name] = _coerce_derived_value(name, spec, rendered)
             continue
-        redacted[name] = REDACTED if spec.sensitive else value
-    return redacted
+        recipe_source = config.recipe_sources.get(name)
+        if recipe_source is not None:
+            rendered = _derive_source_value(recipe_source, target)
+            if rendered is not UNRESOLVED:
+                derived_recipe[name] = _coerce_derived_value(name, spec, rendered)
+    own = _resolve(
+        specs,
+        [config.fixed_values, derived_cli, derived_recipe],
+        recipe=recipe,
+        config=config,
+        label=str(target.path),
+    )
+    values = {
+        name: global_values[name] if name in global_values else own[name]
+        for name in recipe.inputs
+        if name in global_values or name in own
+    }
+    return InputResolutionResult(values=values, display_values=redact(recipe.inputs, values))
 
 
-def has_sensitive_inputs(
+def has_secret_inputs(
     specs: Mapping[str, InputSpec],
     display_values: Mapping[str, object],
 ) -> bool:
-    """Return whether the display row contains any resolved sensitive input."""
-    return any((spec := specs.get(name)) is not None and spec.sensitive for name in display_values)
+    """Return whether the display row contains any resolved secret input."""
+    return any((spec := specs.get(name)) is not None and spec.secret for name in display_values)
 
 
-def _resolve_one(
-    name: str,
-    spec: InputSpec,
+def _resolve(
+    specs: Mapping[str, InputSpec],
+    given: list[Mapping[str, object]],
     *,
-    target: Target | None,
+    recipe: RecipeFile,
     config: InputResolutionConfig,
-) -> object:
-    if name in config.fixed_values:
-        return config.fixed_values[name]
-    cli_source = config.cli_sources.get(name)
-    if cli_source is not None and target is not None:
-        rendered = _derive_source_value(cli_source, target)
-        if rendered is UNRESOLVED:
-            raise ValueError(
-                f"--input-from for input {name!r} did not resolve for target: {target.path}"
-            )
-        return _coerce_derived_value(name, spec, rendered)
-    recipe_source = config.recipe_sources.get(name) if target is not None else None
-    if recipe_source is not None and target is not None:
-        rendered = _derive_source_value(recipe_source, target)
-        if rendered is not UNRESOLVED:
-            return _coerce_derived_value(name, spec, rendered)
-    if spec.default is not None:
-        return _coerce_input(name, spec, spec.default)
-    if not spec.required:
-        return _UNSET
-    # Structured inputs cannot be typed at a prompt.
-    if config.prompt is not None and spec.type not in _STRUCTURED:
-        prompt_target = None if target is None else target.path
-        return _coerce_input(name, spec, _prompt_value(name, spec, prompt_target, config.prompt))
-    raise ValueError(f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE")
+    label: str,
+) -> dict[str, object]:
+    """The values plugin's resolution over ``specs`` (one scope of ``recipe``'s inputs).
+
+    The given values may name the other scope's inputs (``known``). A missing
+    input fails with the ``--var`` hint.
+    """
+    resolved = resolve(specs, given, known=recipe.inputs, ask=config.ask, label=label)
+    if resolved.missing:
+        raise ValueError(_missing_message(resolved.missing))
+    return resolved.values
 
 
-def _validate_config(
+def _missing_message(missing: tuple[str, ...]) -> str:
+    if len(missing) == 1:
+        name = missing[0]
+        return f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE"
+    names = ", ".join(missing)
+    return f"missing required inputs: {names}; pass --var NAME=VALUE or --vars-file FILE"
+
+
+def _validate_input_from(
     recipe: RecipeFile,
     *,
     fixed_values: Mapping[str, object],
     input_from: Mapping[str, str],
 ) -> None:
-    unknown_values = sorted(set(fixed_values) - set(recipe.inputs))
-    if unknown_values:
-        raise RecipeError(f"unknown input: {unknown_values[0]}")
     unknown_sources = sorted(set(input_from) - set(recipe.inputs))
     if unknown_sources:
         raise RecipeError(f"unknown input: {unknown_sources[0]}")
@@ -185,37 +190,6 @@ def _validate_config(
     conflicts = sorted(set(fixed_values) & set(input_from))
     if conflicts:
         raise UsageError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
-
-
-def _coerce_fixed_values(
-    recipe: RecipeFile,
-    fixed_values: Mapping[str, object],
-) -> dict[str, object]:
-    typed: dict[str, object] = {}
-    for name, value in fixed_values.items():
-        spec = recipe.inputs[name]
-        try:
-            typed[name] = spec.coerce(_prepare_fixed_value(name, spec, value))
-        except RecipeError:
-            raise
-        except ValueError as exc:
-            raise RecipeError(f"input {name!r}: {exc}") from exc
-    return typed
-
-
-def _prepare_fixed_value(name: str, spec: InputSpec, value: object) -> object:
-    if spec.type not in {"list", "dict"} or not isinstance(value, str):
-        return value
-    expected = "list" if spec.type == "list" else "mapping"
-    try:
-        parsed = yaml.safe_load(value)
-    except yaml.YAMLError as exc:
-        raise RecipeError(f"input {name!r} expects YAML {expected}: {exc}") from exc
-    if spec.type == "list" and not isinstance(parsed, list):
-        raise RecipeError(f"input {name!r} expects YAML list: parsed value is not a list")
-    if spec.type == "dict" and not isinstance(parsed, dict):
-        raise RecipeError(f"input {name!r} expects YAML mapping: parsed value is not a mapping")
-    return parsed
 
 
 def _compile_named_source(name: str, candidates: tuple[str, ...]) -> CompiledInputSource:
@@ -229,18 +203,10 @@ def _derive_source_value(source: CompiledInputSource, target: Target) -> object:
     return derive_input_value(source, context=_target_context(target))
 
 
-def _coerce_input(name: str, spec: InputSpec, value: object) -> object:
-    """Coerce one input value, naming the input in any coercion error."""
-    try:
-        return spec.coerce(value)
-    except ValueError as exc:
-        raise ValueError(f"input {name!r}: {exc}") from exc
-
-
 def _coerce_derived_value(name: str, spec: InputSpec, value: object) -> object:
-    structured = spec.type in {"list", "dict"}
+    structured = spec.type in _STRUCTURED
     ensure_derived_value_within_bound(value, structured=structured)
-    coerced = _coerce_input(name, spec, value)
+    coerced = coerce(spec, value, name=name)
     ensure_derived_value_within_bound(coerced, structured=structured)
     return coerced
 
@@ -257,14 +223,3 @@ def _target_context(target: Target) -> dict[str, object]:
     if target.record is not None:
         context["record"] = dict(target.record)
     return context
-
-
-def _prompt_value(
-    name: str,
-    spec: InputSpec,
-    target: Path | None,
-    prompt: PromptFunc,
-) -> object:
-    suffix = f" ({spec.description})" if spec.description else ""
-    message = f"{name}{suffix}" if target is None else f"{name} for {target}{suffix}"
-    return prompt(message, sensitive=spec.sensitive)

@@ -113,7 +113,7 @@ def test_each_root_command_sits_in_exactly_one_panel(
         "stability panel) through bootstrap._root_panel, every other root command in "
         "Commands unless marked"
     )
-    for name in plugins:
+    for name in plugins.keys() & expected.keys():  # a plugin with no commands mounts none
         root[name]  # resolve each lazy plugin, as dispatch or completion would
     assert CliInvoker().invoke(root.meta, ["--deprecated", "--help"]).stdout == fresh, (
         "resolving a plugin moved it to another panel; see bootstrap._place"

@@ -10,20 +10,20 @@ from untaped.sdk import attribution, bounded_map
 from untaped_recipe.application.apply_recipe import ApplyRecipe
 from untaped_recipe.application.inputs import (
     InputResolutionResult,
-    has_sensitive_inputs,
+    has_secret_inputs,
     prepare_input_resolution,
     resolve_global_values,
     resolve_target_inputs,
 )
-from untaped_recipe.application.ports import PromptFunc
 from untaped_recipe.application.targets import Target, dedupe_targets
 from untaped_recipe.domain.plan import TargetPlan
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
+from untaped_values.api import Ask, InputError
 
-SENSITIVE_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with sensitive inputs"
-SENSITIVE_ERROR_SUPPRESSED = (
-    "target planning failed; diagnostic suppressed for target with sensitive inputs"
+SECRET_DIAGNOSTIC_SUPPRESSED = "diagnostic suppressed for target with secret inputs"
+SECRET_ERROR_SUPPRESSED = (
+    "target planning failed; diagnostic suppressed for target with secret inputs"
 )
 
 
@@ -43,7 +43,7 @@ def resolve_targets(
     *,
     inputs: dict[str, object],
     input_from: dict[str, str] | None = None,
-    prompt: PromptFunc | None = None,
+    ask: Ask | None = None,
 ) -> list[ResolvedTarget]:
     """Resolve every target's inputs serially, in target order, before any planning.
 
@@ -53,7 +53,7 @@ def resolve_targets(
     a bad input source, or a plain ``ValueError``) only fails its own target.
     """
     config = prepare_input_resolution(
-        recipe, fixed_values=inputs, input_from=input_from or {}, prompt=prompt
+        recipe, fixed_values=inputs, input_from=input_from or {}, ask=ask
     )
     global_values = resolve_global_values(recipe, config)
     resolved: list[ResolvedTarget] = []
@@ -62,7 +62,7 @@ def resolve_targets(
             result = resolve_target_inputs(
                 recipe, target, config=config, global_values=global_values
             )
-        except (RecipeError, ValueError) as exc:
+        except (RecipeError, InputError, ValueError) as exc:
             resolved.append(ResolvedTarget(target=target, error=str(exc), failure=_failure(exc)))
         else:
             resolved.append(ResolvedTarget(target=target, inputs=result))
@@ -84,7 +84,7 @@ class RunBulkApply:
         targets: list[Target],
         inputs: dict[str, object],
         input_from: dict[str, str] | None = None,
-        prompt: PromptFunc | None = None,
+        ask: Ask | None = None,
         parallel: int = 1,
         on_progress: Callable[[int, int], None] | None = None,
     ) -> list[TargetPlan]:
@@ -94,7 +94,7 @@ class RunBulkApply:
             recipe_dir=recipe_dir,
             local_hook_project=local_hook_project,
             resolved=resolve_targets(
-                recipe, targets, inputs=inputs, input_from=input_from, prompt=prompt
+                recipe, targets, inputs=inputs, input_from=input_from, ask=ask
             ),
             parallel=parallel,
             on_progress=on_progress,
@@ -152,19 +152,19 @@ class RunBulkApply:
                 target=target.path,
                 inputs=item.inputs.values,
             )
-            return _suppress_sensitive_diagnostics(
+            return _suppress_secret_diagnostics(
                 recipe,
                 plan.model_copy(update={"display_inputs": item.inputs.display_values}),
             )
         except Exception as exc:
             display_inputs = item.inputs.display_values
-            sensitive = has_sensitive_inputs(recipe.inputs, display_inputs)
-            error = SENSITIVE_ERROR_SUPPRESSED if sensitive else str(exc)
+            secret = has_secret_inputs(recipe.inputs, display_inputs)
+            error = SECRET_ERROR_SUPPRESSED if secret else str(exc)
             return TargetPlan(
                 target=target.path,
                 status="error",
                 error=error,
-                failure=_failure(exc, message=error if sensitive else None),
+                failure=_failure(exc, message=error if secret else None),
                 display_inputs=display_inputs,
             )
 
@@ -180,15 +180,15 @@ def _failure(exc: Exception, *, message: str | None = None) -> RecipeError:
     return RecipeError(message or str(exc), **attribution(exc))
 
 
-def _suppress_sensitive_diagnostics(
+def _suppress_secret_diagnostics(
     recipe: RecipeFile,
     plan: TargetPlan,
 ) -> TargetPlan:
-    if not has_sensitive_inputs(recipe.inputs, plan.display_inputs):
+    if not has_secret_inputs(recipe.inputs, plan.display_inputs):
         return plan
     return plan.model_copy(
         update={
-            "error": SENSITIVE_ERROR_SUPPRESSED if plan.error else "",
-            "warnings": ((SENSITIVE_DIAGNOSTIC_SUPPRESSED,) if plan.warnings else ()),
+            "error": SECRET_ERROR_SUPPRESSED if plan.error else "",
+            "warnings": ((SECRET_DIAGNOSTIC_SUPPRESSED,) if plan.warnings else ()),
         }
     )

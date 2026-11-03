@@ -521,6 +521,10 @@ is a provider; the docs never say "adapter plugin".)
 **Detection**: how a plugin finds out which server version it talks to (not
 "probe", which `OnlineCheck(probe=)` already names).
 
+**Input**: a value a file declares and whoever runs it gives, by `--var`,
+`--vars-file` or an answer at a prompt; the values plugin's `Input`. A
+secret input is never put into text such as a path or a command line.
+
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.
 
