@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
+from untaped.core.surface._lines import Line, LineMark, decl_mark
 
 if TYPE_CHECKING:
-    from untaped.runtime.declaration import PluginDecl, StabilityDecl
+    from untaped.runtime.declaration import PluginDecl
 
 
 def server_api_lines(name: str, plugin: PluginDecl, inherited: LineMark | None) -> list[Line]:
@@ -26,19 +26,11 @@ def server_api_lines(name: str, plugin: PluginDecl, inherited: LineMark | None) 
         if api is None:
             continue
         subject = f"{name}.{block.name}"
-        mark = _mark(api.stability) or inherited
+        mark = decl_mark(api.stability) or inherited
         override = f"{name}.{api.override}"
         lines.append(Line(f"server-api {subject} override={override}", mark))
         lines += [
-            Line(f"adapter {subject} {adapter.name}", _mark(adapter.stability) or mark)
+            Line(f"adapter {subject} {adapter.name}", decl_mark(adapter.stability) or mark)
             for adapter in api.adapters
         ]
     return lines
-
-
-def _mark(stability: StabilityDecl | None) -> LineMark | None:
-    if stability is None:
-        return None
-    if stability.stability == "experimental":
-        return "experimental"
-    return DeprecatedMark(stability.removed_in, stability.replacement)

@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
+import pytest
 import respx
 
 from core_test_support.server_api import URL, Get, Toy, configured, route, serve
@@ -98,6 +99,57 @@ def test_a_server_it_cannot_reach_is_a_warning(install: Installer) -> None:
     row = _row(install(Toy, settings=configured()), "--online")
     assert row["status"] == "warn"
     assert row["detail"].startswith("not checked: ")
+
+
+@respx.mock
+def test_a_server_it_cannot_reach_warns_though_a_version_is_cached(install: Installer) -> None:
+    serve("3.1")
+    route("GET", "/v2/items/a", json={"name": "a"})
+    toy = install(Toy, settings=configured())
+    toy.run(Get(name="a"))
+    respx.get(f"{URL}/about").mock(side_effect=httpx.ConnectError("refused"))
+    ran = toy.cli(["doctor", "--format", "json", "--online"])
+    row = next(row for row in json.loads(ran.stdout) if row["check"] == "toy.server-api")
+    assert row["status"] == "warn"
+    assert row["detail"].startswith("not checked: ")
+    assert "stale" not in ran.stderr
+
+
+@respx.mock
+def test_online_keeps_what_it_detected(install: Installer) -> None:
+    about = serve("3.1")
+    toy = install(Toy, settings=configured())
+    _row(toy, "--online")
+    assert _row(toy)["detail"] == "Toy 3.1, detected 0 s ago · Toy 3 and later"
+    assert about.call_count == 1
+
+
+@respx.mock
+def test_offline_an_override_is_not_judged_by_an_old_detection(install: Installer) -> None:
+    serve("3.1")
+    route("GET", "/v2/items/a", json={"name": "a"})
+    toy = install(Toy, settings=configured())
+    toy.run(Get(name="a"))
+    overridden = install(Toy, settings=configured(version="Toy 1.4"))
+    row = _row(overridden)
+    assert (row["status"], row["detail"]) == (
+        "pass",
+        "Toy 1.4 (set by toy.server_version) · Toy 1 to 2",
+    )
+
+
+@respx.mock
+@pytest.mark.parametrize("answer", ["not the product", "refused"])
+def test_when_detection_cannot_answer_the_override_does(install: Installer, answer: str) -> None:
+    if answer == "not the product":
+        serve(None)
+    else:
+        respx.get(f"{URL}/about").mock(return_value=httpx.Response(401))
+    row = _row(install(Toy, settings=configured(version="Toy 1.4")), "--online")
+    assert (row["status"], row["detail"]) == (
+        "pass",
+        "Toy 1.4 (set by toy.server_version) · Toy 1 to 2",
+    )
 
 
 @respx.mock

@@ -114,6 +114,11 @@ def test_online_true_is_network_online_with_a_deprecation_warning() -> None:
     assert check.network == "online"
     with pytest.warns(UntapedDeprecationWarning, match=r"use DoctorCheck.network"):
         assert check.online
+    with (
+        pytest.warns(UntapedDeprecationWarning),
+        pytest.raises(TypeError, match="not both"),
+    ):
+        DoctorCheck(title="svc API", run=run, network="both", online=False)
     with pytest.raises(ValueError, match="offline, online or both"):
         DoctorCheck(title="svc API", run=run, network="sometimes")  # type: ignore[arg-type]
 

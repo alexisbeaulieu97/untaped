@@ -616,6 +616,14 @@ class PluginWalk:
                 )
                 continue
             seen[id(value)] = attribute
+            for part_name, part in value._parts().items():
+                if id(part) in seen:
+                    self.problem(
+                        "duplicate-block",
+                        f"{where}.{part_name}",
+                        f"is the same {part.block_kind} as {seen[id(part)]}",
+                    )
+                seen[id(part)] = f"{attribute}.{part_name}"
             owners = {binding.owner for binding in value.bindings} - set(cls.__mro__)
             if owners:
                 other = ", ".join(sorted(owner.__qualname__ for owner in owners))

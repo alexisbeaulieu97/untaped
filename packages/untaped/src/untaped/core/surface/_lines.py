@@ -17,9 +17,12 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from untaped.sdk.diagnostic import KIND_PATTERN
+
+if TYPE_CHECKING:
+    from untaped.runtime.declaration import StabilityDecl
 
 #: The line format this generator reads and writes. A PR that respells
 #: existing lines bumps it and teaches :func:`upgrade` the old spelling.
@@ -69,6 +72,16 @@ class DeprecatedMark:
 
 type LineMark = Literal["experimental"] | DeprecatedMark
 """What a line's mark can be."""
+
+
+def decl_mark(stability: StabilityDecl | None) -> LineMark | None:
+    """A declared mark (a command's, an adapter's...) as a line's mark."""
+    if stability is None:
+        return None
+    if stability.stability == "experimental":
+        return "experimental"
+    return DeprecatedMark(stability.removed_in, stability.replacement)
+
 
 DEPRECATED = DeprecatedMark()
 """The undated, replacement-less deprecated mark: format 1's ``[deprecated]``."""

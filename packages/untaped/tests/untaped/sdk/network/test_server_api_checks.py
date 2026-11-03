@@ -251,3 +251,25 @@ def test_construction_refuses_what_is_not_a_key_a_credential_or_a_function() -> 
         _block(credential="token")
     with pytest.raises(TypeError, match="takes a function"):
         _block(detect=None)
+
+
+@pytest.mark.parametrize("cache_first", [False, True])
+def test_holding_a_part_again_is_a_duplicate_block(cache_first: bool) -> None:
+    block = _block()
+    held = {"server_api": block, "detection": block.cache}
+    if cache_first:
+        held = {"detection": block.cache, "server_api": block}
+    holder = type(
+        "Holder",
+        (Plugin,),
+        {"__doc__": "Holds a block.", "settings": ToySettings, "token": TOKEN, **held},
+    )
+    declaration = compose([PluginEntry("holder", f"{__name__}:Holder", holder)])
+    rules = [
+        (problem.rule, problem.detail)
+        for quarantined in declaration.quarantined
+        for problem in quarantined.problems
+    ]
+    assert any(
+        rule == "duplicate-block" and "is the same cache as" in detail for rule, detail in rules
+    ), rules

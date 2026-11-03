@@ -28,13 +28,13 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from untaped.core.surface._contracts import _closure, _model_mark, model_fields
-from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
+from untaped.core.surface._lines import Line, LineMark, decl_mark
 from untaped.core.surface._sdk import SurfaceError, sdk_line_mark
 from untaped.core.surface._types import choice_text
 from untaped.sdk.marks import Experimental, class_mark
 
 if TYPE_CHECKING:
-    from untaped.runtime.declaration import CommandDecl, GroupDecl, StabilityDecl
+    from untaped.runtime.declaration import CommandDecl, GroupDecl
     from untaped.runtime.mount import Mount
     from untaped.runtime.registry import CompositionResult
 
@@ -172,21 +172,13 @@ def _commands(
 ) -> Iterable[tuple[CommandDecl, LineMark | None]]:
     """Every command under ``nodes`` with its mark: its own, else its group's, else its plugin's."""
     for node in nodes:
-        mark = _decl_mark(node.stability) or inherited
+        mark = decl_mark(node.stability) or inherited
         if node.node == "group":
             if node.runs is not None:
-                yield node.runs, _decl_mark(node.runs.stability) or mark
+                yield node.runs, decl_mark(node.runs.stability) or mark
             yield from _commands(node.commands, mark)
         else:
             yield node, mark
-
-
-def _decl_mark(stability: StabilityDecl | None) -> LineMark | None:
-    if stability is None:
-        return None
-    if stability.stability == "experimental":
-        return "experimental"
-    return DeprecatedMark(stability.removed_in, stability.replacement)
 
 
 def _owner_of(model: type, result: CompositionResult, reaching: str) -> str:

@@ -136,13 +136,14 @@ class Acme(Plugin):
   tests ran against; `serves(version)` says whether it serves one. It
   reaches the server only through `self.connect()`.
 - **`override`** is a setting typed `V | None`; set, it replaces detection.
-- Adapters are tried in declared order, latest first; two may not both
-  serve a version.
+- Adapters are tried in declared order, latest first; no two may serve one
+  recorded version.
 
 Composition refuses a block that can't work and names the class: an
 unsubscripted block, keys outside the plugin's settings, an adapter without
-a docstring or recorded versions, overlapping adapters, a version whose
-`parse` doesn't read back its `str`, a deprecated adapter without its major.
+a docstring or recorded versions, two adapters serving one recorded version,
+a version whose `parse` doesn't read back its `str`, a deprecated adapter
+without its major.
 
 ## What core does
 

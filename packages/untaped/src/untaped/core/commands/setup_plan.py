@@ -64,7 +64,8 @@ def plan_rows(
         rows.extend(steps)
         if exists and all(row["state"] == "done" for row in steps):
             ready.append(name)
-    checks = selected_check_rows(result, profile, frozenset(ready)) if ready else []
+    # Only --online runs the checks contacting a service; a plain plan sends nothing.
+    checks = selected_check_rows(result, profile, frozenset(ready)) if ready and online else []
     for plugin in services.values():
         rows.extend(_online_rows(plugin, checks, online=online, ready=plugin.name in ready))
     return rows

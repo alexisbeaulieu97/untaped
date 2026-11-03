@@ -243,7 +243,8 @@ def online_probe_rows(
     (``network="online"`` or ``"both"``): the offline ones would misreport on
     candidate values, and there are no state or config-file rows.
     Settings that do not validate come back as the one failing ``validate
-    settings`` row. Never writes: not the config, not a token store.
+    settings`` row. Writes neither the config nor a token store (a server
+    API's row keeps what it detects, as any detection does).
 
     ``setup`` runs this on a worker thread inside a copy of its own context;
     the child run lives in that copy only.

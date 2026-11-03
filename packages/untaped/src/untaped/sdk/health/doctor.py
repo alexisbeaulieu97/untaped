@@ -72,6 +72,8 @@ class DoctorCheck(OwnedBlock):
         if network not in get_args(Network.__value__):
             raise ValueError(f"DoctorCheck(network=) is offline, online or both, not {network!r}")
         if online is not None:
+            if network != "offline":
+                raise TypeError("DoctorCheck takes network= or the deprecated online=, not both")
             network = "online" if online else "offline"
         self.title = title
         self.run = run
