@@ -331,7 +331,9 @@ class PackageFile(Where):
     `type` is `str`, `int`, `float`, `bool` or `choice`. `{{ name }}` in a
     `target`, a check (`command`, `prints`, `path`), `run`, `args` or a repo's
     `target` names a declared input; a secret input fits none of them, has
-    no `default`, and reaches a step only as its `stdin`.
+    no `default`, and reaches a step only as its `stdin`. A check names only
+    top-level inputs, since it runs again later (in `status`) when a step's
+    own inputs aren't asked.
 
     ## Steps
 
@@ -339,7 +341,9 @@ class PackageFile(Where):
     `prints`, `path` or `program`), and a `run` (an argv, no shell), a
     `script` in the source with `args`, or a `fix` for a person. `run` and
     `script` exclude each other. `kind` with `with` names a step kind a
-    plugin provides.
+    plugin provides. An argument (of `run`, `args` or a check's `command`)
+    that starts with `~/` names the home folder, and a check's `path` is
+    `~/...` or absolute once its inputs are filled in.
 
     ## Example
 
@@ -403,7 +407,8 @@ class PackageFile(Where):
             for step in item.steps:
                 where = f"item {name!r} step {step.name!r}"
                 for field, text in step.texts():
-                    self._placeholders(where, field, text, step.inputs)
+                    own = {} if field.startswith("check.") else step.inputs
+                    self._placeholders(where, field, text, own, step_inputs=step.inputs)
                 if step.stdin is not None and step.stdin not in {**self.inputs, **step.inputs}:
                     raise ValueError(f"{where}: stdin names no declared input {step.stdin!r}")
         return self
@@ -429,7 +434,13 @@ class PackageFile(Where):
                 declared |= set(step.inputs)
 
     def _placeholders(
-        self, where: str, field: str, text: str, own: Mapping[str, PackageInput]
+        self,
+        where: str,
+        field: str,
+        text: str,
+        own: Mapping[str, PackageInput],
+        *,
+        step_inputs: Mapping[str, PackageInput] | None = None,
     ) -> None:
         try:
             names = placeholders(text, field=field)
@@ -438,6 +449,11 @@ class PackageFile(Where):
         specs = {**self.inputs, **own}
         for name in names:
             spec = specs.get(name)
+            if spec is None and step_inputs is not None and name in step_inputs:
+                raise ValueError(
+                    f"{where}: the step's own input {name!r} cannot be used in {field}; "
+                    "it is asked only when the step runs, and a check also runs later, in status"
+                )
             if spec is None:
                 raise ValueError(f"{where}: {{{{ {name} }}}} in {field} names no declared input")
             if spec.secret:

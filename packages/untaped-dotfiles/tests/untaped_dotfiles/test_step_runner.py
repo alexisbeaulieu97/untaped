@@ -113,3 +113,16 @@ def test_a_run_relays_its_output_with_secrets_masked(tmp_path: Path) -> None:
 
 def test_a_report_only_step_has_nothing_to_run() -> None:
     assert _approved(_step(check={"program": "git"}, fix="install git")).argv is None
+
+
+def test_the_digest_leaves_out_what_doesnt_change_what_a_step_does() -> None:
+    step = _step(check={"program": "git"}, fix="install git")
+    described = _step(check={"program": "git"}, fix="install git", description="Git", os=["linux"])
+    assert step_digest(step, None) == step_digest(described, None)
+
+
+def test_a_check_path_that_renders_relative_is_refused(tmp_path: Path) -> None:
+    runner = StepRunner(home=tmp_path)
+    step = _step(check={"path": "{{ where }}"}, fix="f")
+    with pytest.raises(DotfilesError, match=r"neither `~/\.\.\.` nor absolute"):
+        runner.check(_approved(step, {"where": "relative/x"}))

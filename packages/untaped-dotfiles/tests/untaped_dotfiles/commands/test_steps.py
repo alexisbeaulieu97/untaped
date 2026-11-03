@@ -325,8 +325,11 @@ def test_with_no_terminal_a_step_input_skips_the_step(
     assert code == 3
     assert rows[0]["action"] == "skipped"
     assert "--var tag=VALUE" in str(rows[0]["detail"])
-    assert probe.calls() == []
+    assert probe.calls() == ["check"]  # its inputs are asked only once the check fails
     assert states()["install"] == "pending"
+    probe.mark.write_text("there")
+    code, rows, _ = _apply("--yes", "--var", "who=me")
+    assert code == 0 and rows[0]["action"] == "unchanged"  # a passing check asks nothing
 
 
 def test_a_secret_reaches_only_the_programs_stdin(
@@ -438,8 +441,10 @@ def test_an_applied_step_of_an_item_turned_off_is_off(
         ["config", "set", "dotfiles.sources.dotfiles.packages.tool.items.tool.enabled", "false"]
     )
     assert int(ran.exit) == 0, ran.stderr
+    calls = len(probe.calls())
     rows = {r["entry"]: r for r in as_json(["status"])}
     assert rows["install"]["state"] == "off"
+    assert probe.calls()[calls:] == []  # a step that is off runs nothing, its check included
     assert "remove dotfiles/tool/tool" in str(rows["install"]["detail"])
     rows_ = _step_rows(as_json(["remove", "tool/tool", "--yes"]))
     assert [r["action"] for r in rows_] == ["deleted"]
@@ -460,3 +465,110 @@ def test_a_step_the_author_drops_is_forgotten_under_sync(
     assert code == 0
     assert [(r["entry"], r["action"]) for r in rows] == [("install", "deleted")]
     assert "install" not in states()
+
+
+def test_apply_pkg_forgets_a_step_the_author_drops_under_manual(
+    make_remote: MakeRemote, probe: Probe
+) -> None:
+    remote = _source(make_remote, _tool(probe, files=True))
+    subscribe(remote.url, "--add", "tool")
+    assert _apply("--yes")[0] == 0
+    publish(remote, {".untaped/dotfiles/tool.yml": _tool(probe, files=True).split("    steps:")[0]})
+    code, rows, _ = _apply("--yes")
+    assert code == 3 and rows[0]["state"] == "orphan"  # manual: reported
+    code, rows, _ = _apply("tool", "--yes")
+    assert code == 0 and [r["action"] for r in rows] == ["deleted"]
+    assert "install" not in states()
+
+
+def test_a_step_that_failed_stays_pending_not_new(make_remote: MakeRemote, probe: Probe) -> None:
+    subscribe(_source(make_remote, _tool(probe, run_as="noop", files=True)).url, "--add", "tool")
+    code, rows, _ = _apply("--yes")
+    assert code == 1 and rows[0]["action"] == "failed"
+    assert states()["~/tool.txt"] == "applied"
+    assert states()["install"] == "pending"  # asked for with its item: not added later
+
+
+def test_an_argument_starting_with_tilde_names_the_home_folder(
+    make_remote: MakeRemote, probe: Probe, user_home: Path
+) -> None:
+    package = _tool(probe).replace(probe.argv("run"), probe.argv("run", "~/out", "a~/b"))
+    subscribe(_source(make_remote, package).url, "--add", "tool")
+    assert _apply("--yes")[0] == 0
+    assert f"run {user_home / 'out'} a~/b" in probe.calls()
+
+
+def test_a_plain_input_read_on_stdin_waits_for_a_value(
+    make_remote: MakeRemote, probe: Probe
+) -> None:
+    package = _tool(probe, inputs="  token: {description: A token}\n") + "        stdin: token\n"
+    subscribe(_source(make_remote, package).url, "--add", "tool")
+    rows = {r["entry"]: r for r in as_json(["status"])}
+    assert rows["install"]["state"] == "pending"
+    assert "add dotfiles/tool --var token=VALUE" in str(rows["install"]["detail"])
+    assert _apply("--yes")[0] == 3
+    assert probe.calls() == []
+    assert _apply("--yes", "--var", "token=abc")[0] == 0
+    assert probe.mark.read_text() == "abc"
+    probe.mark.unlink()
+    code, rows_, _ = _apply("--yes", "--var", "token=xyz")
+    assert code == 0 and rows_[0]["state"] == "pending"  # a changed input asks again
+    assert probe.mark.read_text() == "xyz"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a script with a shebang")
+def test_a_stuck_clone_runs_none_of_its_steps(
+    make_remote: MakeRemote, probe: Probe, tmp_path: Path
+) -> None:
+    package = f"""\
+version: 1
+items:
+  tool:
+    files:
+      - {{path: tool.txt, target: ~/tool.txt, mode: copy}}
+    steps:
+      - name: setup
+        check: {{path: {json.dumps(str(probe.mark))}}}
+        script: setup.sh
+"""
+    remote = make_remote(packages={"tool": package}, files={"tool.txt": "tool\n"})
+    script = remote.work / "setup.sh"
+    script.write_text(f'#!/bin/sh\necho v1 > "{probe.mark}"\n')
+    script.chmod(0o755)
+    publish(remote, {})
+    subscribe(remote.url, "--add", "tool")
+    as_json(["add", "tool", "--policy", "sync"])
+    assert _apply("--yes")[0] == 0
+    probe.mark.unlink()
+    (tmp_path / "clones/dotfiles/tool.txt").write_text("local edit\n")
+    publish(remote, {"setup.sh": f'#!/bin/sh\necho v2 > "{probe.mark}"\n'})
+    code, rows, stderr = _apply("--yes")
+    assert code == 1, stderr
+    assert rows[0]["action"] == "failed" and "local changes" in str(rows[0]["detail"]), stderr
+    assert not probe.mark.exists()  # neither the old script nor the new one ran
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a script with a shebang")
+def test_a_script_edited_in_the_clone_never_runs(
+    make_remote: MakeRemote, probe: Probe, tmp_path: Path
+) -> None:
+    package = f"""\
+version: 1
+items:
+  tool:
+    steps:
+      - name: setup
+        check: {{path: {json.dumps(str(probe.mark))}}}
+        script: setup.sh
+"""
+    remote = make_remote(packages={"tool": package}, files={})
+    script = remote.work / "setup.sh"
+    script.write_text(f'#!/bin/sh\necho source > "{probe.mark}"\n')
+    script.chmod(0o755)
+    publish(remote, {})
+    subscribe(remote.url, "--add", "tool")
+    (tmp_path / "clones/dotfiles/setup.sh").write_text(f'#!/bin/sh\necho local > "{probe.mark}"\n')
+    code, rows, _ = _apply("--yes")
+    assert code == 1
+    assert "isn't the one the preview showed" in str(rows[0]["detail"])
+    assert not probe.mark.exists()

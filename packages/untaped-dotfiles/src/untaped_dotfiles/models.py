@@ -41,7 +41,8 @@ class ItemRecord(BaseModel):
     first_applied_at: UtcTimestamp
     waited: tuple[tuple[str, str], ...] = ()
     """``(entry, declared target)`` of each entry that waited on an input when the item was
-    applied: asked for with the item, so ``pending`` once answered, not ``new``."""
+    applied, and ``(step, "step")`` of each step that was asked for and didn't end applied:
+    asked for with the item, so ``pending`` once answered, not ``new``."""
 
 
 class PlacedRecord(BaseModel):

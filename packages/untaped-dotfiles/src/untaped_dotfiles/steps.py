@@ -95,6 +95,12 @@ class StepPlan:
     found: StepFound
     action: Action
     detail: str
+    script_hash: str | None = None
+    """The hash of the step's script as planned: what confirming the plan approves."""
+
+
+#: The ``declared`` half of a step's ``ItemRecord.waited`` pair (a target never reads so).
+WAITED = "step"
 
 
 class Steps:
@@ -206,9 +212,11 @@ class Steps:
 
     @staticmethod
     def _names(entry: StepEntry) -> list[str]:
-        """The inputs the step's text fields name, in order, each once."""
-        found = (name for at, text in entry.step.texts() for name in placeholders(text, field=at))
-        return list(dict.fromkeys(found))
+        """The inputs the step uses, in order, each once: those its text fields name, then
+        the one its stdin reads."""
+        step = entry.step
+        found = [name for at, text in step.texts() for name in placeholders(text, field=at)]
+        return list(dict.fromkeys([*found, *([step.stdin] if step.stdin else [])]))
 
     def _stored(self, entry: StepEntry) -> StepFound:
         """The state of a step of an item that is on, from its row and its stored check."""
@@ -221,7 +229,8 @@ class Steps:
             return _error(exc)
         record = entry.record
         if record is None:
-            if self._store.applied_item(entry.owner) is not None:
+            item = self._store.applied_item(entry.owner)
+            if item is not None and (step.name, WAITED) not in item.waited:
                 return StepFound("new", ADDED)
             return StepFound("pending")
         if record.digest != digest:
@@ -307,8 +316,28 @@ class Steps:
                 action = decide_step(entry.policy, found.state)
             else:
                 action = decide_step_asked(found.state)
-            plans.append(StepPlan(entry, found, action, _planned_detail(entry, found, action)))
+            detail = _planned_detail(entry, found, action)
+            plans.append(StepPlan(entry, found, action, detail, self._planned_hash(entry)))
         return plans
+
+    def _planned_hash(self, entry: StepEntry) -> str | None:
+        try:
+            return self._script_hash(entry)
+        except UntapedError:  # the plan's row already says why
+            return None
+
+    @staticmethod
+    def failing(plans: Sequence[StepPlan], stuck: Mapping[str, UntapedError]) -> list[StepPlan]:
+        """``plans`` with each step to run or forget of a stuck source failed, carrying why:
+        what its clone holds is not what the plan shows."""
+        out: list[StepPlan] = []
+        for plan in plans:
+            exc = stuck.get(plan.entry.offer.source.name)
+            if exc is not None and plan.action in ("apply", "remove") and plan.found.error is None:
+                failure = Failure.from_exception(exc, message=str(exc))
+                plan = replace(plan, found=replace(plan.found, error=failure), detail=str(exc))
+            out.append(plan)
+        return out
 
     @staticmethod
     def planned(plans: Sequence[StepPlan]) -> list[ApplyOutcome]:
@@ -356,16 +385,16 @@ class Steps:
         """Run every planned step in order, after the confirmation; the rows, and how many
         steps wait for a person (a report, or an input with no terminal to ask)."""
         runner = self._runner.with_relay(relay)
+        self._checked.clear()  # planned before files were placed: what the status reads reruns
         rows: list[ApplyOutcome] = []
         waiting = 0
         for plan in plans:
-            if plan.action == "remove":
+            if plan.found.error is not None:  # unreadable, or its source's clone is stuck
+                rows.append(_row(plan, "failed", plan.detail, error=plan.found.error))
+            elif plan.action == "remove":
                 self._store.forget_steps((*plan.entry.owner, plan.entry.step.name))
                 rows.append(_row(plan, "deleted", FORGOTTEN))
             elif plan.action != "apply":
-                if plan.found.error is not None:
-                    rows.append(_row(plan, "failed", plan.detail, error=plan.found.error))
-                    continue
                 waiting += plan.action == "report"
                 rows.append(_row(plan, _kept(plan), plan.detail))
             else:
@@ -377,51 +406,59 @@ class Steps:
     def _apply(
         self, plan: StepPlan, runner: StepRunner, *, given: Mapping[str, object], ask: Ask | None
     ) -> tuple[ApplyOutcome, bool]:
+        """Check the step, run it when the check fails (asking its inputs only then), check
+        again; the row, and whether it waits for a person. A step that doesn't end applied is
+        noted on its item, so it stays ``pending`` rather than turning ``new``."""
+        row, waits = self._tried(plan, runner, given=given, ask=ask)
+        if row.action in ("failed", "skipped") and not (waits and _report_only(plan.entry.step)):
+            self._store.note_waited(plan.entry.owner, [(plan.entry.step.name, WAITED)])
+        return row, waits
+
+    def _tried(
+        self, plan: StepPlan, runner: StepRunner, *, given: Mapping[str, object], ask: Ask | None
+    ) -> tuple[ApplyOutcome, bool]:
         entry, step = plan.entry, plan.entry.step
-        asked = {name: spec for name, spec in entry.step.inputs.items()}
-        if step.stdin is not None and step.stdin not in asked:
-            spec = entry.specs[step.stdin]
-            if spec.secret:  # a secret is never kept: asked each run, like a step's own inputs
-                asked[step.stdin] = spec
+        script = self._script(entry)
+        values = self._values(entry)
+        try:
+            self._same_script(plan, script)
+            checking = ApprovedStep.from_plan(
+                entry.key, step, confirmed=True, specs=entry.specs, values=values, script=script
+            )
+            checked = self._checked[entry.key] = runner.check(checking)
+        except UntapedError as exc:
+            return _failed(plan, exc), False
+        if checked.passed:
+            self._store_step(plan)
+            return _row(plan, "unchanged", "the check passes; nothing ran"), False
+        if _report_only(step):
+            self._store_step(plan)
+            return _row(plan, "skipped", f"needs you: {step.fix}"), True
+        asked = dict(step.inputs)
+        if step.stdin is not None and entry.specs[step.stdin].secret:
+            asked[step.stdin] = entry.specs[step.stdin]  # a secret is never kept: asked each run
         mine = {name: value for name, value in given.items() if name in asked}
         try:
             found = resolve(asked, [mine], ask=ask, label=f"{entry.spelled} {step.name}")
         except UntapedError as exc:
             return _failed(plan, exc), False
         if found.missing:
-            names = ", ".join(q(name) for name in found.missing)
-            plain = [name for name in found.missing if not asked[name].secret]
-            hint = (
-                "; " + run_hint("dotfiles apply " + " ".join(f"--var {n}=VALUE" for n in plain))
-                if plain
-                else ""
-            )
-            detail = f"needs input {names}: no terminal to ask{hint}"
-            return _row(plan, "skipped", detail), True
-        values = {**self._values(entry), **found.values}
+            return _row(plan, "skipped", _missing(found.missing, asked)), True
+        everything = {**values, **found.values}
         secrets = [str(found.values[n]) for n in asked if asked[n].secret and n in found.values]
         stdin = None
         if step.stdin is not None:
-            given_stdin = found.values.get(
-                step.stdin, self._inventory.values(entry.offer).get(step.stdin)
-            )
-            stdin = str(given_stdin if given_stdin is not None else "").encode("utf-8")
+            value = everything.get(step.stdin)
+            stdin = str(value if value is not None else "").encode("utf-8")
         approved = ApprovedStep.from_plan(
             entry.key,
             step,
             confirmed=True,
             specs=entry.specs,
-            values={k: v for k, v in values.items() if not entry.specs[k].secret},
-            script=self._script(entry),
+            values={k: v for k, v in everything.items() if not entry.specs[k].secret},
+            script=script,
         )
         try:
-            checked = self._checked[entry.key] = runner.check(approved)
-            if checked.passed:
-                self._store_step(entry)
-                return _row(plan, "unchanged", "the check passes; nothing ran"), False
-            if _report_only(step):
-                self._store_step(entry)
-                return _row(plan, "skipped", f"needs you: {step.fix}"), True
             runner.run(approved, stdin=stdin, secrets=secrets)
             checked = self._checked[entry.key] = runner.check(approved)
         except UntapedError as exc:
@@ -429,13 +466,29 @@ class Steps:
         if not checked.passed:
             failure = DotfilesError(f"ran, but the check still fails: {checked.detail}")
             return _failed(plan, failure), False
-        self._store_step(entry)
+        self._store_step(plan)
         done: ApplyAction = "created" if entry.record is None else "updated"
         return _row(plan, done, "ran; the check passes now"), False
 
-    def _store_step(self, entry: StepEntry) -> None:
+    @staticmethod
+    def _same_script(plan: StepPlan, script: Path | None) -> None:
+        """Refuse a script whose file in the clone isn't the one the plan showed."""
+        if script is None:
+            return
+        try:
+            data = script.read_bytes()
+        except OSError as exc:
+            raise DotfilesError(f"cannot read the script {script}: {exc.strerror or exc}") from exc
+        if content_hash(data) != plan.script_hash:
+            raise DotfilesError(
+                f"the script {script} isn't the one the preview showed; nothing ran",
+                hint="run `untaped dotfiles apply` again once the source's clone is clean",
+            )
+
+    def _store_step(self, plan: StepPlan) -> None:
+        """Store the step as the plan showed it: the confirmation approved that."""
+        entry, script_hash = plan.entry, plan.script_hash
         now = self._now()
-        script_hash = self._script_hash(entry)
         self._store.put_step(
             StepRecord(
                 step=entry.key,
@@ -454,6 +507,16 @@ def _policy(offer: Offer, item: str) -> tuple[Policy, bool]:
     """A step's policy: this machine's choice, else ``manual``."""
     policy, chosen = offer.item_policy(item)
     return (policy, True) if chosen and policy is not None else (Policy.MANUAL, False)
+
+
+def _missing(names: Sequence[str], asked: Mapping[str, PackageInput]) -> str:
+    plain = [name for name in names if not asked[name].secret]
+    hint = (
+        "; " + run_hint("dotfiles apply " + " ".join(f"--var {n}=VALUE" for n in plain))
+        if plain
+        else ""
+    )
+    return f"needs input {', '.join(q(name) for name in names)}: no terminal to ask{hint}"
 
 
 def _report_only(step: Step) -> bool:

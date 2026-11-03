@@ -120,7 +120,7 @@ class Apply(DotfilesCommand):
             )
             self._report_stuck(steps, stuck)
             listed = [e for e in svc.steps.entries(selections) if e.excluded is None]
-            step_plans = svc.steps.plan(listed, follow=follow)
+            step_plans = svc.steps.failing(svc.steps.plan(listed, follow=follow), stuck)
             planned = [*svc.applier.planned(steps), *svc.steps.planned(step_plans)]
             todo = [
                 *(s for s in steps if s.action in ("apply", "remove") or s.converts),
@@ -149,6 +149,7 @@ class Apply(DotfilesCommand):
                 converted = svc.applier.convert(steps)
                 if moving:
                     steps = self._move(svc, moving, steps, stuck, follow=follow)
+                    step_plans = svc.steps.failing(step_plans, stuck)  # a clone that didn't move
                 rows = svc.applier.execute(steps, converted)
                 waiting += svc.applier.waiting(steps)
                 ran, waits = svc.steps.execute(

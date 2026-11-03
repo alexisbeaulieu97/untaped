@@ -6,9 +6,10 @@ Nothing runs a step's command but :class:`StepRunner`, and it takes only an
 was confirmed. Planning a step nobody approved runs nothing.
 
 A program runs with no shell, in the home folder, with the environment
-untaped received; its stdin is ``/dev/null`` or the value of the step's
-``stdin`` input. Checks stop after 30 seconds, runs after 10 minutes. What a
-run prints is relayed with every secret value of the run masked.
+untaped received; an argument that starts with ``~/`` names the home folder.
+Its stdin is ``/dev/null`` or the value of the step's ``stdin`` input.
+Checks stop after 30 seconds, runs after 10 minutes. What a run prints is
+relayed with every secret value of the run masked.
 """
 
 from __future__ import annotations
@@ -37,12 +38,14 @@ _APPROVAL = object()
 """Held only by the two constructors of :class:`ApprovedStep`."""
 
 
+#: What doesn't change what a step does: editing it leaves the step approved.
+_NOT_APPROVED = {"description", "os", "only", "unless"}
+
+
 def step_digest(step: Step, script_hash: str | None) -> str:
-    """What approving ``step`` approves: the step as the package writes it, and its script."""
-    body = json.dumps(
-        {"step": step.model_dump(mode="json", by_alias=True), "script": script_hash},
-        sort_keys=True,
-    )
+    """What approving ``step`` approves: what it checks, runs and reads, and its script."""
+    declared = step.model_dump(mode="json", by_alias=True, exclude=_NOT_APPROVED)
+    body = json.dumps({"step": declared, "script": script_hash}, sort_keys=True)
     return "sha256:" + hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
@@ -130,13 +133,19 @@ class StepRunner:
         check = approved.step.check
         assert check is not None  # a step without a check has a kind, which never gets here
         if check.path is not None:
-            path = self._path(approved.text(check.path, at="check.path"))
+            text = approved.text(check.path, at="check.path")
+            path = self._home_path(text)
+            if not path.is_absolute():
+                raise DotfilesError(
+                    f"step {q(approved.step.name)}: check path {text!r} is neither `~/...` "
+                    "nor absolute"
+                )
             return Checked(True) if path.exists() else Checked(False, f"{path} is absent")
         if check.program is not None:
             found = shutil.which(check.program)
             return Checked(found is not None, f"{check.program} is not on PATH")
         assert check.command is not None
-        argv = [approved.text(each, at="check.command") for each in check.command]
+        argv = [self._home_text(approved.text(each, at="check.command")) for each in check.command]
         ended = self._process(argv, timeout=CHECK_TIMEOUT, what="check", stdin=None)
         if ended.returncode != 0:
             return Checked(False, f"`{_shown(argv)}` exits {ended.returncode}")
@@ -150,8 +159,8 @@ class StepRunner:
 
     def run(self, approved: ApprovedStep, *, stdin: bytes | None, secrets: Sequence[str]) -> None:
         """Run the step's program; a run that doesn't exit 0 raises, naming its status."""
-        argv = approved.argv
-        assert argv is not None  # report-only steps never run
+        assert approved.argv is not None  # report-only steps never run
+        argv = [self._home_text(each) for each in approved.argv]
         ended = self._process(argv, timeout=RUN_TIMEOUT, what="run", stdin=stdin)
         self._relayed(ended, secrets)
         if ended.returncode != 0:
@@ -183,12 +192,17 @@ class StepRunner:
             for line in text.splitlines():
                 self._relay(line)
 
-    def _path(self, text: str) -> Path:
+    def _home_path(self, text: str) -> Path:
+        """``~`` and ``~/...`` in the home folder; anything else as written."""
         if text == "~":
             return self._home
         if text.startswith("~/"):
             return self._home / text[2:]
         return Path(text)
+
+    def _home_text(self, text: str) -> str:
+        """An argv element: one that starts with ``~/`` (or is ``~``) names the home folder."""
+        return str(self._home_path(text)) if text == "~" or text.startswith("~/") else text
 
 
 def _shown(argv: Sequence[str]) -> str:
