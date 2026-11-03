@@ -7,6 +7,7 @@ groups, blocks, fills, caches) and collects the declarations and problems
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import itertools
 import sys
@@ -541,12 +542,13 @@ class PluginWalk:
         from untaped.sdk.contracts._declare import bridge_takes  # noqa: PLC0415 - contracts' cost
 
         takes = [item] if item is not None and item is not info.item else []
-        takes += [
-            found
-            for name, method in info.methods.items()
-            if method.bridge and not method.item_bridge
-            if (found := bridge_takes(typing.cast("type[Contract]", filled), info, name))
-        ]
+        with contextlib.suppress(ContractError):  # the registry quarantines it, naming why
+            takes += [
+                found
+                for name, method in info.methods.items()
+                if method.bridge and not method.item_bridge
+                if (found := bridge_takes(typing.cast("type[Contract]", filled), info, name))
+            ]
         for model in takes:
             # the provider's own records, under the plugin that fills: its rows come back
             # through the bridge that takes them
@@ -612,7 +614,7 @@ class PluginWalk:
                 target=target_of(filled),
                 contract=target_of(info.cls),
                 summary=first_paragraph(prose(filled)[1]),
-                item=item_target(filled, info),
+                takes=bridge_targets(filled, info),
             )
             for filled in cls.fills
             if (info := contract_of(filled)) is not None
@@ -844,15 +846,21 @@ def is_command(obj: object) -> typing.TypeGuard[type[Command[Any]]]:
     return isinstance(obj, type) and issubclass(obj, Command)
 
 
-def item_target(provider: type, info: ContractInfo) -> str | None:
-    """The provider's own record (its ``T`` when not the contract's), which a bridge reads."""
+def bridge_targets(provider: type, info: ContractInfo) -> dict[str, str]:
+    """The provider's own record each bridge it fills takes, by method, which ``via=`` reads."""
     from untaped.sdk.contracts._declare import (  # noqa: PLC0415 - contracts' cost
         ContractError,
-        item_type,
+        bridge_takes,
     )
 
-    try:
-        item = item_type(typing.cast("type[Contract]", provider), info)
-    except ContractError:
-        return None  # the registry quarantines the offer, naming why
-    return None if item is None or item is info.item else target_of(item)
+    found: dict[str, str] = {}
+    for name, method in info.methods.items():
+        if not method.bridge:
+            continue
+        try:
+            takes = bridge_takes(typing.cast("type[Contract]", provider), info, name)
+        except ContractError:
+            continue  # the registry quarantines the offer, naming why
+        if takes is not None:
+            found[name] = target_of(takes)
+    return found

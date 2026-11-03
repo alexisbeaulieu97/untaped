@@ -156,14 +156,15 @@ def _read(command: CommandDecl, known: Mapping[str, type[BaseModel]]) -> list[st
 
 def _through(command: CommandDecl, mount: Mount) -> list[str]:
     """The kinds ``Stdin(via=)`` reads: the own records of the contract's composed providers."""
-    if command.stdin_via is None:
+    if command.stdin_via is None or command.stdin_via_bridge is None:
         return []
     kinds = {kind.target: kind.kind for kind in mount.declaration.kinds}
     return [
-        kinds[fill.item]
+        kinds[takes]
         for plugin in mount.declaration.plugins
         for fill in plugin.fills
-        if fill.contract == command.stdin_via and fill.item in kinds
+        if fill.contract == command.stdin_via
+        and (takes := fill.takes.get(command.stdin_via_bridge)) in kinds
     ]
 
 

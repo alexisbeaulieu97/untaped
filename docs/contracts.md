@@ -63,9 +63,11 @@ class Library(Plugin):
   alone (an invalid row is dropped and the rest kept, where any other
   method's invalid item fails the provider's whole answer), the method
   taking `T` and returning the owner's model is the bridge (a contract has
-  at most one), and a method taking a `ProviderRecord` and returning an
-  `Issued` model is a record bridge: an optional way for a provider to
-  issue another record of its own, such as a selector (below). `@cached(max_age=, label=)` keeps answers per provider, its
+  at most one), and a method of a contract with `T` taking just a
+  `ProviderRecord` and returning an `Issued` model is a record bridge: an
+  optional way for a provider to issue another record of its own, such as
+  a selector (below); `ProviderRecord` anywhere else is a `TypeError`.
+  `@cached(max_age=, label=)` keeps answers per provider, its
   settings and the arguments in a [`Cache`](caches.md) core makes for the
   owner, named `<contract>_<method>` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
@@ -89,8 +91,10 @@ class Library(Plugin):
   its own into the owner's issued model. A provider fills it by annotating
   the parameter with that record (`item: GithubRepoSelector`), which gives
   the record its kind under the provider's plugin and routes it: piped rows,
-  `assert_fills` samples and `source` all follow the annotation; a fill
-  that names no record of its own is quarantined (`unresolved-item-type`).
+  `assert_fills` samples and `source` all follow the annotation, so import
+  the record at run time, not only under `TYPE_CHECKING`. A fill whose
+  annotation names no record with a kind, or doesn't resolve, is
+  quarantined (`unresolved-item-type`).
   The provider reads it back typed with `self.own(selector,
   GithubRepoSelector)`, which fails as `invalid` when the selector was
   issued by another plugin or from another record, or no longer validates.
@@ -168,7 +172,8 @@ loaded on the first ask for one of its owner's contracts, once per process
 and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
-doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
+doesn't fill the bridge), `unresolved-item-type` (its record has no kind, or a
+record bridge's fill names no record it can resolve), `duplicate-kind`,
 `unserialisable-signature`, `uses-missing` (a parameter the contract can't
 pass it by name), or `bad-provider` (building it raised). A
 provider whose plugin requires an owner below its floor, or a disabled one,
@@ -179,7 +184,8 @@ composition problem (`bad-provider`) that quarantines its plugin. A provider met
 the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
-the profile is skipped silently; with none ready `gather` raises
+the profile is skipped silently; with none ready, and no plugin named in
+`plugins` answering `not-filled`, `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
 isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers

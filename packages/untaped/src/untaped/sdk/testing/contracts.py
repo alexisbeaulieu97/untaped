@@ -86,9 +86,9 @@ def assert_fills(provider: type[Contract] | Contract, *, samples: Sequence[objec
     a record bridge for the record its fill names), become a valid issued
     record whose ``source`` names the provider and reads back as the sample
     through ``own``. ``samples=`` is required when ``T`` isn't the owner's
-    model. The provider
-    is the one an enclosing :func:`compose_with` offers, else the installed
-    plugin's.
+    model, and holds a sample of the record each record bridge it fills
+    takes. The provider is the one an enclosing :func:`compose_with`
+    offers, else the installed plugin's.
     """
     from untaped.sdk.contracts._declare import contract_of  # noqa: PLC0415
 
@@ -107,9 +107,10 @@ def piped_through[R](bridge: Callable[..., R], row: BaseModel) -> R:
     """``row`` as a command's ``Stdin(via=bridge)`` reads it when it is piped in.
 
     The row travels as its kind, as on the wire, and comes back as the
-    owner's model: through the bridge of the provider whose ``T`` it is,
-    with that provider as its ``source``, or as it is when it is the owner's
-    own kind. The errors are the ones the command would exit with.
+    bridge's model: through the bridge of the provider whose fill takes it
+    (its ``T`` for the item bridge, the record a record bridge's fill names),
+    with that provider as its ``source``, or as it is when it is that
+    model's own kind. The errors are the ones the command would exit with.
     """
     from untaped.sdk._pipe import PipeEnvelope  # noqa: PLC0415
     from untaped.sdk._rows import _as_row  # noqa: PLC0415 - the pipe writer's dump
@@ -130,10 +131,28 @@ def _assert_bound(cls: type, samples: Sequence[object]) -> None:
             f"{cls.__qualname__} issues {item.__qualname__ if item else 'its own'} records, "
             "so assert_fills needs samples=[...] of them"
         )
+    _record_samples(bound, samples)
     problems = fills_problems(bound, samples)
     assert not problems, f"{cls.__qualname__} doesn't fill {bound.binding.contract.name}:\n" + (
         "\n".join(f"  {line}" for line in problems)
     )
+
+
+def _record_samples(bound: BoundProvider, samples: Sequence[object]) -> None:
+    """Each record bridge the provider fills has a sample of the record it takes."""
+    from untaped.sdk.contracts._declare import bridge_takes  # noqa: PLC0415
+
+    cls = type(bound.instance)
+    info = bound.binding.contract
+    for name, method in info.methods.items():
+        if not method.bridge or method.item_bridge:
+            continue
+        takes = bridge_takes(cls, info, name)
+        if takes is not None and not any(isinstance(sample, takes) for sample in samples):
+            raise TypeError(
+                f"{cls.__qualname__} fills {name}, which takes {takes.__qualname__} records, "
+                f"so assert_fills needs a {takes.__qualname__} among samples=[...]"
+            )
 
 
 def _bound(cls: type) -> BoundProvider:

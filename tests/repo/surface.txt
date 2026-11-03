@@ -39,6 +39,7 @@ cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.to_selector string[] default=[]  [experimental]
 cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cfg github.caches.server_api.max_age_seconds integer(minimum=0) default=86400
@@ -4222,6 +4223,9 @@ contract git.Repo.description string? default=None  [experimental]
 contract git.Repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
 contract git.Repo.source Source? default=None  [experimental]
 contract git.Repo.url string  [experimental]
+contract git.RepoSelector()  [experimental]
+contract git.RepoSelector.match string[] default=[]  [experimental]
+contract git.RepoSelector.source Source? default=None  [experimental]
 contract git.Source(kind, plugin)
 contract git.Source.kind string
 contract git.Source.plugin string
@@ -4232,6 +4236,7 @@ contract git.git_host.home() -> string?  [experimental]
 contract git.repo_source abstract=repos  [experimental]
 contract git.repo_source.repos() -> Repo[]  [experimental]
 contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
+contract git.repo_source.to_selector(item: any) -> RepoSelector  [experimental]
 contract lint.Failure(category, message, system)
 contract lint.Failure.category choice=auth
 contract lint.Failure.category choice=config
@@ -5195,6 +5200,9 @@ record git.repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
 record git.repo.source Source?  [experimental]
 record git.repo.source default=None  [experimental]
 record git.repo.url string  [experimental]
+record git.repo_selector  [experimental]
+record git.repo_selector.match string[]  [experimental]
+record git.repo_selector.source Source?  [experimental]
 record git.store_report
 record git.store_report.exclusive_bytes object
 record git.store_report.filter_ignored object
@@ -6859,6 +6867,7 @@ sdk untaped.sdk.contracts.Answers.skipped
 sdk untaped.sdk.contracts.Answers.take_stale()
 sdk untaped.sdk.contracts.Contract implement=
 sdk untaped.sdk.contracts.Contract.__init_subclass__(shell=) default=None
+sdk untaped.sdk.contracts.Contract.own(cls@2=) default=None
 sdk untaped.sdk.contracts.Contract.own(item)
 sdk untaped.sdk.contracts.Contract.ready() -> NotReady?
 sdk untaped.sdk.contracts.Errored(plugin, error)
@@ -6907,6 +6916,7 @@ sdk untaped.sdk.contracts.Ok.value
 sdk untaped.sdk.contracts.Provider()
 sdk untaped.sdk.contracts.Provider.ctx
 sdk untaped.sdk.contracts.Provider.settings
+sdk untaped.sdk.contracts.ProviderRecord
 sdk untaped.sdk.contracts.Reason.active = active
 sdk untaped.sdk.contracts.Reason.bad_contracts = bad-contracts
 sdk untaped.sdk.contracts.Reason.bad_provider = bad-provider
@@ -6915,6 +6925,7 @@ sdk untaped.sdk.contracts.Reason.invalid_item = invalid-item
 sdk untaped.sdk.contracts.Reason.missing_bridge = missing-bridge
 sdk untaped.sdk.contracts.Reason.no_cache = no-cache
 sdk untaped.sdk.contracts.Reason.not_configured = not-configured
+sdk untaped.sdk.contracts.Reason.not_filled = not-filled
 sdk untaped.sdk.contracts.Reason.raised = raised
 sdk untaped.sdk.contracts.Reason.rank_not_installed = rank-not-installed
 sdk untaped.sdk.contracts.Reason.rank_unknown_method = rank-unknown-method
@@ -8114,6 +8125,13 @@ sdk untaped_git.api.RepoFinder.reask(repo)  [experimental]
 sdk untaped_git.api.RepoFinder.resolve(ident)  [experimental]
 sdk untaped_git.api.RepoFinder.resolve(progress=) default=NO_PROGRESS  [experimental]
 sdk untaped_git.api.RepoName
+sdk untaped_git.api.RepoSelector base=untaped.sdk.Issued  [experimental]
+sdk untaped_git.api.RepoSelector base=untaped.sdk.Record  [experimental]
+sdk untaped_git.api.RepoSelector extra=forbid  [experimental]
+sdk untaped_git.api.RepoSelector()  [experimental]
+sdk untaped_git.api.RepoSelector(match=) default=[]  [experimental]
+sdk untaped_git.api.RepoSelector(source=) default=None  [experimental]
+sdk untaped_git.api.RepoSelector.match  [experimental]
 sdk untaped_git.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.RepoSource implement=repos  [experimental]
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)

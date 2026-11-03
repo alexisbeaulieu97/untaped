@@ -200,7 +200,7 @@ def bridge_of(bridge: Callable[..., Any]) -> tuple[ContractInfo, Method]:
     if not method.bridge:
         raise TypeError(
             f"{info.cls.__qualname__}.{method.name} is not a bridge "
-            "(a method taking T or Record and returning an issued model)"
+            "(a method taking T, or a ProviderRecord, and returning an issued model)"
         )
     return info, method
 

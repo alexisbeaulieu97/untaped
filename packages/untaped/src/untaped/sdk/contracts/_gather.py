@@ -228,13 +228,14 @@ def gather[C: Contract, **P, R](
     code holds one or a plugin name at the user edge (``--source github``);
     the others are left out of the answers, and a named one that doesn't
     fill ``method`` (an optional method) answers ``Skipped(not-filled)``, so
-    a caller falling back to another method can say why. ``refresh`` directs ``@cached``
-    methods: ``False`` serves cached answers only (none stored:
-    ``Skipped(no-cache)``), ``True`` always calls, and ``None`` follows the
-    command's ``Refresh`` when it names this method's cache, else serves
-    within the cache's max age (its ``<owner>.caches.<name>.max_age_seconds``
-    setting). A call refreshing an answer holds that answer's lock, so a
-    second process asking the same provider waits for it. With no ready
+    a caller falling back to another method can say why. ``refresh``
+    directs ``@cached`` methods: ``False`` serves cached answers only (none
+    stored: ``Skipped(no-cache)``), ``True`` always calls, and ``None``
+    follows the command's ``Refresh`` when it names this method's cache,
+    else serves within the cache's max age (its
+    ``<owner>.caches.<name>.max_age_seconds`` setting). A call refreshing an
+    answer holds that answer's lock, so a second process asking the same
+    provider waits for it. With no ready
     provider at all, and none named that doesn't fill it, it raises
     :class:`NoProviderReady` (exit 4) naming why each one isn't.
     ``progress`` counts the providers as they answer, each named as it does;
