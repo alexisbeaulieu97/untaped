@@ -23,6 +23,7 @@ from untaped_awx.infrastructure.controller.jobs import JOB_PATHS, Jobs
 from untaped_awx.infrastructure.controller.resources import ResourceRepository
 from untaped_awx.infrastructure.controller.unified_templates import UnifiedTemplates
 from untaped_awx.infrastructure.controller.workflow_nodes import WorkflowNodes
+from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.settings import AwxServer, AwxSettings, ControllerVersion, Product
 
 if TYPE_CHECKING:
@@ -77,10 +78,12 @@ class ControllerV2(
         return AwxClient(http, prefix=self.prefix, base_url=str(self._server.url))
 
     def ping(self) -> dict[str, Any]:
-        return self._client.ping()
+        return self._client.get_json_dict("ping/")
 
     def me(self) -> dict[str, Any]:
-        return self._client.me()
+        """The authenticated user (a 401 maps to ``ConfigError``)."""
+        with map_awx_errors():
+            return self._client.get_json_dict("me/")
 
     def job_url(self, job: Job) -> str | None:
         """The output page: under ``/execution/`` behind the gateway, the ``/#/`` router before."""

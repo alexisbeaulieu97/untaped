@@ -367,3 +367,34 @@ def test_children_are_found_listed_and_created_under_their_parent(awx_client: Aw
 
 def test_a_record_is_located_by_its_collection(awx_client: AwxClient) -> None:
     assert ClientRepository(awx_client).location(HOST_SPEC, 9) == "hosts/9"
+
+
+def test_a_404_under_a_parent_in_awx_words_is_awx_answering(awx_client: AwxClient) -> None:
+    """A parent's children answer 404 when the parent is gone: AWX's answer, not a mismatch."""
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.get("/api/v2/inventories/4/hosts/").mock(return_value=_NOT_FOUND)
+        mock.post("/api/v2/inventories/4/hosts/").mock(return_value=_NOT_FOUND)
+        repo = ClientRepository(awx_client)
+        with pytest.raises(AwxApiError):
+            repo.named_under(HOST_SPEC, "Inventory", 4, name="web")
+        with pytest.raises(AwxApiError):
+            list(repo.list_under(HOST_SPEC, "Inventory", 4))
+        with pytest.raises(AwxApiError):
+            repo.create_under(HOST_SPEC, "Inventory", 4, {"name": "db"})
+
+
+def test_a_404_on_a_variant_collection_in_awx_words_is_awx_answering(
+    awx_client: AwxClient,
+) -> None:
+    """A variant's collection can be younger than the adapter, so its 404 is AWX's answer."""
+    constructed = INVENTORY_SPEC.model_copy(update={"variant": "constructed"})
+    with respx.mock(base_url="https://aap.example.com") as mock:
+        mock.post("/api/v2/constructed_inventories/").mock(return_value=_NOT_FOUND)
+        with pytest.raises(AwxApiError):
+            ClientRepository(awx_client).create(constructed, WritePayload(name="inv"))
+
+
+def test_an_unknown_variant_has_no_collection(awx_client: AwxClient) -> None:
+    odd = INVENTORY_SPEC.model_copy(update={"variant": "smart"})
+    with pytest.raises(BadRequestError, match="no collection for Inventory variant 'smart'"):
+        ClientRepository(awx_client).list(odd)

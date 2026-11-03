@@ -203,7 +203,7 @@ def test_a_url_that_does_not_answer_as_the_product_is_could_not_tell(install: In
     assert ran.exit == 4
     assert ran.stderr[0] == (
         "error: could not tell which version the toy server at https://toy.example.com runs: "
-        "GET /about answered HTTP 404 without its own error"
+        "GET /about answered HTTP 404"
     )
     assert ran.stderr[1] == (
         "hint: run `untaped auth login toy`, check toy.server.url, or set toy.server_version, "

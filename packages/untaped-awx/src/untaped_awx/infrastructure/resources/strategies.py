@@ -142,7 +142,7 @@ class ScheduleApplyStrategy(DefaultApplyStrategy):
         return _find_unique(
             client,
             spec,
-            (parent_kind, parent_id),
+            (parent_kind, _existing(parent_id)),
             name=str(identity["name"]),
             ambiguity_label={"parent": f"{parent_kind}#{parent_id}"},
         )
@@ -207,7 +207,7 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         return _find_unique(
             client,
             spec,
-            ("Inventory", inventory_id),
+            ("Inventory", _existing(inventory_id)),
             name=str(identity["name"]),
             ambiguity_label={"inventory": str(_parent(identity).name)},
         )
@@ -288,10 +288,17 @@ class InventoryChildApplyStrategy(DefaultApplyStrategy):
         return fk.name_to_id("Inventory", parent.name, scope=scope)
 
 
+def _existing(planned: PlannedId) -> int:
+    """``planned`` as a record id: a lookup runs only under a parent that exists."""
+    if not isinstance(planned, int):
+        raise BadRequestError("cannot look under a parent the batch has yet to create")
+    return planned
+
+
 def _find_unique(
     client: NestedResourceClient,
     spec: ResourceSpec,
-    parent: tuple[str, PlannedId],
+    parent: tuple[str, int],
     *,
     name: str,
     ambiguity_label: dict[str, str],
@@ -299,12 +306,9 @@ def _find_unique(
     """The one ``spec`` record named ``name`` under ``parent``, if any.
 
     Asks for two records to detect ambiguity, as
-    :meth:`ResourceRepository.find` does for a kind's own collection. A
-    parent the batch has yet to create has nothing under it.
+    :meth:`ResourceRepository.find` does for a kind's own collection.
     """
     parent_kind, parent_id = parent
-    if not isinstance(parent_id, int):
-        return None
     results, count = client.named_under(spec, parent_kind, parent_id, name=name)
     if len(results) >= 2:
         identity = {"name": name, **ambiguity_label}

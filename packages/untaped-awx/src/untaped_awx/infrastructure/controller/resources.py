@@ -24,7 +24,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from untaped.sdk import ConfigError, HttpError, attribution
+from untaped.sdk import ConfigError, attribution
 from untaped.sdk.network import ApiMismatch
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.domain.outcomes import DeleteReceipt
@@ -33,7 +33,6 @@ from untaped_awx.errors import (
     AwxApiError,
     BadRequestError,
     PartialWriteError,
-    ResourceNotFoundError,
 )
 from untaped_awx.infrastructure.controller._part import ControllerPart
 from untaped_awx.infrastructure.errors import map_awx_errors
@@ -71,9 +70,21 @@ def _collection(kind: str) -> str:
 
 def _records(spec: ResourceSpec) -> str:
     """Where ``spec``'s records are read and written: its variant's collection, else its kind's."""
-    if spec.variant is not None:
-        return VARIANT_COLLECTIONS[(spec.kind, spec.variant)]
-    return _collection(spec.kind)
+    if spec.variant is None:
+        return _collection(spec.kind)
+    collection = VARIANT_COLLECTIONS.get((spec.kind, spec.variant))
+    if collection is None:
+        raise BadRequestError(f"no collection for {spec.kind} variant {spec.variant!r}")
+    return collection
+
+
+def _always_served(spec: ResourceSpec) -> bool:
+    """Whether every served version has ``spec``'s collection, so its 404 is a mismatch.
+
+    A variant's collection can be younger than the adapter (constructed
+    inventories came in AWX 22), so its 404 stays AWX's own answer.
+    """
+    return spec.variant is None
 
 
 def _under(spec: ResourceSpec, parent_kind: str, parent_id: int) -> str:
@@ -124,17 +135,14 @@ class ResourceRepository(ControllerPart):
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        return self._paginate(f"{_records(spec)}/", params=params, limit=limit, collection=True)
+        return self._paginate(
+            f"{_records(spec)}/", params=params, limit=limit, collection=_always_served(spec)
+        )
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         """The ``spec`` record with ``id_``; :class:`ResourceNotFoundError` when AWX has none."""
+        raw = self._record(f"{_records(spec)}/{id_}/", kind=spec.kind, id_=id_)
         with map_awx_errors():
-            try:
-                raw = self._client.get_json(f"{_records(spec)}/{id_}/")
-            except HttpError as exc:
-                if exc.status_code == 404:
-                    raise ResourceNotFoundError(spec.kind, {"id": id_}, url=exc.url) from exc
-                raise
             # The base Inventory serializer omits constructed source settings.
             # A detail read still refers to this exact ID when hydrating the proxy.
             variant = VARIANT_COLLECTIONS.get((spec.kind, str(raw.get("kind"))))
@@ -173,7 +181,10 @@ class ResourceRepository(ControllerPart):
         :class:`AmbiguousIdentityError` in that case.
         """
         page = self._request(
-            "GET", f"{_records(spec)}/", params={**params, "page_size": "2"}, collection=True
+            "GET",
+            f"{_records(spec)}/",
+            params={**params, "page_size": "2"},
+            collection=_always_served(spec),
         )
         results = page.get("results") or []
         if len(results) >= 2:
@@ -212,7 +223,9 @@ class ResourceRepository(ControllerPart):
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
         body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
-        raw = self._request("POST", f"{_records(spec)}/", json=body, collection=True)
+        raw = self._request(
+            "POST", f"{_records(spec)}/", json=body, collection=_always_served(spec)
+        )
         raw.update(self._write_sub_documents(spec, int(raw["id"]), documents))
         return ServerRecord(**raw)
 

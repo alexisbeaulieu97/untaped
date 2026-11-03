@@ -19,12 +19,14 @@ def test_templates_are_alphabetical_unless_the_caller_orders_them() -> None:
         ("unified_job_templates/", {"order_by": "name"}, 10),
         ("unified_job_templates/", {"order_by": "-modified"}, None),
     ]
+    assert api.collections == ["unified_job_templates/", "unified_job_templates/"]
 
 
 def test_templates_by_ids_are_one_filtered_listing() -> None:
     api = RecordingController(answers=[{"results": [{"id": 1}, {"id": 2}], "next": None}])
     assert [record["id"] for record in api.unified_templates_by_ids(ids=["1", "2"])] == [1, 2]
     assert api.listings == [("unified_job_templates/", {"id__in": "1,2", "order_by": "id"}, None)]
+    assert api.collections == ["unified_job_templates/"]
 
 
 def test_no_ids_ask_nothing() -> None:

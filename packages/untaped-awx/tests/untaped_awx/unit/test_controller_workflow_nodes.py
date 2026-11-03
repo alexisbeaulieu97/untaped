@@ -21,6 +21,8 @@ def test_node_listings() -> None:
         ("workflow_job_template_nodes/", {"unified_job_template": "10"}, None),
         ("workflow_job_template_nodes/5/labels/", {}, None),
     ]
+    # Only the collection-wide listing is one every served version has.
+    assert api.collections == ["workflow_job_template_nodes/"]
 
 
 def test_a_reference_lookup_cannot_be_widened() -> None:

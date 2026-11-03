@@ -317,7 +317,7 @@ def test_the_same_version_after_a_mismatch_passes_it_through(install: Installer)
     assert ran.exit == 1
     assert ran.stderr[0] == (
         "error: Toy 1.4 answered GET /v1/items/a in a way untaped-toy does not expect "
-        "(HTTP 404 without its own error)"
+        "(HTTP 404)"
     )
     assert about.call_count == 2  # detected, then once more after the mismatch
 

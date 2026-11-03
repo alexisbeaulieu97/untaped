@@ -39,7 +39,7 @@ def paginate(
     ``params`` are query parameters for the *first* page only — AWX
     bakes them into the ``next`` URL it returns. ``limit`` caps the
     total number of items yielded. ``collection`` says ``path`` is a
-    collection, where any 404 is a mismatch (:class:`AwxClient`).
+    collection, where any 404 on the first page is a mismatch (:class:`AwxClient`).
 
     The cursor loop is core's :func:`untaped.sdk.paginate_pages`; the
     AWX shape maps onto it with the ``next`` URL as the cursor (``None``

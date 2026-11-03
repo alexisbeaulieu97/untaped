@@ -382,7 +382,7 @@ def test_a_404_without_jiras_error_is_a_mismatch(port: Port, server_version: Jir
 
     assert str(caught.value).startswith(
         f"{server_version} answered GET /rest/api/2/issue/ACME-1 in a way untaped-jira does not "
-        "expect (HTTP 404 without its own error)"
+        "expect (HTTP 404)"
     )
     assert caught.value.hint == (
         f"jira.server_version says the server runs {server_version}; unset it to detect it"

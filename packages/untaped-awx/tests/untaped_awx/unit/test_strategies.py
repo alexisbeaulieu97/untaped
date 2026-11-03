@@ -235,3 +235,17 @@ def test_schedule_strategy_rejects_missing_parent() -> None:
             client=cast(NestedResourceClient, client),
             fk=cast(FkResolver, _StubFk()),
         )
+
+
+def test_a_lookup_under_a_parent_the_batch_has_yet_to_create_is_refused() -> None:
+    from untaped_awx.application.resources.mutation_refs import DeferredReference
+
+    parent = IdentityRef(kind="JobTemplate", name="deploy", organization="Default")
+    deferred = ("JobTemplate", DeferredReference("t1", "JobTemplate", "deploy", {}))
+    with pytest.raises(BadRequestError, match="yet to create"):
+        ScheduleApplyStrategy().find_existing(
+            SCHEDULE_SPEC,
+            {"name": "nightly", "parent": parent, "_prepared_parent": deferred},
+            client=cast(NestedResourceClient, _StubClient()),
+            fk=cast(FkResolver, _StubFk()),
+        )

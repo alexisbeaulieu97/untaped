@@ -7,8 +7,8 @@ lands under the prefix the controller's version calls for (``/api/v2/``, or
 inside :meth:`ApiMismatch.watch <untaped.sdk.network.ApiMismatch.watch>`: a
 404 or 405 without AWX's own ``detail`` body, or a 2xx answer that doesn't
 read, says the server no longer answers as this API does. So does any 404 on
-a collection (``collection=True``): a served version always has its
-collections, so only a moved path answers one that way.
+a kind's collection (``collection=True``): every version the adapter serves
+has them, so only a moved path answers one that way.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 
 from untaped.sdk.network import ApiMismatch, same_origin
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.errors import map_awx_errors
 
 if TYPE_CHECKING:
     from untaped.sdk import HttpStatusError
@@ -44,7 +43,7 @@ def awx_error(error: HttpStatusError) -> bool:
 def _collection_error(error: HttpStatusError) -> bool:
     """Whether an answer on a collection is AWX's own: a 405 that :func:`awx_error` recognises.
 
-    A 404 never is: a collection is there on every version that serves it.
+    A 404 never is: the caller marks only collections every served version has.
     """
     return error.status_code == 405 and awx_error(error)
 
@@ -71,14 +70,10 @@ class AwxClient:
         """
         return f"{self._prefix}{path.lstrip('/')}"
 
-    def ping(self) -> dict[str, Any]:
+    def get_json_dict(self, path: str, **kwargs: Any) -> dict[str, Any]:
+        """GET ``<prefix><path>``, whose JSON body must be an object."""
         with self._watched():
-            return self._http.get_json_dict(self._url("ping/"))
-
-    def me(self) -> dict[str, Any]:
-        """``GET me/``: the authenticated user (401 maps to ConfigError)."""
-        with map_awx_errors(), self._watched():
-            return self._http.get_json_dict(self._url("me/"))
+            return self._http.get_json_dict(self._url(path), **kwargs)
 
     def get_json(self, path: str, *, collection: bool = False, **kwargs: Any) -> Any:
         """GET ``<prefix><path>`` and return the JSON body."""
