@@ -23,9 +23,13 @@ from repo.support import PACKAGES
 MESSAGE = (
     "network git goes through the git plugin (GitHost credentials, proxy, store): untaped_git.api"
 )
+#: Commands that reach a remote.
 VERBS = frozenset({"clone", "fetch", "fetch-pack", "send-pack", "pull", "ls-remote", "push"})
-#: Two-word commands that reach a remote: ``git remote update``, ``git submodule update`` ...
-PAIRS = frozenset({("remote", "update"), ("submodule", "update"), ("submodule", "add")})
+#: Commands whose subcommands reach a remote: ``git remote update``, ``git submodule update`` ...
+SUBCOMMANDS = {
+    "remote": frozenset({"update", "prune", "show", "set-head"}),
+    "submodule": frozenset({"update", "add"}),
+}
 #: git's own options that take the next word as their value (``git -C path fetch``).
 VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
 #: Modules allowed to run network git themselves, relative to ``packages/``, each with why.
@@ -41,11 +45,12 @@ EXCEPTIONS = {
 def network_git(source: str) -> list[int]:
     """The lines of ``source`` holding a git command that reaches a remote.
 
-    A list or tuple literal is read as an argv: an optional executable first
-    (``"git"`` or any non-literal, such as a name holding git's path), after
-    any ``*base`` it splices in, then git's own options, then the command. A
-    call to a function whose name holds ``git`` is read the same way from its
-    positional arguments (``_git(cwd, "fetch")``).
+    A list or tuple literal is read as an argv, and so are the positional
+    arguments of a call to a function whose name holds ``git``
+    (``_git(cwd, "fetch")``). Anything but a string literal (a name holding
+    git's path, a ``*base`` splice, an f-string) is passed over, then
+    ``"git"`` and git's own options, up to the command. A command built from
+    a shell string (``shlex.split``, ``shell=True``) is out of reach.
     """
     lines = set()
     for node in ast.walk(ast.parse(source)):
@@ -62,16 +67,31 @@ def network_git(source: str) -> list[int]:
 
 def _reaches_remote(words: list[ast.expr]) -> bool:
     """Whether ``words``, read as a git argv, run a command that reaches a remote."""
-    index = 0
-    while index < len(words) and isinstance(words[index], ast.Starred):
-        index += 1
-    first = _word(words, index)
-    if first == "git" or (index < len(words) and first is None):
-        index += 1
-    while (option := _word(words, index)) is not None and option.startswith("-"):
-        index += 2 if option in VALUED else 1
+    index = _command(words, 0, executable=True)
     verb = _word(words, index)
-    return verb in VERBS or (verb, _word(words, index + 1)) in PAIRS
+    if verb in SUBCOMMANDS:
+        return _word(words, _command(words, index + 1)) in SUBCOMMANDS[verb]
+    if verb == "archive":
+        return any(
+            word == "--remote" or word.startswith("--remote=")
+            for position in range(index + 1, len(words))
+            if (word := _word(words, position)) is not None
+        )
+    return verb in VERBS
+
+
+def _command(words: list[ast.expr], index: int, *, executable: bool = False) -> int:
+    """The position of the first command word from ``index``: non-literals and options passed."""
+    while index < len(words):
+        word = _word(words, index)
+        if word is None or (executable and word == "git"):
+            index += 1
+        elif word.startswith("-"):
+            index += 2 if word in VALUED else 1
+        else:
+            break
+        executable = executable and word is None
+    return index
 
 
 def _word(words: list[ast.expr], index: int) -> str | None:
@@ -130,7 +150,15 @@ def test_every_exception_still_runs_network_git() -> None:
         ('subprocess.run([GIT, "fetch", "origin"])', True),
         ('run_git([*base, "pull"])', True),
         ('run_git(["remote", "update"])', True),
-        ('run_git(["submodule", "update", "--init"])', True),
+        ('run_git(["submodule", "--quiet", "update", "--init"])', True),
+        ('subprocess.run(["git", *opts, "fetch"])', True),
+        ('subprocess.run(["git", f"-C{path}", "fetch"])', True),
+        ('self._git(cwd, env, "pull")', True),
+        ('run_git(["remote", "-v", "prune", "origin"])', True),
+        ('run_git(["archive", "--remote=origin", "HEAD"])', True),
+        ('run_git(["archive", "HEAD"])', False),
+        ('run_git(["remote", "add", "origin", url])', False),
+        ('self._in(wt, ["submodule", "status", "--recursive"])', False),
         ('run_git(["fetch-pack", url])', True),
         ('run_git(["remote", "get-url", "origin"])', False),
         ('_git(cwd, "status")', False),

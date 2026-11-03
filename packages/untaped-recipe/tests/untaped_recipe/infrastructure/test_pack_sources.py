@@ -231,3 +231,55 @@ def test_a_failed_release_is_a_warning(
     release_unused_sources([remote.url], [], plugin="recipe")
 
     assert warnings == [f"could not release the repo store's copy of {remote.url}: repo is locked"]
+
+
+def test_a_commit_id_never_resolves_through_a_ref_named_like_it(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    first = remote.oid("main")
+    later = remote.commit("later.txt", "later\n")
+    fetch_pack_source(remote.url, rev=None, dest=tmp_path / "a", plugin="recipe")
+    prefix = first[:10]
+    subprocess.run(
+        [
+            "git",
+            f"--git-dir={_store(remote.url).path}",
+            "update-ref",
+            f"refs/heads/{prefix}",
+            later,
+        ],
+        check=True,
+    )
+
+    commit = fetch_pack_source(remote.url, rev=prefix.upper(), dest=tmp_path / "b", plugin="recipe")
+
+    assert commit == first
+
+
+def test_a_tree_entry_named_git_is_refused(remote: GitRemote, tmp_path: Path) -> None:
+    def git(*args: str, stdin: str | None = None) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=remote.work, input=stdin, capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    blob = git("hash-object", "-w", "--stdin", stdin="[core]\n")
+    inner = git("mktree", stdin=f"100644 blob {blob}\tconfig\n")
+    listing = git("ls-tree", "HEAD")
+    root = git("mktree", stdin=f"{listing}\n040000 tree {inner}\t.git\n")
+    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    commit = git(*author, "commit-tree", root, "-p", "HEAD", "-m", "planted")
+    git("push", "--quiet", "origin", f"{commit}:refs/heads/main")
+
+    with pytest.raises(ValueError, match=r"unsafe path: '\.git/config'"):
+        fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
+
+    assert not (tmp_path / "pack").exists()
+
+
+def test_a_pack_that_cannot_be_written_is_a_fetch_error(remote: GitRemote, tmp_path: Path) -> None:
+    (tmp_path / "file").write_text("")
+
+    with pytest.raises(PackFetchError, match="could not write the pack") as raised:
+        fetch_pack_source(remote.url, rev=None, dest=tmp_path / "file" / "pack", plugin="recipe")
+
+    assert raised.value.category is ErrorCategory.FAILED

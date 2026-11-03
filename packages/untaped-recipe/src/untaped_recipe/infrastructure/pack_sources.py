@@ -31,7 +31,7 @@ from untaped_git.api import (
 from untaped_recipe.errors import PackFetchError
 
 _GIT_URL_PREFIXES = ("https://", "git@", "ssh://")
-_COMMIT_ID = re.compile(r"[0-9a-f]{4,64}")
+_COMMIT_ID = re.compile(r"[0-9a-f]{4,64}")  # matched lowercased
 _EXECUTABLE = "100755"
 _LINK = "120000"
 _SUBMODULE = "160000"
@@ -98,24 +98,44 @@ def _fetch(store: RepoStore, url: str, rev: str | None) -> str:
                     store.fetch(tags=[rev])
                 store.write_private()
                 return _present(store, commit, url, rev)
-    if not _COMMIT_ID.fullmatch(rev):
+    prefix = rev.lower()
+    if not _COMMIT_ID.fullmatch(prefix):
         raise _not_found(url, rev)
     store.fetch(branches=["*"], tags=["*"], prune=True)
     store.write_private()
-    resolved = store.run(
-        ["rev-parse", "--verify", "--quiet", "--end-of-options", f"{rev}^{{commit}}"],
-        capture=True,
-        check=False,
-    )
-    commit = resolved.text.strip()
-    if resolved.returncode != 0 or not _reached(store, commit):
+    found = _commits(store, prefix)
+    if len(found) > 1:
+        raise PackFetchError(
+            f"{rev!r} names more than one commit of {url}; pass a longer id",
+            category=ErrorCategory.CONFLICT,
+        )
+    if not found:
         raise _not_found(url, rev)
-    return commit
+    return found[0]
+
+
+def _commits(store: RepoStore, prefix: str) -> list[str]:
+    """The commits whose id starts with ``prefix`` that recipe's branches or tags reach.
+
+    Objects are listed by id (``--disambiguate``), never by ref name, so a ref
+    another plugin or a person named like the id resolves nothing.
+    """
+    listed = store.run(["rev-parse", f"--disambiguate={prefix}"], capture=True, check=False)
+    commits = set()
+    for oid in listed.text.split():
+        peeled = store.run(
+            ["rev-parse", "--verify", "--quiet", f"{oid}^{{commit}}"], capture=True, check=False
+        )
+        if peeled.returncode == 0:
+            commits.add(peeled.text.strip())
+    return sorted(commit for commit in commits if _reached(store, commit))
 
 
 def _present(store: RepoStore, commit: str, url: str, rev: str) -> str:
     """``commit``, the remote's listing of ``rev``, once the fetch brought it in."""
-    found = store.run(["rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"], check=False)
+    found = store.run(
+        ["rev-parse", "--verify", "--quiet", f"{commit}^{{commit}}"], capture=True, check=False
+    )
     if found.returncode != 0:
         raise PackFetchError(
             f"{rev!r} of {url} moved while it was fetched; run the command again",
@@ -172,11 +192,17 @@ def _read_blobs(store: RepoStore, commit: str, oids: list[str]) -> dict[str, byt
     contents: dict[str, bytes] = {}
     offset = 0
     for oid in unique:
-        end = out.index(b"\n", offset)
-        _, _, size = out[offset:end].decode("ascii").split(" ")
+        end = out.find(b"\n", offset)
+        header = out[offset:end].decode("ascii", errors="replace").split(" ") if end >= 0 else []
+        if len(header) != 3 or header[:2] != [oid, "blob"] or not header[2].isdigit():
+            raise PackFetchError(
+                f"the repo store could not read {oid} of {commit}; run the command again",
+                category=ErrorCategory.FAILED,
+                system=System.GIT,
+            )
         start = end + 1
-        contents[oid] = out[start : start + int(size)]
-        offset = start + int(size) + 1
+        contents[oid] = out[start : start + int(header[2])]
+        offset = start + int(header[2]) + 1
     return contents
 
 

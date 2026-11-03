@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -194,7 +194,9 @@ class Add(RecipeCommand):
                 )
                 installed_name, added = self._install(library, source, source_dir, commit)
             except Exception:
-                # Nothing was installed: the URL's store repo stays only for a pack using it.
+                # Nothing was installed: the URL's store repo stays only for a
+                # pack using it. Best effort, like every release here: an add
+                # of the same URL running at this moment may have to run again.
                 _release_unused(library, [source], plugin=self.ctx.plugin)
                 raise
             _release_unused(library, [previous.get(installed_name, "")], plugin=self.ctx.plugin)
@@ -410,14 +412,13 @@ class Remove(RecipeCommand):
                     rows.append(
                         _outcome(RemoveOutcome, name, installed.get(name), action="removed")
                     )
-            left = library.sources()
-            gone = [source for name, source in sources.items() if name not in left]
-            _release_unused(library, gone, plugin=self.ctx.plugin)
+            # Every source the library had: those still installed are kept.
+            _release_unused(library, sources.values(), plugin=self.ctx.plugin)
         return iter(rows)
 
 
-def _release_unused(library: PackLibrary, released: list[str], *, plugin: object) -> None:
-    """Release the store repos of ``released`` git URLs no pack in ``packs.toml`` uses.
+def _release_unused(library: PackLibrary, released: Iterable[str], *, plugin: object) -> None:
+    """Release the store repos of ``released`` git URLs no pack in ``packs.toml`` uses now.
 
     An index that cannot be read releases nothing: a repo kept is refetched,
     one released while a pack uses it is not.
