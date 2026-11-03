@@ -19,6 +19,7 @@ from untaped.sdk.health.deprecated_keys import (
     mapping_errors,
     migration_moves,
     old_spellings,
+    read_spelling,
     rename_keys,
     scan_keys,
 )
@@ -292,6 +293,22 @@ class ChainedRanks(BaseModel):
     retired_keys: ClassVar[dict[str, str]] = {"r": "cur"}
 
     cur: int = 0
+
+
+@pytest.mark.parametrize(
+    ("data", "read"),
+    [
+        ({"cur": None, "y": 1}, "cur"),
+        ({"x": None, "y": None, "r": 1}, "y"),
+        ({"x": 2, "r": 1}, "x"),
+        ({"r": 1}, None),
+    ],
+)
+def test_read_spelling_is_the_spelling_rename_keys_reads(
+    data: dict[str, int | None], read: str | None
+) -> None:
+    """Present counts, even as null; a retired spelling is never read."""
+    assert read_spelling(ChainedRanks, "cur", data) == read
 
 
 def test_a_spelling_runs_read_ranks_ahead_of_a_closer_retired_one() -> None:

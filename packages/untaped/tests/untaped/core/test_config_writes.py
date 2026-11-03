@@ -23,12 +23,17 @@ class DemoSettings(BaseModel):
 
 
 class SpelledSettings(BaseModel):
-    """A setting with an old spelling still read and a retired one."""
+    """Settings with an old spelling still read and a retired one."""
 
-    renamed_keys: ClassVar[dict[str, str]] = {"old_size": "size"}
-    retired_keys: ClassVar[dict[str, str]] = {"a_size": "size"}
+    renamed_keys: ClassVar[dict[str, str]] = {
+        "old_size": "size",
+        "old_groups": "groups",
+        "legacy_groups": "groups",
+    }
+    retired_keys: ClassVar[dict[str, str]] = {"a_size": "size", "a_groups": "groups"}
 
     size: int = 1
+    groups: dict[str, dict[str, str]] = {}
 
 
 class PairServer(BaseModel):
@@ -201,3 +206,48 @@ def test_a_retired_spelling_is_no_ones_value(_config: Path) -> None:
 
     _config.write_text("format_version: 2\nspelled: {a_size: 9, old_size: 5}\n", encoding="utf-8")
     assert SettingsFileRepository().own_value("spelled.size") == 5
+
+
+def test_an_entry_is_read_from_the_map_a_run_reads(_config: Path) -> None:
+    """Under the map's renamed spelling when that is all there is; never past the map's name."""
+    _config.write_text(
+        "format_version: 2\nspelled:\n  a_groups: {ops: {lead: ana}}\n"
+        "  old_groups: {dev: {lead: bo}}\n",
+        encoding="utf-8",
+    )
+    repo = SettingsFileRepository()
+    assert repo.own_value("spelled.groups.dev.lead") == "bo"
+    assert repo.own_value("spelled.groups.ops") is None
+
+    _config.write_text(
+        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n"
+        "  old_groups: {dev: {lead: bo}}\n",
+        encoding="utf-8",
+    )
+    assert SettingsFileRepository().own_value("spelled.groups.dev") is None
+
+
+@pytest.mark.parametrize(
+    "spelled",
+    [
+        "groups: null\n  old_groups: {dev: {lead: bo}}",
+        "legacy_groups: null\n  old_groups: {dev: {lead: bo}}",
+    ],
+    ids=["its-name", "its-closest-old-spelling"],
+)
+def test_a_null_spelling_a_run_reads_hides_the_others(_config: Path, spelled: str) -> None:
+    """A run reads the null (its name, or the closest old spelling) and ignores ``old_groups``."""
+    _config.write_text(f"format_version: 2\nspelled:\n  {spelled}\n", encoding="utf-8")
+    assert SettingsFileRepository().own_value("spelled.groups.dev.lead") is None
+    SetSettings(SettingsFileRepository())({"spelled.groups.qa.lead": "cy"})
+    assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
+
+
+def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
+    text = (
+        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n"
+    )
+    _config.write_text(text, encoding="utf-8")
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
+    assert change.outcome.action == "unchanged"
+    assert _config.read_text(encoding="utf-8") == text

@@ -520,15 +520,56 @@ def test_unsetting_an_entry_of_an_ignored_old_map_changes_nothing(_isolated_conf
     assert _get("shelf.groups.ops.lead")["value"] == "ana"
 
 
-def test_a_retired_spelling_of_a_map_is_never_carried(_isolated_config: Path) -> None:
-    """``a_groups`` is retired (no longer read): the readable ``old_groups`` is what moves."""
+def test_an_entry_write_carries_the_read_map_and_removes_the_others(
+    _isolated_config: Path,
+) -> None:
+    """``a_groups`` is retired (no longer read): ``old_groups`` moves, ``a_groups`` goes."""
     write_config(
         _isolated_config,
         "format_version: 2\nshelf:\n  a_groups: {ops: {lead: ana}}\n"
         "  old_groups: {dev: {lead: bo}}\n",
     )
-    result = _config("set", "shelf.groups.dev.team", "x")
+    assert _get("shelf.groups")["value"] == {"dev": {"lead": "bo"}}
+    result = _config("set", "shelf.groups.qa.lead", "cy")
     assert result.exit_code == 0, result.output
-    shelf = _shelf(_isolated_config)
-    assert shelf["groups"] == {"dev": {"lead": "bo", "team": "x"}}
-    assert _get("shelf.groups.dev.lead")["value"] == "bo"
+    assert "shelf.old_groups" in result.output
+    assert "shelf.a_groups" in result.output
+    assert _shelf(_isolated_config) == {"groups": {"dev": {"lead": "bo"}, "qa": {"lead": "cy"}}}
+    assert _get("shelf.groups")["value"] == {"dev": {"lead": "bo"}, "qa": {"lead": "cy"}}
+
+
+def test_unsetting_an_entry_removes_its_maps_unread_spellings(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nshelf:\n  a_groups: {ops: {lead: ana}}\n"
+        "  legacy_groups: {dev: {lead: bo}, qa: {lead: cy}}\n  old_groups: {ops: {lead: di}}\n",
+    )
+    result = _config("unset", "shelf.groups.dev")
+    assert result.exit_code == 0, result.output
+    assert _shelf(_isolated_config) == {"groups": {"qa": {"lead": "cy"}}}
+
+
+def test_an_entry_write_under_the_maps_name_drops_its_old_spellings(
+    _isolated_config: Path,
+) -> None:
+    """The map's name wins over its old spellings: nothing of ``old_groups`` is merged in."""
+    write_config(
+        _isolated_config,
+        "format_version: 2\nshelf:\n  groups: {dev: {lead: bo}}\n"
+        "  old_groups: {ops: {lead: ana}}\n",
+    )
+    result = _config("set", "shelf.groups.qa.lead", "cy")
+    assert result.exit_code == 0, result.output
+    assert _shelf(_isolated_config) == {"groups": {"dev": {"lead": "bo"}, "qa": {"lead": "cy"}}}
+
+
+def test_unsetting_the_last_entry_never_brings_an_old_map_back(_isolated_config: Path) -> None:
+    write_config(
+        _isolated_config,
+        "format_version: 2\nshelf:\n  groups: {dev: {lead: bo}}\n"
+        "  old_groups: {ops: {lead: ana}}\n",
+    )
+    result = _config("unset", "shelf.groups.dev")
+    assert result.exit_code == 0, result.output
+    assert "old_groups" not in read_config_dict(_isolated_config).get("shelf", {})
+    assert _get("shelf.groups")["value"] == {}

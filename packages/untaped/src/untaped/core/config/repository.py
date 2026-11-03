@@ -60,6 +60,7 @@ from untaped.sdk.health.deprecated_keys import (
     migration_moves,
     old_spellings,
     profile_sections,
+    read_spelling,
 )
 from untaped.sdk.marks import Stability
 from untaped.sdk.network.credentials import FOLDER_SOURCE_PREFIX
@@ -321,7 +322,9 @@ class SettingsFileRepository:
 
         A value stored under an old spelling of the key counts as the key's
         own; writing or removing the key removes every old spelling in the
-        target profile, each reported to ``on_spelling_removed``.
+        target profile, each reported to ``on_spelling_removed``. For an entry
+        of a map, those are the map's; removing an entry that isn't set
+        changes nothing.
         """
         return self.update_values(
             {key: update},
@@ -371,14 +374,9 @@ class SettingsFileRepository:
             for key, update in updates.items():
                 descriptor = descriptors[key]
                 where, name = targets[key]
-                self._carry_old_map(where, descriptor, on_spelling_removed)
-                olds = self._old_paths(descriptor)
                 raw_value = update(name, self._own(where, descriptor))
-                if raw_value is None:
-                    unset_at_path(where, descriptor.path, keep=descriptor.entry_depth)
-                else:
-                    set_at_path(where, descriptor.path, _stored(key, descriptor, raw_value))
-                _remove_spellings(where, olds, on_spelling_removed)
+                value = None if raw_value is None else _stored(key, descriptor, raw_value)
+                self._write(where, descriptor, value, on_spelling_removed, remove=raw_value is None)
             for key, descriptor in descriptors.items():
                 # A key sent to the base is read under the profile the others land in too.
                 for reader in dict.fromkeys((targets[key][1], written)):
@@ -421,6 +419,34 @@ class SettingsFileRepository:
         name = profile or write_target()
         return self._own(self.profile_data(name) or {}, descriptor)
 
+    def _write(
+        self,
+        data: dict[str, Any],
+        descriptor: FieldDescriptor,
+        value: Any,
+        report: SpellingRemoved | None,
+        *,
+        remove: bool,
+    ) -> bool:
+        """Set ``descriptor`` to ``value`` in one profile's ``data``, or remove it.
+
+        Then every old spelling no run reads any more goes, each reported to
+        ``report``: the key's own, or for an entry of a map (or a setting
+        inside one) the map's, as the map's name now wins over all of them.
+        Removing an entry that isn't set changes nothing. ``True`` when
+        anything was written or removed.
+        """
+        declared = self._declared(descriptor)
+        self._carry_old_map(data, descriptor, report, only_if_set=remove)
+        if remove:
+            changed = unset_at_path(data, descriptor.path, keep=descriptor.entry_depth)
+            if not changed and declared.path != descriptor.path:
+                return False
+        else:
+            set_at_path(data, descriptor.path, value)
+            changed = True
+        return _remove_spellings(data, self._old_paths(declared), report) or changed
+
     def _carry_old_map(
         self,
         data: dict[str, Any],
@@ -433,36 +459,50 @@ class SettingsFileRepository:
 
         Otherwise the entry would land under the new name, which wins over the
         old one, and the map's other entries would stop being read. Only the
-        spelling the reader reads is carried: the closest one still read.
+        spelling the reader reads is carried (:meth:`_holder`).
         ``only_if_set`` (an unset) leaves the map where it is unless it holds
         ``descriptor``, so removing nothing changes nothing.
         """
         declared = self._declared(descriptor)
-        if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
+        if declared.path == descriptor.path:
             return
-        for old in self._read_paths(declared):  # a retired spelling isn't read, nor carried
-            value = _at_path(data, old)
-            if value is None:
-                continue
-            if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
-                return  # the closest old spelling is the one read; the others are ignored
-            unset_at_path(data, old)
-            set_at_path(data, declared.path, value)
-            if report is not None:
-                report(".".join(old))
+        holder = self._holder(data, declared)
+        if holder is None or holder == declared.path:
             return
+        value = _at_path(data, holder)
+        if only_if_set and not _has(value, descriptor.path[len(declared.path) :]):
+            return
+        unset_at_path(data, holder)
+        set_at_path(data, declared.path, value)
+        if report is not None:
+            report(".".join(holder))
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
         """The key's raw value in one profile's ``data``, as a run reads it.
 
-        Its own spelling, else the closest old one still read; a retired
-        spelling's value is no one's, so it is left out.
+        Read from where its setting is read (:meth:`_holder`); an entry of a
+        map, from that map. A spelling the reader ignores or no longer reads is
+        no one's value, so it is left out.
         """
-        paths = [descriptor.path, *self._read_paths(descriptor)]
-        return next(
-            (value for value in (_at_path(data, path) for path in paths) if value is not None),
-            None,
-        )
+        declared = self._declared(descriptor)
+        holder = self._holder(data, declared)
+        if holder is None:
+            return None
+        return _at_path(data, (*holder, *descriptor.path[len(declared.path) :]))
+
+    def _holder(self, data: dict[str, Any], declared: FieldDescriptor) -> tuple[str, ...] | None:
+        """Where a run reads ``declared`` from in one profile's ``data``; ``None``: nowhere.
+
+        The reader's choice (:func:`read_spelling`): its own name when
+        present, even as null, else the first old spelling still read.
+        """
+        section = declared.path[0]
+        model = self.section_model(section)
+        section_data = data.get(section)
+        if model is None or not isinstance(section_data, Mapping):
+            return None
+        spelled = read_spelling(model, _relative(declared), section_data)
+        return None if spelled is None else (section, *spelled.split("."))
 
     def unset_value(
         self,
@@ -479,7 +519,8 @@ class SettingsFileRepository:
         ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
         (``removed=False``). Each old spelling removed is reported to
-        ``on_spelling_removed``.
+        ``on_spelling_removed``; for an entry of a map, those are the map's,
+        and removing an entry that isn't set changes nothing.
         """
         descriptor = self.descriptor(key)
         removed = False
@@ -488,10 +529,7 @@ class SettingsFileRepository:
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
             target_data, resolved = self._write_target(data, profile)
-            self._carry_old_map(target_data, descriptor, on_spelling_removed, only_if_set=True)
-            own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
-            olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
-            if not (own or olds):
+            if not self._write(target_data, descriptor, None, on_spelling_removed, remove=True):
                 return
             removed = True
             # Symmetric with ``update_value``: re-validate the key's section so a
@@ -675,6 +713,15 @@ def _at_path(data: Any, path: tuple[str, ...]) -> Any:
     for segment in path:
         data = data.get(segment) if isinstance(data, dict) else None
     return data
+
+
+def _has(data: Any, path: tuple[str, ...]) -> bool:
+    """Whether ``path`` is present in ``data``, even as null."""
+    for segment in path:
+        if not isinstance(data, dict) or segment not in data:
+            return False
+        data = data[segment]
+    return True
 
 
 def _remove_spellings(
