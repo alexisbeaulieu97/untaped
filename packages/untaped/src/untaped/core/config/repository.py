@@ -545,7 +545,7 @@ class SettingsFileRepository:
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
     ) -> tuple[bool, str]:
-        """Remove ``key``, and every old spelling of it, from the resolved write scope, when set.
+        """Remove ``key`` and its old spellings (only the retired ones, when it isn't set).
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit
