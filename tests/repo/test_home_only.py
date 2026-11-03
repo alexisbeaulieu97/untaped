@@ -23,8 +23,9 @@ pytestmark = pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 HOME_ONLY = frozenset(
     {
         "ansible.index_dir",
+        "dotfiles.clones_dir",
         "dotfiles.kept_dir",
-        "dotfiles.repos_dir",
+        "dotfiles.os",  # this machine's OS: one answer per machine, whatever the folder
         "dotfiles.state_dir",
         "git.store_dir",
         "recipe.library_dir",

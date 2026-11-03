@@ -1,30 +1,30 @@
-"""``apply`` and ``sync``: pull what may be pulled, then place, skip or report each path.
+"""``apply``, ``remove`` and ``unsubscribe``: place, skip or take back each path.
 
-``sync`` fast-forwards a managed clone only when every enabled ``link``
-file reading from it has policy ``sync`` and the working tree is clean: one
-``manual`` link file holds the whole clone back, and ``sync`` reports those
-files as ``behind`` so the hold is never silent. ``apply ITEMS`` pulls the
-clone when the item has a link file in it, which moves every other link
-file on that clone too; the plan lists them before the confirmation.
+``apply`` places every selected path whatever its policy: ``pending``,
+``foreign``, ``behind`` and ``missing`` paths are placed, ``orphan`` ones
+taken back, and ``modified`` or ``conflict`` ones refused unless ``--force``
+(the local version is kept aside). Taking a path back deletes a link or an
+unedited copy, takes merged keys back out, and keeps an edited file aside.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError, q, run_hint
-from untaped_dotfiles.errors import DotfilesError, GitError
-from untaped_dotfiles.models import AppliedRecord, RepoRecord
-from untaped_dotfiles.records import PlaceAction, PlaceOutcome, RepoOutcome
-from untaped_dotfiles.states import Action, sync_action, target_modified
+from untaped.sdk import Failure, UntapedError
+from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.models import CloneRecord, PlacedRecord
+from untaped_dotfiles.records import ApplyAction, ApplyOutcome
+from untaped_dotfiles.states import Action, target_modified
 
 if TYPE_CHECKING:
     from untaped_dotfiles.inventory import Inventory, Placement
-    from untaped_dotfiles.ports import DotfilesStore, GitRepos, Placer
+    from untaped_dotfiles.ports import DotfilesStore, Placer
     from untaped_dotfiles.status import Evaluation, Evaluator
 
 
@@ -40,12 +40,11 @@ class Step:
 
 
 class Applier:
-    """Plans and runs placements for ``apply`` and ``sync``."""
+    """Plans and runs placements, and takes placed paths back."""
 
     def __init__(
         self,
         store: DotfilesStore,
-        git: GitRepos,
         placer: Placer,
         inventory: Inventory,
         evaluator: Evaluator,
@@ -53,82 +52,15 @@ class Applier:
         now: Callable[[], datetime],
     ) -> None:
         self._store = store
-        self._git = git
         self._placer = placer
         self._inventory = inventory
         self._evaluator = evaluator
         self._now = now
 
-    # -- pulling -------------------------------------------------------------
-
-    def fetch_all(self, repos: Sequence[RepoRecord]) -> list[RepoOutcome]:
-        """Fetch every repo; a failure is a row, not a stop."""
-        rows: list[RepoOutcome] = []
-        for repo in repos:
-            try:
-                self._git.fetch(Path(repo.path))
-            except UntapedError as exc:
-                rows.append(
-                    RepoOutcome(
-                        name=repo.name,
-                        action="failed",
-                        detail=f"fetch failed: {exc}",
-                        error=Failure.from_exception(exc, message=str(exc)),
-                    )
-                )
-        return rows
-
-    def held_back_by(self, repo: RepoRecord, placements: Sequence[Placement]) -> list[str]:
-        """The ``manual`` link files (``item/file``) that keep ``repo``'s clone where it is."""
-        return sorted(
-            {
-                f"{p.item}/{p.file}"
-                for p in placements
-                if p.repo.name == repo.name
-                and p.mode == "link"
-                and p.choice.policy == "manual"
-                and not p.excluded
-            }
-        )
-
-    def fast_forward(self, repo: RepoRecord, *, held: Sequence[str] = ()) -> RepoOutcome:
-        """Fast-forward a managed clone unless held back or dirty.
-
-        A registered checkout is only fetched.
-        """
-        if not repo.managed:
-            return RepoOutcome(name=repo.name, action="unchanged", detail="fetched; not pulled")
-        if held:
-            return RepoOutcome(
-                name=repo.name,
-                action="skipped",
-                detail=f"held back by manual link files: {', '.join(held)}",
-            )
-        path = Path(repo.path)
-        try:
-            if not self._git.is_clean(path):
-                raise GitError(
-                    f"the clone of {q(repo.name)} has local changes; not fast-forwarded",
-                    category="conflict",
-                    hint=f"commit or discard the changes in {path}",
-                )
-            moved = self._git.fast_forward(path, repo.ref)
-        except UntapedError as exc:
-            return RepoOutcome(
-                name=repo.name,
-                action="failed",
-                detail=str(exc),
-                error=Failure.from_exception(exc, message=str(exc)),
-            )
-        self._evaluator.reset()
-        if moved:
-            return RepoOutcome(name=repo.name, action="updated", detail="fast-forwarded")
-        return RepoOutcome(name=repo.name, action="unchanged", detail="up to date")
-
     # -- planning ------------------------------------------------------------
 
     def plan_apply(self, placements: Sequence[Placement], *, force: bool) -> list[Step]:
-        """Explicit ``apply``: every path, whatever its policy; local edits need ``--force``."""
+        """Every placed path, whatever its policy; local edits need ``--force``."""
         self._evaluator.prime_changes(placements)
         steps: list[Step] = []
         for placement in placements:
@@ -136,36 +68,8 @@ class Applier:
             steps.append(Step(placement, found, *self._apply_action(found, force=force)))
         return steps
 
-    def replan(self, steps: Sequence[Step], *, force: bool) -> list[Step]:
-        """Plan again after a pull.
-
-        A link the pull already moved stays an ``apply`` step, so the record
-        carries the new commit and the row says the path changed.
-        """
-        moved = {s.placement.key for s in steps if s.action == "apply"}
-        fresh = self.plan_apply([s.placement for s in steps], force=force)
-        return [
-            replace(s, action="apply", detail="moved with the clone")
-            if s.action == "skip" and s.placement.key in moved
-            else s
-            for s in fresh
-        ]
-
-    def plan_sync(self, placements: Sequence[Placement]) -> list[Step]:
-        """``sync``: the policy table decides."""
-        self._evaluator.prime_changes(placements)
-        steps: list[Step] = []
-        for placement in placements:
-            found = self._evaluator.evaluate(placement)
-            if found.error is not None:
-                steps.append(Step(placement, found, "report", found.detail))
-                continue
-            action = sync_action(placement.choice.policy, found.state)
-            detail = self._report_detail(placement, found) if action == "report" else found.detail
-            steps.append(Step(placement, found, action, detail))
-        return steps
-
-    def _apply_action(self, found: Evaluation, *, force: bool) -> tuple[Action | None, str]:
+    @staticmethod
+    def _apply_action(found: Evaluation, *, force: bool) -> tuple[Action | None, str]:
         state = found.state
         if found.error is not None:
             return "report", found.detail
@@ -173,41 +77,32 @@ class Applier:
             return "apply", found.detail
         if state == "applied":
             return "skip", "already applied"
+        if state == "excluded":
+            return "skip", f"{found.detail}; left as it is"
         if state == "orphan":
             return "remove", found.detail
         if force:
             return "apply", f"{found.detail}; the local version is kept aside"
         return None, f"{found.detail}; pass --force to replace it (kept aside)"
 
-    @staticmethod
-    def _report_detail(placement: Placement, found: Evaluation) -> str:
-        state = found.state
-        if state in ("behind", "pending", "foreign"):
-            lead = found.detail or f"{state}"
-            from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - import cycle
-
-            return f"{lead}; {run_hint(Apply.spelled(placement.item))}"
-        return found.detail
-
     # -- executing -----------------------------------------------------------
 
-    def planned(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
-        """The dry-run rows: what each step would do; a step that cannot is failed, as in a run."""
-        rows: list[PlaceOutcome] = []
+    def planned(self, steps: Sequence[Step]) -> list[ApplyOutcome]:
+        """The preview rows: what each step would do; a step that cannot is failed, as in a run."""
+        rows: list[ApplyOutcome] = []
         for step in steps:
             action = self._planned_action(step)
             error = step.found.error if action == "failed" else None
             rows.append(self._row(step, action, step.detail, error=error))
         return rows
 
-    def execute(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
-        rows: list[PlaceOutcome] = []
-        for step in steps:
-            rows.append(self._run(step))
+    def execute(self, steps: Sequence[Step]) -> list[ApplyOutcome]:
+        rows = [self._run(step) for step in steps]
         self._evaluator.reset()
         return rows
 
-    def _planned_action(self, step: Step) -> PlaceAction:
+    @staticmethod
+    def _planned_action(step: Step) -> ApplyAction:
         if step.action is None:
             return "conflict"
         if step.found.error is not None:
@@ -216,7 +111,7 @@ class Applier:
             return "planned"
         return "unchanged" if step.found.state == "applied" else "skipped"
 
-    def _run(self, step: Step) -> PlaceOutcome:
+    def _run(self, step: Step) -> ApplyOutcome:
         action = self._planned_action(step)
         if action == "failed":
             return self._row(step, "failed", step.detail, error=step.found.error)
@@ -224,15 +119,15 @@ class Applier:
             return self._row(step, action, step.detail)
         try:
             if step.action == "remove":
-                kept = self._remove(step)
-                gone = "removed; the source is gone from the repo"
+                record = step.found.record
+                kept = self._take_back(record) if record is not None else None
+                gone = "taken back; the source no longer has it"
                 return self._row(
                     step, "deleted", f"{gone}; kept the edited version at {kept}" if kept else gone
                 )
             kept = self._place(step)
-            done: PlaceAction = "created" if step.found.record is None else "updated"
-            detail = f"kept the previous version at {kept}" if kept else ""
-            return self._row(step, done, detail)
+            done: ApplyAction = "created" if step.found.record is None else "updated"
+            return self._row(step, done, f"kept the previous version at {kept}" if kept else "")
         except (UntapedError, OSError) as exc:
             failure = exc if isinstance(exc, UntapedError) else DotfilesError(str(exc))
             return self._row(
@@ -242,14 +137,17 @@ class Applier:
                 error=Failure.from_exception(failure, message=str(failure)),
             )
 
+    @staticmethod
     def _row(
-        self, step: Step, action: PlaceAction, detail: str, *, error: Failure | None = None
-    ) -> PlaceOutcome:
+        step: Step, action: ApplyAction, detail: str, *, error: Failure | None = None
+    ) -> ApplyOutcome:
         p = step.placement
-        return PlaceOutcome(
-            repo=p.repo.name,
+        assert p.target is not None  # a placement waiting on an input is never planned
+        return ApplyOutcome(
+            source=p.source.name,
+            package=p.package,
             item=p.item,
-            source=p.source,
+            entry=p.shown,
             mode=p.mode,
             action=action,
             state=step.found.state,
@@ -261,38 +159,41 @@ class Applier:
     def _place(self, step: Step) -> Path | None:
         """Place one path; returns where a replaced local file was kept."""
         p, found = step.placement, step.found
+        assert p.target is not None
         record = found.record
         target = p.target
+        owner = (p.source.name, p.package, p.item)
         ours = record is not None and found.state in ("behind", "applied", "missing")
         present = target.is_symlink() or target.exists()
         kept: Path | None = None
         if p.mode == "merge":
             if present and not ours:
-                kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item, copy=True)
-            data = self._evaluator.tree(p.repo).read(p.source)
-            assert p.fmt is not None  # validated by the manifest
+                kept = self._placer.keep_aside(target, owner=owner, copy=True)
+            data = p.source.tree.read(p.path)
+            assert p.fmt is not None  # checked when the package loads
             target_hash, managed = self._placer.merge(data, target, fmt=p.fmt)
             source_hash = self._evaluator.source_hash(p, data)
         else:
             if present and not ours:
-                kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item)
+                kept = self._placer.keep_aside(target, owner=owner)
             managed = ()
             if p.mode == "link":
-                destination = self._inventory.link_destination(p.repo, p.source)
+                destination = self._inventory.link_destination(p.source, p.path)
                 target_hash = self._placer.link(destination, target)
                 source_hash = target_hash
             else:
-                data = self._evaluator.tree(p.repo).read(p.source)
+                data = p.source.tree.read(p.path)
                 target_hash = self._placer.copy(data, target, executable=p.executable)
                 source_hash = self._evaluator.source_hash(p, data)
-        self._store.put_applied(
-            AppliedRecord(
+        self._store.put_placed(
+            PlacedRecord(
                 target=p.key,
-                repo=p.repo.name,
+                source=p.source.name,
+                package=p.package,
                 item=p.item,
-                file=p.file,
-                source=p.source,
-                mode=p.mode,
+                path=p.path,
+                entry=p.entry,
+                placed_as=p.mode,
                 fmt=p.fmt,
                 source_commit=found.commit,
                 source_hash=source_hash,
@@ -303,60 +204,165 @@ class Applier:
         )
         return kept
 
-    def _remove(self, step: Step) -> Path | None:
-        """Remove what the tool placed.
+    # -- taking back ---------------------------------------------------------
 
-        A target that is no longer what the tool wrote (whatever its state,
-        an orphan included) is kept aside instead of deleted; a merge target
-        whose managed keys were edited is copied aside before the keys go.
+    def _take_back(self, record: PlacedRecord) -> Path | None:
+        """Take back what untaped placed; returns where an edited target was kept.
+
+        A target that is no longer what untaped wrote is kept aside instead of
+        deleted; a merge target whose managed keys were edited is copied aside
+        before the keys go.
         """
-        p, record = step.placement, step.found.record
-        if record is None:
-            return None
-        target = p.target
+        target = Path(record.target)
+        owner = (record.source, record.package, record.item)
         kept: Path | None = None
         present = target.is_symlink() or target.exists()
-        if p.mode == "merge":
-            if present and p.fmt is not None:
-                observed = self._placer.observe(target, fmt=p.fmt, managed=record.managed)
-                if target_modified(p.mode, record, observed):
-                    kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item, copy=True)
-                self._placer.unmerge(target, fmt=p.fmt, managed=record.managed)
+        if record.placed_as == "merge":
+            fmt = record.fmt
+            if present and fmt is not None:
+                observed = self._placer.observe(target, fmt=fmt, managed=record.managed)
+                if target_modified(record.placed_as, record, observed):
+                    kept = self._placer.keep_aside(target, owner=owner, copy=True)
+                self._placer.unmerge(target, fmt=fmt, managed=record.managed)
         elif present:
-            if target_modified(p.mode, record, self._placer.observe(target)):
-                kept = self._placer.keep_aside(target, repo=p.repo.name, item=p.item)
+            if target_modified(record.placed_as, record, self._placer.observe(target)):
+                kept = self._placer.keep_aside(target, owner=owner)
             else:
                 self._placer.delete(target)
-        self._store.remove_applied(record.target)
+        self._store.remove_placed(record.target)
         return kept
 
-    def remove_all(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
-        """``remove``: delete every recorded placement among ``steps``."""
-        rows: list[PlaceOutcome] = []
-        for step in steps:
-            if step.found.record is None:
-                rows.append(self._row(step, "skipped", "never placed by this tool"))
+    def removal(
+        self,
+        records: Sequence[PlacedRecord],
+        *,
+        keep_files: bool,
+        clone: CloneRecord | None = None,
+    ) -> list[ApplyOutcome]:
+        """The preview of taking ``records`` back (or forgetting them, with ``keep_files``).
+
+        ``clone``: the clone that goes with them, so a kept link into it becomes a copy.
+        """
+        return [
+            self._removal_row(
+                record, "planned", self._kept(record, clone) or "forgets it; the file stays"
+            )
+            if keep_files
+            else self._removal_row(record, "planned", self._what(record))
+            for record in records
+        ]
+
+    def take_back(
+        self,
+        records: Sequence[PlacedRecord],
+        *,
+        keep_files: bool,
+        clone: CloneRecord | None = None,
+    ) -> list[ApplyOutcome]:
+        """Take every one of ``records`` back (or only forget it, with ``keep_files``)."""
+        rows: list[ApplyOutcome] = []
+        for record in records:
+            if keep_files:
+                try:
+                    copied = self._unlink(record, clone)
+                except OSError as exc:
+                    broken = DotfilesError(str(exc))
+                    rows.append(
+                        self._removal_row(
+                            record,
+                            "failed",
+                            str(broken),
+                            error=Failure.from_exception(broken, message=str(broken)),
+                        )
+                    )
+                    continue
+                self._store.remove_placed(record.target)
+                detail = (
+                    "forgotten; the link became a copy" if copied else "forgotten; the file stays"
+                )
+                rows.append(self._removal_row(record, "deleted", detail))
                 continue
             try:
-                kept = self._remove(step)
+                kept = self._take_back(record)
             except (UntapedError, OSError) as exc:
                 failure = exc if isinstance(exc, UntapedError) else DotfilesError(str(exc))
+                message = str(failure)
                 rows.append(
-                    self._row(
-                        step,
+                    self._removal_row(
+                        record,
                         "failed",
-                        str(failure),
-                        error=Failure.from_exception(failure, message=str(failure)),
+                        message,
+                        error=Failure.from_exception(failure, message=message),
                     )
                 )
                 continue
-            detail = f"kept the edited version at {kept}" if kept else ""
-            rows.append(self._row(step, "deleted", detail))
+            rows.append(
+                self._removal_row(
+                    record, "deleted", f"kept the edited version at {kept}" if kept else ""
+                )
+            )
         self._evaluator.reset()
         return rows
 
-    def preview_removal(self, steps: Sequence[Step]) -> list[PlaceOutcome]:
-        return [
-            self._row(step, "planned" if step.found.record is not None else "skipped", step.detail)
-            for step in steps
-        ]
+    def _kept(self, record: PlacedRecord, clone: CloneRecord | None) -> str | None:
+        """What ``--keep-files`` says of a link into ``clone``, which goes: it becomes a copy."""
+        if self._into(record, clone) is None:
+            return None
+        return "forgets it; the link becomes a copy, since the clone goes"
+
+    def _into(self, record: PlacedRecord, clone: CloneRecord | None) -> Path | None:
+        """Where ``record``'s link points, when it still points into ``clone``; else ``None``."""
+        if clone is None or record.placed_as != "link":
+            return None
+        target = Path(record.target)
+        destination = Path(record.target_hash)
+        if not target.is_symlink() or os.readlink(target) != record.target_hash:
+            return None
+        if Path(clone.folder) not in destination.parents or not destination.is_file():
+            return None
+        return destination
+
+    def _unlink(self, record: PlacedRecord, clone: CloneRecord | None) -> bool:
+        """Turn a link into ``clone`` into a copy of what it shows; whether it did."""
+        destination = self._into(record, clone)
+        if destination is None:
+            return False
+        executable = os.access(destination, os.X_OK)
+        self._placer.copy(destination.read_bytes(), Path(record.target), executable=executable)
+        return True
+
+    def _what(self, record: PlacedRecord) -> str:
+        """What taking ``record`` back does to its target, as things stand."""
+        target = Path(record.target)
+        if not (target.is_symlink() or target.exists()):
+            return "forgets it; the target is already gone"
+        observed = self._placer.observe(target, fmt=record.fmt, managed=record.managed)
+        edited = target_modified(record.placed_as, record, observed)
+        if record.placed_as == "merge":
+            return "takes the merged keys back" + (
+                " (the edited file is kept aside first)" if edited else ""
+            )
+        if edited:
+            return "keeps the edited file aside"
+        return "deletes the link" if record.placed_as == "link" else "deletes the copy"
+
+    def _removal_row(
+        self,
+        record: PlacedRecord,
+        action: ApplyAction,
+        detail: str,
+        *,
+        error: Failure | None = None,
+    ) -> ApplyOutcome:
+        target = Path(record.target)
+        return ApplyOutcome(
+            source=record.source,
+            package=record.package,
+            item=record.item,
+            entry=self._inventory.shown(target),
+            mode=record.placed_as,
+            action=action,
+            detail=detail,
+            target_path=target,
+            error=error,
+        )

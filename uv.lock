@@ -936,12 +936,14 @@ source = { editable = "packages/untaped-dotfiles" }
 dependencies = [
     { name = "untaped" },
     { name = "untaped-git" },
+    { name = "untaped-values" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
+    { name = "untaped-values", editable = "packages/untaped-values" },
 ]
 
 [[package]]

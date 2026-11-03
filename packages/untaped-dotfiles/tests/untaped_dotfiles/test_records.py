@@ -14,20 +14,18 @@ from untaped.sdk.testing import install
 from untaped_dotfiles.plugin import Dotfiles
 from untaped_dotfiles.records import (
     ApplyOutcome,
-    Item,
-    ItemOutcome,
-    PathStatus,
-    RemoveOutcome,
-    Repo,
-    RepoOutcome,
+    EntryStatus,
+    ItemDetail,
+    Package,
+    PackageDetail,
     StatusSummary,
-    SyncOutcome,
 )
 
 _PLACE = {
-    "repo": "dotfiles",
-    "item": "fish",
-    "source": "fish/config.fish",
+    "source": "dotfiles",
+    "package": "fish",
+    "item": "config",
+    "entry": "~/.config/fish/config.fish",
     "mode": "link",
     "action": "created",
     "state": "pending",
@@ -35,21 +33,18 @@ _PLACE = {
 }
 
 _SAMPLES: dict[type[BaseModel], BaseModel] = {
-    Item: Item(repo="dotfiles", name="fish", suggested="manual", files=2),
-    ItemOutcome: ItemOutcome(repo="dotfiles", name="fish", action="created", policy="sync"),
-    Repo: Repo(
-        name="dotfiles",
-        url="https://example.com/acme/dotfiles.git",
-        ref="main",
-        managed=True,
-        target_path=Path("/home/acme/repos/dotfiles"),
+    Package: Package(source="dotfiles", name="fish", on=True, policy="sync", items=1),
+    PackageDetail: PackageDetail(
+        source="dotfiles",
+        name="fish",
+        on=True,
+        items=(ItemDetail(name="config", enabled=True),),
     ),
-    RepoOutcome: RepoOutcome(name="dotfiles", action="deleted", detail="kept"),
-    PathStatus: PathStatus(
-        repo="dotfiles",
-        item="fish",
-        file="fish/config.fish",
-        source="fish/config.fish",
+    EntryStatus: EntryStatus(
+        source="dotfiles",
+        package="fish",
+        item="config",
+        entry="~/.config/fish/config.fish",
         mode="link",
         policy="manual",
         state="applied",
@@ -58,39 +53,62 @@ _SAMPLES: dict[type[BaseModel], BaseModel] = {
     StatusSummary: StatusSummary(
         checked_at=datetime(2026, 10, 2, tzinfo=UTC), total=1, attention=0
     ),
-    ApplyOutcome: ApplyOutcome(**_PLACE),
-    SyncOutcome: SyncOutcome(**_PLACE),
-    RemoveOutcome: RemoveOutcome(**_PLACE),
+    ApplyOutcome: ApplyOutcome(**_PLACE),  # type: ignore[arg-type]
 }
 
-_PLACE_KEYS = ["repo", "item", "source", "mode", "action", "state", "detail", "target_path"]
+_PLACE_KEYS = [
+    "source",
+    "package",
+    "item",
+    "kind",
+    "entry",
+    "mode",
+    "action",
+    "state",
+    "detail",
+    "target_path",
+]
 
-#: The keys, in order, each command wrote before its rows declared a kind.
+#: The keys of each row, in order (``StatusSummary`` is ``status.json``, read by prompts).
 _ROW_KEYS: dict[type[BaseModel], list[str]] = {
-    Item: [
-        "repo",
-        "name",
-        "suggested",
-        "policy",
-        "enabled",
-        "files",
-        "skip",
-        "excluded",
-        "description",
-    ],
-    ItemOutcome: ["repo", "name", "action", "policy", "detail"],
-    Repo: ["name", "url", "ref", "managed", "head", "behind", "items", "target_path"],
-    RepoOutcome: ["name", "action", "detail"],
-    PathStatus: [
-        "repo",
-        "item",
-        "file",
+    Package: [
         "source",
+        "name",
+        "on",
+        "policy",
+        "suggested",
+        "chosen",
+        "items",
+        "description",
+        "excluded",
+        "error",
+    ],
+    PackageDetail: [
+        "source",
+        "name",
+        "on",
+        "policy",
+        "suggested",
+        "chosen",
+        "description",
+        "excluded",
+        "inputs",
+        "items",
+        "error",
+    ],
+    EntryStatus: [
+        "source",
+        "package",
+        "item",
+        "kind",
+        "entry",
         "mode",
         "policy",
+        "chosen",
         "state",
         "detail",
         "target_path",
+        "error",
     ],
     StatusSummary: [
         "checked_at",
@@ -105,23 +123,15 @@ _ROW_KEYS: dict[type[BaseModel], list[str]] = {
         "missing",
         "orphan",
         "error",
-        "repos_behind",
     ],
     ApplyOutcome: _PLACE_KEYS,
-    SyncOutcome: _PLACE_KEYS,
-    RemoveOutcome: _PLACE_KEYS,
 }
 
 _KINDS = {
-    Item: "dotfiles.item",
-    ItemOutcome: "dotfiles.item_outcome",
-    Repo: "dotfiles.repo",
-    RepoOutcome: "dotfiles.repo_outcome",
-    PathStatus: "dotfiles.path_status",
-    StatusSummary: "dotfiles.status_summary",
+    Package: "dotfiles.package",
+    PackageDetail: "dotfiles.package_detail",
+    EntryStatus: "dotfiles.entry_status",
     ApplyOutcome: "dotfiles.apply_outcome",
-    SyncOutcome: "dotfiles.sync_outcome",
-    RemoveOutcome: "dotfiles.remove_outcome",
 }
 
 
@@ -136,12 +146,12 @@ def test_each_record_a_command_prints_has_the_kind_of_its_class_name() -> None:
 
 
 @pytest.mark.parametrize("model", list(_ROW_KEYS), ids=lambda model: model.__name__)
-def test_a_record_writes_its_old_row_keys_in_their_order(model: type[BaseModel]) -> None:
+def test_a_record_writes_its_row_keys_in_order(model: type[BaseModel]) -> None:
     assert list(json.loads(_SAMPLES[model].model_dump_json())) == _ROW_KEYS[model]
 
 
 def test_a_failed_place_row_adds_its_error_last() -> None:
     error = Failure.from_exception(UntapedError("could not read"))
-    row = ApplyOutcome(**{**_PLACE, "action": "failed"}, error=error)
+    row = ApplyOutcome(**{**_PLACE, "action": "failed"}, error=error)  # type: ignore[arg-type]
 
     assert list(json.loads(row.model_dump_json())) == [*_PLACE_KEYS, "error"]

@@ -1,68 +1,55 @@
-"""Source trees: the files of a repo read from a fetched ref (git) or from a working tree (fs).
+"""Source trees: a source's files read from a store commit (a git source) or a folder.
 
-A ``copy`` or ``merge`` file in a managed clone reads ``origin/<ref>``, so it
-follows its own policy even while the working tree is held back for a
-``manual`` link file; a registered checkout reads its working tree, because
-its owner edits there and decides what it contains. Both refuse a path that
-escapes the repo.
+A git source's packages, ``copy`` and ``merge`` files are read from the
+commit last fetched into the git plugin's store, so they are what the source
+holds even before its clone moves; a local folder is read as it stands,
+because its owner edits there. Both refuse a path that escapes the source.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from untaped.sdk import attribution
+from untaped.sdk import UntapedError
 from untaped_dotfiles.errors import DotfilesError, GitError
 from untaped_dotfiles.models import TreeFile
-from untaped_git.api import GitCommandError, GitResult, run_git
+
+if TYPE_CHECKING:
+    from untaped_git.api import Prefetched, RepoStore
 
 
-class GitRefTree:
-    """The files of ``ref`` in the repo at ``path``.
+class StoreTree:
+    """The files of one commit of a store repo (a git source as last fetched).
 
-    One ``git ls-tree`` lists the whole tree on first use; ``git show`` reads
-    a file.
+    One ``ls-tree`` lists the whole tree on first use; the first read fetches
+    the commit's missing blobs in one round trip.
     """
 
-    def __init__(self, path: Path, ref: str, *, git: str = "git", timeout: float = 60.0) -> None:
-        self._path = path
-        self._ref = ref
-        self._git = git
-        self._timeout = timeout
-        self._commit: str | None = None
+    def __init__(self, store: RepoStore, commit: str) -> None:
+        self._store = store
+        self._commit = commit
         self._entries: dict[str, TreeFile | None] | None = None
         """Every path in the tree: a :class:`TreeFile` for a blob, ``None`` for a directory."""
+        self._reader: Prefetched | None = None
 
     @property
     def commit(self) -> str | None:
-        if self._commit is None:
-            self._commit = self._run(
-                ["rev-parse", "--verify", f"{self._ref}^{{commit}}"]
-            ).text.strip()
         return self._commit
-
-    def _run(self, args: list[str], *, what: str | None = None) -> GitResult:
-        try:
-            return run_git(args, cwd=self._path, git=self._git, timeout=self._timeout, capture=True)
-        except GitCommandError as exc:
-            raise GitError(
-                f"{what or f'git {args[0]}'} failed in {self._path}: {exc}", **attribution(exc)
-            ) from exc
 
     def _tree(self) -> dict[str, TreeFile | None]:
         if self._entries is None:
-            out = self._run(["ls-tree", "-r", "-t", "-z", self._ref]).text
             entries: dict[str, TreeFile | None] = {}
-            for entry in out.split("\0"):
-                if not entry:
-                    continue
-                meta, _, name = entry.partition("\t")
-                mode, kind, _sha = meta.split()
-                if kind == "blob":
-                    entries[name] = TreeFile(path=name, executable=mode == "100755")
-                elif kind == "tree":
-                    entries[name] = None
+            for entry in self._store.ls_tree(self._commit):
+                if entry.type == "blob":
+                    entries[entry.path] = TreeFile(
+                        path=entry.path, executable=entry.mode == "100755"
+                    )
+                    parent = entry.path.rpartition("/")[0]
+                    while parent and parent not in entries:  # ls-tree -r lists blobs only
+                        entries[parent] = None
+                        parent = parent.rpartition("/")[0]
             self._entries = entries
         return self._entries
 
@@ -81,13 +68,17 @@ class GitRefTree:
         )
 
     def read(self, path: str) -> bytes:
-        return self._run(
-            ["show", f"{self._ref}:{path}"], what=f"reading {path} at {self._ref}"
-        ).stdout
+        if self._reader is None:
+            self._reader = self._store.prefetched(trees=[self._commit])
+        try:  # the handle is kept on self, which lint's reader cannot follow
+            argv = ["show", f"{self._commit}:{path}"]
+            return self._reader.run(argv, capture=True).stdout  # untaped: allow blob-reader
+        except UntapedError as exc:
+            raise GitError(f"reading {path} at {self._commit[:12]} failed: {exc}") from exc
 
 
 class WorkingTree:
-    """The files of a checkout's working tree (``.git`` left out)."""
+    """The files of a local folder (``.git`` left out)."""
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve()
@@ -100,7 +91,7 @@ class WorkingTree:
         """The absolute path of ``path``; refuses one that leaves the repo (symlinks included)."""
         candidate = (self._root / path).resolve()
         if candidate != self._root and self._root not in candidate.parents:
-            raise DotfilesError(f"source {path!r} leaves the repo at {self._root}")
+            raise DotfilesError(f"path {path!r} leaves the source at {self._root}")
         return candidate
 
     def exists(self, path: str) -> bool:

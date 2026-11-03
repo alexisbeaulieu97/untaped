@@ -446,10 +446,25 @@ decides how its items are released.
 
 **Provider**: a plugin that fills a contract, or the class in it that does.
 
-**Source**: three things that keep the word. A record's `source` names the
+**Source**: four things that keep the word. A record's `source` names the
 plugin and record it came from (provenance on the wire); ansible's `source`
-is a set of repositories a user adds (`ansible source add`); and
-`RepoSource` is a contract.
+is a set of repositories a user adds (`ansible source add`); `RepoSource` is
+a contract; and a dotfiles source is a git repo or a local folder whose
+packages a machine subscribes to (`dotfiles subscribe`).
+
+**Package**: one file `.untaped/dotfiles/<name>.yml` in a dotfiles source,
+named by the file; what a machine turns on or off (`dotfiles add`).
+
+**Item (dotfiles)**: a named part of a package, holding files, steps and
+repos; on while its package is, unless the machine turns it off. Not an
+item store's item.
+
+**Step**: a dotfiles check plus a run, or a check plus a fix for a person
+when nothing runs.
+
+**Update policy**: how a dotfiles package or item follows its source:
+`sync`, `once` or `manual`. The package suggests one; the machine may choose
+its own. Not the output **Policy**.
 
 **Answer cache**: the SDK's store of a cached contract answer, per
 provider, method, profile and arguments, kept with its freshness in one file
@@ -523,7 +538,9 @@ is a provider; the docs never say "adapter plugin".)
 
 **Input**: a value a file declares and whoever runs it gives, by `--var`,
 `--vars-file` or an answer at a prompt; the values plugin's `Input`. A
-secret input is never placed in a path, a target or a command line.
+secret input is never placed in a path, a target or a command line. A
+dotfiles package's `inputs:` are inputs too, answered in the machine's
+config.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

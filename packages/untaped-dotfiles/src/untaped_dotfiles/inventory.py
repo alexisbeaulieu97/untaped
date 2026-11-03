@@ -1,78 +1,102 @@
-"""Placements: every path an enabled item puts on this machine, resolved from the manifests.
+"""Placements: every path an item that is on puts on this machine, resolved from its package.
 
-A directory source is placed per child: the target directory stays a real
-directory, each file under the source gets its own placement at the same
-relative path, and files other programs write there are never touched.
+A folder entry is placed per child: the target folder stays a real folder,
+each file under the entry gets its own placement at the same relative path,
+and files other programs write there are never touched. A target renders
+``{{ name }}`` from this machine's answer (``inputs`` in the package's
+choice), else the input's default; an input with neither leaves its
+entries pending, naming the ``config set`` key that answers it, and what
+the entry placed before stays as it is.
+
+A path untaped placed that its entry no longer places is an ``orphan``:
+the entry left the package, the file left the source's folder, the input
+moved the target, or the package file left the source. A path whose entry
+is now left out on this machine (``os``, ``only``, ``unless``) is
+``excluded`` and stays as it is. Two packages placing one target are an
+error for each, and neither is placed.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, q, run_hint
-from untaped_dotfiles.errors import DotfilesError, ManifestError
-from untaped_dotfiles.manifest import FileEntry, Manifest, parse_manifest
-from untaped_dotfiles.models import (
-    AppliedRecord,
-    ItemChoice,
-    Machine,
-    MergeFormat,
-    Mode,
-    RepoRecord,
-    item_id,
-)
-from untaped_dotfiles.selection import effective_mode, selected_files
+from untaped.sdk import UntapedError, key, q, run_hint
+from untaped_dotfiles.errors import PackageError
+from untaped_dotfiles.policy import Policy
+from untaped_dotfiles.settings import DotfilesSettings
+from untaped_values.api import InputError, placeholders, render
 
 if TYPE_CHECKING:
-    from untaped_dotfiles.ports import DotfilesStore, GitRepos, SourceTree
+    from untaped_dotfiles.catalog import Catalog, Offer, Selection
+    from untaped_dotfiles.models import Machine, PlacedRecord
+    from untaped_dotfiles.package import File, MergeFormat, Mode
+    from untaped_dotfiles.ports import DotfilesStore, SourceTree
+    from untaped_dotfiles.sources import Source
 
 
 @dataclass(frozen=True)
 class Placement:
-    """One path an enabled item places (a file entry, or one child of a directory entry)."""
+    """One path an item places (a file entry, or one child of a folder entry)."""
 
-    repo: RepoRecord
-    choice: ItemChoice
-    file: str
-    """The manifest file entry's name (``FileEntry.key``)."""
-    source: str
-    target: Path
+    offer: Offer
+    item: str
+    entry: str
+    """The package file entry's ``path`` (a folder for its children)."""
+    path: str
+    """The source-relative path placed."""
+    target: Path | None
+    """``None`` while an input the target names has no value (``unanswered`` says which)."""
+    shown: str
+    """The target as the user reads it: ``~/...``, or the package's text while unrendered."""
+    declared: str
+    """The target as the package writes it (``{{ input }}`` unrendered)."""
     mode: Mode
+    policy: Policy
+    chosen: bool = False
     fmt: MergeFormat | None = None
     executable: bool = False
     excluded: str | None = None
+    unanswered: str | None = None
     orphan: bool = False
-    """An applied record whose source the manifest or the tree no longer lists."""
+    """A placed record the package or the tree no longer lists."""
 
     @property
-    def item(self) -> str:
-        return self.choice.name
+    def source(self) -> Source:
+        return self.offer.source
+
+    @property
+    def package(self) -> str:
+        return self.offer.name
 
     @property
     def key(self) -> str:
         return str(self.target)
 
+    @property
+    def owner(self) -> tuple[str, str, str]:
+        return (self.source.name, self.package, self.item)
+
 
 @dataclass(frozen=True)
 class Resolved:
-    """The placements of some items, and the items that could not be resolved."""
+    """The placements of some packages, and the packages that could not be resolved."""
 
     placements: list[Placement]
     problems: list[tuple[str, UntapedError]]
-    """``(item id, error)`` for each enabled item whose repo or manifest entry is gone."""
+    """``(SOURCE/PKG, error)`` for each package that doesn't load."""
 
 
 class Inventory:
-    """Reads manifests and expands enabled items into placements."""
+    """Expands the items that are on into placements."""
 
     def __init__(
-        self, store: DotfilesStore, git: GitRepos, *, home: Path, machine: Machine
+        self, catalog: Catalog, store: DotfilesStore, *, home: Path, machine: Machine
     ) -> None:
+        self._catalog = catalog
         self._store = store
-        self._git = git
         self._home = home.resolve()
         self._machine = machine
 
@@ -80,24 +104,16 @@ class Inventory:
     def machine(self) -> Machine:
         return self._machine
 
-    def source_tree(self, repo: RepoRecord) -> SourceTree:
-        """Where ``copy``/``merge`` sources and the manifest are read.
+    @property
+    def home(self) -> Path:
+        return self._home
 
-        The fetched ref for a managed clone, the working tree for a registered checkout.
-        """
-        path = Path(repo.path)
-        return self._git.ref_tree(path, repo.ref) if repo.managed else self._git.working_tree(path)
-
-    def manifest(self, repo: RepoRecord) -> Manifest:
-        tree = self.source_tree(repo)
-        where = f"{repo.name}:{repo.manifest}"
-        if not tree.exists(repo.manifest):
-            raise ManifestError(f"manifest {where} not found", category="not_found")
+    def shown(self, target: Path) -> str:
+        """``target`` as the user reads it: under ``~/`` when it is in the home folder."""
         try:
-            text = tree.read(repo.manifest).decode("utf-8")
-        except UnicodeDecodeError as exc:
-            raise ManifestError(f"manifest {where} is not UTF-8") from exc
-        return parse_manifest(text, where=where)
+            return "~/" + target.relative_to(self._home).as_posix()
+        except ValueError:
+            return str(target)
 
     def resolve_target(self, target: str) -> Path:
         """``target`` as an absolute path; ``~`` is this machine's home."""
@@ -108,105 +124,272 @@ class Inventory:
         else:
             path = Path(target)
         path = Path(*path.parts)
+        if not path.is_absolute():
+            raise PackageError(f"target {target!r} must start with '~/' or '/'")
         if path == self._home or path in self._home.parents:
-            raise ManifestError(f"target {target!r} is the home directory or above it")
+            raise PackageError(f"target {target!r} is the home folder or above it")
         return path
 
-    def link_destination(self, repo: RepoRecord, source: str) -> Path:
-        return Path(repo.path) / source
+    def link_destination(self, source: Source, path: str) -> Path:
+        return source.root / path
+
+    def on(self) -> list[Selection]:
+        """Every package that is on, as a selection."""
+        from untaped_dotfiles.catalog import Selection  # noqa: PLC0415 - a cycle
+
+        return [Selection(offer) for offer in self._catalog.offers() if offer.on]
 
     def placements(
-        self, choices: Sequence[ItemChoice], *, include_excluded: bool = False
+        self, selections: Sequence[Selection], *, include_excluded: bool = False
     ) -> Resolved:
-        """The placements of ``choices``, in manifest order, plus orphaned applied records."""
+        """The placements of ``selections`` (items that are on only), plus what untaped placed
+        for them that they no longer place (``orphan``) or that is now left out (``excluded``)."""
         found: list[Placement] = []
         problems: list[tuple[str, UntapedError]] = []
-        for choice in choices:
+        resolved: dict[tuple[str, str, str], Offer] = {}
+        held: dict[tuple[str, str, str, str], Placement | None] = {}
+        """``(source, package, item, entry)`` whose records stay: excluded (its placement) or
+        waiting on an input (``None``). Keyed by entry, so when two entries of one item share
+        a path and one is held, the other's old records stay too (rather than orphaned)."""
+        for offer, item in _wanted(selections):
+            if offer.gone:
+                resolved.update({owner: offer for owner in self._owners_of(offer)})
+                continue
+            if offer.package is None:
+                assert offer.error is not None  # a package that doesn't load says why
+                problems.append((offer.spelled, offer.error))
+                continue
             try:
-                found.extend(self._item_placements(choice, include_excluded=include_excluded))
+                placed, waiting = self._item(offer, item)
             except UntapedError as exc:
-                problems.append((choice.id, exc))
-        placed = {p.key for p in found}
-        # an item that failed to resolve is reported, not treated as all orphans
-        resolved = {c.id for c in choices} - {item for item, _ in problems}
-        for record in self._store.applied():
-            if item_id(record.repo, record.item) in resolved and record.target not in placed:
-                found.append(self._orphan(record, choices))
+                problems.append((f"{offer.spelled}/{item}", exc))
+                continue
+            resolved[(offer.source.name, offer.name, item)] = offer
+            for each in waiting:
+                held[(*each.owner, each.entry)] = each if each.excluded is not None else None
+            found.extend(placed)
+            if include_excluded:
+                found.extend(p for p in waiting if p.excluded is not None)
+        fought = self._fought()
+        found, claimed = _claims(found, fought)
+        problems.extend(claimed)
+        placed_keys = {p.key for p in found}
+        for record in self._store.placed():
+            owner = (record.source, record.package, record.item)
+            owned = resolved.get(owner)
+            if owned is None or record.target in placed_keys or record.target in fought:
+                continue  # a disputed target keeps its file until the dispute is settled
+            at = (*owner, record.entry)
+            if at not in held:
+                found.append(self._from_record(record, owned, orphan=True))
+                continue
+            excluded = held[at]
+            if excluded is not None:
+                found.append(
+                    self._from_record(
+                        record, owned, excluded=excluded.excluded, declared=excluded.declared
+                    )
+                )
+                if include_excluded:  # the record's own row stands for its entry
+                    found = [p for p in found if p is not excluded]
         return Resolved(found, problems)
 
-    def _item_placements(self, choice: ItemChoice, *, include_excluded: bool) -> list[Placement]:
-        repo = self._store.get_repo(choice.repo)
-        if repo is None:
-            raise DotfilesError(
-                f"repo {q(choice.repo)} is no longer subscribed",
-                category="not_found",
-                hint=_disable(choice.name, choice.repo),
-            )
-        manifest = self.manifest(repo)
-        item = manifest.items.get(choice.name)
-        if item is None:
-            raise DotfilesError(
-                f"item {q(choice.name)} is no longer in the manifest of {q(repo.name)}",
-                category="not_found",
-                hint=_disable(choice.name, repo.name),
-            )
-        tree = self.source_tree(repo)
-        out: list[Placement] = []
-        for entry, reason in selected_files(item, self._machine, skip=choice.skip):
-            mode = effective_mode(entry.mode, choice.policy)
-            base = Placement(
-                repo=repo,
-                choice=choice,
-                file=entry.key,
-                source=entry.source,
-                target=self.resolve_target(entry.target),
-                mode=mode,
-                fmt=entry.merge_format,
-            )
-            if reason is not None:
-                if include_excluded:
-                    out.append(replace(base, excluded=reason))
+    def _fought(self) -> dict[str, set[str]]:
+        """Each target two packages that are on place here, with their ``SOURCE/PKG`` names;
+        every package that is on counts, whatever a run selects."""
+        claimants: dict[str, set[str]] = {}
+        for offer, item in _wanted(self.on()):
+            if offer.package is None:
                 continue
-            out.extend(self._expand(base, entry, tree))
-        return out
+            try:
+                placed, _ = self._item(offer, item)
+            except UntapedError:  # said when the item is selected
+                continue
+            for p in placed:
+                if p.target is not None:
+                    claimants.setdefault(p.key, set()).add(offer.spelled)
+        return {target: names for target, names in claimants.items() if len(names) > 1}
 
-    def _expand(self, base: Placement, entry: FileEntry, tree: SourceTree) -> list[Placement]:
-        if not tree.is_dir(entry.source):
+    def _owners_of(self, offer: Offer) -> set[tuple[str, str, str]]:
+        """Every item ``offer``'s package placed something for (a package gone from its source)."""
+        return {
+            (r.source, r.package, r.item)
+            for r in self._store.placed()
+            if (r.source, r.package) == (offer.source.name, offer.name)
+        }
+
+    def _item(self, offer: Offer, item: str) -> tuple[list[Placement], list[Placement]]:
+        """``(placements, waiting)``: what ``item`` places, and the entries it can't place here
+        now (left out on this machine, or waiting on an input), unexpanded."""
+        package = offer.package
+        assert package is not None
+        tree = offer.source.tree
+        policy, chosen = offer.item_policy(item)
+        assert policy is not None  # a package that loads has a policy
+        placed: list[Placement] = []
+        waiting: list[Placement] = []
+        for file in package.items[item].files:
+            reason = offer.exclusion(self._machine, item) or file.exclusion(
+                self._machine.os, self._machine.tags
+            )
+            base = self._placement(offer, item, file, policy=policy, chosen=chosen)
+            if reason is not None:
+                waiting.append(replace(base, excluded=reason))
+            elif base.target is None:
+                placed.append(base)
+                waiting.append(base)
+            else:
+                placed.extend(self._expand(base, tree))
+        return placed, waiting
+
+    def _placement(
+        self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
+    ) -> Placement:
+        target, unanswered = self._render(offer, file.target)
+        return Placement(
+            offer=offer,
+            item=item,
+            entry=file.path,
+            path=file.path,
+            target=target,
+            shown=self.shown(target) if target is not None else file.target,
+            declared=file.target,
+            mode=file.mode,
+            policy=policy,
+            chosen=chosen,
+            fmt=file.merge_format,
+            unanswered=unanswered,
+        )
+
+    def _render(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
+        """The target ``text`` names here, or ``(None, why)`` while an input has no value."""
+        package = offer.package
+        assert package is not None
+        values = input_values(offer)
+        missing = [name for name in placeholders(text, field="target") if name not in values]
+        if missing:
+            return None, unanswered(offer, missing)
+        try:
+            rendered = render(text, values, package.inputs, field="target")
+        except InputError as exc:
+            raise PackageError(f"{offer.spelled}: {exc}") from exc
+        return self.resolve_target(rendered), None
+
+    def _expand(self, base: Placement, tree: SourceTree) -> list[Placement]:
+        if not tree.is_dir(base.entry):
             return [base]
         if base.mode == "merge":
-            raise ManifestError(f"merge file {q(entry.key)}: the source is a directory")
-        prefix = entry.source + "/"
+            raise PackageError(f"merge file {q(base.entry)}: the source is a folder")
+        assert base.target is not None
+        prefix = base.entry + "/"
         return [
             replace(
                 base,
-                source=child.path,
-                target=base.target / child.path.removeprefix(prefix),
+                path=child.path,
+                target=(target := base.target / child.path.removeprefix(prefix)),
+                shown=self.shown(target),
                 executable=child.executable,
             )
-            for child in tree.files(entry.source)
+            for child in tree.files(base.entry)
         ]
 
-    def _orphan(self, record: AppliedRecord, choices: Sequence[ItemChoice]) -> Placement:
-        choice = next(c for c in choices if c.repo == record.repo and c.name == record.item)
-        repo = self._store.get_repo(record.repo)
-        assert repo is not None  # the item resolved above, so its repo exists
-        fmt: MergeFormat | None = None
-        if record.mode == "merge":  # records written before ``fmt`` existed go by extension
-            fmt = record.fmt or ("json" if record.target.endswith(".json") else "yaml")
+    def _from_record(
+        self,
+        record: PlacedRecord,
+        offer: Offer,
+        *,
+        orphan: bool = False,
+        excluded: str | None = None,
+        declared: str = "",
+    ) -> Placement:
+        """What untaped placed at ``record``'s target, as a placement of ``offer``."""
+        policy, chosen = offer.item_policy(record.item)
+        target = Path(record.target)
         return Placement(
-            repo=repo,
-            choice=choice,
-            file=record.file,
-            source=record.source,
-            target=Path(record.target),
-            mode=record.mode,
-            fmt=fmt,
-            orphan=True,
+            offer=offer,
+            item=record.item,
+            entry=record.entry,
+            path=record.path,
+            target=target,
+            shown=self.shown(target),
+            declared=declared,
+            mode=record.placed_as,
+            policy=policy or Policy.MANUAL,
+            chosen=chosen,
+            fmt=record.fmt,
+            excluded=excluded,
+            orphan=orphan,
         )
 
 
-def _disable(name: str, repo: str) -> str:
-    """The hint that disables item ``name`` of ``repo``."""
-    from untaped_dotfiles.commands.items import Disable  # noqa: PLC0415 - import cycle
+def _wanted(selections: Sequence[Selection]) -> list[tuple[Offer, str]]:
+    """``(offer, item)`` for each item the selections name that is on, each once; a package
+    gone from its source once, as ``(offer, "")``."""
+    wanted: dict[tuple[str, str, str], tuple[Offer, str]] = {}
+    for selection in selections:
+        offer = selection.offer
+        if offer.package is None:
+            wanted.setdefault((offer.source.name, offer.name, ""), (offer, ""))
+            continue
+        items = [selection.item] if selection.item else list(offer.package.items)
+        for item in items:
+            if offer.item_on(item):
+                wanted.setdefault((offer.source.name, offer.name, item), (offer, item))
+    return list(wanted.values())
 
-    return run_hint(Disable.spelled(name, "--repo", repo))
+
+def _claims(
+    placements: list[Placement], fought: dict[str, set[str]]
+) -> tuple[list[Placement], list[tuple[str, UntapedError]]]:
+    """``placements`` without the targets two packages claim (``fought``), and an error for
+    each selected claimant."""
+    selected: dict[str, set[str]] = {}
+    for p in placements:
+        if p.target is not None and p.excluded is None and p.key in fought:
+            selected.setdefault(p.key, set()).add(p.offer.spelled)
+    if not selected:
+        return placements, []
+    problems: list[tuple[str, UntapedError]] = []
+    for target, mine in sorted(selected.items()):
+        names = fought[target]
+        for name in sorted(mine):
+            problems.append(
+                (
+                    name,
+                    PackageError(
+                        f"target {target} is placed by {' and '.join(sorted(names))}; "
+                        "neither places it",
+                        category="conflict",
+                    ),
+                )
+            )
+    kept = [p for p in placements if p.target is None or p.excluded or p.key not in fought]
+    return kept, problems
+
+
+def input_values(offer: Offer) -> dict[str, object]:
+    """The package's top-level input values here: this machine's answers, else the defaults."""
+    package = offer.package
+    if package is None:
+        return {}
+    answers = offer.choice.inputs if offer.choice is not None else {}
+    values: dict[str, object] = {}
+    for name, spec in package.inputs.items():
+        if spec.secret:
+            continue
+        if name in answers:
+            values[name] = answers[name]
+        elif spec.default is not None:
+            values[name] = spec.default
+    return values
+
+
+def unanswered(offer: Offer, names: Iterable[str]) -> str:
+    """``input 'x' has no value: `untaped config set ... VALUE```."""
+    from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
+
+    named = list(names)
+    setting = key(DotfilesSettings).sources[offer.source.name].packages[offer.name]
+    hints = [run_hint(Set.spelled(setting.inputs[name], "VALUE")) for name in named]
+    which = ", ".join(q(name) for name in named)
+    return f"input {which} has no value: {'; '.join(hints)}"
