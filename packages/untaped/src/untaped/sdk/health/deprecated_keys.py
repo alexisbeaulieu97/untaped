@@ -456,8 +456,9 @@ def _spellings(
     """``(field, keeper, old spellings)`` for each field with an old spelling in ``data``.
 
     The one rule the reader and ``config migrate`` share: the current key
-    wins over an old spelling, and among old spellings the hop closest to
-    the current name wins. The old spellings are closest first.
+    wins over an old spelling, and among old spellings one still read wins
+    over a retired one, then the hop closest to the current name
+    (:func:`_rank`). The old spellings are in that order.
     """
     found: dict[str, list[str]] = {}
     for old, new in old_keys.items():
@@ -465,7 +466,7 @@ def _spellings(
             found.setdefault(new, []).append(old)
     result = []
     for new, olds in sorted(found.items()):
-        ranked = sorted(olds, key=lambda old: (mappings.distance[old], old))
+        ranked = sorted(olds, key=lambda old: _rank(mappings, old))
         keeper = new if _lookup(data, new) is not _MISSING else ranked[0]
         result.append((new, keeper, ranked))
     return result
@@ -636,7 +637,8 @@ def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[Key
     """What ``config migrate`` does to one section's data in one profile.
 
     Every renamed or retired key moves to its current field; when the field
-    or a closer old spelling is also set, the other spelling is dropped.
+    or an old spelling ranked ahead of it (:func:`_rank`: one still read,
+    then the closest) is also set, the other spelling is dropped.
     Every key whose chain ends at a :class:`Retired` key is deleted.
     """
     mappings = key_mappings(model)
@@ -665,10 +667,22 @@ def apply_move(data: dict[str, Any], move: KeyMove) -> bool:
 
 
 def old_spellings(model: type[BaseModel], key: str) -> list[str]:
-    """Every renamed or retired key of ``model`` that maps to field ``key``, closest first."""
+    """Every renamed or retired key of ``model`` that maps to field ``key``, read ones first.
+
+    Each group is closest first (:func:`_rank`).
+    """
     mappings = key_mappings(model)
     olds = [old for old, new in mappings.migratable.items() if new == key]
-    return sorted(olds, key=lambda old: (mappings.distance[old], old))
+    return sorted(olds, key=lambda old: _rank(mappings, old))
+
+
+def _rank(mappings: KeyMappings, old: str) -> tuple[bool, int, str]:
+    """Where ``old`` ranks among a field's old spellings: the reader's choice first.
+
+    A spelling still read comes before a retired one, so every writer keeps
+    the value a run reads; then the hop closest to the current name.
+    """
+    return (old not in mappings.readable, mappings.distance[old], old)
 
 
 def reset_key_warnings() -> None:

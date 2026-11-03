@@ -130,9 +130,9 @@ def test_unset_removes_every_spelling(_isolated_config: Path, key: str) -> None:
     result = _config("unset", key)
 
     assert result.exit_code == 0, result.output
-    assert (
-        "unset renamed.cache_dir in profile default; removed renamed.ancient_path, "
-        "renamed.corpus_path"
+    assert (  # the spelling runs read first, then the retired one
+        "unset renamed.cache_dir in profile default; removed renamed.corpus_path, "
+        "renamed.ancient_path"
     ) in result.stderr
     assert _profile(_isolated_config) == {}
 
