@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from untaped_dotfiles.documents import dump_document, load_document
+from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
 from untaped_dotfiles.merge import leaf_paths, merge_into, project, remove_paths
 from untaped_dotfiles.placer import FilesystemPlacer
@@ -106,3 +109,83 @@ def test_yaml_merge_keeps_the_target_mapping_indentation(tmp_path: Path) -> None
     placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
     placer.merge(b"added: {deep: 2}\n", target, fmt="yaml")
     assert target.read_text() == "outer:\n    inner: 1\nadded:\n    deep: 2\n"
+
+
+_TOML_TARGET = """\
+# top
+name = "app"  # inline
+skip = [1, 2]
+
+[nested]
+keep = 1
+level = "debug"  # why
+
+[[servers]]
+host = "a"
+"""
+
+
+def test_toml_merge_keeps_comments_and_order_and_replaces_arrays(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text(_TOML_TARGET)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    source = b'skip = [3]\nnew = 1\n[nested]\nlevel = "info"\n[[servers]]\nhost = "b"\n'
+    target_hash, managed = placer.merge(source, target, fmt="toml")
+    assert target.read_text() == (
+        "# top\n"
+        'name = "app"  # inline\n'
+        "skip = [3]\n"
+        "new = 1\n"
+        "\n"
+        "[nested]\n"
+        "keep = 1\n"
+        'level = "info"  # why\n'
+        "\n"
+        "[[servers]]\n"
+        'host = "b"\n'
+    )
+    assert managed == (("skip",), ("new",), ("nested", "level"), ("servers",))
+    assert target_hash == value_hash([[3], 1, "info", [{"host": "b"}]])
+    assert placer.observe(target, fmt="toml", managed=managed).hash == target_hash
+
+
+def test_toml_unmerge_takes_managed_keys_back_out(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text(_TOML_TARGET)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    source = b'new = 1\n[nested]\nlevel = "info"\n[tool.deep]\nx = 2\n'
+    _, managed = placer.merge(source, target, fmt="toml")
+    assert "[tool.deep]\nx = 2\n" in target.read_text()
+    placer.unmerge(target, fmt="toml", managed=managed)
+    text = target.read_text()
+    assert text.startswith('# top\nname = "app"  # inline\nskip = [1, 2]\n')
+    assert load_document(text, fmt="toml", where="t") == {
+        "name": "app",
+        "skip": [1, 2],
+        "nested": {"keep": 1},
+        "servers": [{"host": "a"}],
+    }
+
+
+def test_toml_merge_creates_a_missing_target_and_keeps_dates(tmp_path: Path) -> None:
+    target = tmp_path / "new.toml"
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    placer.merge(b"[when]\nday = 2024-01-02\nat = 1979-05-27T07:32:00Z\n", target, fmt="toml")
+    assert target.read_text() == "[when]\nday = 2024-01-02\nat = 1979-05-27T07:32:00Z\n"
+
+
+def test_toml_dotted_keys_and_super_tables_merge_in_place(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text("a.b = 1\na.c = 2\n\n[x.y]\nz = 1\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    _, managed = placer.merge(b"a.b = 5\n[x.y]\nz = 9\n", target, fmt="toml")
+    assert target.read_text() == "a.b = 5\na.c = 2\n\n[x.y]\nz = 9\n"
+    placer.unmerge(target, fmt="toml", managed=managed)
+    assert target.read_text() == "a.c = 2\n\n"
+
+
+def test_toml_documents_load_dump_and_report_errors() -> None:
+    assert load_document("", fmt="toml", where="t") == {}
+    assert dump_document(load_document("a = 1\n", fmt="toml", where="t"), fmt="toml") == "a = 1\n"
+    with pytest.raises(DotfilesError, match="t is invalid TOML"):
+        load_document("a = = 1\n", fmt="toml", where="t")

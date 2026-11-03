@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from untaped.sdk.storage import atomic_write
-from untaped_dotfiles.documents import dump_document, load_document, plain
+from untaped_dotfiles.documents import dump_document, load_document, plain, values
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
 from untaped_dotfiles.merge import leaf_paths, merge_into, project, remove_paths
@@ -95,15 +95,14 @@ class FilesystemPlacer:
         return content_hash(data)
 
     def parse(self, source: bytes, *, fmt: MergeFormat) -> dict[str, Any]:
-        document = load_document(source.decode("utf-8"), fmt=fmt, where="the merge source")
-        result: dict[str, Any] = plain(document)
+        result: dict[str, Any] = plain(_source(source, fmt=fmt))
         return result
 
     def _merged(
         self, source: bytes, target: Path, *, fmt: MergeFormat
     ) -> tuple[str, MutableMapping[str, Any], dict[str, Any]]:
         """``(original text, merged document, incoming document)``."""
-        incoming = self.parse(source, fmt=fmt)
+        incoming = values(_source(source, fmt=fmt), fmt=fmt)
         text = target.read_text(encoding="utf-8") if target.is_file() else ""
         existing = load_document(text, fmt=fmt, where=str(target))
         merge_into(existing, incoming)
@@ -128,6 +127,10 @@ class FilesystemPlacer:
     def delete(self, target: Path) -> None:
         if target.is_symlink() or target.is_file():
             target.unlink()
+
+
+def _source(source: bytes, *, fmt: MergeFormat) -> MutableMapping[str, Any]:
+    return load_document(source.decode("utf-8"), fmt=fmt, where="the merge source")
 
 
 def _umask() -> int:

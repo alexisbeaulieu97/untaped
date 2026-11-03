@@ -34,14 +34,19 @@ from untaped_values.api import Input, InputError, placeholders
 PACKAGE_VERSION = 1
 
 Mode = Literal["link", "copy", "merge"]
-MergeFormat = Literal["json", "yaml"]
+MergeFormat = Literal["json", "yaml", "toml"]
 InputType = Literal["str", "int", "float", "bool", "choice"]
 
 #: Sources, packages, items and steps: one segment of a config key each, so no dot.
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 #: Inputs read as identifiers inside ``{{ name }}``.
 INPUT_NAME = re.compile(r"^[a-z_][a-z0-9_]*$")
-_FORMATS: dict[str, MergeFormat] = {".json": "json", ".yml": "yaml", ".yaml": "yaml"}
+_FORMATS: dict[str, MergeFormat] = {
+    ".json": "json",
+    ".yml": "yaml",
+    ".yaml": "yaml",
+    ".toml": "toml",
+}
 
 
 def _named(value: Mapping[str, Any], what: str, pattern: re.Pattern[str] = NAME) -> None:
@@ -152,7 +157,8 @@ class File(Where):
     def _format(self) -> Self:
         if self.mode == "merge" and self.merge_format is None:
             raise ValueError(
-                f"merge target {self.target!r} needs a .json, .yml or .yaml extension or a format"
+                f"merge target {self.target!r} needs a .json, .yml, .yaml or .toml "
+                "extension or a format"
             )
         if self.mode != "merge" and self.format is not None:
             raise ValueError("format applies to merge files only")
@@ -302,9 +308,12 @@ class PackageFile(Where):
       starts with `~/` or `/` after `{{ input }}` substitution and is not the
       home folder or above it. Two files of a package with one target are
       refused; one `path` may go to several targets.
-    - `mode` defaults to `link`. `merge` needs a JSON or YAML target, by its
-      extension (`.json`, `.yml`, `.yaml`) or `format`; `format` without
-      `merge` is refused.
+    - `mode` defaults to `link`. `merge` needs a JSON, YAML or TOML target,
+      by its extension (`.json`, `.yml`, `.yaml`, `.toml`) or `format`;
+      `format` without `merge` is refused. A merge writes the keys the
+      source names: mappings (TOML tables) recurse, other values (lists and
+      arrays of tables too) replace, and the target's other keys stay, with
+      a YAML or TOML target's comments and order.
     - `policy` is the author's suggestion: `sync`, `once` or `manual`
       (default). A machine can choose its own.
     - `os` (`macos`, `linux`, `windows`), `only` and `unless` (tag lists) on

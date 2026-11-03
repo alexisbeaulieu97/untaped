@@ -1,9 +1,10 @@
-"""Structured documents a ``merge`` file writes into: JSON and comment-keeping YAML.
+"""Structured documents a ``merge`` file writes into: JSON, and comment-keeping YAML and TOML.
 
 JSON is rewritten with two-space indentation (programs that own such files,
 editor and agent settings, write it that way too). YAML goes through
-``ruamel.yaml``'s round-trip loader so the target's comments, order, quoting
-and indentation survive a merge; ``ruamel.yaml`` is imported lazily.
+``ruamel.yaml``'s round-trip loader and TOML through ``tomlkit``, so the
+target's comments, order, quoting and indentation survive a merge; both are
+imported lazily.
 """
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
     if not text.strip():
         return _empty(fmt)
     try:
-        raw: Any = json.loads(text) if fmt == "json" else _yaml(text).load(text)
-    except Exception as exc:  # json and ruamel each raise their own classes
+        raw: Any = _parse(text, fmt)
+    except Exception as exc:  # json, ruamel and tomlkit each raise their own classes
         raise DotfilesError(f"{where} is invalid {fmt.upper()}: {exc}", category="invalid") from exc
     if raw is None:
         return _empty(fmt)
@@ -37,6 +38,10 @@ def dump_document(document: MutableMapping[str, Any], *, fmt: MergeFormat, like:
     """Render ``document``; YAML is indented the way ``like`` (the original text) was."""
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    if fmt == "toml":
+        import tomlkit  # noqa: PLC0415
+
+        return tomlkit.dumps(document)
     out = io.StringIO()
     _yaml(like).dump(document, out)
     return out.getvalue()
@@ -47,9 +52,38 @@ def plain(document: Any) -> Any:
     return json.loads(json.dumps(document, default=str))
 
 
+def values(document: MutableMapping[str, Any], *, fmt: MergeFormat) -> dict[str, Any]:
+    """``document``'s values detached from its text: what a merge writes into another one.
+
+    A TOML document keeps its value types (a date stays a date, where ``plain``
+    would write it as a string) and leaves its comments and layout behind.
+    """
+    if fmt == "toml":
+        from tomlkit import TOMLDocument  # noqa: PLC0415
+
+        if isinstance(document, TOMLDocument):
+            return document.unwrap()
+    detached: dict[str, Any] = plain(document)
+    return detached
+
+
+def _parse(text: str, fmt: MergeFormat) -> Any:
+    if fmt == "json":
+        return json.loads(text)
+    if fmt == "toml":
+        import tomlkit  # noqa: PLC0415
+
+        return tomlkit.parse(text)
+    return _yaml(text).load(text)
+
+
 def _empty(fmt: MergeFormat) -> MutableMapping[str, Any]:
     if fmt == "json":
         return {}
+    if fmt == "toml":
+        import tomlkit  # noqa: PLC0415
+
+        return tomlkit.document()
     from ruamel.yaml.comments import CommentedMap  # noqa: PLC0415
 
     return CommentedMap()

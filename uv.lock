@@ -934,6 +934,7 @@ name = "untaped-dotfiles"
 version = "11.1.0"
 source = { editable = "packages/untaped-dotfiles" }
 dependencies = [
+    { name = "tomlkit" },
     { name = "untaped" },
     { name = "untaped-git" },
     { name = "untaped-values" },
@@ -941,6 +942,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
     { name = "untaped-values", editable = "packages/untaped-values" },
