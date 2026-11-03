@@ -61,9 +61,9 @@ def test_a_deprecated_adapter_row_says_when_it_goes() -> None:
 def test_the_surface_carries_the_block_and_each_adapter() -> None:
     lines = [line for line in plugin_lines(TOY) if line.area in {"server-api", "adapter"}]
     assert lines == [
-        Line("adapter toy.server-api V1"),
-        Line("adapter toy.server-api V2"),
-        Line("server-api toy.server-api override=toy.server_version"),
+        Line("adapter toy.server-api V1", "experimental"),
+        Line("adapter toy.server-api V2", "experimental"),
+        Line("server-api toy.server-api override=toy.server_version", "experimental"),
     ]
 
 

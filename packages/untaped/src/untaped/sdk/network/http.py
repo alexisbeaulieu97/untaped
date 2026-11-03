@@ -48,6 +48,7 @@ from untaped.sdk.errors import (
     UntapedError,
 )
 from untaped.sdk.health.marks import section_marks
+from untaped.sdk.marks import experimental
 from untaped.sdk.network.upstream import capped, succeeded
 from untaped.sdk.words import q, run_hint
 
@@ -660,6 +661,7 @@ def connected_client(
     )
 
 
+@experimental
 @dataclass(frozen=True)
 class HttpFactory:
     """A plugin's HTTP clients: ``self.ctx.http.client(settings, base_url=..., bearer=...)``.
@@ -669,7 +671,12 @@ class HttpFactory:
     http=self.ctx.http)``). Core adds untaped's proxy, trust, timeout and
     retries, binds the credential to its origin and refuses a folder's
     proxy, all attributed to the plugin whose settings model ``settings``
-    is.
+    is. A server API's adapters connect through ``ApiAdapter.connect``
+    instead.
+
+    Experimental while the HTTP client's place outside core is designed
+    (#1058). First consumer: a plugin's client class that is not a server
+    API's adapter.
     """
 
     _owner: Callable[[type[BaseModel]], str]

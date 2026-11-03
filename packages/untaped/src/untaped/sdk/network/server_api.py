@@ -51,6 +51,7 @@ from untaped.sdk.errors import (
     first_validation_error,
 )
 from untaped.sdk.health.doctor import DoctorCheck
+from untaped.sdk.marks import experimental
 from untaped.sdk.network._server_api_calls import last_sent
 from untaped.sdk.network._versions import Release, ServerVersion
 from untaped.sdk.network.http import sent_by
@@ -74,6 +75,7 @@ def _no_vendor_error(error: HttpStatusError) -> bool:
     return False
 
 
+@experimental
 class ApiMismatch(UntapedError):
     """The server answered as this API version never does: a gone path, a body that doesn't read.
 
@@ -84,6 +86,8 @@ class ApiMismatch(UntapedError):
     answered, when known. Whether anything took effect is core's to tell
     from the requests it saw, never a field the plugin sets. Passed through,
     it exits 1.
+
+    Experimental. First consumer: jira.
     """
 
     category = ErrorCategory.FAILED
@@ -158,6 +162,7 @@ class UnsupportedServer(ConfigError):
 # --------------------------------------------------------------------------- #
 
 
+@experimental
 class ApiAdapter[S: BaseModel, V: ServerVersion]:
     """Base of one API version's adapter: it owns that version's paths, JSON, paging and auth.
 
@@ -172,6 +177,8 @@ class ApiAdapter[S: BaseModel, V: ServerVersion]:
 
     Core builds it with the plugin's ``settings`` and the ``version`` it
     picked. :meth:`connect` is the one way it reaches the server.
+
+    Experimental. First consumer: jira.
     """
 
     stability: ClassVar[Stability | None] = None
@@ -243,6 +250,7 @@ class _Detected(BaseModel):
     version: str
 
 
+@experimental
 class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
     """A plugin's server API: its port, detection, adapters and override.
 
@@ -259,6 +267,8 @@ class ServerApi[P, S: BaseModel, V: ServerVersion](OwnedBlock):
     builds; ``adapters`` are tried in declared order; ``override`` is
     ``key(S)`` of a field typed ``V | None`` that, set, replaces detection.
     ``max_age`` is how long a detection is trusted.
+
+    Experimental. First consumer: jira.
     """
 
     block_kind = "server-api"

@@ -1,4 +1,4 @@
-Commands and providers build their HTTP clients with
+Commands and providers build their HTTP clients with the experimental
 `self.ctx.http.client(self.settings, base_url=..., bearer=...)`, which
 also takes `verify=` and `headers=` (`untaped.sdk.network.HttpFactory`):
 core adds the proxy, trust, timeout and retries, binds the bearer to its

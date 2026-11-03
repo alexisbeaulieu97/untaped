@@ -1,5 +1,5 @@
 # untaped surface 3
-adapter github.server-api Rest2022
+adapter github.server-api Rest2022  [experimental]
 cfg github.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
 cfg github.default_org string? default=unset
@@ -652,4 +652,4 @@ sdk untaped_github.api.is_global_github_failure(exc)
 sdk untaped_github.api.normalize_team_scopes(orgs=) default=[]
 sdk untaped_github.api.normalize_team_scopes(values)
 sdk untaped_github.api.split_repo_id(value)
-server-api github.server-api override=github.server_version
+server-api github.server-api override=github.server_version  [experimental]

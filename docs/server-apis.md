@@ -12,7 +12,8 @@ API it targets, latest first. The floor rises only when the plugin adopts a
 break, and the old adapter then stays, deprecated, until the plugin's next
 major, not until the vendor's end of support.
 
-The block lives in `untaped.sdk.network`.
+The block is experimental (`untaped.sdk.network`); see
+[versioning](./versioning.md).
 
 ## Declaring one
 
