@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from untaped.sdk import UsageError, q
 from untaped.sdk.storage import safe_path_segment
+from untaped_git.api import repo_url_parts, store_key
 from untaped_workspace.domain.models import RepoSpec
 
 #: The longest name :func:`~untaped.sdk.safe_path_segment` keeps as it is.
@@ -38,8 +39,6 @@ def repo_key(url: str) -> tuple[str, ...]:
     The store keeps one repo per key (the https and ssh URLs of a repo, and
     two spellings of its path, are one), so workspace counts them as one too.
     """
-    from untaped_git.api import store_key  # noqa: PLC0415  # keeps CLI startup free of git
-
     return store_key(url)
 
 
@@ -51,8 +50,6 @@ def store_ident(url: str) -> str:
 
 def repo_identity(url: str) -> tuple[str, str]:
     """``(owner, name)`` from a clone URL or path; owner is ``""`` when absent."""
-    from untaped_git.api import repo_url_parts  # noqa: PLC0415  # keeps CLI startup free of git
-
     _, segments = repo_url_parts(url)
     name = segments[-1] if segments else url
     owner = segments[-2] if len(segments) > 1 else ""

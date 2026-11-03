@@ -1,8 +1,8 @@
 """The ``workspace`` plugin class: what the plugin has, each under its own name.
 
 The ``untaped.plugins`` entry point names :class:`WorkspacePlugin`, in this
-leaf module: the class imports every command, so ``api`` (which repo
-providers import) imports without them. Its docstring is the workspace guide.
+leaf module, since the class imports every command. Its docstring is the
+workspace guide.
 """
 
 from __future__ import annotations

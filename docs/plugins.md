@@ -283,7 +283,7 @@ subclasses the owner's contract and can't load without it:
 
 ```toml
 [project]
-dependencies = ["untaped>=12.0", "pydantic>=2.13.3,<3", "untaped-workspace>=12.0"]
+dependencies = ["untaped>=12.0", "pydantic>=2.13.3,<3", "untaped-git>=12.0"]
 
 [project.entry-points."untaped.plugins"]
 gitlab = "untaped_gitlab.plugin:Gitlab"

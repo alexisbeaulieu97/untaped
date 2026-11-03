@@ -12,14 +12,15 @@ from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, O
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock
 from untaped_git.api import Repo
+from untaped_git.testing import listing, make_repo
 from untaped_workspace.domain.models import RepoArg, StoredRepo
 from untaped_workspace.domain.naming import repo_key
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
-from workspace_test_support import composed, listing, repo
+from workspace_test_support import composed
 
 NOW = datetime.now(UTC)
-API = repo("acme/api", description="Core API")
-OLD = repo("acme/old", archived=True)
+API = make_repo("acme/api", description="Core API")
+OLD = make_repo("acme/old", archived=True)
 
 
 def _stored(ident: str, origin: str | None = None) -> StoredRepo:
@@ -68,7 +69,7 @@ def test_provider_repos_then_stored_only_repos_with_a_footer_per_provider() -> N
     git = FakeGit(_stored("github.com/acme/api"), _stored("github.com/team/tool"))
     ask = always(
         ok("github", API, OLD, refreshed_at=NOW - timedelta(hours=3, minutes=5)),
-        ok("gitlab", repo("infra/web", "gitlab.example")),
+        ok("gitlab", make_repo("infra/web", "gitlab.example")),
     )
     catalog = _source(git, ask=ask).catalog(refresh=False)
     assert [(i.id, i.dimmed, i.description) for i in catalog.items] == [
@@ -96,7 +97,7 @@ def test_the_refresh_directive_reaches_the_providers() -> None:
 def test_a_provider_serving_its_stored_answer_says_so_and_a_pick_of_another_works() -> None:
     """S7 (after the refresh): github down, its stored answer stands in; a gitlab pick works."""
     down = Errored("github", UntapedError("HTTP 503"))
-    infra = repo("infra/web", "gitlab.example")
+    infra = make_repo("infra/web", "gitlab.example")
     source = _source(ask=always(ok("github", API, stale=down), ok("gitlab", infra)))
     catalog = source.catalog(refresh=True)
     assert catalog.note == "github: cached repos only: HTTP 503 · gitlab: 1 repo"
@@ -113,7 +114,7 @@ def test_a_provider_serving_its_stored_answer_says_so_and_a_pick_of_another_work
 def test_an_answer_with_invalid_rows_counts_them_and_names_the_upgrade() -> None:
     """S8: ``gitlab: 1 repo, 1 invalid (…; upgrade untaped-gitlab)``."""
     invalid = ("row 2: name: String should match pattern '^[^/\\s]+(/[^/\\s]+)*$'",)
-    ask = always(ok("gitlab", repo("infra/web", "gitlab.example"), invalid=invalid))
+    ask = always(ok("gitlab", make_repo("infra/web", "gitlab.example"), invalid=invalid))
     assert _source(ask=ask).catalog(refresh=False).note == (
         f"gitlab: 1 repo, 1 invalid ({invalid[0]}; upgrade untaped-gitlab)"
     )
@@ -149,7 +150,7 @@ def test_with_no_provider_ready_the_store_alone_is_offered() -> None:
 
 
 def test_a_name_two_providers_list_is_one_item_per_provider() -> None:
-    gitlab_api = repo("acme/api", "gitlab.example")
+    gitlab_api = make_repo("acme/api", "gitlab.example")
     source = _source(ask=always(ok("github", API), ok("gitlab", gitlab_api)))
     items = source.catalog(refresh=False).items
     assert [(i.id, i.label) for i in items] == [
@@ -266,7 +267,7 @@ def test_the_real_providers_first_pass_serves_stored_answers_then_the_refresh_as
     """S7 end to end over ``gather``: nothing stored is "not listed yet" (no network on the
     first pass); after a refresh github's stored answer stands in for its failed call."""
     github = listing(API)
-    gitlab = listing(repo("infra/web", "gitlab.example"))
+    gitlab = listing(make_repo("infra/web", "gitlab.example"))
     with composed({"github": (github,), "gitlab": (gitlab,)}):
         source = RepoPickSource(git=FakeGit())  # type: ignore[arg-type]
         first = source.catalog(refresh=False)

@@ -9,7 +9,7 @@ from pydantic import Field
 
 from untaped.sdk import Output, Parallel, Positional, Short, Stdin, UsageError, now, plural, q
 from untaped.sdk.storage import ProgressHandle
-from untaped_git.api import Repo, RepoSource
+from untaped_git.api import Repo, RepoFinder, RepoSource
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.commands._workspace import NAME_HELP, WORKERS, WorkspaceCommand
 from untaped_workspace.commands.picker import Picker, choose_repos
@@ -74,8 +74,6 @@ class Provisions(WorkspaceCommand):
 
     def provisioner(self, warn: Callable[[str], None]) -> ProvisionRepos:
         """The ``create``/``add`` use case wired to the real adapters."""
-        from untaped_git.api import RepoFinder  # noqa: PLC0415  # loads the contracts machinery
-
         return ProvisionRepos(
             self.store(),
             self.git_worktrees(),
@@ -110,7 +108,7 @@ class Create(Provisions):
     `checked_out` (an existing branch resumed, or a read-only checkout) or
     `failed`. Repos that succeed stay even when another fails (exit 1);
     `add` retries the failed ones. An unknown or ambiguous repo name exits 2
-    with candidates. --stdin reads names or URLs, or `workspace.repo` records
+    with candidates. --stdin reads names or URLs, or `git.repo` records
     and the repo records a repo source reads (`github.repo`, say); a record
     without a kind, or of a kind no source reads, exits 2.
 

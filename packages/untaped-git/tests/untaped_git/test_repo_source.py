@@ -6,27 +6,31 @@ Its schemas are guarded by the plugin's surface (``contract git.*`` lines).
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import timedelta
 
 import pytest
 
-from git_test_support import composed, host, listing, repo
+from git_test_support import composed
 from untaped.sdk import home
 from untaped.sdk.contracts import gather
 from untaped.sdk.testing import ManualClock
 from untaped_git.api import RepoSource, looks_like_url
-from untaped_git.testing import conformance
+from untaped_git.testing import conformance, host, listing, make_repo
 
 
 def test_a_provider_listing_distinct_names_conforms() -> None:
-    github = listing(repo("acme/api"), repo("acme/web"), repo("other/api"))
+    github = listing(make_repo("acme/api"), make_repo("acme/web"), make_repo("other/api"))
     conformance(github())
 
 
 def test_a_provider_listing_one_name_twice_does_not_conform() -> None:
     """Repos are found by name: two repos under one name (in any case) can't be told
     apart."""
-    github = listing(repo("acme/api"), repo("ACME/API", "mirror.example"), repo("acme/web"))
+    github = listing(
+        make_repo("acme/api"), make_repo("ACME/API", "mirror.example"), make_repo("acme/web")
+    )
     with pytest.raises(AssertionError, match="repos share a name: acme/api"):
         conformance(github())
 
@@ -35,8 +39,29 @@ def test_a_git_host_provider_has_nothing_to_conform_to() -> None:
     conformance(host("github.com")())
 
 
+_BLOCK_PYTEST = """
+import sys
+
+class Blocked:
+    def find_spec(self, name, path=None, target=None):
+        if name == "pytest" or name.startswith(("_pytest", "pytest.")):
+            raise ImportError(name)
+
+sys.meta_path.insert(0, Blocked())
+from untaped_git.testing import conformance
+assert callable(conformance)
+"""
+
+
+def test_the_conformance_check_loads_without_pytest() -> None:
+    """untaped's plugin check imports ``untaped_git.testing`` where pytest may be missing,
+    and skips an owner whose module fails to import, so the import must not need pytest."""
+    ran = subprocess.run([sys.executable, "-c", _BLOCK_PYTEST], capture_output=True, text=True)
+    assert ran.returncode == 0, ran.stderr
+
+
 def test_repos_answers_are_kept_six_hours(clock: ManualClock) -> None:
-    github = listing(repo("acme/api"))
+    github = listing(make_repo("acme/api"))
     with composed({"github": (github,)}):
         gather(RepoSource.repos)()
         clock.advance(timedelta(hours=5))
@@ -60,7 +85,7 @@ def test_a_max_age_of_zero_asks_the_providers_every_time(
             "format_version: 2\ngit:\n  caches:\n    repo_source_repos: {max_age_seconds: 0}\n",
             encoding="utf-8",
         )
-    github = listing(repo("acme/api"))
+    github = listing(make_repo("acme/api"))
     with composed({"github": (github,)}):
         gather(RepoSource.repos)()
         gather(RepoSource.repos)()

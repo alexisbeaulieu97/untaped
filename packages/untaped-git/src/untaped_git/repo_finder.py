@@ -14,7 +14,7 @@ from __future__ import annotations
 import difflib
 from collections.abc import Sequence
 
-from untaped.sdk import UsageError, not_found, q
+from untaped.sdk import UsageError, experimental, not_found, q
 from untaped.sdk.contracts import (
     Answers,
     NoProviderReady,
@@ -32,6 +32,7 @@ from untaped_git.url import repo_url_parts
 _URL_HINT = "pass the repo's clone URL"
 
 
+@experimental
 class RepoFinder:
     """Repos by name over the plugins filling ``RepoSource``, asked once per finder.
 
@@ -132,12 +133,10 @@ def name_matches(name: str, ident: str) -> bool:
 
 
 def _unasked_hint(exc: NoProviderReady) -> str:
-    """``github wasn't asked: …; set github.default_org, or pass the repo's clone URL``."""
+    """``forge wasn't asked: …; set forge.org, or pass the repo's clone URL``."""
     if not exc.not_ready:
         # Nobody is merely unconfigured: none is installed, or each was set aside.
-        return (
-            f"{exc}; install or upgrade a plugin that lists repos, or {_URL_HINT}"
-        )
+        return f"{exc}; install or upgrade a plugin that lists repos, or {_URL_HINT}"
     parts = []
     for plugin, ready in exc.not_ready.items():
         setting = f"; set {ready.spelled}" if ready.spelled else ""

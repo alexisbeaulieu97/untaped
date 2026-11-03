@@ -1,7 +1,7 @@
-"""Repos named by the plugins that list them: the ``git.repo`` record and the ``RepoSource`` contract.
+"""Repos named by the plugins that list them: the ``git.repo`` record, the ``RepoSource`` contract.
 
 The git plugin never knows where a repo comes from: every installed plugin
-that fills :class:`RepoSource` (github, a third-party gitlab…) answers, and
+that fills :class:`RepoSource` (a forge's plugin, say) answers, and
 :class:`~untaped_git.repo_finder.RepoFinder` picks among their answers by name
 (``untaped plugin rank`` orders providers that list the same repo). A typed
 URL needs no provider: :func:`typed_repo` names it by its path.
@@ -23,6 +23,7 @@ from untaped_git.url import GitUrl, repo_url_parts
 type RepoName = Annotated[str, StringConstraints(pattern=r"^[^/\s]+(/[^/\s]+)*$")]
 
 
+@experimental
 class Repo(Issued):
     """A repository a plugin lists by name; ``source`` names the plugin that issued it."""
 
@@ -50,6 +51,7 @@ class RepoSource[T: Record = Repo](Contract):
         """Every repo the provider can list in the active profile."""
 
 
+@experimental
 def looks_like_url(ident: str) -> bool:
     """Whether ``ident`` is a URL, scp-style ``user@host:path``, a path, or ends in ``.git``.
 
@@ -64,6 +66,7 @@ def looks_like_url(ident: str) -> bool:
     )
 
 
+@experimental
 def typed_repo(url: str) -> Repo:
     """The repo a typed URL names: a plain :class:`Repo` called by the URL's full path.
 

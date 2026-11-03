@@ -115,7 +115,7 @@ REPO_HIT_COLUMNS = (
 class CorpusRepo(Repo):
     """One repository row in the local scan corpus.
 
-    A :class:`Repo`, so it pipes into workspace like any repo row.
+    A :class:`Repo`, so it pipes into any command that reads ``git.repo`` rows.
     """
 
     ref: str
@@ -161,8 +161,8 @@ class CacheDeleteOutcome(OutcomeRecord):
 class SweepRepo(Repo):
     """Aggregated sweep result for one repository.
 
-    A :class:`Repo`, so a sweep's matches pipe into workspace (or a
-    second sweep) like any repo row.
+    A :class:`Repo`, so a sweep's matches pipe into any command that
+    reads ``git.repo`` rows (a second sweep, say).
     """
 
     matched: bool = Field(

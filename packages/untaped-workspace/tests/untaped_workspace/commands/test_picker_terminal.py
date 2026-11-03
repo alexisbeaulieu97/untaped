@@ -13,10 +13,10 @@ from untaped.sdk.contracts import gather
 from untaped.sdk.prompt import Picked, PickItem, PickRequest, PickResult
 from untaped.sdk.testing import ScriptedTerminal
 from untaped_git.api import Repo, RepoSource
-from untaped_git.testing import GitRemote, global_config
+from untaped_git.testing import GitRemote, global_config, listing
 from untaped_workspace.domain.models import RepoSpec
 from untaped_workspace.infrastructure import LocalGitWorktrees
-from workspace_test_support import composed, err, git, listing, new_workspace, run, stored
+from workspace_test_support import composed, err, git, new_workspace, run, stored
 
 
 @dataclass

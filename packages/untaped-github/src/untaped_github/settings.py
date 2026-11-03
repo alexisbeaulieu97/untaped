@@ -110,8 +110,8 @@ class GithubSettings(BaseModel):
     git_protocol: Literal["https", "ssh"] = Field(
         default="https",
         description=(
-            "How `sweep`, `cache sync`, workspace and `ansible source refresh` "
-            "fetch repos on the GitHub host: `https` or `ssh` "
+            "How `sweep`, `cache sync` and any plugin that names repos through "
+            "git's `RepoSource` fetch repos on the GitHub host: `https` or `ssh` "
             "(`git@HOST:OWNER/NAME.git`, with your own SSH keys)."
         ),
     )

@@ -92,6 +92,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
+- `RepoSource`, `Repo`, `RepoFinder`, `typed_repo` and `looks_like_url` in
+  `untaped_git.api`: the contract a plugin fills to list repos by name, its
+  `git.repo` record, and the lookup that turns a typed name or URL into one
+  repo.
 - `clone` in `untaped_git.api`: a working copy the user owns afterwards,
   cloned with untaped's credentials for its host.
 - `Stdin.text` in `untaped.sdk`: stdin's whole text for an argument whose
@@ -99,7 +103,7 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
   a plugin's typed private file in a store repo.
 - The fixtures in `untaped_git.testing`, for testing a plugin against the
-  repo store.
+  repo store, and its fake providers of git's contracts.
 - The upstream budget: `capped` and `succeeded` in `untaped.sdk.network`,
   which a call to an upstream reads and reports to so `doctor --online` and a
   cache's automatic refresh fail fast offline.
