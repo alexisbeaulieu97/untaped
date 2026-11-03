@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError, plural, run_hint, unified_diff_text
 from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.hashing import content_hash
 from untaped_dotfiles.merge import leaf_paths
 from untaped_dotfiles.models import CloneRecord, PlacedRecord
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome
@@ -184,21 +185,26 @@ class Applier:
             assert p.target is not None and record is not None
             try:
                 data = self._inventory.link_destination(p.source, p.path).read_bytes()
-                target_hash = self._placer.copy(data, p.target, executable=p.executable)
+                committed = self._evaluator.committed(p)
+                self._placer.copy(data, p.target, executable=p.executable)
             except (UntapedError, OSError) as exc:
                 rows[p.key] = self._failed(step, exc)
                 continue
+            source = data if committed is None else committed
+            # untaped wrote the source: an edit the clone held reads as edited here
             self._store.put_placed(
                 record.model_copy(
                     update={
                         "placed_as": "copy",
-                        "source_hash": self._evaluator.source_hash(p, data),
-                        "target_hash": target_hash,
+                        "source_hash": self._evaluator.source_hash(p, source),
+                        "target_hash": content_hash(source),
                         "applied_at": self._now(),
                     }
                 )
             )
             detail = f"became a copy of what it showed: {p.policy} places copies"
+            if source != data:
+                detail += "; it holds your edit, so it reads modified"
             rows[p.key] = self._row(step, "updated", detail, mode="copy")
         self._evaluator.reset()
         return rows

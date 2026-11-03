@@ -111,7 +111,6 @@ class Apply(DotfilesCommand):
             steps = _failing(
                 svc.applier.plan_apply(placements, force=self.force, follow=follow), stuck
             )
-            steps = _failing(steps, self._edited(svc, steps, stuck), converting=True)
             self._report_stuck(steps, stuck)
             planned = svc.applier.planned(steps)
             todo = [s for s in steps if s.action in ("apply", "remove") or s.converts]
@@ -281,26 +280,6 @@ class Apply(DotfilesCommand):
                 stuck[record.source] = why
         return stuck
 
-    @staticmethod
-    def _edited(
-        svc: Services, steps: Sequence[Step], stuck: dict[str, UntapedError]
-    ) -> dict[str, UntapedError]:
-        """Each clone that isn't moving but has local changes, by source, where a link into it
-        would become a copy: what the link shows may be an edit, not the source."""
-        edited: dict[str, UntapedError] = {}
-        why: UntapedError | None
-        for name in sorted({s.placement.source.name for s in steps if s.converts} - set(stuck)):
-            record = svc.store.get_clone(name)
-            if record is None:
-                continue
-            try:
-                why = svc.clones.local_changes(record)
-            except UntapedError as exc:
-                why = exc
-            if why is not None:
-                edited[name] = why
-        return edited
-
     def _report_stuck(self, steps: Sequence[Step], stuck: dict[str, UntapedError]) -> None:
         """Say why a stuck source stays put when none of its rows says it."""
         said = {s.placement.source.name for s in steps if s.found.error is not None}
@@ -350,23 +329,17 @@ class Apply(DotfilesCommand):
         return fresh
 
 
-def _failing(
-    steps: list[Step], stuck: dict[str, UntapedError], *, converting: bool = False
-) -> list[Step]:
-    """``steps`` with each change of a stuck source failed, carrying why (and its hint);
-    ``converting``: only its links to convert."""
+def _failing(steps: list[Step], stuck: dict[str, UntapedError]) -> list[Step]:
+    """``steps`` with each change of a stuck source failed, carrying why (and its hint); a link
+    to convert still converts, since the copy keeps what it shows."""
     if not stuck:
         return steps
     out: list[Step] = []
     for step in steps:
         exc = stuck.get(step.placement.source.name)
-        changes = step.converts or (not converting and step.action in ("apply", "remove"))
-        if exc is not None and changes and step.found.error is None:
-            # a link to convert waits too: its clone doesn't move, and what it shows may be
-            # an edit the clone holds
+        if exc is not None and step.action in ("apply", "remove") and step.found.error is None:
             error = Failure.from_exception(exc, message=str(exc))
-            found = replace(step.found, error=error, converts=False)
-            step = replace(step, found=found, detail=str(exc))
+            step = replace(step, found=replace(step.found, error=error), detail=str(exc))
         out.append(step)
     return out
 

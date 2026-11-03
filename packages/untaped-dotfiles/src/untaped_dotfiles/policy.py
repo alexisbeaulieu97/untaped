@@ -17,7 +17,8 @@ class Policy(StrEnum):
     `manual` it is placed as a copy, since a link would change the moment
     the clone moves. When a link's item stops following `sync`, `apply`
     makes it a copy of what it shows before the clone moves, so nothing a
-    program reads changes; when a copy's item starts following `sync`, it
+    program reads changes (an edit made through the link is kept, and the
+    copy reads `modified`); when a copy's item starts following `sync`, it
     is `behind` and becomes a link.
 
     ## States of a file entry

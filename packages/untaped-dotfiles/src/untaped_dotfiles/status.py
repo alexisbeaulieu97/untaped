@@ -124,6 +124,17 @@ class Evaluator:
         data = tree.read(placement.path)
         return SourceInfo(exists=True, hash=self.source_hash(placement, data))
 
+    def committed(self, placement: Placement) -> bytes | None:
+        """What a link's file holds at the commit its clone has checked out, without the
+        clone's local changes; ``None`` for a local folder (the folder is the source)."""
+        clone = placement.source.clone
+        if clone is None:
+            return None
+        tree = self._clones.checked_out_tree(clone)
+        if tree is None or not tree.exists(placement.path):
+            return None
+        return tree.read(placement.path)
+
     def source_hash(self, placement: Placement, data: bytes) -> str:
         if placement.mode == "merge" and placement.fmt is not None:
             try:

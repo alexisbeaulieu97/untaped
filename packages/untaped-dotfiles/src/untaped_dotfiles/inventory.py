@@ -198,7 +198,9 @@ class Inventory:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
-            failed = self._failed.get(offer.spelled) or self._stale(offer)
+            failed = self._failed.get(offer.spelled)
+            if failed is None and (stale := self._stale(offer)) is not None:
+                self._failed[offer.spelled] = failed = stale  # said once per package
             if failed is not None:
                 if (offer.spelled, failed) not in problems:
                     problems.append((offer.spelled, failed))

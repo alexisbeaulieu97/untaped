@@ -198,7 +198,7 @@ def test_a_value_that_does_not_fit_its_input_exits_2(make_folder: MakeFolder) ->
 
 
 def test_an_answer_that_no_longer_fits_fails_only_its_package(
-    make_remote: MakeRemote, user_home: Path
+    make_remote: MakeRemote, user_home: Path, dotfiles_env: Path
 ) -> None:
     remote = make_remote()
     subscribe(remote.url, "--add", "git", "--add", "starship")
@@ -212,6 +212,9 @@ def test_an_answer_that_no_longer_fits_fails_only_its_package(
     assert result.exit_code == 1 and "cannot coerce value to int" in result.stderr
     assert (user_home / ".config/starship.toml").read_text() == "changed\n"
     assert (user_home / ".config/git/home.inc").exists()  # left as it is
+    status = run(["status"])
+    assert status.exit_code == 1 and status.stderr.count("cannot coerce value to int") == 1
+    assert json.loads((dotfiles_env / "status.json").read_text())["error"] == 1
     assert run(["status", "--check"]).exit_code == 1
     assert run(["apply", "--yes", "--var", "git_profile=3"]).exit_code == 0  # answered again
 
@@ -219,7 +222,7 @@ def test_an_answer_that_no_longer_fits_fails_only_its_package(
 # -- a stuck clone ----------------------------------------------------------------
 
 
-def test_a_link_into_a_clone_with_local_changes_is_not_converted(
+def test_a_link_holding_an_edit_becomes_a_copy_that_reads_modified(
     make_remote: MakeRemote, user_home: Path, tmp_path: Path
 ) -> None:
     remote = make_remote()
@@ -230,15 +233,16 @@ def test_a_link_into_a_clone_with_local_changes_is_not_converted(
     as_json(["add", "fish", "--policy", "manual"])
     publish(remote, {"fish/conf.d/abbr.fish": "abbr x y\n"})
     result = run(["apply", "--yes", "--format", "json"])
-    assert result.exit_code == 1, result.output
+    assert result.exit_code == 1, result.output  # the clone can't move
     row = {r["entry"]: r for r in json_rows(result)}["~/.config/fish/config.fish"]
-    assert row["action"] == "failed" and "local changes" in str(row["detail"])
-    assert target.is_symlink() and target.read_text() == "edited through the link\n"
+    assert row["action"] == "updated" and "holds your edit" in str(row["detail"])
+    assert not target.is_symlink() and target.read_text() == "edited through the link\n"
+    assert states()["~/.config/fish/config.fish"] == "modified"
     clone = tmp_path / "clones" / "dotfiles"
     subprocess.run(["git", "-C", str(clone), "checkout", "--", "."], check=True)
-    rows = {r["entry"]: r for r in json_rows(run(["apply", "--yes", "--format", "json"]))}
-    assert str(rows["~/.config/fish/config.fish"]["detail"]).startswith("became a copy")
-    assert not target.is_symlink() and target.read_text() == FILES["fish/config.fish"]
+    refused = run(["apply", "fish", "--yes", "--format", "json"])
+    assert refused.exit_code == 1, refused.output
+    assert target.read_text() == "edited through the link\n"  # the edit needs --force
 
 
 def test_a_link_that_moved_with_the_clone_keeps_its_diff(make_remote: MakeRemote) -> None:
@@ -251,19 +255,20 @@ def test_a_link_that_moved_with_the_clone_keeps_its_diff(make_remote: MakeRemote
     assert "+upstream" in diff
 
 
-def test_a_link_into_an_edited_clone_that_is_not_moving_waits_too(
+def test_one_package_s_edit_does_not_hold_back_another_s_conversion(
     make_remote: MakeRemote, user_home: Path
 ) -> None:
-    subscribe(make_remote().url, "--add", "fish")
+    subscribe(make_remote().url, "--add", "fish", "--add", "claude")
     as_json(["apply", "--yes"])
-    target = user_home / ".config/fish/config.fish"
-    target.write_text("edited through the link\n")
-    as_json(["add", "fish", "--policy", "manual"])
+    edited = user_home / ".config/fish/config.fish"
+    edited.write_text("edited through the link\n")
+    as_json(["add", "claude", "--policy", "manual"])
     result = run(["apply", "--yes", "--format", "json"])
-    assert result.exit_code == 1, result.output
-    row = {r["entry"]: r for r in json_rows(result)}["~/.config/fish/config.fish"]
-    assert row["action"] == "failed" and "local changes" in str(row["detail"])
-    assert target.is_symlink()
+    assert result.exit_code == 0, result.output
+    skill = user_home / ".agents/skills/mine/hello/SKILL.md"
+    assert not skill.is_symlink() and skill.read_text() == "# hello\n"
+    assert edited.is_symlink()  # fish still follows sync
+    assert states()["~/.agents/skills/mine/hello/SKILL.md"] == "applied"
 
 
 def test_a_binary_file_over_an_existing_one_says_so(
