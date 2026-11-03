@@ -12,8 +12,8 @@ the same output and piping rules:
 - **`awx`**: inspect, change, launch, sync and test AWX/AAP resources.
 - **`ansible`**: Ansible role dependency graphs and upstream impact.
 - **`recipe`**: plan, preview and apply file changes across many directories.
-- **`dotfiles`**: place config files from dotfiles repos, with a policy per
-  item per machine (experimental).
+- **`dotfiles`**: place config files from the packages of dotfiles repos and
+  folders, with a policy per machine (experimental).
 - **`git`**: credentials for Git hosts, and the repo store the other plugins
   keep repositories in.
 - **`lint`**: rules over plugins and records, one id and ignore spelling for

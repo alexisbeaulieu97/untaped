@@ -1,10 +1,10 @@
 """``FilesystemPlacer``: links, copies and merges on the machine, and the kept directory.
 
-Before the tool replaces anything it did not write, the file moves to
-``<kept_dir>/<repo>/<item>/<timestamp>/<path relative to home>``: a central
+Before untaped replaces anything it didn't write, the file moves to
+``<kept_dir>/<source>/<package>/<item>/<timestamp>/<path relative to home>``: a central
 directory keeps the copy out of directories programs glob (``conf.d/*``),
 which a ``<name>.before-dotfiles`` sibling would not. Nothing in it is ever
-deleted by the tool.
+deleted by untaped.
 """
 
 from __future__ import annotations
@@ -22,7 +22,8 @@ from untaped_dotfiles.documents import dump_document, load_document, plain
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
 from untaped_dotfiles.merge import leaf_paths, merge_into, project, remove_paths
-from untaped_dotfiles.models import KeyPath, MergeFormat
+from untaped_dotfiles.models import KeyPath
+from untaped_dotfiles.package import MergeFormat
 from untaped_dotfiles.states import TargetInfo
 
 
@@ -65,13 +66,13 @@ class FilesystemPlacer:
             return TargetInfo(kind="other")
         return TargetInfo(kind="file", hash=value_hash(project(plain(document), managed)))
 
-    def keep_aside(self, target: Path, *, repo: str, item: str, copy: bool = False) -> Path:
+    def keep_aside(self, target: Path, *, owner: tuple[str, ...], copy: bool = False) -> Path:
         stamp = self._now().strftime("%Y%m%dT%H%M%SZ")
         try:
             relative = target.relative_to(self._home)
         except ValueError:
             relative = Path(*target.parts[1:])
-        dest = self._kept_dir / repo / item / stamp / relative
+        dest = self._kept_dir.joinpath(*owner, stamp) / relative
         dest.parent.mkdir(parents=True, exist_ok=True)
         if copy:
             shutil.copy2(target, dest, follow_symlinks=False)
@@ -107,10 +108,6 @@ class FilesystemPlacer:
         existing = load_document(text, fmt=fmt, where=str(target))
         merge_into(existing, incoming)
         return text, existing, incoming
-
-    def preview_merge(self, source: bytes, target: Path, *, fmt: MergeFormat) -> str:
-        text, existing, _ = self._merged(source, target, fmt=fmt)
-        return dump_document(existing, fmt=fmt, like=text)
 
     def merge(
         self, source: bytes, target: Path, *, fmt: MergeFormat

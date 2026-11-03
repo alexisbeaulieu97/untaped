@@ -27,7 +27,7 @@ def test_dotfiles_keeps_its_surface() -> None:
 def test_the_root_mounts_the_plugin() -> None:
     listed = invoke_root(["plugin", "list", "--format", "json"])
     assert ("dotfiles", "ready") in [(r["name"], r["status"]) for r in json.loads(listed.stdout)]
-    assert invoke_root(["dotfiles", "repos"]).exit_code == 0
+    assert invoke_root(["dotfiles", "status"]).exit_code == 0
 
 
 def test_the_folders_follow_the_home_when_unset(install: Installer, home: Home) -> None:

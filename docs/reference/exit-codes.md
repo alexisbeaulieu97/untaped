@@ -69,7 +69,7 @@ pipe keeps its own exit code.
 | `untaped awx lint` | A rule found an error, or found anything under `--strict`, as `untaped lint` does. |
 | `untaped project remove --check`, `untaped project prune --check` | A hold's plugin refused to release it (a plan that failed exits 1 instead). |
 | `untaped recipe apply --check` | Any target would change. |
-| `untaped dotfiles sync`, `untaped dotfiles status --check` | A row needs the user (for example a local edit or a conflict). |
+| `untaped dotfiles status --check` | An entry needs a person (for example a local edit or a conflict). |
 | `untaped lint` | A rule found an error, or found anything under `--strict` ([Lint](../lint.md#exit-codes)). A rule that could not run exits 1 instead. |
 | `untaped skills status --check` | An installed skill is outdated or orphaned (no plugin installed here ships it). |
 | `untaped workspace status --check` | Any repo would block `workspace archive` (uncommitted changes, stashes on its branch, unpushed commits, initialised submodules, or a repo missing from the repo store). A repo whose git state cannot be read exits 1 instead. |

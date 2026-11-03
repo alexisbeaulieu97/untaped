@@ -15,7 +15,7 @@ from typing import Any
 
 from untaped.sdk import yaml_mapping_indent
 from untaped_dotfiles.errors import DotfilesError
-from untaped_dotfiles.models import MergeFormat
+from untaped_dotfiles.package import MergeFormat
 
 
 def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[str, Any]:

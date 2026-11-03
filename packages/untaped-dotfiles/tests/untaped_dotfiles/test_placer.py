@@ -51,19 +51,19 @@ def test_observe_hashes_the_managed_keys_of_a_merge_target(
     assert placer.observe(target, fmt="json").kind == "other"
 
 
-def test_keep_aside_moves_into_the_kept_dir_by_repo_item_and_time(
+def test_keep_aside_moves_into_the_kept_dir_by_owner_and_time(
     placer: FilesystemPlacer, tmp_path: Path
 ) -> None:
     target = tmp_path / "home" / ".config" / "fish" / "config.fish"
     target.parent.mkdir(parents=True)
     target.write_text("mine")
-    kept = placer.keep_aside(target, repo="dotfiles", item="fish")
-    assert kept == tmp_path / "kept/dotfiles/fish/20261002T120000Z/.config/fish/config.fish"
+    kept = placer.keep_aside(target, owner=("dotfiles", "fish", "config"))
+    assert kept == tmp_path / "kept/dotfiles/fish/config/20261002T120000Z/.config/fish/config.fish"
     assert kept.read_text() == "mine" and not target.exists()
     outside = tmp_path / "etc" / "x.conf"
     outside.parent.mkdir()
     outside.write_text("x")
-    copied = placer.keep_aside(outside, repo="r", item="i", copy=True)
+    copied = placer.keep_aside(outside, owner=("s", "p", "i"), copy=True)
     assert copied.relative_to(tmp_path / "kept").as_posix().endswith("/etc/x.conf")
     assert outside.exists()
 

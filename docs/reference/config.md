@@ -84,11 +84,12 @@ Kept in `~/.untaped/plugins/ansible/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `dotfiles.repos_dir` | path (optional) | unset | `UNTAPED_DOTFILES__REPOS_DIR` | Where `dotfiles subscribe URL` clones repos (`<repos_dir>/NAME`), an absolute path. Unset: `plugins/dotfiles/clones/` under the home. Experimental: may change in a minor release. |
-| `dotfiles.kept_dir` | path (optional) | unset | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `sync` and `remove` keep local files they replace, under `<repo>/<item>/<timestamp>/`; an absolute path. Unset: `plugins/dotfiles/kept/` under the home. Experimental: may change in a minor release. |
-| `dotfiles.state_dir` | path (optional) | unset | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json` and `attention`, the files a prompt segment reads; an absolute path. Unset: `plugins/dotfiles/prompt/` under the home. Experimental: may change in a minor release. |
-| `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in manifests. Experimental: may change in a minor release. |
+| `dotfiles.sources` | mapping | empty | `UNTAPED_DOTFILES__SOURCES` | The sources this machine subscribed to, by name (`dotfiles subscribe`). Experimental: may change in a minor release. |
+| `dotfiles.tags` | list | empty | `UNTAPED_DOTFILES__TAGS` | This machine's tags, matched against `only` and `unless` in packages. Experimental: may change in a minor release. |
 | `dotfiles.os` | `macos` \| `linux` \| `windows` (optional) | unset | `UNTAPED_DOTFILES__OS` | This machine's OS for `os` filters; detected when unset. Experimental: may change in a minor release. |
+| `dotfiles.clones_dir` | path (optional) | unset | `UNTAPED_DOTFILES__CLONES_DIR` | Where the managed clones of subscribed git sources go (`<clones_dir>/SOURCE`), an absolute path. Unset: `plugins/dotfiles/clones/` under the home. Experimental: may change in a minor release. |
+| `dotfiles.kept_dir` | path (optional) | unset | `UNTAPED_DOTFILES__KEPT_DIR` | Where `apply`, `remove` and `unsubscribe` keep local files they replace, under `<source>/<package>/<item>/<timestamp>/`; an absolute path. Unset: `plugins/dotfiles/kept/` under the home. Experimental: may change in a minor release. |
+| `dotfiles.state_dir` | path (optional) | unset | `UNTAPED_DOTFILES__STATE_DIR` | Holds `status.json` and `attention`, the files a prompt segment reads; an absolute path. Unset: `plugins/dotfiles/prompt/` under the home. Experimental: may change in a minor release. |
 
 ## `dotfiles` state
 
@@ -96,9 +97,8 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 
 | Key | Type | Description |
 |---|---|---|
-| `dotfiles.repos` | list | A subscribed repo: where its clone is and which branch it follows. |
-| `dotfiles.items` | list | The machine's decision about one item: its policy and the files it skips. |
-| `dotfiles.applied` | list | One placed path: what the tool wrote there and from which source. |
+| `dotfiles.cloned` | list | The clone untaped made for a git source: a detached worktree of the git plugin's store. |
+| `dotfiles.placed` | list | One placed path: what untaped wrote there and from which entry of which package. |
 
 ## `git`
 

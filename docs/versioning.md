@@ -76,8 +76,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
   excepted) and `untaped_awx.testing`.
 - `workspace`: its commands, record kinds, the `workspace.*` settings, and the
   `UNTAPED_*` variables `workspace run` sets.
-- `dotfiles`: its commands, the `dotfiles.yml` manifest, its record kinds,
-  the `status.json` and `attention` files, and the `dotfiles.*` settings.
+- `dotfiles`: its commands, the package file format (`.untaped/dotfiles/*.yml`,
+  which keeps its own `version:`), its record kinds, the `status.json` and
+  `attention` files, and the `dotfiles.*` settings.
 - `lint`: its commands, its record kinds, the `lint.ignore` setting,
   `untaped_lint.api` (the `Linter` and `TreeReader` contracts, `Rules`,
   `rule`, `finding`, `lint_report` and `lint_config`), `untaped_lint.testing`, and

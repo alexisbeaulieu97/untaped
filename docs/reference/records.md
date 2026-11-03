@@ -237,22 +237,17 @@ untaped workspace status NAME --format pipe \
 
 | Command | Writes |
 |---|---|
-| `dotfiles subscribe`, `dotfiles items` | `dotfiles.item` |
-| `dotfiles enable`, `dotfiles disable` | `dotfiles.item_outcome` |
-| `dotfiles repos` | `dotfiles.repo` |
-| `dotfiles unsubscribe` | `dotfiles.repo_outcome` |
-| `dotfiles status` | `dotfiles.path_status` |
-| `dotfiles summary` | `dotfiles.status_summary` |
-| `dotfiles apply` | `dotfiles.apply_outcome` |
-| `dotfiles sync` | `dotfiles.sync_outcome` |
-| `dotfiles remove` | `dotfiles.remove_outcome` |
+| `dotfiles subscribe`, `dotfiles add` | `dotfiles.package` |
+| `dotfiles show` | `dotfiles.package_detail` |
+| `dotfiles status` | `dotfiles.entry_status` |
+| `dotfiles apply`, `dotfiles remove`, `dotfiles unsubscribe` | `dotfiles.apply_outcome` |
 
-`dotfiles diff` prints a unified diff, not records. `dotfiles status` and
-`dotfiles summary` (run without ITEMS or `--repo`) and `dotfiles sync` (and,
-after their changes, `dotfiles apply` and `dotfiles remove`) write two files under
-`dotfiles.state_dir`: `status.json`, the `dotfiles.status_summary` record,
-and `attention`, one line holding its `attention` count (the rows that need
-the user), for prompt segments.
+`dotfiles status` run without selectors (and `dotfiles apply`, `dotfiles
+remove` and `dotfiles unsubscribe` after their changes) writes two files
+under `dotfiles.state_dir`: `status.json`, the counts of the entries in
+each state with `checked_at`, `total` and `attention`, and `attention`, one
+line holding that count (the entries that need a person), for prompt
+segments.
 
 ## git
 

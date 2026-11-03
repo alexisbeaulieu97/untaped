@@ -7,7 +7,8 @@ config file nor YAML; across the code base, only the repositories and the
 editor write the file. The screen knows shapes, not settings: no string in its
 modules is a section, a key or a field name of a first-party setting, so a
 setting gets its row from its model, never from a case in the screen; and every
-first-party setting has a shape with a field, so none falls back to JSON.
+first-party setting has a shape with a field, so none falls back to JSON unless
+it is listed with why.
 """
 
 from __future__ import annotations
@@ -172,12 +173,21 @@ def test_the_screen_names_no_setting() -> None:
     )
 
 
+#: Settings that stay one line of JSON in `untaped setup`, and why each has no field.
+JSON_SETTINGS = {
+    "dotfiles.sources": (
+        "a map of nested choices that the dotfiles commands write; `config set` reaches "
+        "each entry by its key"
+    ),
+}
+
+
 def test_every_first_party_setting_gets_a_field_of_its_shape() -> None:
     bootstrap.compose_root()
     found = [
         descriptor.key
         for descriptor in walk_settings(get_settings_model(), include_collections=True)
-        if shape(descriptor) == "json"
+        if shape(descriptor) == "json" and descriptor.key not in JSON_SETTINGS
     ]
     assert not found, (
         f"{found}: these settings open as one line of JSON in `untaped setup`; give their "

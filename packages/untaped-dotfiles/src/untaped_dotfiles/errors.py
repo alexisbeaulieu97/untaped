@@ -11,25 +11,19 @@ class DotfilesError(UntapedError):
     system = System.LOCAL
 
 
-class ManifestError(DotfilesError):
-    """A manifest does not parse or breaks a manifest rule."""
+class PackageError(DotfilesError):
+    """A package file does not parse or breaks a package rule."""
 
     category = ErrorCategory.INVALID
 
 
 class GitError(DotfilesError):
-    """A git operation on a subscribed repo failed."""
+    """A git operation on a source's clone failed."""
 
     system = System.GIT
 
 
-class RepoNotFoundError(DotfilesError):
-    """No subscribed repo has that name."""
-
-    category = ErrorCategory.NOT_FOUND
-
-
-class ItemNotFoundError(DotfilesError):
-    """No manifest item has that name."""
+class SourceNotFoundError(DotfilesError):
+    """No subscribed source has that name."""
 
     category = ErrorCategory.NOT_FOUND

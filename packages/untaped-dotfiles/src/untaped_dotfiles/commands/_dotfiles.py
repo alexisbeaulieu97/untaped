@@ -1,4 +1,4 @@
-"""What every dotfiles command shares: the use cases wired for this run, and the item selection."""
+"""What every dotfiles command shares: the use cases wired for this run, and the summary rows."""
 
 from __future__ import annotations
 
@@ -7,42 +7,27 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
 
-from pydantic import Field
-
-from untaped.sdk import (
-    Command,
-    ConfigError,
-    Positional,
-    Short,
-    UntapedError,
-    UsageError,
-    key,
-    run_hint,
-)
+from untaped.sdk import Command, ConfigError, UntapedError, key, run_hint
 from untaped_dotfiles.applier import Applier
-from untaped_dotfiles.choices import Catalog
-from untaped_dotfiles.git_repos import LocalGitRepos
+from untaped_dotfiles.catalog import Catalog, Offer
 from untaped_dotfiles.inventory import Inventory
-from untaped_dotfiles.models import Machine, OsName
+from untaped_dotfiles.models import Machine
 from untaped_dotfiles.placer import FilesystemPlacer
-from untaped_dotfiles.records import PlaceOutcome
-from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings
+from untaped_dotfiles.records import ApplyOutcome, Package
+from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings, Os
+from untaped_dotfiles.sources import Clones, Sources
 from untaped_dotfiles.status import Evaluator, StatusReader
 from untaped_dotfiles.store import StateDotfilesStore
 
-_OS: dict[str, OsName] = {"darwin": "macos", "linux": "linux", "windows": "windows"}
-
-#: How ``--repo`` reads in help.
-REPO = "Limit to one subscribed repo (also picks an item name present in several)."
+_OS: dict[str, Os] = {"darwin": "macos", "linux": "linux", "windows": "windows"}
 
 
 def utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def detect_os(settings: DotfilesSettings) -> OsName:
+def detect_os(settings: DotfilesSettings) -> Os:
     if settings.os is not None:
         return settings.os
     found = _OS.get(platform.system().lower())
@@ -60,83 +45,91 @@ def detect_os(settings: DotfilesSettings) -> OsName:
 class Services:
     """Every use case, wired to the real adapters for this run's settings."""
 
-    repos_dir: Path
     home: Path
     store: StateDotfilesStore
-    git: LocalGitRepos
+    clones: Clones
+    sources: Sources
+    catalog: Catalog
     placer: FilesystemPlacer
     inventory: Inventory
     evaluator: Evaluator
     reader: StatusReader
     applier: Applier
-    catalog: Catalog
 
-    def shown(self, target: Path) -> str:
-        """``target`` as the user reads it: under ``~/`` when it is in the home directory."""
-        try:
-            return "~/" + target.relative_to(self.home).as_posix()
-        except ValueError:
-            return str(target)
-
-
-def services(settings: DotfilesSettings) -> Services:
-    home = Path.home().resolve()
-    store = StateDotfilesStore(state_dir=PROMPT.path.resolve())
-    git = LocalGitRepos()
-    placer = FilesystemPlacer(home=home, kept_dir=KEPT.path.resolve(), now=utc_now)
-    machine = Machine(os=detect_os(settings), tags=frozenset(settings.tags))
-    inventory = Inventory(store, git, home=home, machine=machine)
-    evaluator = Evaluator(store, git, placer, inventory)
-    return Services(
-        repos_dir=CLONES.path.resolve(),
-        home=home,
-        store=store,
-        git=git,
-        placer=placer,
-        inventory=inventory,
-        evaluator=evaluator,
-        reader=StatusReader(store, git, evaluator, now=utc_now),
-        applier=Applier(store, git, placer, inventory, evaluator, now=utc_now),
-        catalog=Catalog(store, inventory),
-    )
+    def refresh_status(self) -> None:
+        """Rewrite status.json and attention after a change, so a prompt segment is current."""
+        self.catalog.forget()
+        self.evaluator.reset()
+        rows = self.reader.rows(self.inventory.placements(self.inventory.on()).placements)
+        self.store.write_status(self.reader.summary(rows))
 
 
 class DotfilesCommand(Command[DotfilesSettings]):
     """A command over this machine's dotfiles, through the profile's ``dotfiles`` settings."""
 
-    def services(self) -> Services:
-        """The use cases, wired for this run."""
-        return services(self.settings)
+    def services(self, settings: DotfilesSettings | None = None) -> Services:
+        """The use cases, wired for this run (with ``settings`` when the command changed them)."""
+        settings = settings or self.settings
+        home = Path.home().resolve()
+        store = StateDotfilesStore(state_dir=PROMPT.path.resolve())
+        clones = Clones(
+            store, plugin=self.ctx.plugin, clones_dir=CLONES.path.resolve(), now=utc_now
+        )
+        sources = Sources(settings.sources, store, clones)
+        folder = self.ctx.plugin.committed("dotfiles").as_posix()
+        catalog = Catalog(sources, folder=folder)
+        placer = FilesystemPlacer(home=home, kept_dir=KEPT.path.resolve(), now=utc_now)
+        machine = Machine(os=detect_os(settings), tags=frozenset(settings.tags))
+        inventory = Inventory(catalog, store, home=home, machine=machine)
+        evaluator = Evaluator(store, clones, placer, inventory)
+        return Services(
+            home=home,
+            store=store,
+            clones=clones,
+            sources=sources,
+            catalog=catalog,
+            placer=placer,
+            inventory=inventory,
+            evaluator=evaluator,
+            reader=StatusReader(evaluator, now=utc_now),
+            applier=Applier(store, placer, inventory, evaluator, now=utc_now),
+        )
 
     def report(self, problems: Sequence[tuple[str, UntapedError]]) -> None:
-        """Each item's problem on stderr; each counts toward the exit code."""
+        """Each problem on stderr, named; each counts toward the exit code."""
         for item, exc in problems:
             self.ctx.diag.failure(exc, item=item)
 
-    def report_rows(self, rows: Sequence[PlaceOutcome]) -> None:
-        """Each row's error on stderr, named by its item and source."""
+    def report_sources(self, catalog: Catalog) -> None:
+        """Each source that couldn't be opened, on stderr; each counts toward the exit code."""
+        self.report(sorted(catalog.problems.items()))
+
+    def report_rows(self, rows: Sequence[ApplyOutcome]) -> None:
+        """Each row's error on stderr, named by its package, item and entry."""
         for row in rows:
             if row.error is not None:
-                self.ctx.diag.failure(row.error, item=f"{row.item}/{row.source}")
+                self.ctx.diag.failure(row.error, item=f"{row.package}/{row.item} {row.entry}")
 
 
-class Selected(DotfilesCommand):
-    """A command over enabled items: the named ones, or every one."""
+def package_row(offer: Offer, machine: Machine) -> Package:
+    """``offer`` as a ``Package`` row; a file that doesn't load carries its error."""
+    from untaped.sdk import Failure  # noqa: PLC0415 - kept beside its only use
 
-    items: Positional[list[str]] = Field(
-        default_factory=list, description="Item names; every enabled item when none is given."
+    policy, chosen = offer.policy
+    package = offer.package
+    return Package(
+        source=offer.source.name,
+        name=offer.name,
+        on=offer.on,
+        policy=policy if offer.on else None,
+        suggested=package.policy if package is not None else None,
+        chosen=chosen,
+        items=len(package.items) if package is not None else 0,
+        description=package.description if package is not None else "",
+        excluded=offer.exclusion(machine),
+        error=(
+            Failure.from_exception(offer.error, message=str(offer.error))
+            if offer.error is not None
+            else None
+        ),
     )
-    repo: Annotated[str | None, Short("-r")] = Field(None, description=REPO)
-
-
-class Chosen(DotfilesCommand):
-    """A command over named items or ``--all``, never both or neither."""
-
-    repo: Annotated[str | None, Short("-r")] = Field(None, description=REPO)
-    all_: bool = Field(False, description="Every item, not only the named ones.")
-
-    def names(self, given: list[str]) -> list[str]:
-        """``given``, once checked against ``--all``."""
-        if bool(given) == self.all_:
-            raise UsageError("pass ITEMS or --all, not both or neither")
-        return given

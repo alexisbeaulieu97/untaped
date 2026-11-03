@@ -3,85 +3,96 @@
 Install it as part of `untaped`: `uv tool install 'untaped[dotfiles]'` or `pip install 'untaped[dotfiles]'`.
 To add it to an existing install, see [Getting started](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/getting-started.md#install).
 
-`untaped dotfiles` places config files from one or more git repos on a
-machine, with a policy per item per machine. A repo carries a manifest,
-`dotfiles.yml`, of named *items*; each item lists *files* with a `mode`
-(`link`, `copy` or `merge`). The manifest suggests a policy; the machine
-decides when it enables the item: `sync` (new versions apply as they
-arrive), `once` (apply, then leave alone) or `manual` (report that a new
-version exists; apply when asked). Items not enabled are ignored.
+`untaped dotfiles` places config files on a machine from *packages* that
+*sources* offer. A source is a git repo or a local folder; each of its
+`.untaped/dotfiles/<name>.yml` files is one package, made of named
+*items*, and each item lists *files* with a `mode` (`link`, `copy` or
+`merge`). A machine subscribes to sources and turns packages (or single
+items) on. The package suggests an update policy; the machine can choose
+its own: `sync` (new versions apply as they arrive), `once` (apply, then
+leave alone) or `manual` (report; apply when asked).
 
 `dotfiles` is [experimental](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/versioning.md#experimental) and may change in
 a minor release.
 
-## Set up
-
-A repo needs a `dotfiles.yml` at its root:
+## A package
 
 ```yaml
+# .untaped/dotfiles/fish.yml
 version: 1
+description: Fish shell config
+policy: manual                 # the author's suggestion; manual when unset
+os: [macos, linux]
 items:
-  fish:
-    policy: manual            # suggestion; absent means manual
+  config:
     files:
-      - source: fish/config.fish
-        target: ~/.config/fish/config.fish
-        mode: link            # or copy, or merge (JSON/YAML)
-      - source: fish/conf.d   # a directory: each file under it is placed
-        target: ~/.config/fish/conf.d
+      - {path: fish/config.fish, target: ~/.config/fish/config.fish}
+      - {path: fish/conf.d, target: ~/.config/fish/conf.d}   # each file placed on its own
 ```
 
-Every entry key, the three modes, per-OS and per-tag filters and how a
-directory source is placed are in the docstring of the
-[manifest model](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/manifest.py).
-Where clones, kept files and state live, and the machine's tags and OS,
-are in the
-[configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#dotfiles).
+A target may name an input, `{{ name }}`, that the package declares under
+`inputs:` (with an optional `default`); the machine answers it in its
+config. Every key, the three modes, inputs, per-OS and per-tag filters,
+steps and repos, and every rule a package must follow to load, are in the
+docstring of the
+[package model](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/package.py)
+(`untaped plugin schema dotfiles.package_file` prints its schema). A
+package that breaks a rule is one row with an `error`; the other packages
+still load. Steps and repos load and show, but `apply` places files only
+for now.
+
 On Windows, `link` needs symlink permission (Developer Mode or elevation);
 `copy` and `merge` work. Nothing is tested there yet.
 
-## Subscribe, enable, apply
+## Subscribe, add, apply
 
 ```bash
-untaped dotfiles subscribe git@github.com:acme/dotfiles.git
-untaped dotfiles enable fish starship --policy sync
-untaped dotfiles enable claude --skip settings
+untaped dotfiles subscribe https://git.example.com/acme/dotfiles.git --add fish
+untaped dotfiles subscribe ~/work-dotfiles --name work
+untaped dotfiles show                     # every package the sources offer
+untaped dotfiles add starship --policy sync
+untaped dotfiles add claude/skills        # one item of a package
 untaped dotfiles apply --dry-run
 untaped dotfiles apply
 ```
 
-`subscribe` clones a URL under `dotfiles.repos_dir`, or registers the
-checkout at a path (fetched, never pulled: its owner pulls it). Several
-repos can be subscribed: a personal one everywhere, a work one on the work
-machine. `enable` records the machine's choice and places nothing;
-`apply` shows the plan, asks, then places the paths. A local file in the
-way is never destroyed: it moves to `dotfiles.kept_dir`, and the row says
-where.
+`subscribe` records the source in `config.yml` (`dotfiles.sources`) and
+lists its packages. A git source gets a clone under `dotfiles.clones_dir`
+through the git plugin's repo store, so its credentials and proxy apply;
+a local folder is read as it stands, never fetched. `add` and `remove`
+turn packages or items on and off and place nothing. `apply` fetches each
+git source, moves its clone to the fetched commit, shows what it will do,
+asks, then places the files. A local file in the way is never destroyed:
+it moves to `dotfiles.kept_dir`, and the row says where. A file edited on
+this machine is refused unless `--force`.
+
+A selector is `PKG`, `PKG/ITEM`, `SOURCE/PKG` or `SOURCE/PKG/ITEM`; a
+bare name that two sources offer asks for its source.
+
+## A new machine
+
+The machine's choices all live in `config.yml`. Copy it to a new machine
+(or set a source's `dotfiles.sources.<name>.url` with `untaped config
+set`), and `untaped dotfiles apply` clones each git source it names and
+places what is on.
 
 ## Keep up to date
 
 ```bash
-untaped dotfiles sync            # what a timer runs
 untaped dotfiles status
-untaped dotfiles status --check  # exit 3 while anything needs you
-untaped dotfiles summary         # the counts status.json holds
-untaped dotfiles diff
+untaped dotfiles status --check  # exit 3 while anything needs a person
 untaped dotfiles apply fish
 ```
 
-`sync` fetches every repo, applies the `sync` items and reports the rest.
-It only ever writes a path that is absent or still exactly what the tool
-wrote, so it never prompts and never loses a local edit. What each policy
-does to a path in each state, and when a clone is pulled, is the policy
-guide, the docstring of
+`status` reads nothing from the network: `behind` is as of the last fetch,
+which `apply` (or `apply --dry-run`) makes. What each state means, what
+`apply` does with it and what needs a person is the policy guide, the
+docstring of
 [`Policy`](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/policy.py).
-A timer is the machine's business (a launchd agent on macOS, a systemd
-user timer on Linux); `untaped dotfiles sync` is what it runs.
 
 ## Show it in the prompt
 
-`status` reads nothing from the network. Run without item names or
-`--repo`, it writes the
+Run without selectors, `status` writes the
 [status files](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#dotfiles),
 so a prompt segment needs only the shell:
 
@@ -92,6 +103,15 @@ command = "cat ~/.untaped/plugins/dotfiles/prompt/attention"
 when = 'test "$(cat ~/.untaped/plugins/dotfiles/prompt/attention 2>/dev/null)" != 0'
 format = "[⇣ $output dotfiles]($style) "
 ```
+
+## From 11.x
+
+A repo's `dotfiles.yml` becomes one package file per item under
+`.untaped/dotfiles/`: each item is a package with one item, `source:`
+becomes `path:`, and `skip:` on the machine becomes an item turned off
+(`untaped dotfiles remove PKG/ITEM --keep-files`). Subscriptions and
+enabled items are not carried over: 12.0 starts from a clean home, so
+subscribe and add again.
 
 ## Reference
 
