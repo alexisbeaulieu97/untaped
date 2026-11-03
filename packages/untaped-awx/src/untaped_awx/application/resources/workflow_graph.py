@@ -39,7 +39,7 @@ from untaped_awx.domain.workflow_graph import (
     Reference,
     WorkflowNodeSpec,
 )
-from untaped_awx.errors import AwxApiError, BadRequestError
+from untaped_awx.errors import BadRequestError
 
 NODE_FIELDS: tuple[str, ...] = (
     *PROMPT_REFERENCES,
@@ -294,23 +294,11 @@ def _read_members(
     members: dict[str, tuple[PlannedId, ...]] = {}
     types: dict[int, Any] = {}
     for relation in PROMPT_MEMBERS:
-        records = _member_records(repo, node_id, relation)
+        records = list(repo.list_node_members(node_id=node_id, relation=relation))
         members[relation] = tuple(int(record["id"]) for record in records)
         if relation == "credentials":
             types.update({int(r["id"]): r.get("credential_type") for r in records})
     return members, types
-
-
-def _member_records(
-    repo: WorkflowNodeRepository, node_id: int, relation: str
-) -> list[dict[str, Any]]:
-    """A node's members of ``relation``; none when this AWX lacks the relation (404)."""
-    try:
-        return list(repo.list_node_members(node_id=node_id, relation=relation))
-    except AwxApiError as exc:
-        if relation != "credentials" and exc.status_code == 404:
-            return []
-        raise
 
 
 def _roots_first(states: list[NodeState]) -> list[NodeState]:

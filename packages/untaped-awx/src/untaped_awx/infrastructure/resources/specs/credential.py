@@ -18,7 +18,6 @@ CREDENTIAL_SPEC = AwxResourceSpec(
     kind="Credential",
     record=Credential,
     cli_name="credentials",
-    api_path="credentials",
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",

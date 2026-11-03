@@ -31,13 +31,15 @@ def paginate(
     params: dict[str, str] | None = None,
     page_size: int = 200,
     limit: int | None = None,
+    collection: bool = False,
 ) -> Iterator[dict[str, Any]]:
     """Yield each item from a paginated AWX list endpoint.
 
     ``path`` is relative to the controller API prefix (e.g. ``"job_templates/"``).
     ``params`` are query parameters for the *first* page only — AWX
     bakes them into the ``next`` URL it returns. ``limit`` caps the
-    total number of items yielded.
+    total number of items yielded. ``collection`` says ``path`` is a
+    collection, where any 404 on the first page is a mismatch (:class:`AwxClient`).
 
     The cursor loop is core's :func:`untaped.sdk.paginate_pages`; the
     AWX shape maps onto it with the ``next`` URL as the cursor (``None``
@@ -47,7 +49,7 @@ def paginate(
 
     def fetch(cursor: str | None) -> tuple[list[dict[str, Any]], str | None]:
         page: dict[str, Any] = (
-            client.get_json(path, params=initial_params)
+            client.get_json(path, params=initial_params, collection=collection)
             if cursor is None
             else client.get_absolute_json(cursor)
         )

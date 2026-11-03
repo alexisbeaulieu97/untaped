@@ -46,7 +46,7 @@ from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
 from untaped_awx.infrastructure.resources.spec import AwxResourceSpec
 
 if TYPE_CHECKING:
-    from untaped_awx.application.resources.ports import ResourceClient
+    from untaped_awx.application.resources.ports import ResourceLookups
 
 WarnFn = Callable[[str], None]
 
@@ -57,7 +57,7 @@ def _noop_warn(_msg: str) -> None: ...
 class HttpFkResolver:
     def __init__(
         self,
-        repo: ResourceClient,
+        repo: ResourceLookups,
         catalog: AwxResourceCatalog,
         *,
         warn: WarnFn = _noop_warn,
@@ -209,15 +209,8 @@ class HttpFkResolver:
 
     def _read_identity(self, kind: str, id_: int) -> IdentityRef:
         if kind == "UnifiedJobTemplate":
-            lookup = AwxResourceSpec(
-                kind=kind,
-                cli_name="",
-                api_path="unified_job_templates",
-                identity_keys=("name",),
-                canonical_fields=(),
-            )
-            record = self._repo.get(lookup, id_)
-            resolved_kind = unified_template_kind(str(record.get("type", "")))
+            template = self._repo.unified_template(id_)
+            resolved_kind = unified_template_kind(str(template.get("type", "")))
             if resolved_kind is None:
                 raise BadRequestError("unsupported schedule parent type")
             return self.id_to_identity(resolved_kind, id_)

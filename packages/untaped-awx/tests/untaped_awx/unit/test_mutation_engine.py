@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any, cast, get_type_hints
 
 import pytest
@@ -17,7 +17,7 @@ from untaped_awx.application.resources.mutation_types import DeferredReference
 from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
-    RawHttpResourceClient,
+    NestedResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import FkRef, Metadata, Resource, ResourceSpec, ServerRecord
@@ -26,7 +26,7 @@ from untaped_awx.infrastructure.resources.specs import PROJECT_SPEC
 
 def _engine(client: _Client) -> BatchMutationEngine:
     return BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, _Catalog(PROJECT_SPEC)),
         fk=cast(FkResolver, _Fk({("Organization", "Default"): 1})),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -66,7 +66,7 @@ def test_secret_values_are_redacted_in_plan_presentation() -> None:
 
     client = _Client([{"id": 7, "name": "one", "organization": 1, "host_config_key": "old"}])
     engine = BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, _Catalog(JOB_TEMPLATE_SPEC)),
         fk=cast(FkResolver, _Fk({("Organization", "Default"): 1})),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -102,7 +102,7 @@ def test_planned_fk_reference_does_not_confuse_negative_literal_values() -> None
     catalog = _Catalog(parent_spec, child_spec)
     fk = _Fk({})
     engine = BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, catalog),
         fk=cast(FkResolver, fk),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -140,7 +140,7 @@ def test_execute_binds_created_id_for_later_reference() -> None:
     )
     client = _Client([])
     engine = BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, _Catalog(parent_spec, child_spec)),
         fk=cast(FkResolver, _Fk({})),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -171,7 +171,7 @@ def test_execute_uses_prepared_fk_even_if_name_resolution_changes() -> None:
     client = _Client([{"id": 7, "name": "child", "parent": 20}])
     fk = _Fk({("Parent", "parent"): 21})
     engine = BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, _Catalog(spec)),
         fk=cast(FkResolver, fk),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -194,7 +194,7 @@ def test_prepare_rejects_placeholder_create_before_any_write() -> None:
     )
     client = _Client([])
     engine = BatchMutationEngine(
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         catalog=cast(Catalog, _Catalog(spec)),
         fk=cast(FkResolver, _Fk({})),
         strategies=cast(StrategyResolver, _Strategies()),
@@ -217,7 +217,7 @@ def _group_engine(client: _MembershipClient) -> BatchMutationEngine:
     from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
 
     return BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(GROUP_SPEC)),
         cast(FkResolver, _Fk({("Inventory", "prod"): 30})),
         StaticStrategyResolver(),
@@ -253,7 +253,7 @@ def test_nested_create_uses_frozen_parent_id() -> None:
     fk = _Fk({("Inventory", "prod"): 30})
     client = _MembershipClient([])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(GROUP_SPEC)),
         cast(FkResolver, fk),
         StaticStrategyResolver(),
@@ -262,7 +262,7 @@ def test_nested_create_uses_frozen_parent_id() -> None:
     fk.values[("Inventory", "prod")] = 40
     result = engine.execute(plan)
     assert result.outcomes[0].action == "created"
-    assert client.nested_posts == ["inventories/30/groups/"]
+    assert client.nested_posts == [("Inventory", 30, "Group")]
 
 
 def test_empty_membership_snapshot_is_rechecked_before_any_write() -> None:
@@ -274,7 +274,7 @@ def test_empty_membership_snapshot_is_rechecked_before_any_write() -> None:
     )
     client = _MembershipClient([{"id": 1, "name": "first", "description": "old"}])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -317,7 +317,7 @@ def test_body_replacements_must_converge_exactly(desired: Any, observed: Any) ->
     spec = ResourceSpec(kind="Item", canonical_fields=("value",), identity_keys=("name",))
     client = RefusingClient([{"id": 1, "name": "one", "value": observed}])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -341,7 +341,7 @@ def test_selected_target_is_fixed_by_id_even_with_same_named_other_record() -> N
     )
     selected = SelectedResource("Item", 2, "same", {}, dict(client.records[2]))
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -366,7 +366,7 @@ def test_selected_kind_change_is_rejected_before_writes() -> None:
     client = _Client([{"id": 2, "name": "same"}])
     selected = SelectedResource("OtherKind", 2, "same", {}, dict(client.records[2]))
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -402,7 +402,7 @@ def test_body_dependency_cycles_fail_preparation_before_unrelated_writes() -> No
     )
     client = _Client([])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -432,7 +432,7 @@ def test_new_and_existing_secret_values_are_redacted_from_runtime_errors() -> No
     )
     client = Echoing([{"id": 1, "name": "one", "password": "old-secret"}])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -463,7 +463,7 @@ def test_failed_creation_skips_only_its_dependents() -> None:
     )
     client = Failing([])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -480,7 +480,7 @@ def test_failed_creation_skips_only_its_dependents() -> None:
 def _item_engine(client: _Client) -> BatchMutationEngine:
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
     return BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -667,7 +667,7 @@ def test_parallel_execution_never_exceeds_http_cap() -> None:
     spec = ResourceSpec(kind="Item", canonical_fields=(), identity_keys=("name",))
     client = Counting()
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -719,7 +719,7 @@ def test_preflight_watches_unchanged_preserved_and_identity_fields_batchwide(dri
     ]
     client = _Client(records)
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -774,7 +774,7 @@ def test_distinct_selected_ids_with_duplicate_names_are_independent() -> None:
     client = _Client([{"id": i, "name": "same", "description": "old"} for i in (1, 2)])
     selected = [SelectedResource("Item", i, "same", {}, dict(client.records[i])) for i in (1, 2)]
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -797,7 +797,7 @@ def test_repeated_selected_id_is_rejected_before_writes() -> None:
     spec = ResourceSpec(kind="Item", canonical_fields=("description",), identity_keys=("name",))
     client = _Client([{"id": 1, "name": "same", "description": "old"}])
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({})),
         cast(StrategyResolver, _Strategies()),
@@ -853,7 +853,7 @@ def test_editor_preserves_membership_ids_for_ambiguous_unchanged_labels(
     client = NamedMembers([{"id": 1, "name": "item"}])
     client.members[(1, "members")] = current.copy()
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, AmbiguousFk({})),
         cast(StrategyResolver, _Strategies()),
@@ -899,7 +899,7 @@ def test_ordered_membership_interleaves_created_reference_before_retained_tail()
     )
     client.members[(1, "members")] = [2, 3]
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client),
+        cast(NestedResourceClient, client),
         cast(Catalog, _Catalog(spec)),
         cast(FkResolver, _Fk({("Item", "first"): 2, ("Item", "last"): 3})),
         cast(StrategyResolver, _Strategies()),
@@ -938,22 +938,20 @@ def test_editor_return_values_cannot_mutate_original_snapshot() -> None:
 
 
 class _RefusingWebServers(_MembershipClient):
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        found = [r for r in self.records.values() if r["name"] == name]
+        return found, len(found)
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
-        if method == "POST" and json is not None and json.get("name") == "web-servers":
+        if body.get("name") == "web-servers":
             from untaped_awx.errors import BadRequestError
 
             raise BadRequestError("refused", status=400)
-        if method == "GET" and params is not None:
-            found = [r for r in self.records.values() if r["name"] == params["name"]]
-            return {"results": found}
-        return super().request(method, path, params=params, json=json)
+        return super().create_under(spec, parent_kind, parent_id, body)
 
 
 def test_a_membership_on_a_failed_create_is_skipped_as_a_dependency() -> None:

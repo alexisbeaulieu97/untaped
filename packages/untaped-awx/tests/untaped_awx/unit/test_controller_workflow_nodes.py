@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
+import pytest
+
 from awx_test_support import RecordingController
+from untaped_awx.errors import ResourceNotFoundError
 
 
 def test_node_listings() -> None:
@@ -15,6 +21,8 @@ def test_node_listings() -> None:
         ("workflow_job_template_nodes/", {"unified_job_template": "10"}, None),
         ("workflow_job_template_nodes/5/labels/", {}, None),
     ]
+    # Only the collection-wide listing is one every served version has.
+    assert api.collections == ["workflow_job_template_nodes/"]
 
 
 def test_a_reference_lookup_cannot_be_widened() -> None:
@@ -45,3 +53,21 @@ def test_node_writes_use_the_node_and_approval_endpoints() -> None:
         ("GET", "workflow_approval_templates/8/", None),
         ("DELETE", "workflow_job_template_nodes/5/", None),
     ]
+
+
+class _Gone(RecordingController):
+    """A controller whose every listing answers AWX's own 404."""
+
+    def _paginate(self, path: str, **kwargs: Any) -> Iterator[dict[str, Any]]:
+        raise ResourceNotFoundError("node relation", {"path": path})
+        yield {}
+
+
+@pytest.mark.parametrize("relation", ["labels", "instance_groups"])
+def test_a_later_prompt_relation_the_server_lacks_has_no_members(relation: str) -> None:
+    assert list(_Gone().list_node_members(node_id=5, relation=relation)) == []
+
+
+def test_an_older_relation_the_server_lacks_is_not_found() -> None:
+    with pytest.raises(ResourceNotFoundError):
+        list(_Gone().list_node_members(node_id=5, relation="credentials"))

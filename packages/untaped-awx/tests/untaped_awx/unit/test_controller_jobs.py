@@ -46,6 +46,7 @@ def test_jobs_are_newest_first_unless_the_caller_orders_them() -> None:
         {"order_by": "-id", "status": "successful"},
         {"order_by": "started", "status": "running"},
     ]
+    assert api.collections == ["jobs/", "jobs/"]
 
 
 def test_an_unknown_kind_is_refused() -> None:
@@ -58,6 +59,7 @@ def test_one_job_is_read_from_its_collection() -> None:
     assert api.job(kind="job", job_id=42) == {"id": 42, "status": "successful"}
     api.job(kind="workflow_job", job_id=9)
     assert [path for _, path, _ in api.json_calls] == ["jobs/42/", "workflow_jobs/9/"]
+    assert api.collections == []
 
 
 def test_host_summaries_are_one_listing_failed_hosts_first() -> None:

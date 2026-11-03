@@ -28,11 +28,9 @@ class Catalog(Protocol):
 
     Returns :class:`ResourceSpec` (the domain view). Concrete catalogs
     in infrastructure may return :class:`AwxResourceSpec` instances —
-    that's a covariant subtype, so it satisfies this Protocol while
-    keeping transport detail (``api_path``, ``cli_name``) accessible
-    to callers in infrastructure (strategies, the resource repository).
-    Application code reads only domain fields and stays decoupled from
-    AWX-specific transport.
+    a covariant subtype, so it satisfies this Protocol while keeping the
+    CLI wiring (``cli_name``, ``commands``) accessible to the commands.
+    Application code reads only domain fields.
     """
 
     def get(self, kind: str) -> ResourceSpec: ...
@@ -49,11 +47,8 @@ class ResourceClient(Protocol):
     or iterate-and-extract, where the per-record Pydantic round trip
     is pure overhead. Writes accept :class:`WritePayload` (create /
     update) or :class:`ActionPayload` (custom actions). The client
-    never branches on kind — it follows the spec verbatim.
-
-    Methods take :class:`ResourceSpec` (the domain view); concrete
-    adapters narrow to :class:`AwxResourceSpec` internally to read
-    transport fields like ``api_path``.
+    never branches on kind — it follows the spec verbatim, and knows
+    where each kind's records live.
     """
 
     def list(
@@ -72,6 +67,10 @@ class ResourceClient(Protocol):
         The record itself is not read: a caller holding a list row adds these
         to it instead of reading the record again.
         """
+        ...
+
+    def location(self, spec: ResourceSpec, id_: int) -> str:
+        """Where the controller keeps record ``id_``, as ``job_templates/7``."""
         ...
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
@@ -132,11 +131,8 @@ class ResourceClient(Protocol):
     ) -> dict[str, Any]:
         """Hit a many-to-many sub-endpoint of a resource.
 
-        Constructed URL: ``<api_path>/<record_id>/<sub_endpoint>/``.
-        Hides the ``api_path`` join from application code so the layering
-        rule (``application/`` mustn't read AwxResourceSpec-only fields)
-        stays intact while still letting use cases reconcile membership
-        generically across kinds.
+        ``sub_endpoint`` names the relation (``credentials``) or the record's
+        endpoint (``launch``, ``copy``); where it lives is the adapter's.
         """
         ...
 
@@ -148,32 +144,43 @@ class ResourceClient(Protocol):
         *,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Walk every page of ``<api_path>/<record_id>/<sub_endpoint>/``.
+        """Walk every page of a record's ``sub_endpoint`` relation.
 
-        Same path-join contract as :meth:`sub_endpoint_request`; use
+        Named as :meth:`sub_endpoint_request` names it; use
         this for membership reads where one page (typically 200 rows)
         wouldn't fit (e.g. a Group with many hosts).
         """
         ...
 
 
-class RawHttpResourceClient(ResourceClient, Protocol):
-    """A :class:`ResourceClient` that also sends a request to a path it is given.
+class NestedResourceClient(ResourceClient, Protocol):
+    """A :class:`ResourceClient` that also reads and writes records under a parent.
 
-    :class:`ApplyStrategy` implementations take it: some write to nested
-    endpoints the spec alone doesn't name (``ScheduleApplyStrategy``,
-    ``InventoryChildApplyStrategy``).
+    :class:`ApplyStrategy` implementations take it: a schedule is created
+    under its template, a host, group or source under its inventory.
+    ``parent_kind`` and ``parent_id`` name the parent record.
     """
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        """At most two ``spec`` records named ``name`` under the parent, and how many there are."""
+        ...
+
+    def list_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int
+    ) -> Iterator[dict[str, Any]]:
+        """Every ``spec`` record under the parent."""
+        ...
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
-        """Escape hatch for strategies that need ad-hoc URLs (e.g. Schedule)."""
+        """Create a ``spec`` record under the parent, which it then belongs to."""
+        ...
+
+    def inventory_kind(self, inventory_id: int) -> str:
+        """Inventory ``inventory_id``'s kind: ``""`` (plain), ``smart`` or ``constructed``."""
         ...
 
 
@@ -250,14 +257,12 @@ class ApplyStrategy(Protocol):
     and unwrap on the way out (``record.model_dump()``).
 
     Some strategies (e.g. ``ScheduleApplyStrategy``,
-    ``InventoryChildApplyStrategy``) write to nested endpoints whose
-    URLs aren't derivable from the spec alone, so the ``client``
-    parameter is :class:`RawHttpResourceClient` (which extends
-    :class:`ResourceClient` with raw URL access).
+    ``InventoryChildApplyStrategy``) write records under a parent, so the
+    ``client`` parameter is :class:`NestedResourceClient`.
     """
 
     def snapshot_existing(
-        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: NestedResourceClient
     ) -> dict[str, Any]:
         """Hydrate apply/patch baselines; editors supply an already complete snapshot."""
         ...
@@ -270,7 +275,7 @@ class ApplyStrategy(Protocol):
         *,
         parent: tuple[str, PlannedId] | None = None,
         parent_resource: Resource | None = None,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         """Freeze routing and validate state without refreshing the existing baseline."""
         ...
@@ -290,7 +295,7 @@ class ApplyStrategy(Protocol):
         spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None: ...
 
@@ -300,7 +305,7 @@ class ApplyStrategy(Protocol):
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
@@ -310,7 +315,7 @@ class ApplyStrategy(Protocol):
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
@@ -337,9 +342,17 @@ class UnifiedTemplateRepository(Protocol):
         """Every template ``params`` select, by name unless ``params`` order them."""
         ...
 
+    def unified_template(self, id_: int) -> dict[str, Any]:
+        """The template with ``id_``, its ``type`` naming its kind."""
+        ...
+
     def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         """The templates with ``ids``, by id: one listing, paged when there are many."""
         ...
+
+
+class ResourceLookups(ResourceClient, UnifiedTemplateRepository, Protocol):
+    """What resolving foreign keys reads: records of any kind, and unified templates."""
 
 
 class WorkflowNodeRepository(Protocol):
@@ -380,7 +393,10 @@ class WorkflowNodeRepository(Protocol):
         ...
 
     def list_node_members(self, *, node_id: int, relation: str) -> Iterator[dict[str, Any]]:
-        """Walk a node relation: ``success_nodes``, ``credentials``, ``labels``, …"""
+        """Walk a node relation: ``success_nodes``, ``credentials``, ``labels``, …
+
+        A prompt relation the controller is too old to have has no members.
+        """
         ...
 
     def create_node(self, *, workflow_id: int, body: dict[str, Any]) -> dict[str, Any]:
@@ -429,10 +445,11 @@ __all__ = [
     "ApplyStrategy",
     "Catalog",
     "FkResolver",
+    "NestedResourceClient",
     "ProjectPlaybooks",
-    "RawHttpResourceClient",
     "ResourceClient",
     "ResourceDocumentReader",
+    "ResourceLookups",
     "StrategyResolver",
     "UnifiedTemplateRepository",
     "WorkflowNodeRepository",

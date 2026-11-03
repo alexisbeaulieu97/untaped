@@ -26,7 +26,6 @@ def test_minimal_transport_spec() -> None:
     spec = AwxResourceSpec(
         kind="Project",
         cli_name="projects",
-        api_path="projects",
         identity_keys=("name", "organization"),
         canonical_fields=("description", "scm_type"),
     )
@@ -68,7 +67,6 @@ def test_resource_spec_is_frozen() -> None:
     spec = AwxResourceSpec(
         kind="Project",
         cli_name="projects",
-        api_path="projects",
         identity_keys=("name",),
         canonical_fields=("description",),
     )
@@ -81,7 +79,6 @@ def test_invalid_fidelity_rejected() -> None:
         AwxResourceSpec(
             kind="X",
             cli_name="xs",
-            api_path="xs",
             identity_keys=("name",),
             canonical_fields=("d",),
             fidelity="amazing",  # type: ignore[arg-type]
