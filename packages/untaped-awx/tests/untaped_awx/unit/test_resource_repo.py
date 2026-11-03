@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import nullcontext
-
 import httpx
 import pytest
 import respx
 
+from awx_test_support import ClientRepository
 from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
 
 
@@ -22,9 +20,8 @@ def test_find_returns_unique_record(awx_client: AwxClient) -> None:
                 json={"count": 1, "results": [{"id": 7, "name": "deploy"}]},
             )
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            record = repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
+        repo = ClientRepository(awx_client)
+        record = repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
     assert record is not None
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
@@ -34,9 +31,8 @@ def test_find_returns_none_for_zero_results(awx_client: AwxClient) -> None:
         mock.get("/api/v2/job_templates/").mock(
             return_value=httpx.Response(200, json={"count": 0, "results": []})
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            assert repo.find(JOB_TEMPLATE_SPEC, params={"name": "ghost"}) is None
+        repo = ClientRepository(awx_client)
+        assert repo.find(JOB_TEMPLATE_SPEC, params={"name": "ghost"}) is None
 
 
 def test_find_raises_ambiguous_on_multi_match(awx_client: AwxClient) -> None:
@@ -55,10 +51,9 @@ def test_find_raises_ambiguous_on_multi_match(awx_client: AwxClient) -> None:
                 },
             )
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            with pytest.raises(AmbiguousIdentityError) as excinfo:
-                repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
+        repo = ClientRepository(awx_client)
+        with pytest.raises(AmbiguousIdentityError) as excinfo:
+            repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
     assert excinfo.value.kind == "JobTemplate"
     assert excinfo.value.match_count == 5
     # The user-facing message must not leak AWX's `__name` filter syntax.
@@ -76,9 +71,8 @@ def test_find_overrides_caller_supplied_page_size(awx_client: AwxClient) -> None
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(side_effect=_capture)
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy", "page_size": "1"})
+        repo = ClientRepository(awx_client)
+        repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy", "page_size": "1"})
     assert captured.get("page_size") == "2"
 
 
@@ -97,13 +91,12 @@ def test_find_by_identity_builds_scope_field_name_params(awx_client: AwxClient) 
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(side_effect=_capture)
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            repo.find_by_identity(
-                JOB_TEMPLATE_SPEC,
-                name="deploy",
-                scope={"organization": "Default"},
-            )
+        repo = ClientRepository(awx_client)
+        repo.find_by_identity(
+            JOB_TEMPLATE_SPEC,
+            name="deploy",
+            scope={"organization": "Default"},
+        )
     assert captured["name"] == "deploy"
     assert captured["organization__name"] == "Default"
 
@@ -119,9 +112,8 @@ def test_find_by_identity_no_scope(awx_client: AwxClient) -> None:
                 json={"count": 1, "results": [{"id": 7, "name": "deploy"}]},
             )
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            record = repo.find_by_identity(JOB_TEMPLATE_SPEC, name="deploy")
+        repo = ClientRepository(awx_client)
+        record = repo.find_by_identity(JOB_TEMPLATE_SPEC, name="deploy")
     assert record is not None
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
@@ -143,8 +135,7 @@ def test_request_text_sends_text_plain_accept(awx_client: AwxClient) -> None:
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/jobs/42/stdout/").mock(side_effect=_record)
-        with nullcontext(awx_client) as awx:
-            text = awx.request_text("GET", "jobs/42/stdout/", params={"format": "txt"})
+        text = awx_client.request_text("GET", "jobs/42/stdout/", params={"format": "txt"})
     assert text == "job log line\n"
     assert captured[0].headers["accept"] == "text/plain"
 
@@ -155,15 +146,13 @@ def test_delete_receipt_preserves_http_acceptance(
 ) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/job_templates/7/").mock(return_value=httpx.Response(status))
-        with nullcontext(awx_client) as awx:
-            assert ResourceRepository(awx).delete(JOB_TEMPLATE_SPEC, 7).action == action
+        assert ClientRepository(awx_client).delete(JOB_TEMPLATE_SPEC, 7).action == action
 
 
 def test_low_level_delete_returns_status(awx_client: AwxClient) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/inventories/7/").mock(return_value=httpx.Response(202))
-        with nullcontext(awx_client) as awx:
-            assert awx.delete("inventories/7/") == 202
+        assert awx_client.delete("inventories/7/") == 202
 
 
 def test_get_fills_in_endpoint_backed_survey(awx_client: AwxClient) -> None:
@@ -174,8 +163,7 @@ def test_get_fills_in_endpoint_backed_survey(awx_client: AwxClient) -> None:
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json={"name": "s", "spec": []})
         )
-        with nullcontext(awx_client) as awx:
-            record = ResourceRepository(awx).get(JOB_TEMPLATE_SPEC, 7)
+        record = ClientRepository(awx_client).get(JOB_TEMPLATE_SPEC, 7)
     assert record.model_dump()["survey_spec"] == {"name": "s", "spec": []}
 
 
@@ -199,12 +187,9 @@ def test_writes_route_survey_to_its_endpoint(awx_client: AwxClient) -> None:
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json=survey)
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            created = repo.create(
-                JOB_TEMPLATE_SPEC, WritePayload(name="deploy", survey_spec=survey)
-            )
-            repo.update(JOB_TEMPLATE_SPEC, 7, WritePayload(description="x", survey_spec={}))
+        repo = ClientRepository(awx_client)
+        created = repo.create(JOB_TEMPLATE_SPEC, WritePayload(name="deploy", survey_spec=survey))
+        repo.update(JOB_TEMPLATE_SPEC, 7, WritePayload(description="x", survey_spec={}))
 
     assert b"survey_spec" not in create.calls[0].request.content
     assert b"survey_spec" not in patch.calls[0].request.content
@@ -222,8 +207,7 @@ def test_sub_documents_reads_no_record(awx_client: AwxClient) -> None:
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json={"name": "s", "spec": []})
         )
-        with nullcontext(awx_client) as awx:
-            documents = ResourceRepository(awx).sub_documents(JOB_TEMPLATE_SPEC, 7)
+        documents = ClientRepository(awx_client).sub_documents(JOB_TEMPLATE_SPEC, 7)
     assert documents == {"survey_spec": {"name": "s", "spec": []}}
     assert detail.call_count == 0
 
@@ -237,11 +221,10 @@ def test_playbooks_returns_a_tuple(awx_client: AwxClient) -> None:
         mock.get("/api/v2/projects/4/playbooks/").mock(
             return_value=httpx.Response(404, json={"detail": "Not found."})
         )
-        with nullcontext(awx_client) as awx:
-            repo = ResourceRepository(awx)
-            assert repo.playbooks(3) == ("site.yml", "roles/deploy.yml")
-            with pytest.raises(AwxApiError):
-                repo.playbooks(4)
+        repo = ClientRepository(awx_client)
+        assert repo.playbooks(3) == ("site.yml", "roles/deploy.yml")
+        with pytest.raises(AwxApiError):
+            repo.playbooks(4)
 
 
 def test_playbooks_rejects_an_answer_that_is_not_a_list(awx_client: AwxClient) -> None:
@@ -250,8 +233,5 @@ def test_playbooks_rejects_an_answer_that_is_not_a_list(awx_client: AwxClient) -
         mock.get("/api/v2/projects/3/playbooks/").mock(
             return_value=httpx.Response(200, json={"site.yml": "x"})
         )
-        with (
-            nullcontext(awx_client) as awx,
-            pytest.raises(BadRequestError, match="not a list"),
-        ):
-            ResourceRepository(awx).playbooks(3)
+        with pytest.raises(BadRequestError, match="not a list"):
+            ClientRepository(awx_client).playbooks(3)

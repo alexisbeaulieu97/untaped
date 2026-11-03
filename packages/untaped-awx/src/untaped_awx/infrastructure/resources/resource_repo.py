@@ -32,11 +32,13 @@ contravariant parameter type holds while the runtime read of
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
 from untaped.sdk import ConfigError, HttpError, attribution
+from untaped.sdk.network import ApiMismatch
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.domain.outcomes import DeleteReceipt
 from untaped_awx.errors import (
@@ -71,32 +73,33 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
 
     A 401 (:class:`ConfigError`) is wrapped too, so the row keeps its ID;
     it stays the cause, and the mutation engine still aborts the batch on it.
+    So is an :class:`ApiMismatch`: the record write already went through, so
+    the call can't run again on another adapter, and the row names the record.
     The error keeps its cause's category, system and hint.
     """
     try:
         with map_awx_errors():
             yield
-    except (AwxApiError, ConfigError) as exc:
+    except (AwxApiError, ConfigError, ApiMismatch) as exc:
         raise PartialWriteError(
             f"{step} failed: {exc}", record_id=record_id, **attribution(exc)
         ) from exc
 
 
-class ResourceRepository:
+class ResourceRepository(ABC):
     """Spec-driven reads and writes over an :class:`AwxClient`.
 
-    :class:`~untaped_awx.infrastructure.controller.ControllerV2` is the one
-    built in a run: it supplies the client its version's prefix calls for.
+    :class:`~untaped_awx.infrastructure.controller.ControllerV2` implements it:
+    it supplies the client its version's prefix calls for, and the page size.
     """
 
-    def __init__(self, client: AwxClient, *, page_size: int = 200) -> None:
-        self._given = client
-        self._page_size = page_size
+    #: Results requested per list page (``awx.page_size``).
+    _page_size: int
 
     @property
+    @abstractmethod
     def _client(self) -> AwxClient:
         """The controller client every request goes through."""
-        return self._given
 
     def list(
         self,
@@ -200,7 +203,7 @@ class ResourceRepository:
         try:
             records = self.list(spec, params=params or None, limit=self._page_size)
             return tuple(str(record["name"]) for record in records if record.get("name"))
-        except AwxApiError:
+        except AwxApiError, ApiMismatch:
             return ()
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:

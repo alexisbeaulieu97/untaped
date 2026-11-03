@@ -22,6 +22,8 @@ from untaped.sdk.testing import CliResult, Install, PromptBackend, install, invo
 from untaped.sdk.testing.fixtures import current_terminal
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.controller import Ping
+from untaped_awx.infrastructure import AwxClient
+from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
 from untaped_awx.plugin import Awx
 from untaped_awx.settings import AwxSettings
 
@@ -105,3 +107,15 @@ def recorded_answer(version: ServerVersion, name: str) -> Any:
     """What ``version``'s controller answered, recorded as ``recorded/<version>/<name>.json``."""
     folder = RECORDED / safe_path_segment(str(version))
     return json.loads((folder / f"{name}.json").read_text(encoding="utf-8"))
+
+
+class ClientRepository(ResourceRepository):
+    """A :class:`ResourceRepository` over a given client: the repository's own tests."""
+
+    def __init__(self, client: AwxClient, *, page_size: int = 200) -> None:
+        self._given = client
+        self._page_size = page_size
+
+    @property
+    def _client(self) -> AwxClient:
+        return self._given

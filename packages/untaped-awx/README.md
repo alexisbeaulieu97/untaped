@@ -22,9 +22,8 @@ untaped auth login awx
 untaped awx ping
 ```
 
-`ping` names the authenticated `user`. untaped finds out whether the server
-runs AWX or AAP, and which release, on first use; `awx.server_version`
-(`AWX 24.6.1`, `AAP controller 4.6.2`) says it instead. `auth login` stores the token with your
+`ping` names the authenticated `user`. untaped detects AWX or AAP, and its
+release, on first use. `auth login` stores the token with your
 password store, not in `config.yml`; an environment variable also works. See
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens)
 and the

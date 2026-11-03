@@ -21,7 +21,7 @@ from untaped_awx.application.ports import AwxApi
 from untaped_awx.domain.jobs.job import JOB_ROUTES
 from untaped_awx.infrastructure.awx_client import AwxClient
 from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
-from untaped_awx.settings import AwxSettings, ControllerVersion, Product
+from untaped_awx.settings import AwxServer, AwxSettings, ControllerVersion, Product
 
 if TYPE_CHECKING:
     from untaped.sdk.network import HttpClient
@@ -65,7 +65,8 @@ def _answers(client: HttpClient, path: str) -> bool:
 def detect(settings: AwxSettings, client: HttpClient) -> ControllerVersion:
     """Asks the platform gateway's `ping/`, then the controller's.
 
-    AWX numbers its releases from 9 up; AAP's controller is 4.x.
+    Behind the gateway it is AAP; without it, a release below 9 is AAP's
+    controller (4.x), and one from 9 up is AWX.
     """
     del settings
     with ApiMismatch.watch():
@@ -91,10 +92,20 @@ class ControllerV2(ResourceRepository, ApiAdapter[AwxSettings, ControllerVersion
         ApiAdapter.__init__(self, settings, version)
         self._page_size = settings.page_size
 
+    @property
+    def _server(self) -> AwxServer:
+        """The controller's server setting: core checked it is set before building this adapter."""
+        server = self.settings.server
+        assert server is not None, "core builds an adapter only for a set-up server"
+        return server
+
     @classmethod
     def serves(cls, version: ControllerVersion) -> bool:
-        # Execution environments, which awx reads and writes, arrived in AWX 18.
-        return version.product is Product.AAP or version.release >= (18,)
+        # Execution environments, which awx reads and writes, arrived in AWX 18 and in
+        # AAP 2.0, whose controller is 4.0; Tower 3.x reads as an older AAP controller.
+        if version.product is Product.AAP:
+            return version.release >= (4,)
+        return version.release >= (18,)
 
     @property
     def prefix(self) -> str:
@@ -103,10 +114,8 @@ class ControllerV2(ResourceRepository, ApiAdapter[AwxSettings, ControllerVersion
 
     @cached_property
     def _client(self) -> AwxClient:
-        server = self.settings.server
-        base_url = "" if server is None else str(server.url)
         http = self.connect(headers={"Accept": "application/json"})
-        return AwxClient(http, prefix=self.prefix, base_url=base_url)
+        return AwxClient(http, prefix=self.prefix, base_url=str(self._server.url))
 
     def ping(self) -> dict[str, Any]:
         return self._client.ping()
@@ -117,11 +126,10 @@ class ControllerV2(ResourceRepository, ApiAdapter[AwxSettings, ControllerVersion
     def job_url(self, job: Job) -> str | None:
         """The output page: under ``/execution/`` behind the gateway, the ``/#/`` router before."""
         routes = JOB_ROUTES.get(job.kind)
-        server = self.settings.server
-        if server is None or routes is None:
+        if routes is None:
             return None
         root = "/execution/" if self.version.gateway else "/#/"
-        return f"{str(server.url).rstrip('/')}{root}jobs/{routes.ui_type}/{job.id}/output"
+        return f"{str(self._server.url).rstrip('/')}{root}jobs/{routes.ui_type}/{job.id}/output"
 
 
 __all__ = [

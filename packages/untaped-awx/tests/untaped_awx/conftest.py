@@ -183,7 +183,7 @@ def awx_config() -> AwxSettings:
     """The settings the ``settings`` fixture holds by default (its token a variable)."""
     return AwxSettings(
         server=AwxServer(url=HttpUrl("https://aap.example.com")),
-        server_version=ControllerVersion.parse("AWX 24.6.1"),
+        server_version=PINNED,
     )
 
 

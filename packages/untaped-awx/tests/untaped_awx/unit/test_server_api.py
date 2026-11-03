@@ -120,7 +120,8 @@ def test_awx_own_not_found_stays_not_found(settings: Settings, version: Controll
     assert "does not expect" not in result.stderr
 
 
-def test_a_path_the_server_lacks_is_a_mismatch(settings: Settings) -> None:
+def test_a_404_page_that_is_not_the_controllers_is_a_mismatch(settings: Settings) -> None:
+    """A proxy's or gateway's page, not AWX's JSON ``detail``: not this API's answer."""
     with respx.mock(base_url=BASE) as mock:
         mock.get(f"{CONTROLLER_PREFIX}job_templates/99/").respond(
             404, text="<html>Not Found</html>"
@@ -172,8 +173,12 @@ def test_a_version_spelled_otherwise_is_refused(text: str) -> None:
         ControllerVersion.parse(text)
 
 
-def test_an_awx_older_than_execution_environments_is_refused(settings: Settings) -> None:
-    settings["server_version"] = "AWX 17.1.0"
+@pytest.mark.parametrize("version", ["AWX 17.1.0", "AAP controller 3.8.6"])
+def test_a_controller_older_than_execution_environments_is_refused(
+    settings: Settings, version: str
+) -> None:
+    """AWX before 18, and Tower 3.x, which detection reads as an AAP controller below 4."""
+    settings["server_version"] = version
     result = run(["ping"])
     assert result.exit_code == 4, result.output
     assert "untaped-awx supports AWX 18 and later, and AAP 2.0 and later" in result.stderr

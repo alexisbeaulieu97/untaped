@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from contextlib import nullcontext
-
 import httpx
 import pytest
 import respx
@@ -27,8 +25,7 @@ def test_paginate_follows_next_url(awx_client: AwxClient) -> None:
     )
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.get(url__regex=r".*/job_templates/.*").mock(side_effect=lambda _r: next(pages))
-        with nullcontext(awx_client) as client:
-            ids = [item["id"] for item in paginate(client, "job_templates/")]
+        ids = [item["id"] for item in paginate(awx_client, "job_templates/")]
     assert ids == [1, 2, 3]
 
 
@@ -36,8 +33,7 @@ def test_paginate_respects_limit(awx_client: AwxClient) -> None:
     big_page = _page(*[{"id": i} for i in range(50)], next_url="/api/v2/x/?page=2")
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.get(url__regex=r".*/job_templates/.*").mock(return_value=big_page)
-        with nullcontext(awx_client) as client:
-            ids = [item["id"] for item in paginate(client, "job_templates/", limit=5)]
+        ids = [item["id"] for item in paginate(awx_client, "job_templates/", limit=5)]
     assert ids == [0, 1, 2, 3, 4]
 
 
@@ -52,8 +48,7 @@ def test_paginate_passes_initial_params_then_follows_next(awx_client: AwxClient)
 
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.get(url__regex=r".*/job_templates/.*").mock(side_effect=handler)
-        with nullcontext(awx_client) as client:
-            list(paginate(client, "job_templates/", params={"search": "deploy"}))
+        list(paginate(awx_client, "job_templates/", params={"search": "deploy"}))
 
     assert any("search=deploy" in p for p in seen_paths)
     assert any("page=2" in p for p in seen_paths)
@@ -76,8 +71,8 @@ def test_paginate_refuses_next_url_on_another_origin(awx_client: AwxClient, next
             return_value=_page({"id": 1}, next_url=next_url)
         )
         elsewhere = mock.route().mock(return_value=_page({"id": 2}))
-        with nullcontext(awx_client) as client, pytest.raises(AwxApiError, match="origin"):
-            list(paginate(client, "job_templates/"))
+        with pytest.raises(AwxApiError, match="origin"):
+            list(paginate(awx_client, "job_templates/"))
     assert first.call_count == 1
     assert elsewhere.call_count == 0
 
@@ -93,6 +88,5 @@ def test_paginate_follows_absolute_next_url_on_the_configured_origin(
     )
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.get(url__regex=r".*/job_templates/.*").mock(side_effect=lambda _r: next(pages))
-        with nullcontext(awx_client) as client:
-            ids = [item["id"] for item in paginate(client, "job_templates/")]
+        ids = [item["id"] for item in paginate(awx_client, "job_templates/")]
     assert ids == [1, 2]
