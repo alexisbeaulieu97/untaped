@@ -247,6 +247,10 @@ def test_two_sources_on_one_url_keep_their_own_clones(
     assert not (tmp_path / "clones" / "a").exists()
     assert (tmp_path / "clones" / "b" / "fish" / "config.fish").is_file()
     assert (user_home / ".config/fish/config.fish").read_text() == FILES["fish/config.fish"]
+    store = user_home / ".untaped/plugins/git/store/git.example/dotfiles.git"
+    assert store.is_dir()
+    as_json(["unsubscribe", "b", "--yes"])
+    assert not store.exists()
 
 
 def test_unsubscribe_keep_files_turns_links_into_copies(

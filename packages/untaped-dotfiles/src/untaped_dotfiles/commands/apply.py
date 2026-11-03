@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import Field
 
-from untaped.sdk import Confirm, Output, Positional, UntapedError, plural, q
+from untaped.sdk import Confirm, Failure, Output, Positional, UntapedError, plural, q
 from untaped_dotfiles.applier import Step
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services
 from untaped_dotfiles.inventory import Placement
@@ -31,7 +31,8 @@ class Apply(DotfilesCommand):
     holds now; a failed fetch is reported and exits 1 (a --dry-run preview
     only warns, and reads a source with no clone from the fetch, cloning
     nothing). A clone with local changes (an edit through a link) is never
-    moved: its source fails (exit 1), and the other sources apply. A local
+    moved: its source's changes fail (exit 1) with a hint, and the other
+    sources apply. A local
     folder is read as it stands; a source that became a folder lets its old
     clone go once its links point at the folder. A file in the way of a new
     path is kept aside, and the row says where.
@@ -69,10 +70,12 @@ class Apply(DotfilesCommand):
             resolved = svc.inventory.placements(selections)
             self.report(resolved.problems)
             placements = self._answered(resolved.placements)
-            steps = svc.applier.plan_apply(placements, force=self.force)
+            stuck = self._stuck(svc, fetched)
+            steps = _failing(svc.applier.plan_apply(placements, force=self.force), stuck)
+            self._report_stuck(steps, stuck)
             planned = svc.applier.planned(steps)
             todo = [s for s in steps if s.action in ("apply", "remove")]
-            moving = [r for r in fetched if svc.clones.behind(r)]
+            moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
             if not self.confirm(
                 f"Apply {plural(len(todo), 'path')}?",
                 preview=lambda: [planned],
@@ -80,7 +83,7 @@ class Apply(DotfilesCommand):
             ):
                 return iter(planned)
             if moving:
-                steps = self._move(svc, moving, steps)
+                steps = self._move(svc, moving, steps, stuck)
             rows = svc.applier.execute(steps)
             self._release_folders(svc)
             svc.refresh_status()
@@ -125,6 +128,12 @@ class Apply(DotfilesCommand):
             if spec is None or spec.path is None:
                 continue
             folder = Path(record.folder)
+            here = Path(spec.path).expanduser().resolve()
+            if here == folder.resolve() or folder.resolve() in here.parents:
+                # the folder the source names now is the old clone: keep it, forget the record
+                svc.store.remove_clone(record.source)
+                self.ctx.diag.info(f"{q(record.source)} reads its old clone as a local folder now")
+                continue
             if any(r.placed_as == "link" and folder in Path(r.target_hash).parents for r in placed):
                 continue
             try:
@@ -155,6 +164,30 @@ class Apply(DotfilesCommand):
             fetched.append(record)
         return fetched
 
+    def _stuck(self, svc: Services, fetched: Sequence[CloneRecord]) -> dict[str, UntapedError]:
+        """Each fetched clone that should move but has local changes, by source, with why."""
+        stuck: dict[str, UntapedError] = {}
+        for record in fetched:
+            why: UntapedError | None
+            try:
+                why = svc.clones.local_changes(record) if svc.clones.behind(record) else None
+            except UntapedError as exc:
+                why = exc
+            if why is not None:
+                stuck[record.source] = why
+        return stuck
+
+    def _report_stuck(self, steps: Sequence[Step], stuck: dict[str, UntapedError]) -> None:
+        """Say why a stuck source stays put when none of its rows says it."""
+        said = {s.placement.source.name for s in steps if s.found.error is not None}
+        for name, exc in stuck.items():
+            if name in said:
+                continue
+            if self.confirm.dry_run:
+                self.ctx.diag.warning(f"{name}: {exc}", hint=getattr(exc, "hint", None))
+            else:
+                self.ctx.diag.failure(exc, item=name)
+
     def _answered(self, placements: Sequence[Placement]) -> list[Placement]:
         """The placements whose target is known; each one waiting on an input is said once."""
         for placement in placements:
@@ -165,20 +198,43 @@ class Apply(DotfilesCommand):
                 )
         return [p for p in placements if p.target is not None]
 
-    def _move(self, svc: Services, moving: Sequence[CloneRecord], steps: list[Step]) -> list[Step]:
+    def _move(
+        self,
+        svc: Services,
+        moving: Sequence[CloneRecord],
+        steps: list[Step],
+        stuck: dict[str, UntapedError],
+    ) -> list[Step]:
         """Move each clone to its fetched commit, then plan again.
 
-        A clone that can't move (local changes) fails its source, and its
-        entries are planned from the clone as it stands. A link the move
+        A clone that can't move fails its source's rows. A link the move
         already changed stays an ``apply`` step, so its record carries the new
         commit and its row says it changed.
         """
+        failed: dict[str, UntapedError] = {}
         for record in moving:
             try:
                 svc.clones.move(record)
             except UntapedError as exc:
-                self.ctx.diag.failure(exc, item=record.source)
-        return _replanned(svc, steps, force=self.force)
+                failed[record.source] = exc
+        stuck.update(failed)
+        fresh = _failing(_replanned(svc, steps, force=self.force), stuck)
+        self._report_stuck(fresh, failed)
+        return fresh
+
+
+def _failing(steps: list[Step], stuck: dict[str, UntapedError]) -> list[Step]:
+    """``steps`` with each change of a stuck source failed, carrying why (and its hint)."""
+    if not stuck:
+        return steps
+    out: list[Step] = []
+    for step in steps:
+        exc = stuck.get(step.placement.source.name)
+        if exc is not None and step.action in ("apply", "remove") and step.found.error is None:
+            error = Failure.from_exception(exc, message=str(exc))
+            step = replace(step, found=replace(step.found, error=error), detail=str(exc))
+        out.append(step)
+    return out
 
 
 def _replanned(svc: Services, steps: list[Step], *, force: bool) -> list[Step]:

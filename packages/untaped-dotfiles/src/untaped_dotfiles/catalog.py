@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, UsageError, q
+from untaped.sdk import UntapedError, UsageError, q, run_hint
 from untaped_dotfiles.errors import PackageError
 from untaped_dotfiles.package import NAME, PackageFile, parse_package
 from untaped_dotfiles.policy import Policy
@@ -53,8 +53,6 @@ class Offer:
         """``(policy, chosen)``: this machine's choice when it made one, else the author's."""
         if self.choice is not None and self.choice.policy is not None:
             return self.choice.policy, True
-        if self.gone:
-            return Policy.MANUAL, False
         return (self.package.policy if self.package is not None else None), False
 
     def item_choice(self, item: str) -> ItemChoice:
@@ -213,14 +211,14 @@ class Catalog:
         if first in self._sources.names:
             raise UsageError(f"source {q(first)} has no package {q(second)}")
         offer = self._package(first, selector=selector)
-        raise UsageError(f"package {offer.spelled} has no item {q(second)}")
+        raise _no_item(offer, second)
 
     def _full(self, source: str, package: str, item: str, *, selector: str) -> Selection:
         offer = self._find(source, package)
         if offer is None:
             raise UsageError(f"no package {q(f'{source}/{package}')}")
-        if offer.package is not None and item not in offer.package.items:
-            raise UsageError(f"package {offer.spelled} has no item {q(item)}")
+        if offer.gone or (offer.package is not None and item not in offer.package.items):
+            raise _no_item(offer, item)
         return Selection(offer, item)
 
     def _find(self, source: str, package: str) -> Offer | None:
@@ -253,6 +251,30 @@ class Catalog:
         return [
             each for each in seen.values() if each.item is None or each.offer.spelled not in whole
         ]
+
+
+def _no_item(offer: Offer, item: str) -> UsageError:
+    if not offer.gone:
+        return UsageError(f"package {offer.spelled} has no item {q(item)}")
+    return UsageError(
+        f"package {offer.spelled} left its source, so it has no item {q(item)}",
+        hint=f"{_remove(offer.spelled)} takes back what it placed",
+    )
+
+
+def gone_error(offer: Offer) -> PackageError:
+    """Why a package that is on here can't be read: it left its source."""
+    return PackageError(
+        f"source {q(offer.source.name)} no longer has package {q(offer.name)}",
+        category="not_found",
+        hint=f"{_remove(offer.spelled)} takes back what it placed",
+    )
+
+
+def _remove(selector: str) -> str:
+    from untaped_dotfiles.commands.packages import Remove  # noqa: PLC0415 - a cycle
+
+    return run_hint(Remove.spelled(selector))
 
 
 def _ambiguous(what: str, spellings: list[str]) -> UsageError:

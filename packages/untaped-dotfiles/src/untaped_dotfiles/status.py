@@ -87,7 +87,7 @@ class Evaluator:
             destination = self._inventory.link_destination(source, placement.path)
             in_tree = destination.exists() or destination.is_symlink()
             changed = placement.path in self._changed.get(source.name, set())
-            if not in_tree and source.clone is not None:
+            if not in_tree and (source.clone is not None or source.peeked):
                 in_tree = source.tree.exists(placement.path)
                 changed = changed or in_tree
             return SourceInfo(exists=in_tree, hash=str(destination), changed=changed)
@@ -136,7 +136,7 @@ class Evaluator:
         if state == "orphan" and record is None:
             failure = DotfilesError(f"{placement.path}: {detail}", category="not_found")
             error = Failure.from_exception(failure, message=detail)
-        if placement.mode != "link":
+        if placement.mode != "link" or placement.source.peeked:
             commit = placement.source.tree.commit
         elif placement.source.clone is not None:
             commit = self._head(placement.source)

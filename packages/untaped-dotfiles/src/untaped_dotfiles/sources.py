@@ -101,6 +101,8 @@ class Source:
     """Where packages, ``copy`` and ``merge`` files are read."""
     clone: CloneRecord | None = None
     """The clone untaped keeps; ``None`` for a local folder."""
+    peeked: bool = False
+    """A git source read from the fetch with no clone yet (a preview): links read the tree."""
 
 
 class Clones:
@@ -221,26 +223,36 @@ class Clones:
         """Whether the fetched commit is not the one the clone has checked out."""
         return self.checked_out(record) != self.head(record)
 
+    def local_changes(self, record: CloneRecord) -> GitError | None:
+        """Why the clone can't be moved or made again: it has local changes. ``None`` when clean
+        or gone."""
+        folder = Path(record.folder)
+        if not folder.is_dir():
+            return None
+        changes = run_git(
+            ["status", "--porcelain"], cwd=folder, capture=True, timeout=_TIMEOUT
+        ).text.strip()
+        if not changes:
+            return None
+        from untaped_dotfiles.commands.sources import Subscribe  # noqa: PLC0415 - a cycle
+
+        return GitError(
+            f"the clone of {q(record.source)} has local changes, so it stays where it is",
+            category="conflict",
+            hint=f"edit in your own checkout ({run_hint(Subscribe.spelled('PATH'))}), or "
+            f"discard them: git -C {folder} checkout -- .",
+        )
+
     def move(self, record: CloneRecord) -> None:
         """Check the fetched commit out in the clone; refused while the clone has local changes.
 
         An edit to a linked file lands in the clone; it is never overwritten.
         """
-        folder = Path(record.folder)
-        changes = run_git(
-            ["status", "--porcelain"], cwd=folder, capture=True, timeout=_TIMEOUT
-        ).text.strip()
-        if changes:
-            from untaped_dotfiles.commands.sources import Subscribe  # noqa: PLC0415 - a cycle
-
-            raise GitError(
-                f"the clone of {q(record.source)} has local changes, so it stays where it is",
-                category="conflict",
-                hint=f"edit in your own checkout ({run_hint(Subscribe.spelled('PATH'))}), or "
-                f"discard them: git -C {folder} checkout -- .",
-            )
+        stuck = self.local_changes(record)
+        if stuck is not None:
+            raise stuck
         repo = self.repo(record.url)
-        repo.checkout(folder, repo.ref(f"heads/{record.ref}"))
+        repo.checkout(Path(record.folder), repo.ref(f"heads/{record.ref}"))
 
     def ensure(self, name: str, spec: PackageSource) -> tuple[CloneRecord, bool]:
         """Source ``name``'s clone, made again when it is missing or its URL or ref changed.
@@ -253,6 +265,9 @@ class Clones:
             return record, False
         assert spec.url is not None
         if record is not None:
+            stuck = self.local_changes(record)
+            if stuck is not None:
+                raise stuck
             self.release(record)
             self._store.remove_clone(name)
         record = self.make(name, spec.url, resolve_url(spec.url), ref=spec.ref)
@@ -264,7 +279,7 @@ class Clones:
         clones the same URL."""
         repo = self.repo(record.url)
         shared = any(
-            other.url == record.url and other.source != record.source
+            other.source != record.source and self.repo(other.url).path == repo.path
             for other in self._store.clones()
         )
         try:
@@ -313,7 +328,9 @@ class Sources:
         """Read git source ``name`` from ``tree`` this run, as if cloned: a preview's view of
         a source with no clone yet (its links would point into ``clones_dir/<name>``)."""
         spec = self._specs[name]
-        self._peeked[name] = Source(name=name, spec=spec, root=self._clones.folder(name), tree=tree)
+        self._peeked[name] = Source(
+            name=name, spec=spec, root=self._clones.folder(name), tree=tree, peeked=True
+        )
 
     def _opened(self, name: str, spec: PackageSource) -> Source:
         if name in self._peeked:

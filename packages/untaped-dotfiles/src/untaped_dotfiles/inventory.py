@@ -149,7 +149,8 @@ class Inventory:
         resolved: dict[tuple[str, str, str], Offer] = {}
         held: dict[tuple[str, str, str, str], Placement | None] = {}
         """``(source, package, item, entry)`` whose records stay: excluded (its placement) or
-        waiting on an input (``None``)."""
+        waiting on an input (``None``). Keyed by entry, so when two entries of one item share
+        a path and one is held, the other's old records stay too (rather than orphaned)."""
         for offer, item in _wanted(selections):
             if offer.gone:
                 resolved.update({owner: offer for owner in self._owners_of(offer)})
@@ -169,24 +170,45 @@ class Inventory:
             found.extend(placed)
             if include_excluded:
                 found.extend(p for p in waiting if p.excluded is not None)
-        found, claimed = _claims(found)
+        fought = self._fought()
+        found, claimed = _claims(found, fought)
         problems.extend(claimed)
         placed_keys = {p.key for p in found}
         for record in self._store.placed():
             owner = (record.source, record.package, record.item)
             owned = resolved.get(owner)
-            if owned is None or record.target in placed_keys:
-                continue
+            if owned is None or record.target in placed_keys or record.target in fought:
+                continue  # a disputed target keeps its file until the dispute is settled
             at = (*owner, record.entry)
             if at not in held:
                 found.append(self._from_record(record, owned, orphan=True))
                 continue
             excluded = held[at]
             if excluded is not None:
-                found.append(self._from_record(record, owned, excluded=excluded.excluded))
+                found.append(
+                    self._from_record(
+                        record, owned, excluded=excluded.excluded, declared=excluded.declared
+                    )
+                )
                 if include_excluded:  # the record's own row stands for its entry
                     found = [p for p in found if p is not excluded]
         return Resolved(found, problems)
+
+    def _fought(self) -> dict[str, set[str]]:
+        """Each target two packages that are on place here, with their ``SOURCE/PKG`` names;
+        every package that is on counts, whatever a run selects."""
+        claimants: dict[str, set[str]] = {}
+        for offer, item in _wanted(self.on()):
+            if offer.package is None:
+                continue
+            try:
+                placed, _ = self._item(offer, item)
+            except UntapedError:  # said when the item is selected
+                continue
+            for p in placed:
+                if p.target is not None:
+                    claimants.setdefault(p.key, set()).add(offer.spelled)
+        return {target: names for target, names in claimants.items() if len(names) > 1}
 
     def _owners_of(self, offer: Offer) -> set[tuple[str, str, str]]:
         """Every item ``offer``'s package placed something for (a package gone from its source)."""
@@ -278,6 +300,7 @@ class Inventory:
         *,
         orphan: bool = False,
         excluded: str | None = None,
+        declared: str = "",
     ) -> Placement:
         """What untaped placed at ``record``'s target, as a placement of ``offer``."""
         policy, chosen = offer.item_policy(record.item)
@@ -289,7 +312,7 @@ class Inventory:
             path=record.path,
             target=target,
             shown=self.shown(target),
-            declared="",
+            declared=declared,
             mode=record.placed_as,
             policy=policy or Policy.MANUAL,
             chosen=chosen,
@@ -316,19 +339,20 @@ def _wanted(selections: Sequence[Selection]) -> list[tuple[Offer, str]]:
 
 
 def _claims(
-    placements: list[Placement],
+    placements: list[Placement], fought: dict[str, set[str]]
 ) -> tuple[list[Placement], list[tuple[str, UntapedError]]]:
-    """``placements`` without the targets two packages claim, and an error for each claimant."""
-    claimants: dict[str, set[str]] = {}
+    """``placements`` without the targets two packages claim (``fought``), and an error for
+    each selected claimant."""
+    selected: dict[str, set[str]] = {}
     for p in placements:
-        if p.target is not None and p.excluded is None:
-            claimants.setdefault(p.key, set()).add(p.offer.spelled)
-    fought = {target: names for target, names in claimants.items() if len(names) > 1}
-    if not fought:
+        if p.target is not None and p.excluded is None and p.key in fought:
+            selected.setdefault(p.key, set()).add(p.offer.spelled)
+    if not selected:
         return placements, []
     problems: list[tuple[str, UntapedError]] = []
-    for target, names in sorted(fought.items()):
-        for name in sorted(names):
+    for target, mine in sorted(selected.items()):
+        names = fought[target]
+        for name in sorted(mine):
             problems.append(
                 (
                     name,

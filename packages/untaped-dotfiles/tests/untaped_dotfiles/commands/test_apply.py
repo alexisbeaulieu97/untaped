@@ -258,16 +258,24 @@ def test_a_clone_with_local_changes_fails_its_source_and_the_rest_applies(
     make_remote: MakeRemote, make_folder: MakeFolder, user_home: Path, tmp_path: Path
 ) -> None:
     remote = make_remote()
-    subscribe(remote.url, "--add", "fish")
+    subscribe(remote.url, "--add", "fish", "--add", "starship")
     as_json(["apply", "--yes"])
     (user_home / ".config/fish/config.fish").write_text("local edit\n")  # lands in the clone
-    publish(remote, {"fish/config.fish": "upstream\n"})
+    publish(remote, {"fish/config.fish": "upstream\n", "starship.toml": "new\n"})
     subscribe(str(make_folder("other", packages={"mine": _LINK}, files={"a.txt": "a\n"})))
     as_json(["add", "mine"])
+    preview = run(["apply", "--dry-run", "--format", "json"])
+    assert {r["entry"]: r["action"] for r in json_rows(preview)}["~/.config/starship.toml"] == (
+        "failed"
+    )
     result = run(["apply", "--yes", "--format", "json"])
     assert result.exit_code == 1, result.output
     assert "has local changes" in result.stderr and "checkout -- ." in result.stderr
+    rows = {r["entry"]: r["action"] for r in json_rows(result)}
+    assert rows["~/.config/starship.toml"] == "failed"
+    assert rows["~/a.txt"] == "created"
     assert (user_home / "a.txt").is_symlink()
+    assert (user_home / ".config/starship.toml").read_text() == FILES["starship.toml"]
     assert (tmp_path / "clones/dotfiles/fish/config.fish").read_text() == "local edit\n"
 
 
@@ -284,8 +292,14 @@ def test_a_package_that_leaves_its_source_is_taken_back(
     rows = {r["entry"]: r["action"] for r in as_json(["apply", "--yes"])}
     assert rows["~/.config/starship.toml"] == "deleted"
     assert not (user_home / ".config/starship.toml").exists()
+    shown = run(["show", "starship", "--format", "json"])
+    assert shown.exit_code == 1 and "no longer has package" in shown.stderr
+    assert json_rows(shown)[0]["policy"] is None
+    no_item = run(["remove", "starship/config", "--yes"])
+    assert no_item.exit_code == 2 and "remove dotfiles/starship" in no_item.stderr
     assert run(["add", "starship"]).exit_code == 2
     assert run(["remove", "dotfiles/starship", "--yes"]).exit_code == 0
+    assert "starship" not in {r["name"] for r in as_json(["show"])}
 
 
 def test_a_package_and_its_item_together_place_each_path_once(
@@ -303,20 +317,36 @@ def test_two_packages_on_one_target_place_neither(
     subscribe(make_remote().url, "--add", "starship")
     subscribe(str(make_folder("work", packages={"prompt": _SHARED}, files={"a.txt": "a\n"})))
     as_json(["add", "prompt"])
+    for selected in (["work/prompt"], []):
+        result = run(["apply", *selected, "--yes", "--format", "json"])
+        assert result.exit_code == 1
+        assert "is placed by dotfiles/starship and work/prompt" in result.stderr
+        assert not (user_home / ".config/starship.toml").exists()
+
+
+def test_a_second_package_on_a_placed_target_leaves_the_file(
+    make_remote: MakeRemote, make_folder: MakeFolder, user_home: Path
+) -> None:
+    subscribe(make_remote().url, "--add", "starship")
+    as_json(["apply", "--yes"])
+    subscribe(str(make_folder("work", packages={"prompt": _SHARED}, files={"a.txt": "a\n"})))
+    as_json(["add", "prompt"])
+    status = run(["status", "--format", "json"])
+    assert "orphan" not in {r["state"] for r in json_rows(status)}
     result = run(["apply", "--yes", "--format", "json"])
     assert result.exit_code == 1
     assert "is placed by dotfiles/starship and work/prompt" in result.stderr
-    assert not (user_home / ".config/starship.toml").exists()
+    assert (user_home / ".config/starship.toml").read_text() == FILES["starship.toml"]
 
 
 def test_a_dry_run_reads_a_source_with_no_clone_and_clones_nothing(
     make_remote: MakeRemote, tmp_path: Path
 ) -> None:
-    subscribe(make_remote().url, "--add", "starship")
+    subscribe(make_remote().url, "--add", "starship", "--add", "fish")
     shutil.rmtree(tmp_path / "clones" / "dotfiles")
     result = run(["apply", "--dry-run", "--format", "json"])
     assert result.exit_code == 0, result.output
-    assert [r["action"] for r in json_rows(result)] == ["planned"]
+    assert {r["action"] for r in json_rows(result)} == {"planned"}
     assert not (tmp_path / "clones" / "dotfiles").exists()
     assert "lost its clone" in run(["status"]).stderr
 
@@ -344,6 +374,28 @@ def test_a_source_that_becomes_a_folder_relinks_and_lets_its_clone_go(
     assert not (tmp_path / "clones" / "dotfiles").exists()
 
 
+def test_a_source_whose_folder_is_its_old_clone_keeps_it(
+    make_remote: MakeRemote, user_home: Path, tmp_path: Path
+) -> None:
+    subscribe(make_remote().url, "--add", "starship")
+    as_json(["apply", "--yes"])
+    clone = tmp_path / "clones" / "dotfiles"
+    ran = installed().cli(
+        [
+            "config",
+            "set",
+            "dotfiles.sources.dotfiles",
+            f'{{"path": "{clone}", "packages": {{"starship": {{}}}}}}',
+        ]
+    )
+    assert int(ran.exit) == 0, ran.stderr
+    (clone / "notes.txt").write_text("mine\n")
+    as_json(["apply", "--yes"])
+    assert (clone / "notes.txt").read_text() == "mine\n"
+    assert (clone / ".untaped/dotfiles/starship.yml").is_file()
+    assert set(states().values()) == {"applied"}
+
+
 def test_unsetting_an_input_leaves_what_it_placed(make_remote: MakeRemote, user_home: Path) -> None:
     subscribe(make_remote().url, "--add", "git")
     setting = "dotfiles.sources.dotfiles.packages.git.inputs.git_profile"
@@ -367,3 +419,6 @@ def test_an_item_left_out_after_it_was_placed_stays_as_it_is(
     rows = {r["entry"]: r["action"] for r in as_json(["apply", "--yes"])}
     assert rows["~/.claude/settings.json"] == "skipped"
     assert (user_home / ".claude/settings.json").is_file()
+    [shown] = as_json(["show", "claude/settings"])
+    [item] = shown["items"]  # type: ignore[misc]
+    assert [f["state"] for f in item["files"]] == ["excluded"]

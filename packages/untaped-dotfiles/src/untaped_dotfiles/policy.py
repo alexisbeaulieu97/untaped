@@ -34,7 +34,8 @@ class Policy(StrEnum):
     - `error`: could not be read (a git or filesystem failure); the row's
       `error` says why. A package file that doesn't load, a source that can't
       be opened, or a target two packages place, is reported on stderr and
-      counts as an `error` in the status files.
+      counts as an `error` in the status files; a disputed target keeps what
+      was placed there until one package lets it go.
 
     An entry whose target names an input with no value is `pending`, and
     what it placed before stays as it is.
@@ -42,8 +43,8 @@ class Policy(StrEnum):
     ## What `apply` does
 
     `apply` fetches every git source and moves each clone to the fetched
-    commit (a clone with local changes stays where it is, and its source
-    fails), then places every selected entry whatever its policy: `pending`,
+    commit (a clone with local changes stays where it is, and its source's
+    changes fail with a hint), then places every selected entry whatever its policy: `pending`,
     `foreign`, `behind` and `missing` entries are placed, `orphan` ones taken
     back, `excluded` ones left as they are, and `modified` or `conflict` ones
     refused unless `--force` (the local version is kept aside). A local

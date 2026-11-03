@@ -7,8 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Confirm, DryRun, Output, Positional, UsageError, key, plural, q, run_hint
-from untaped_dotfiles.catalog import Offer, Selection
+from untaped.sdk import Confirm, DryRun, Output, Positional, UsageError, key, plural, run_hint
+from untaped_dotfiles.catalog import Offer, Selection, gone_error
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.inventory import input_values
 from untaped_dotfiles.package import Item
@@ -241,10 +241,8 @@ def _usable(svc: Services, selection: Selection) -> None:
     if offer.error is not None:
         raise offer.error
     if offer.gone:
-        raise UsageError(
-            f"source {q(offer.source.name)} no longer has package {q(offer.name)}",
-            hint=f"{run_hint(Remove.spelled(offer.spelled))} takes back what it placed",
-        )
+        gone = gone_error(offer)
+        raise UsageError(str(gone), hint=gone.hint)
     excluded = offer.exclusion(svc.inventory.machine, selection.item)
     if excluded is not None:
         raise UsageError(f"{selection.spelled} doesn't apply on this machine: {excluded}")

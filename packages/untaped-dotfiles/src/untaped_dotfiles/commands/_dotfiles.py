@@ -10,7 +10,7 @@ from pathlib import Path
 
 from untaped.sdk import Command, ConfigError, UntapedError, key, run_hint
 from untaped_dotfiles.applier import Applier
-from untaped_dotfiles.catalog import Catalog, Offer
+from untaped_dotfiles.catalog import Catalog, Offer, gone_error
 from untaped_dotfiles.inventory import Inventory
 from untaped_dotfiles.models import Machine
 from untaped_dotfiles.placer import FilesystemPlacer
@@ -119,6 +119,7 @@ def package_row(offer: Offer, machine: Machine) -> Package:
 
     policy, chosen = offer.policy
     package = offer.package
+    error = gone_error(offer) if offer.gone else offer.error
     return Package(
         source=offer.source.name,
         name=offer.name,
@@ -129,9 +130,5 @@ def package_row(offer: Offer, machine: Machine) -> Package:
         items=len(package.items) if package is not None else 0,
         description=package.description if package is not None else "",
         excluded=offer.exclusion(machine),
-        error=(
-            Failure.from_exception(offer.error, message=str(offer.error))
-            if offer.error is not None
-            else None
-        ),
+        error=Failure.from_exception(error, message=str(error)) if error is not None else None,
     )
