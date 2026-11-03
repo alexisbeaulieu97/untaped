@@ -323,8 +323,9 @@ class SettingsFileRepository:
         A value stored under an old spelling of the key counts as the key's
         own; writing or removing the key removes every old spelling in the
         target profile, each reported to ``on_spelling_removed``. For an entry
-        of a map, those are the map's; removing an entry that isn't set
-        changes nothing.
+        of a map, those are the map's. Removing a key or entry that isn't set
+        (a run reads it from nowhere in the target, even as null) changes
+        nothing, and leaves its retired spellings for ``config migrate``.
         """
         return self.update_values(
             {key: update},
@@ -340,6 +341,7 @@ class SettingsFileRepository:
         profile: str | None = None,
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
+        on_unchanged: Callable[[str], None] | None = None,
         home_only_to_base: bool = False,
     ) -> str:
         """:meth:`update_value` for several keys as one change, under one config lock.
@@ -350,7 +352,8 @@ class SettingsFileRepository:
         one raising ``update`` writes nothing. ``home_only_to_base`` writes a
         key no profile may set to the base instead of refusing it: a plugin's
         own write names no place, so such a key lands where every run reads
-        it. Returns the profile the other keys land in.
+        it. Each key whose ``None`` removed nothing, as it wasn't set, is
+        reported to ``on_unchanged``. Returns the profile the other keys land in.
         """
         descriptors = {key: self.descriptor(key) for key in updates}
         based = {
@@ -376,7 +379,11 @@ class SettingsFileRepository:
                 where, name = targets[key]
                 raw_value = update(name, self._own(where, descriptor))
                 value = None if raw_value is None else _stored(key, descriptor, raw_value)
-                self._write(where, descriptor, value, on_spelling_removed, remove=raw_value is None)
+                changed = self._write(
+                    where, descriptor, value, on_spelling_removed, remove=raw_value is None
+                )
+                if not changed and on_unchanged is not None:
+                    on_unchanged(key)
             for key, descriptor in descriptors.items():
                 # A key sent to the base is read under the profile the others land in too.
                 for reader in dict.fromkeys((targets[key][1], written)):
@@ -433,35 +440,28 @@ class SettingsFileRepository:
         Then every old spelling no run reads any more goes, each reported to
         ``report``: the key's own, or for an entry of a map (or a setting
         inside one) the map's, as the map's name now wins over all of them.
-        Removing an entry that isn't set changes nothing. ``True`` when
-        anything was written or removed.
+        Removing what a run doesn't read (:meth:`_is_set`) changes nothing,
+        retired spellings included. ``True`` when anything was written or
+        removed.
         """
-        declared = self._declared(descriptor)
-        self._carry_old_map(data, descriptor, report, only_if_set=remove)
+        if remove and not self._is_set(data, descriptor):
+            return False
+        self._carry_old_map(data, descriptor, report)
         if remove:
-            changed = unset_at_path(data, descriptor.path, keep=descriptor.entry_depth)
-            if not changed and declared.path != descriptor.path:
-                return False
+            unset_at_path(data, descriptor.path, keep=descriptor.entry_depth)
         else:
             set_at_path(data, descriptor.path, value)
-            changed = True
-        return _remove_spellings(data, self._old_paths(declared), report) or changed
+        _remove_spellings(data, self._old_paths(self._declared(descriptor)), report)
+        return True
 
     def _carry_old_map(
-        self,
-        data: dict[str, Any],
-        descriptor: FieldDescriptor,
-        report: SpellingRemoved | None,
-        *,
-        only_if_set: bool = False,
+        self, data: dict[str, Any], descriptor: FieldDescriptor, report: SpellingRemoved | None
     ) -> None:
         """Move a map still under an old spelling to its name before one of its entries changes.
 
         Otherwise the entry would land under the new name, which wins over the
         old one, and the map's other entries would stop being read. Only the
         spelling the reader reads is carried (:meth:`_holder`).
-        ``only_if_set`` (an unset) leaves the map where it is unless it holds
-        ``descriptor``, so removing nothing changes nothing.
         """
         declared = self._declared(descriptor)
         if declared.path == descriptor.path:
@@ -470,12 +470,25 @@ class SettingsFileRepository:
         if holder is None or holder == declared.path:
             return
         value = _at_path(data, holder)
-        if only_if_set and not _has(value, descriptor.path[len(declared.path) :]):
-            return
         unset_at_path(data, holder)
         set_at_path(data, declared.path, value)
         if report is not None:
             report(".".join(holder))
+
+    def _is_set(self, data: dict[str, Any], descriptor: FieldDescriptor) -> bool:
+        """Whether a run reads ``descriptor`` from one profile's ``data``, even as null.
+
+        Under its name or an old spelling still read; an entry of a map, in
+        the map a run reads (:meth:`_holder`). A retired spelling is no one's.
+        """
+        declared = self._declared(descriptor)
+        if self.section_model(declared.path[0]) is None:
+            # Outside any settings section: no old spellings, only its own path.
+            return _has(data, descriptor.path)
+        holder = self._holder(data, declared)
+        if holder is None:
+            return False
+        return _has(_at_path(data, holder), descriptor.path[len(declared.path) :])
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
         """The key's raw value in one profile's ``data``, as a run reads it.
@@ -519,8 +532,7 @@ class SettingsFileRepository:
         ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
         (``removed=False``). Each old spelling removed is reported to
-        ``on_spelling_removed``; for an entry of a map, those are the map's,
-        and removing an entry that isn't set changes nothing.
+        ``on_spelling_removed``; for an entry of a map, those are the map's.
         """
         descriptor = self.descriptor(key)
         removed = False

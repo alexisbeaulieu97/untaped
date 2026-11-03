@@ -207,7 +207,7 @@ class SetSettings:
         """
         expected = expected or {}
         removed: list[str] = []
-        had: dict[str, bool] = {}
+        unchanged: list[str] = []
 
         def updater(key: str, value: str | None) -> Callable[[str, Any], str | None]:
             def update(target: str, current: Any) -> str | None:
@@ -216,7 +216,6 @@ class SetSettings:
                         f"{key} changed in profile {target} while it was open; nothing was written",
                         category="conflict",
                     )
-                had[key] = current is not None
                 return value
 
             return update
@@ -225,10 +224,11 @@ class SetSettings:
             {key: updater(key, value) for key, value in values.items()},
             profile=profile,
             on_spelling_removed=removed.append,
+            on_unchanged=unchanged.append,
         )
         changes: list[SettingChange] = []
         for key, value in values.items():
-            if value is None and not had.get(key):
+            if key in unchanged:
                 outcome = SettingOutcome(key=key, profile=target, action="unchanged")
                 changes.append(SettingChange(outcome))
                 continue
@@ -260,29 +260,29 @@ class PlannedSettings:
         self._changes = dict(changes)
         self._repo = repo
         repo_now = repo()
-        had: dict[str, bool] = {}
         landed: dict[str, str] = {}
         removed: list[str] = []
+        unchanged: list[str] = []
         repo_now.update_values(
-            self._updates(had, landed),
+            self._updates(landed),
             dry_run=True,
             on_spelling_removed=removed.append,
+            on_unchanged=unchanged.append,
             home_only_to_base=True,
         )
         self._lines = [
             *(
-                self._line(repo_now, key, value, landed[key], had=had[key])
+                self._line(repo_now, key, value, landed[key], had=key not in unchanged)
                 for key, value in self._changes.items()
             ),
             *(f"remove {old}, an old spelling{_landed(landed)}" for old in removed),
         ]
 
     def _updates(
-        self, had: dict[str, bool], landed: dict[str, str]
+        self, landed: dict[str, str]
     ) -> dict[str, Callable[[str, Any], str | Typed | None]]:
         def updater(key: str, value: object) -> Callable[[str, Any], Typed | None]:
             def update(target: str, current: Any) -> Typed | None:
-                had[key] = current is not None
                 landed[key] = target
                 return None if value is None else Typed(value)
 
@@ -313,15 +313,20 @@ class PlannedSettings:
         """Write every change as one under the lock, validated again against the file as it is."""
         repo = self._repo()
         holders = {key: _holder(repo, key) for key in self._changes}
-        had: dict[str, bool] = {}
         landed: dict[str, str] = {}
         removed: list[str] = []
+        unchanged: list[str] = []
         target = repo.update_values(
-            self._updates(had, landed), on_spelling_removed=removed.append, home_only_to_base=True
+            self._updates(landed),
+            on_spelling_removed=removed.append,
+            on_unchanged=unchanged.append,
+            home_only_to_base=True,
         )
         outcomes: list[SettingOutcome] = []
         for key, value in self._changes.items():
-            action = "updated" if value is not None else "deleted" if had[key] else "unchanged"
+            action = (
+                "unchanged" if key in unchanged else "updated" if value is not None else "deleted"
+            )
             outcomes.append(SettingOutcome(key=key, profile=landed[key], action=action))
             if action != "unchanged":
                 for _, text in _still_read(key, landed[key], holders[key]):

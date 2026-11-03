@@ -251,3 +251,27 @@ def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
     (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
     assert change.outcome.action == "unchanged"
     assert _config.read_text(encoding="utf-8") == text
+
+
+@pytest.mark.parametrize("key", ["spelled.groups", "spelled.size"])
+def test_removing_a_key_that_isnt_set_changes_nothing(_config: Path, key: str) -> None:
+    """A retired spelling is no one's value: removing the key leaves it, and says unchanged."""
+    text = "format_version: 2\nspelled:\n  a_groups: {ops: {lead: ana}}\n  a_size: 9\n"
+    _config.write_text(text, encoding="utf-8")
+    (change,) = SetSettings(SettingsFileRepository())({key: None})
+    assert (change.outcome.action, change.notes) == ("unchanged", ())
+    unset = UnsetSetting(SettingsFileRepository())(key)
+    assert unset.outcome.action == "unchanged"
+    assert unset.notes == (("info", f"{key} was not set in profile default"),)
+    assert _config.read_text(encoding="utf-8") == text
+
+
+def test_removing_a_null_a_run_reads_is_a_change(_config: Path) -> None:
+    """A null is set, as a run reads it: removing it writes the file and says so."""
+    _config.write_text("format_version: 2\nspelled:\n  size: null\n  a_size: 9\n", encoding="utf-8")
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.size": None})
+    assert change.outcome.action == "deleted"
+    assert change.notes == (
+        ("success", "unset spelled.size in profile default; removed spelled.a_size"),
+    )
+    assert not read_config_dict(_config).get("spelled")
