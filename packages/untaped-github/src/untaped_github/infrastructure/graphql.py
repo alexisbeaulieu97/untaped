@@ -4,8 +4,8 @@ This module runs the probe: chunking, alias bookkeeping, per-repo ref
 pagination, and transient 5xx/transport retry splitting. The query text
 and how answers read live in
 :mod:`untaped_github.infrastructure.graphql_queries`, and how failures read
-in :mod:`untaped_github.infrastructure.graphql_errors`. ``GithubClient``
-only wires an ``HttpClient`` and the derived GraphQL endpoint into
+in :mod:`untaped_github.infrastructure.graphql_errors`. ``Rest2022``
+only wires its ``HttpClient`` and the derived GraphQL endpoint into
 :func:`fetch_repo_refs`.
 
 Each chunk of repositories becomes one POST with aliases ``r0..rN`` that

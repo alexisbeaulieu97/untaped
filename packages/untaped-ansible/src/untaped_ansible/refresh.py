@@ -24,7 +24,6 @@ from untaped.sdk import (
     most_severe,
     plural,
 )
-from untaped.sdk.network import HttpFactory
 from untaped.sdk.storage import NO_PROGRESS, ProgressHandle, Served
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
@@ -44,7 +43,7 @@ from untaped_ansible.infrastructure import (
     SqliteDependencyIndex,
 )
 from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, SourceDefinition
-from untaped_github.api import GithubClient, GithubSettings, github_web_host
+from untaped_github.api import GithubSettings, github_api, github_web_host
 
 GIT_PARALLEL_CAP = 32
 """Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_parallel``)."""
@@ -79,7 +78,6 @@ class RefreshWiring:
     aliases: dict[str, str]
     settings: AnsibleSettings
     github_settings: GithubSettings
-    http: HttpFactory
     plugin: PluginHandle
     warn: Callable[[str], None]
     """Where the refresh's warnings go: the command's ``diag.warning``."""
@@ -172,7 +170,6 @@ def _filler(
             aliases=wiring.aliases,
             settings=wiring.settings,
             github_settings=wiring.github_settings,
-            http=wiring.http,
             plugin=wiring.plugin,
             concurrency=wiring.concurrency,
             backend=wiring.backend,
@@ -286,7 +283,6 @@ def refresh_source(
     aliases: dict[str, str],
     settings: AnsibleSettings,
     github_settings: GithubSettings,
-    http: HttpFactory,
     plugin: PluginHandle,
     concurrency: int,
     backend: Backend | None = None,
@@ -295,29 +291,26 @@ def refresh_source(
     """Run a git-backed source refresh with fully wired adapters."""
     # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
     protocol = github_settings.git_protocol
-    with GithubClient(github_settings, http=http) as github:
-        git = GitSourceStore(plugin=plugin)
-        selected_backend = backend or settings.source_refresh_backend
-        graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)
-        git_probe = GitRemoteRefProbe(
-            git, clone_protocol=protocol, concurrency=settings.probe_parallel
-        )
-        result = RefreshGitSourceIndex(
-            github=github,
-            git=git,
-            probe=AutoRefProbe(graphql_probe, git_probe, backend=selected_backend),
-            index=index,
-            aliases=aliases,
-            default_dependency_paths=settings.dependency_paths,
-            clone_protocol=protocol,
-            concurrency=concurrency,
-            ref_scan_default=settings.ref_scan_default,
-            repo_batch_size=settings.source_refresh_repo_batch_size,
-            rate_limit_floor=settings.source_refresh_rate_limit_floor,
-            progress=progress,
-            github_host=github_web_host(github_settings.api_url),
-        )(source, source_key=source_key)
-    return result
+    github = github_api(github_settings)
+    git = GitSourceStore(plugin=plugin)
+    selected_backend = backend or settings.source_refresh_backend
+    graphql_probe = GithubRefProbe(github, concurrency=settings.probe_parallel)
+    git_probe = GitRemoteRefProbe(git, clone_protocol=protocol, concurrency=settings.probe_parallel)
+    return RefreshGitSourceIndex(
+        github=github,
+        git=git,
+        probe=AutoRefProbe(graphql_probe, git_probe, backend=selected_backend),
+        index=index,
+        aliases=aliases,
+        default_dependency_paths=settings.dependency_paths,
+        clone_protocol=protocol,
+        concurrency=concurrency,
+        ref_scan_default=settings.ref_scan_default,
+        repo_batch_size=settings.source_refresh_repo_batch_size,
+        rate_limit_floor=settings.source_refresh_rate_limit_floor,
+        progress=progress,
+        github_host=github_web_host(github_settings.api_url),
+    )(source, source_key=source_key)
 
 
 def _warn_probe_fallbacks(result: RefreshResult, warn: Callable[[str], None]) -> None:

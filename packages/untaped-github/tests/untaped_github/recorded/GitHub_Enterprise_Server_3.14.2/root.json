@@ -1,0 +1,15 @@
+{
+  "request": "GET /",
+  "status": 200,
+  "headers": {
+    "X-GitHub-Enterprise-Version": "3.14.2"
+  },
+  "body": {
+    "current_user_url": "https://ghe.example.com/api/v3/user",
+    "authorizations_url": "https://ghe.example.com/api/v3/authorizations",
+    "code_search_url": "https://ghe.example.com/api/v3/search/code?q={query}{&page,per_page,sort,order}",
+    "organization_repositories_url": "https://ghe.example.com/api/v3/orgs/{org}/repos{?type,page,per_page,sort}",
+    "rate_limit_url": "https://ghe.example.com/api/v3/rate_limit",
+    "user_url": "https://ghe.example.com/api/v3/users/{user}"
+  }
+}

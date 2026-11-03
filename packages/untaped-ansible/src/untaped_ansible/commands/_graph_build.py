@@ -9,7 +9,6 @@ its warnings beside the graph, and :func:`with_graph_warnings` attaches them.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -30,28 +29,27 @@ from untaped_ansible.infrastructure import (
 )
 from untaped_ansible.refresh import format_skipped_dependency_file, ignored_collections_warning
 from untaped_ansible.settings import AnsibleSettings
-from untaped_github.api import GithubClient, github_token_found
+from untaped_github.api import GithubApi, github_token_found
 
 
 class LiveReads:
     """One live GitHub read index shared by every root of a graph command.
 
-    It opens the GitHub client on first use, so each repo/ref is read live
-    once per command however many ``find`` roots reach it.
+    It opens github's port on first use, so a command that reads nothing live
+    needs no token, and each repo/ref is read live once per command however
+    many ``find`` roots reach it.
     """
 
     def __init__(
         self,
-        stack: ExitStack,
+        open_github: Callable[[], GithubApi],
         *,
-        open_client: Callable[[], GithubClient],
         wrapped: DependencyIndex,
         aliases: dict[str, str],
         settings: AnsibleSettings,
         github_host: str | None,
     ) -> None:
-        self._stack = stack
-        self._open_client = open_client
+        self._open_github = open_github
         self._wrapped = wrapped
         self._aliases = aliases
         self._settings = settings
@@ -60,9 +58,8 @@ class LiveReads:
 
     def index(self) -> GithubDependencyIndex:
         if self._index is None:
-            github = self._stack.enter_context(self._open_client())
             self._index = GithubDependencyIndex(
-                github=github,
+                github=self._open_github(),
                 wrapped=self._wrapped,
                 aliases=self._aliases,
                 dependency_paths=self._settings.dependency_paths,

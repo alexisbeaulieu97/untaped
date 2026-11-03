@@ -22,6 +22,13 @@ For GitHub Enterprise Server, also point the profile at its API:
 untaped config set github.server.url https://github.example.com/api/v3
 ```
 
+untaped asks the server which release it runs (3.9 and later are supported)
+and checks again daily. To set it instead of asking:
+
+```bash
+untaped config set github.server_version "GitHub Enterprise Server 3.14.2"
+```
+
 With a default org,
 commands given no `--org`, `--team` or `--repo` use it. The token can also
 come from the GitHub CLI or `GH_TOKEN`; see

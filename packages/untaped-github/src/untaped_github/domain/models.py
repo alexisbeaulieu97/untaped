@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from untaped.sdk import ErrorCategory
 
 RefKind = Literal["heads", "tags"]
-"""Ref namespace probed by ``GithubClient.batch_repo_refs``."""
+"""Ref namespace probed by ``GithubApi.batch_repo_refs``."""
 
 BatchRepoRefsFailureKind = Literal["server_error", "transport", "request"]
 """Why a batched GraphQL ref probe could not read a repo.

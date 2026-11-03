@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, Protocol
 
 from untaped.sdk.storage import NO_PROGRESS
@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         LocalRef,
         RefSelector,
     )
+    from untaped_github.domain.models import BatchRepoRefsResult
     from untaped_github.records import CacheDeleteOutcome, CorpusRepo, Worktree
 
 
@@ -72,6 +73,56 @@ class GithubRepositoryInventoryService(GithubRepoListService, Protocol):
     """Repository metadata endpoints used by reusable inventory expansion."""
 
     def get_repository(self, owner: str, repo: str) -> dict[str, Any]: ...
+
+
+class GithubApi(GithubMeService, GithubSearchService, GithubRepositoryInventoryService, Protocol):
+    """github's port: every call its commands, providers and ansible make to the GitHub API.
+
+    One adapter per REST API version serves it
+    (:class:`untaped_github.infrastructure.rest_2022.Rest2022`); commands reach it
+    through ``SERVER_API.port(settings)``. Rows are GitHub's JSON objects.
+    """
+
+    def list_matching_refs(
+        self, owner: str, repo: str, namespace: str
+    ) -> Iterator[dict[str, Any]]: ...
+
+    def get_tree(
+        self, owner: str, repo: str, tree_sha: str, *, recursive: bool = False
+    ) -> dict[str, Any]: ...
+
+    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str: ...
+
+    def batch_repo_refs(
+        self,
+        repos: Sequence[str],
+        *,
+        kinds: Sequence[str] = ("heads", "tags"),
+        chunk_size: int = 50,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> BatchRepoRefsResult:
+        """Probe branch and tag heads for many ``owner/name`` repos in batched GraphQL queries.
+
+        Batches ``chunk_size`` repos per query, ``concurrency`` at once;
+        ``kinds`` selects the ref namespaces, and passing only ``("heads",)``
+        halves the GraphQL cost. ``on_progress(done, total)`` hears of each
+        finished chunk in repos. A chunk whose request fails for any reason
+        but a GraphQL error (which stops the probe) returns its repos in
+        ``BatchRepoRefsResult.failures``.
+        """
+        ...
+
+    def batch_default_branch_refs(
+        self,
+        repos: Sequence[str],
+        *,
+        chunk_size: int = 100,
+        concurrency: int = 1,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> BatchRepoRefsResult:
+        """Probe only default-branch heads, as :meth:`batch_repo_refs` probes and reports."""
+        ...
 
 
 class GitCorpus(Protocol):
