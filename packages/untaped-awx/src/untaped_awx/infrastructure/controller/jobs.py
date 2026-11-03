@@ -69,7 +69,10 @@ class Jobs(ControllerPart):
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
         return self._paginate(
-            f"{_collection(kind)}/", params={"order_by": "-id", **(params or {})}, limit=limit
+            f"{_collection(kind)}/",
+            params={"order_by": "-id", **(params or {})},
+            limit=limit,
+            collection=True,
         )
 
     def job(self, *, kind: str, job_id: int) -> dict[str, Any]:

@@ -112,8 +112,8 @@ def recorded_answer(version: ServerVersion, name: str) -> Any:
     return json.loads((folder / f"{name}.json").read_text(encoding="utf-8"))
 
 
-class ClientRepository(ResourceRepository):
-    """A :class:`ResourceRepository` over a given client: the repository's own tests."""
+class ClientRepository(ResourceRepository, UnifiedTemplates):
+    """The resource reads and writes over a given client: :class:`ResourceLookups`' own tests."""
 
     def __init__(self, client: AwxClient, *, page_size: int = 200) -> None:
         self._given = client
@@ -153,6 +153,8 @@ class RecordingController(Jobs, WorkflowNodes, UnifiedTemplates):
         self.listings: list[tuple[str, dict[str, str], int | None]] = []
         #: Every text request: method, path, params.
         self.text_calls: list[Call] = []
+        #: The paths of the calls made to a collection (``collection=True``).
+        self.collections: list[str] = []
 
     @property
     def _client(self) -> AwxClient:
@@ -165,7 +167,10 @@ class RecordingController(Jobs, WorkflowNodes, UnifiedTemplates):
         *,
         params: Mapping[str, str] | None = None,
         json: dict[str, Any] | None = None,
+        collection: bool = False,
     ) -> dict[str, Any]:
+        if collection:
+            self.collections.append(path)
         self.json_calls.append((method, path, dict(params or {})))
         self.bodies.append(json)
         return self._answers.pop(0) if self._answers else {"results": [], "next": None}
@@ -176,9 +181,10 @@ class RecordingController(Jobs, WorkflowNodes, UnifiedTemplates):
         *,
         params: Mapping[str, str] | None = None,
         limit: int | None = None,
+        collection: bool = False,
     ) -> Iterator[dict[str, Any]]:
         self.listings.append((path, dict(params or {}), limit))
-        page = self._request("GET", path, params=params)
+        page = self._request("GET", path, params=params, collection=collection)
         while True:
             yield from page.get("results") or []
             if not page.get("next"):

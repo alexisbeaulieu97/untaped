@@ -205,6 +205,10 @@ class ResourceSpec(BaseModel):
     """
     async_delete: bool = False
     """AWX deletes this kind in the background, even when it answers 204."""
+    variant: str | None = None
+    """The variant of the kind a record is written as, when the server writes
+    some records of a kind apart: ``constructed`` for a constructed
+    ``Inventory``; ``None`` for the kind's plain records."""
     apply_strategy: str = "default"
     """Behavior selector: which write path the apply pipeline dispatches to.
     The string is opaque to the domain — :class:`StrategyResolver` (an

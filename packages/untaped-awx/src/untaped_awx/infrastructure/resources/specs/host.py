@@ -18,7 +18,6 @@ HOST_SPEC = AwxResourceSpec(
     kind="Host",
     record=Host,
     cli_name="hosts",
-    api_path="hosts",
     structured_text_fields=("variables",),
     identity_keys=("name",),  # unique within parent (Inventory)
     canonical_fields=("description", "enabled", "instance_id", "variables"),

@@ -93,7 +93,7 @@ class ApiMismatch(UntapedError):
     category = ErrorCategory.FAILED
     #: What the server was asked: ``POST /rest/api/2/search``.
     request: str | None
-    #: How it answered: ``HTTP 404 without its own error``.
+    #: How it answered: ``HTTP 404``.
     answer: str | None
 
     def __init__(
@@ -137,7 +137,7 @@ class ApiMismatch(UntapedError):
             if sent is not None:
                 sent.accepted_nothing = True
             asked = str(sent) if sent is not None else exc.url
-            raise cls._made(asked, f"HTTP {exc.status_code} without its own error") from exc
+            raise cls._made(asked, f"HTTP {exc.status_code}") from exc
         except HttpError as exc:
             if exc.status_code is None or exc.status_code >= 400:
                 raise

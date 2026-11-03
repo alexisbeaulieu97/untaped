@@ -83,7 +83,7 @@ def test_watch_turns_a_404_without_the_vendors_body_into_a_mismatch_that_accepte
     ):
         client.post("/gone")
     assert caught.value.request == "POST /gone"
-    assert caught.value.answer == "HTTP 404 without its own error"
+    assert caught.value.answer == "HTTP 404"
     assert log.sent[0].accepted_nothing
     assert not log.wrote
 

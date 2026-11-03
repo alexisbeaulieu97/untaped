@@ -4,9 +4,9 @@ For each ``FkRef(multi=True, sub_endpoint=…)`` on a spec (today: only
 ``GROUP_SPEC.hosts`` / ``GROUP_SPEC.children``), the reconciler:
 
 1. Reads the desired list of member names from ``resource.spec[ref.field]``.
-2. Fetches the existing members from
-   ``GET /<api_path>/<id>/<sub_endpoint>/`` (skipped when the resource
-   doesn't exist yet — ``record_id is None``).
+2. Fetches the existing members of the record's ``sub_endpoint``
+   relation (skipped when the resource doesn't exist yet —
+   ``record_id is None``).
 3. Computes ``to_associate`` (in desired but not existing) and
    ``to_disassociate`` (in existing but not desired).
 4. Builds a :class:`FieldChange` row when there's any diff so the

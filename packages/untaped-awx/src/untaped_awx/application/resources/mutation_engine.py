@@ -40,7 +40,7 @@ from untaped_awx.application.resources.mutation_values import redact_error, sema
 from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
-    RawHttpResourceClient,
+    NestedResourceClient,
     ResourceClient,
     StrategyResolver,
     WorkflowNodeRepository,
@@ -73,7 +73,7 @@ class BatchMutationEngine:
 
     def __init__(
         self,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         catalog: Catalog,
         fk: FkResolver,
         strategies: StrategyResolver,

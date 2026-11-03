@@ -21,7 +21,6 @@ def _spec(*fk_refs: FkRef) -> AwxResourceSpec:
     return AwxResourceSpec(
         kind="Test",
         cli_name="tests",
-        api_path="tests",
         identity_keys=("name",),
         canonical_fields=("name",),
         fk_refs=fk_refs,

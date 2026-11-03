@@ -13,10 +13,23 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
+from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.controller._part import ControllerPart
 
 _NODES = "workflow_job_template_nodes"
 _APPROVALS = "workflow_approval_templates"
+#: Prompt relations newer than some controllers this adapter serves: an older one
+#: has none, and answers its own 404 for them.
+_LATER_PROMPTS = frozenset({"labels", "instance_groups"})
+
+
+def _or_none(members: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+    """``members``, or none where the controller answers that the relation isn't there."""
+    try:
+        yield from members
+    except AwxApiError as exc:
+        if exc.status_code != 404:
+            raise
 
 
 def _workflow_nodes(workflow_id: int) -> str:
@@ -42,10 +55,11 @@ class WorkflowNodes(ControllerPart):
     ) -> Iterator[dict[str, Any]]:
         # Our key goes last so a caller's ``unified_job_template`` filter cannot widen the query.
         merged = {**(params or {}), "unified_job_template": str(unified_job_template)}
-        return self._paginate(f"{_NODES}/", params=merged)
+        return self._paginate(f"{_NODES}/", params=merged, collection=True)
 
     def list_node_members(self, *, node_id: int, relation: str) -> Iterator[dict[str, Any]]:
-        return self._paginate(f"{_NODES}/{node_id}/{relation}/")
+        members = self._paginate(f"{_NODES}/{node_id}/{relation}/")
+        return _or_none(members) if relation in _LATER_PROMPTS else members
 
     def create_node(self, *, workflow_id: int, body: dict[str, Any]) -> dict[str, Any]:
         return self._request("POST", _workflow_nodes(workflow_id), json=body)

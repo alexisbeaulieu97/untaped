@@ -15,8 +15,8 @@ from typing import Any, Protocol
 
 from untaped_awx.application.jobs.ports import Executions
 from untaped_awx.application.resources.ports import (
+    NestedResourceClient,
     ProjectPlaybooks,
-    RawHttpResourceClient,
     UnifiedTemplateRepository,
     WorkflowNodeRepository,
 )
@@ -24,18 +24,18 @@ from untaped_awx.domain import Job
 
 
 class AwxPingService(Protocol):
-    """Returns the raw AAP ``/ping/`` payload; :class:`Ping` validates
+    """The controller's raw health payload; :class:`Ping` validates
     the shape into a :class:`PingStatus` entity."""
 
     def ping(self) -> dict[str, Any]: ...
 
     def me(self) -> dict[str, Any]:
-        """Authenticated ``/me/`` list payload; fails when the token is rejected."""
+        """The signed-in user's payload; fails when the token is rejected."""
         ...
 
 
 class AwxApi(
-    RawHttpResourceClient,
+    NestedResourceClient,
     ProjectPlaybooks,
     Executions,
     UnifiedTemplateRepository,

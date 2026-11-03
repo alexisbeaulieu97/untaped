@@ -1,10 +1,11 @@
 """Unit tests for :class:`InventoryChildApplyStrategy`.
 
 The strategy is the parent-scoped write path used by Host and Group:
-creates POST against ``/inventories/<id>/<api_path>/`` (so ``inventory``
-is implied by the URL), updates use the global ``/<api_path>/<id>/``
-endpoint, and ``find_existing`` filters the nested list by name with
-the same ambiguity guard as :class:`DefaultApplyStrategy`.
+creates go under their inventory (so ``inventory`` is implied by where
+they land), updates go to the record itself, and ``find_existing``
+filters the inventory's members by name with the same ambiguity guard
+as :class:`DefaultApplyStrategy`. Where those live on the server is the
+adapter's business, tested with the controller.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import Any, cast
 
 import pytest
 
-from untaped_awx.application.resources.ports import FkResolver, RawHttpResourceClient
+from untaped_awx.application.resources.ports import FkResolver, NestedResourceClient
 from untaped_awx.domain import IdentityRef, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.errors import AmbiguousIdentityError, BadRequestError
 from untaped_awx.infrastructure.resources.specs import GROUP_SPEC, HOST_SPEC
@@ -32,27 +33,24 @@ class _StubClient:
         self._find_results = find_results or []
         self._find_count = find_count if find_count is not None else len(self._find_results)
         self.update_calls: list[tuple[str, int, dict[str, Any]]] = []
-        self.request_calls: list[tuple[str, str, dict[str, Any], dict[str, str]]] = []
+        self.nested_calls: list[tuple[str, str, int, str, dict[str, Any]]] = []
 
     def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord:
         body = payload.model_dump()
         self.update_calls.append((spec.kind, id_, body))
         return ServerRecord(id=id_, **body)
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        self.nested_calls.append(("find", parent_kind, parent_id, spec.kind, {"name": name}))
+        return list(self._find_results), self._find_count
+
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
     ) -> dict[str, Any]:
-        self.request_calls.append((method, path, json or {}, dict(params or {})))
-        if method == "GET":
-            return {"count": self._find_count, "results": list(self._find_results)}
-        if method == "POST":
-            return {"id": 100, **(json or {})}
-        return {}
+        self.nested_calls.append(("create", parent_kind, parent_id, spec.kind, body))
+        return {"id": 100, **body}
 
 
 class _StubFk:
@@ -91,12 +89,11 @@ def test_create_posts_to_nested_inventory_endpoint() -> None:
             **_identity(),
             "_prepared_parent": s.prepare_parent(HOST_SPEC, _identity(), fk=cast(FkResolver, fk)),
         },
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, fk),
     )
-    method, path, body, _ = client.request_calls[-1]
-    assert method == "POST"
-    assert path == "inventories/42/hosts/"
+    action, parent_kind, parent_id, kind, body = client.nested_calls[-1]
+    assert (action, parent_kind, parent_id, kind) == ("create", "Inventory", 42, "Host")
     assert body["name"] == "web-01"
     assert body["description"] == "frontend"
     # Inventory FK lookup is org-scoped (the parent IdentityRef carries it).
@@ -105,35 +102,30 @@ def test_create_posts_to_nested_inventory_endpoint() -> None:
     assert scope == {"organization": "Default"}
 
 
-def test_create_uses_group_api_path_for_group_kind() -> None:
+def test_create_puts_a_group_under_its_inventory() -> None:
     client = _StubClient()
     s = InventoryChildApplyStrategy()
     s.create(
         GROUP_SPEC,
         {"name": "web", "description": "Web servers"},
         {**_identity(name="web"), "_prepared_parent": ("Inventory", 42)},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
-    _, path, _, _ = client.request_calls[-1]
-    assert path == "inventories/42/groups/"
+    assert client.nested_calls[-1][:4] == ("create", "Inventory", 42, "Group")
 
 
-def test_find_existing_uses_nested_endpoint_with_name_filter() -> None:
+def test_find_existing_looks_by_name_under_the_inventory() -> None:
     client = _StubClient(find_results=[{"id": 7, "name": "web-01"}], find_count=1)
     s = InventoryChildApplyStrategy()
     found = s.find_existing(
         HOST_SPEC,
         _identity(),
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
     assert found == {"id": 7, "name": "web-01"}
-    method, path, _, params = client.request_calls[0]
-    assert method == "GET"
-    assert path == "inventories/42/hosts/"
-    assert params["name"] == "web-01"
-    assert params["page_size"] == "2"
+    assert client.nested_calls == [("find", "Inventory", 42, "Host", {"name": "web-01"})]
 
 
 def test_find_existing_returns_none_when_no_match() -> None:
@@ -142,7 +134,7 @@ def test_find_existing_returns_none_when_no_match() -> None:
     found = s.find_existing(
         HOST_SPEC,
         _identity(),
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk(inventory_id=42)),
     )
     assert found is None
@@ -158,7 +150,7 @@ def test_find_existing_raises_when_two_results() -> None:
         s.find_existing(
             HOST_SPEC,
             _identity(),
-            client=cast(RawHttpResourceClient, client),
+            client=cast(NestedResourceClient, client),
             fk=cast(FkResolver, _StubFk(inventory_id=42)),
         )
     assert excinfo.value.kind == "Host"
@@ -172,7 +164,7 @@ def test_update_uses_global_endpoint() -> None:
         HOST_SPEC,
         {"id": 9, "name": "web-01"},
         {"description": "new"},
-        client=cast(RawHttpResourceClient, client),
+        client=cast(NestedResourceClient, client),
         fk=cast(FkResolver, _StubFk()),
     )
     assert client.update_calls == [("Host", 9, {"description": "new"})]

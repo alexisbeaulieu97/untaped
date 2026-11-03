@@ -38,7 +38,7 @@ from untaped_awx.application.resources.ports import (
     ApplyStrategy,
     Catalog,
     FkResolver,
-    RawHttpResourceClient,
+    NestedResourceClient,
     StrategyResolver,
 )
 from untaped_awx.application.resources.prepared_body import BodyOperations
@@ -152,7 +152,7 @@ class MutationPlanner:
 
     def __init__(
         self,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         catalog: Catalog,
         fk: FkResolver,
         strategies: StrategyResolver,

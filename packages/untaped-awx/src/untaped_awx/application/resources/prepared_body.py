@@ -16,7 +16,7 @@ from untaped.sdk import plural
 from untaped_awx.application.resources.apply_field_diff import PRESERVED_SECRET_NOTE, FieldDiff
 from untaped_awx.application.resources.apply_secret_policy import SecretPreservationPolicy
 from untaped_awx.application.resources.apply_verifier import ApplyVerifier
-from untaped_awx.application.resources.ports import RawHttpResourceClient
+from untaped_awx.application.resources.ports import NestedResourceClient
 from untaped_awx.domain import FieldChange, Resource, ResourceSpec
 from untaped_awx.domain.secret_paths import (
     covered_by,
@@ -44,7 +44,7 @@ UNVERIFIED_KEPT = "continuing because --allow-unverified was set"
 class BodyOperations:
     def __init__(
         self,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         *,
         warn: Callable[[str], None],
         secret_policy: SecretPreservationPolicy,

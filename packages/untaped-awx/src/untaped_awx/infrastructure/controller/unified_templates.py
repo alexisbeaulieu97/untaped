@@ -25,13 +25,20 @@ class UnifiedTemplates(ControllerPart):
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        return self._paginate(_PATH, params={"order_by": "name", **(params or {})}, limit=limit)
+        return self._paginate(
+            _PATH, params={"order_by": "name", **(params or {})}, limit=limit, collection=True
+        )
+
+    def unified_template(self, id_: int) -> dict[str, Any]:
+        return self._record(f"{_PATH}{id_}/", kind="UnifiedJobTemplate", id_=id_)
 
     def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         # An empty ``id__in=`` filter matches every record, so no ids asks nothing.
         if not ids:
             return iter(())
-        return self._paginate(_PATH, params={"id__in": ",".join(ids), "order_by": "id"})
+        return self._paginate(
+            _PATH, params={"id__in": ",".join(ids), "order_by": "id"}, collection=True
+        )
 
 
 __all__ = ["UnifiedTemplates"]
