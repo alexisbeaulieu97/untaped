@@ -12,15 +12,21 @@ import json
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
+from pathlib import Path
 from typing import Any
 
 from untaped.runtime.bootstrap import build_root_app
+from untaped.sdk.network import ServerVersion
+from untaped.sdk.storage import safe_path_segment
 from untaped.sdk.testing import CliResult, Install, PromptBackend, install, invoke_cli
 from untaped.sdk.testing.fixtures import current_terminal
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.controller import Ping
 from untaped_awx.plugin import Awx
 from untaped_awx.settings import AwxSettings
+
+#: What each recorded controller version answered, one folder per version.
+RECORDED = Path(__file__).parent / "untaped_awx" / "recorded"
 
 #: The ``awx`` settings the next run uses (the ``settings`` fixture), by field.
 type Settings = dict[str, Any]
@@ -93,3 +99,9 @@ def human(stderr: str) -> str:
         item = f"{record['item']}: " if record.get("item") else ""
         lines.append(f"{record['level']}: {item}{record['message']}")
     return "".join(f"{line}\n" for line in lines)
+
+
+def recorded_answer(version: ServerVersion, name: str) -> Any:
+    """What ``version``'s controller answered, recorded as ``recorded/<version>/<name>.json``."""
+    folder = RECORDED / safe_path_segment(str(version))
+    return json.loads((folder / f"{name}.json").read_text(encoding="utf-8"))

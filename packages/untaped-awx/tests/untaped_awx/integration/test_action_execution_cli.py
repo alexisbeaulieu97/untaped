@@ -26,7 +26,7 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
     seed_templates(fake_aap)
     fake_aap.seed("workflow_jobs", id=101, name="sliced", status=status)
     fake_aap.router.routes.clear()
-    route = fake_aap.router.post("https://aap.example.com/api/v2/job_templates/50/launch/").respond(
+    route = fake_aap.router.post(fake_aap.url("job_templates/50/launch/")).respond(
         201, json={"id": 101, "type": "workflow_job", "status": "pending"}
     )
     fake_aap.install(fake_aap.router)
@@ -47,8 +47,8 @@ def test_sliced_launch_wait_keeps_mixed_execution_kinds(
     paths = [
         call.request.url.path for call in fake_aap.router.calls if call.request.method == "GET"
     ]
-    assert "/api/v2/workflow_jobs/101/" in paths
-    assert "/api/v2/jobs/101/" not in paths
+    assert fake_aap.path("workflow_jobs/101/") in paths
+    assert fake_aap.path("jobs/101/") not in paths
 
 
 @pytest.mark.parametrize(
@@ -67,7 +67,7 @@ def test_invalid_response_keeps_execution_id_without_retry_or_monitoring(
 ) -> None:
     seed_templates(fake_aap)
     fake_aap.router.routes.clear()
-    route = fake_aap.router.post("https://aap.example.com/api/v2/job_templates/50/launch/").respond(
+    route = fake_aap.router.post(fake_aap.url("job_templates/50/launch/")).respond(
         201, json=response
     )
     fake_aap.install(fake_aap.router)
@@ -155,7 +155,7 @@ def test_follow_pending_to_terminal_uses_only_supported_routes(
         for c in fake_aap.router.calls
         if f"/{collection}/101/" in c.request.url.path
     ]
-    detail = f"/api/v2/{collection}/101/"
+    detail = fake_aap.path(f"{collection}/101/")
     if kind == "workflow_job":
         assert paths and set(paths) == {detail}
         assert "pending" in result.stderr and status in result.stderr
@@ -168,14 +168,14 @@ def test_follow_pending_to_terminal_uses_only_supported_routes(
 @pytest.mark.parametrize("subpath", ["job_events", "events", "stdout"])
 def test_fake_rejects_invented_workflow_routes(fake_aap: Any, subpath: str) -> None:
     fake_aap.seed("workflow_jobs", id=101, status="successful")
-    response = httpx.get(f"https://aap.example.com/api/v2/workflow_jobs/101/{subpath}/")
+    response = httpx.get(fake_aap.url(f"workflow_jobs/101/{subpath}/"))
     assert response.status_code == 404
 
 
 @pytest.mark.parametrize("collection", ["project_updates", "inventory_updates"])
 def test_fake_rejects_invented_update_job_events(fake_aap: Any, collection: str) -> None:
     fake_aap.seed(collection, id=101, status="successful")
-    response = httpx.get(f"https://aap.example.com/api/v2/{collection}/101/job_events/")
+    response = httpx.get(fake_aap.url(f"{collection}/101/job_events/"))
     assert response.status_code == 404
 
 
@@ -187,4 +187,6 @@ def test_workflow_event_and_log_commands_fail_without_unsupported_requests(
     result = run(["jobs", command, "101", "--kind", "workflow_job"])
     assert result.exit_code == 1, result.output
     assert "workflow_job" in result.output and "not" in result.output
-    assert [c.request.url.path for c in fake_aap.router.calls] == ["/api/v2/workflow_jobs/101/"]
+    assert [c.request.url.path for c in fake_aap.router.calls] == [
+        fake_aap.path("workflow_jobs/101/")
+    ]

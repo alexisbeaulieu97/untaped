@@ -15,33 +15,6 @@ def _mock_me(mock: respx.Router, path: str = "/api/v2/me/") -> None:
     mock.get(path).mock(return_value=httpx.Response(200, json={"results": [{"username": "admin"}]}))
 
 
-@pytest.mark.parametrize(
-    ("api_prefix", "expected_path"),
-    [
-        (None, "/api/controller/v2/ping/"),  # AAP default
-        ("/api/v2/", "/api/v2/ping/"),  # upstream AWX
-    ],
-)
-def test_ping_uses_configured_api_prefix(
-    settings: Settings, api_prefix: str | None, expected_path: str
-) -> None:
-    if api_prefix is None:
-        del settings["api_prefix"]
-
-    with respx.mock(base_url="https://aap.example.com") as mock:
-        _mock_me(mock, expected_path.replace("ping/", "me/"))
-        mock.get(expected_path).mock(
-            return_value=httpx.Response(
-                200,
-                json={"version": "4.5.0", "active_node": "controller-1"},
-            )
-        )
-        result = run(["ping", "--format", "raw", "--columns", "version"])
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.strip() == "4.5.0"
-
-
 def test_ping_table_renders_detail_view() -> None:
     """A single entity renders as a vertical key:value detail view under the
     default config — not a boxed one-row table (the ``emit`` single-record
@@ -313,7 +286,10 @@ def test_apply_takes_a_positional_file_and_advertises_parallel(command: list[str
     ("variable", "value"),
     [
         ("UNTAPED_AWX__SERVER__URL", "https://aap.example.com"),
-        ("UNTAPED_AWX", '{"server": {"url": "https://aap.example.com"}, "api_prefix": "/api/v2/"}'),
+        (
+            "UNTAPED_AWX",
+            '{"server": {"url": "https://aap.example.com"}, "server_version": "AWX 24.6.1"}',
+        ),
     ],
 )
 def test_a_variable_sets_the_server(

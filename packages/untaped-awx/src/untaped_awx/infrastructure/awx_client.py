@@ -1,110 +1,122 @@
-"""HTTP client for the AAP / AWX REST API.
+"""HTTP client for the AAP / AWX REST API, under one controller API prefix.
 
-URL composition flows through :meth:`AwxClient._url` so every call respects
-the configured ``api_prefix`` (default ``/api/controller/v2/`` for AAP;
-upstream AWX users set it to ``/api/v2/``).
+:class:`~untaped_awx.infrastructure.controller.ControllerV2` builds one per
+connection: URL composition flows through :meth:`AwxClient._url`, so every call
+lands under the prefix the controller's version calls for (``/api/v2/``, or
+``/api/controller/v2/`` behind AAP's platform gateway). Every request runs
+inside :meth:`ApiMismatch.watch <untaped.sdk.network.ApiMismatch.watch>`: a
+404 or 405 without AWX's own ``detail`` body, or a 2xx answer that doesn't
+read, says the server no longer answers as this API does.
 """
 
 from __future__ import annotations
 
-from types import TracebackType
-from typing import Any
+import json
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any
 
-from untaped.sdk.network import HttpFactory, same_origin
+from untaped.sdk.network import ApiMismatch, same_origin
 from untaped_awx.errors import AwxApiError
 from untaped_awx.infrastructure.errors import map_awx_errors
-from untaped_awx.settings import TOKEN, AwxSettings
+
+if TYPE_CHECKING:
+    from untaped.sdk import HttpStatusError
+    from untaped.sdk.network import HttpClient
+
+
+def awx_error(error: HttpStatusError) -> bool:
+    """Whether a 404 or 405 is AWX's own answer: a JSON body with its ``detail``.
+
+    AWX answers a missing record (``{"detail": "Not found."}``) and a refused
+    method that way; anything else (a proxy's page, an empty body) is a path
+    this server doesn't have.
+    """
+    try:
+        body = json.loads(error.body or "")
+    except ValueError:
+        return False
+    return isinstance(body, dict) and isinstance(body.get("detail"), str)
 
 
 class AwxClient:
-    """Talks to AAP/AWX REST endpoints using the configured token."""
+    """Talks to AAP/AWX REST endpoints under ``prefix`` through one ``http`` client."""
 
-    def __init__(self, config: AwxSettings, *, http: HttpFactory) -> None:
-        # A token-less client can still hit unauthenticated endpoints like
-        # `ping/`; when a token is found for the server, it is the bearer.
-        server = config.server
-        self._base_url = "" if server is None else str(server.url)
-        self._http = http.client(
-            config,
-            base_url=self._base_url,
-            bearer=TOKEN.find(server),
-            verify=True if server is None else server.verify_tls,
-            headers={"Accept": "application/json"},
-        )
-        self._api_prefix = config.api_prefix
+    def __init__(self, http: HttpClient, *, prefix: str, base_url: str) -> None:
+        self._http = http
+        self._prefix = prefix
+        self._base_url = base_url
+
+    @staticmethod
+    @contextmanager
+    def _watched() -> Iterator[None]:
+        with ApiMismatch.watch(vendor_error=awx_error):
+            yield
 
     def _url(self, path: str) -> str:
-        """Join ``api_prefix`` with a relative resource path.
+        """Join the prefix with a relative resource path.
 
         ``path`` must NOT start with ``/`` — it's a path under the prefix
         (e.g. ``ping/``, ``job_templates/42/``).
         """
-        return f"{self._api_prefix}{path.lstrip('/')}"
+        return f"{self._prefix}{path.lstrip('/')}"
 
     def ping(self) -> dict[str, Any]:
-        return self._http.get_json_dict(self._url("ping/"))
+        with self._watched():
+            return self._http.get_json_dict(self._url("ping/"))
 
     def me(self) -> dict[str, Any]:
         """``GET me/``: the authenticated user (401 maps to ConfigError)."""
-        with map_awx_errors():
+        with map_awx_errors(), self._watched():
             return self._http.get_json_dict(self._url("me/"))
 
     def get_json(self, path: str, **kwargs: Any) -> Any:
-        """GET ``<api_prefix><path>`` and return the JSON body."""
-        return self._http.get_json(self._url(path), **kwargs)
+        """GET ``<prefix><path>`` and return the JSON body."""
+        with self._watched():
+            return self._http.get_json(self._url(path), **kwargs)
 
     def post_json(self, path: str, **kwargs: Any) -> Any:
-        """POST ``<api_prefix><path>`` and return the JSON body."""
-        return self._http.post_json(self._url(path), **kwargs)
+        """POST ``<prefix><path>`` and return the JSON body."""
+        with self._watched():
+            return self._http.post_json(self._url(path), **kwargs)
 
     def request_json(self, method: str, path: str, **kwargs: Any) -> Any:
-        """Generic verb under ``<api_prefix>``. Returns the JSON body
+        """Generic verb under the prefix. Returns the JSON body
         or ``None`` for empty 204 responses (e.g. DELETE)."""
-        return self._http.request_json(method, self._url(path), **kwargs)
+        with self._watched():
+            return self._http.request_json(method, self._url(path), **kwargs)
 
     def delete(self, path: str) -> int:
         """Keep the HTTP status so callers do not confuse 202 with removal."""
-        return self._http.request("DELETE", self._url(path)).status_code
+        with self._watched():
+            return self._http.request("DELETE", self._url(path)).status_code
 
     def request_text(self, method: str, path: str, **kwargs: Any) -> str:
-        """Generic verb under ``<api_prefix>``; returns the raw response body
+        """Generic verb under the prefix; returns the raw response body
         as text (no JSON decode). Use for endpoints like ``jobs/<id>/stdout/``.
 
-        The constructor pins ``Accept: application/json`` on the shared
-        httpx client so JSON endpoints negotiate cleanly. Text endpoints
+        The adapter's connection pins ``Accept: application/json`` so JSON
+        endpoints negotiate cleanly. Text endpoints
         like ``jobs/<id>/stdout/`` return ``text/plain`` and reject the
         JSON Accept with HTTP 406 — override per-call here so callers
         don't have to know. Any caller-supplied ``headers`` still win.
         """
         headers = {"Accept": "text/plain", **(kwargs.pop("headers", None) or {})}
-        response = self._http.request(method, self._url(path), headers=headers, **kwargs)
-        return response.text
+        with self._watched():
+            return self._http.request(method, self._url(path), headers=headers, **kwargs).text
 
     def get_absolute_json(self, absolute_path: str, **kwargs: Any) -> Any:
-        """GET an absolute server path (already includes ``api_prefix``).
+        """GET an absolute server path (already including the prefix).
 
         Used to follow AWX's pagination ``next`` URLs, which come back
         as full paths and would double-prefix if passed through
         :meth:`_url`. A URL naming another scheme, host or port than the
-        configured ``server.url`` is refused, so the token never leaves it.
+        configured ``awx.server.url`` is refused, so the token never leaves it.
         """
         if not same_origin(absolute_path, self._base_url):
             raise AwxApiError(
                 f"refusing to follow {absolute_path!r}: its origin differs from "
                 f"the configured awx.server.url {self._base_url!r}"
             )
-        return self._http.get_json(absolute_path, **kwargs)
-
-    def close(self) -> None:
-        self._http.close()
-
-    def __enter__(self) -> AwxClient:
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        self.close()
+        with self._watched():
+            return self._http.get_json(absolute_path, **kwargs)

@@ -1,4 +1,4 @@
-"""Concrete :class:`ResourceClient` implementation backed by :class:`AwxClient`.
+"""The :class:`ResourceClient` implementation backed by :class:`AwxClient`.
 
 The repository never branches on kind — it follows the spec verbatim
 to derive paths and parameters. Per-kind variation is handled in
@@ -83,9 +83,20 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
 
 
 class ResourceRepository:
+    """Spec-driven reads and writes over an :class:`AwxClient`.
+
+    :class:`~untaped_awx.infrastructure.controller.ControllerV2` is the one
+    built in a run: it supplies the client its version's prefix calls for.
+    """
+
     def __init__(self, client: AwxClient, *, page_size: int = 200) -> None:
-        self._client = client
+        self._given = client
         self._page_size = page_size
+
+    @property
+    def _client(self) -> AwxClient:
+        """The controller client every request goes through."""
+        return self._given
 
     def list(
         self,
@@ -258,7 +269,7 @@ class ResourceRepository:
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Escape hatch: ad-hoc URL under ``api_prefix`` (no spec required)."""
+        """Escape hatch: ad-hoc URL under the controller API prefix (no spec required)."""
         with map_awx_errors():
             return self._client.request_json(  # type: ignore[no-any-return]
                 method, path, params=params, json=json

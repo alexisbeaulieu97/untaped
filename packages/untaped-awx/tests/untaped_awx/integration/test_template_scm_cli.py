@@ -79,12 +79,12 @@ def test_each_project_is_read_once(fake_aap: Any) -> None:
     project_reads = [
         call.request.url.path
         for call in fake_aap.router.calls
-        if call.request.url.path.startswith("/api/v2/projects/")
+        if call.request.url.path.startswith(fake_aap.path("projects/"))
     ]
     assert sorted(project_reads) == [
-        "/api/v2/projects/10/",
-        "/api/v2/projects/11/",
-        "/api/v2/projects/12/",
+        fake_aap.path("projects/10/"),
+        fake_aap.path("projects/11/"),
+        fake_aap.path("projects/12/"),
     ]
 
 

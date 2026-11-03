@@ -104,7 +104,7 @@ def _failed_task(host: str, task: str, msg: str) -> dict[str, Any]:
 
 
 def _paths(fake: FakeAap) -> list[str]:
-    return [call.request.url.path.removeprefix("/api/v2/") for call in fake.router.calls]
+    return [fake.relative(call.request.url.path) for call in fake.router.calls]
 
 
 def test_a_workflow_case_passes_and_lists_its_nodes(aap: FakeAap, tmp_path: Path) -> None:

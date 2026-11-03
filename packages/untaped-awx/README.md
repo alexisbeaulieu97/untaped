@@ -19,11 +19,12 @@ connection:
 ```bash
 untaped config set awx.server.url https://aap.example.com
 untaped auth login awx
-untaped config set awx.api_prefix /api/v2/   # standalone AWX only
 untaped awx ping
 ```
 
-`ping` names the authenticated `user`. `auth login` stores the token with your
+`ping` names the authenticated `user`. untaped finds out whether the server
+runs AWX or AAP, and which release, on first use; `awx.server_version`
+(`AWX 24.6.1`, `AAP controller 4.6.2`) says it instead. `auth login` stores the token with your
 password store, not in `config.yml`; an environment variable also works. See
 [Tokens](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/configuration.md#tokens)
 and the

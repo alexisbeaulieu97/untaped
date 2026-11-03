@@ -197,7 +197,7 @@ class RawHttpResourceClient(ResourceClient, Protocol):
     ) -> Iterator[dict[str, Any]]:
         """Walk every page of a list endpoint at ``path``.
 
-        ``path`` is relative to ``api_prefix``. Use this instead of a
+        ``path`` is relative to the controller API prefix. Use this instead of a
         single ``request("GET", path, params=…)`` whenever the result
         could exceed one page — AWX silently truncates at ``page_size``
         otherwise.

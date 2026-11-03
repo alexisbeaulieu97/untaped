@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import httpx
 import pytest
 import respx
 
-from untaped.sdk.network import HttpFactory
 from untaped_awx.errors import AmbiguousIdentityError, AwxApiError, BadRequestError
 from untaped_awx.infrastructure import AwxClient
 from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.resources.specs import JOB_TEMPLATE_SPEC
-from untaped_awx.settings import AwxSettings
 
 
-def test_find_returns_unique_record(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_find_returns_unique_record(awx_client: AwxClient) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(
             return_value=httpx.Response(
@@ -22,24 +22,24 @@ def test_find_returns_unique_record(awx_config: AwxSettings, http: HttpFactory) 
                 json={"count": 1, "results": [{"id": 7, "name": "deploy"}]},
             )
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             record = repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
     assert record is not None
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
 
-def test_find_returns_none_for_zero_results(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_find_returns_none_for_zero_results(awx_client: AwxClient) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(
             return_value=httpx.Response(200, json={"count": 0, "results": []})
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             assert repo.find(JOB_TEMPLATE_SPEC, params={"name": "ghost"}) is None
 
 
-def test_find_raises_ambiguous_on_multi_match(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_find_raises_ambiguous_on_multi_match(awx_client: AwxClient) -> None:
     """Two records matching the same params must raise AmbiguousIdentityError
     rather than silently picking whichever AWX ordered first."""
     with respx.mock(base_url="https://aap.example.com") as mock:
@@ -55,7 +55,7 @@ def test_find_raises_ambiguous_on_multi_match(awx_config: AwxSettings, http: Htt
                 },
             )
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             with pytest.raises(AmbiguousIdentityError) as excinfo:
                 repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy"})
@@ -65,9 +65,7 @@ def test_find_raises_ambiguous_on_multi_match(awx_config: AwxSettings, http: Htt
     assert "__name" not in str(excinfo.value)
 
 
-def test_find_overrides_caller_supplied_page_size(
-    awx_config: AwxSettings, http: HttpFactory
-) -> None:
+def test_find_overrides_caller_supplied_page_size(awx_client: AwxClient) -> None:
     """`find` is unique-or-zero by contract — even if a caller passes
     `page_size=1`, the repo upgrades to 2 so ambiguity is detectable."""
     captured: dict[str, str] = {}
@@ -78,15 +76,13 @@ def test_find_overrides_caller_supplied_page_size(
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(side_effect=_capture)
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             repo.find(JOB_TEMPLATE_SPEC, params={"name": "deploy", "page_size": "1"})
     assert captured.get("page_size") == "2"
 
 
-def test_find_by_identity_builds_scope_field_name_params(
-    awx_config: AwxSettings, http: HttpFactory
-) -> None:
+def test_find_by_identity_builds_scope_field_name_params(awx_client: AwxClient) -> None:
     """`find_by_identity` is the canonical way to look up a name within a
     scope; it must apply the AWX `<key>__name` filter convention so callers
     don't have to."""
@@ -101,7 +97,7 @@ def test_find_by_identity_builds_scope_field_name_params(
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/").mock(side_effect=_capture)
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             repo.find_by_identity(
                 JOB_TEMPLATE_SPEC,
@@ -112,7 +108,7 @@ def test_find_by_identity_builds_scope_field_name_params(
     assert captured["organization__name"] == "Default"
 
 
-def test_find_by_identity_no_scope(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_find_by_identity_no_scope(awx_client: AwxClient) -> None:
     """Without scope, `find_by_identity` queries by name alone; the
     underlying `find` still detects ambiguity so unscoped queries that hit
     duplicates raise."""
@@ -123,14 +119,14 @@ def test_find_by_identity_no_scope(awx_config: AwxSettings, http: HttpFactory) -
                 json={"count": 1, "results": [{"id": 7, "name": "deploy"}]},
             )
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             record = repo.find_by_identity(JOB_TEMPLATE_SPEC, name="deploy")
     assert record is not None
     assert record.model_dump() == {"id": 7, "name": "deploy"}
 
 
-def test_request_text_sends_text_plain_accept(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_request_text_sends_text_plain_accept(awx_client: AwxClient) -> None:
     """``jobs/<id>/stdout/`` returns ``text/plain``; AWX answers 406 when
     the Accept header pins ``application/json``. ``request_text`` must
     override Accept so callers don't have to know — otherwise every
@@ -147,7 +143,7 @@ def test_request_text_sends_text_plain_accept(awx_config: AwxSettings, http: Htt
 
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/jobs/42/stdout/").mock(side_effect=_record)
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             text = awx.request_text("GET", "jobs/42/stdout/", params={"format": "txt"})
     assert text == "job log line\n"
     assert captured[0].headers["accept"] == "text/plain"
@@ -155,22 +151,22 @@ def test_request_text_sends_text_plain_accept(awx_config: AwxSettings, http: Htt
 
 @pytest.mark.parametrize("status,action", [(204, "deleted"), (202, "deletion_requested")])
 def test_delete_receipt_preserves_http_acceptance(
-    awx_config: AwxSettings, http: HttpFactory, status: int, action: str
+    awx_client: AwxClient, status: int, action: str
 ) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/job_templates/7/").mock(return_value=httpx.Response(status))
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             assert ResourceRepository(awx).delete(JOB_TEMPLATE_SPEC, 7).action == action
 
 
-def test_low_level_delete_returns_status(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_low_level_delete_returns_status(awx_client: AwxClient) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.delete("/api/v2/inventories/7/").mock(return_value=httpx.Response(202))
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             assert awx.delete("inventories/7/") == 202
 
 
-def test_get_fills_in_endpoint_backed_survey(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_get_fills_in_endpoint_backed_survey(awx_client: AwxClient) -> None:
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/job_templates/7/").mock(
             return_value=httpx.Response(200, json={"id": 7, "name": "deploy"})
@@ -178,12 +174,12 @@ def test_get_fills_in_endpoint_backed_survey(awx_config: AwxSettings, http: Http
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json={"name": "s", "spec": []})
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             record = ResourceRepository(awx).get(JOB_TEMPLATE_SPEC, 7)
     assert record.model_dump()["survey_spec"] == {"name": "s", "spec": []}
 
 
-def test_writes_route_survey_to_its_endpoint(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_writes_route_survey_to_its_endpoint(awx_client: AwxClient) -> None:
     from untaped_awx.domain import WritePayload
 
     survey = {"name": "s", "description": "", "spec": [{"variable": "a", "type": "text"}]}
@@ -203,7 +199,7 @@ def test_writes_route_survey_to_its_endpoint(awx_config: AwxSettings, http: Http
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json=survey)
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             created = repo.create(
                 JOB_TEMPLATE_SPEC, WritePayload(name="deploy", survey_spec=survey)
@@ -217,7 +213,7 @@ def test_writes_route_survey_to_its_endpoint(awx_config: AwxSettings, http: Http
     assert created.model_dump()["survey_spec"] == survey
 
 
-def test_sub_documents_reads_no_record(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_sub_documents_reads_no_record(awx_client: AwxClient) -> None:
     """A list row's survey is read from its endpoint alone; the record is not read again."""
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         detail = mock.get("/api/v2/job_templates/7/").mock(
@@ -226,13 +222,13 @@ def test_sub_documents_reads_no_record(awx_config: AwxSettings, http: HttpFactor
         mock.get("/api/v2/job_templates/7/survey_spec/").mock(
             return_value=httpx.Response(200, json={"name": "s", "spec": []})
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             documents = ResourceRepository(awx).sub_documents(JOB_TEMPLATE_SPEC, 7)
     assert documents == {"survey_spec": {"name": "s", "spec": []}}
     assert detail.call_count == 0
 
 
-def test_playbooks_returns_a_tuple(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_playbooks_returns_a_tuple(awx_client: AwxClient) -> None:
     """AWX answers ``projects/<id>/playbooks/`` with a bare list of paths."""
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/projects/3/playbooks/").mock(
@@ -241,23 +237,21 @@ def test_playbooks_returns_a_tuple(awx_config: AwxSettings, http: HttpFactory) -
         mock.get("/api/v2/projects/4/playbooks/").mock(
             return_value=httpx.Response(404, json={"detail": "Not found."})
         )
-        with AwxClient(awx_config, http=http) as awx:
+        with nullcontext(awx_client) as awx:
             repo = ResourceRepository(awx)
             assert repo.playbooks(3) == ("site.yml", "roles/deploy.yml")
             with pytest.raises(AwxApiError):
                 repo.playbooks(4)
 
 
-def test_playbooks_rejects_an_answer_that_is_not_a_list(
-    awx_config: AwxSettings, http: HttpFactory
-) -> None:
+def test_playbooks_rejects_an_answer_that_is_not_a_list(awx_client: AwxClient) -> None:
     """A record where the list should be is an unexpected shape, not a list of its keys."""
     with respx.mock(base_url="https://aap.example.com") as mock:
         mock.get("/api/v2/projects/3/playbooks/").mock(
             return_value=httpx.Response(200, json={"site.yml": "x"})
         )
         with (
-            AwxClient(awx_config, http=http) as awx,
+            nullcontext(awx_client) as awx,
             pytest.raises(BadRequestError, match="not a list"),
         ):
             ResourceRepository(awx).playbooks(3)

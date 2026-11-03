@@ -1,0 +1,20 @@
+{
+  "ha": true,
+  "version": "4.6.2",
+  "active_node": "controller-0.example.com",
+  "install_uuid": "00000000-0000-4000-8000-000000000003",
+  "instances": [
+    {
+      "node": "controller-0.example.com",
+      "node_type": "hybrid",
+      "uuid": "00000000-0000-4000-8000-000000000004",
+      "heartbeat": "2026-11-03T07:00:00.000000Z",
+      "capacity": 120,
+      "version": "4.6.2"
+    }
+  ],
+  "instance_groups": [
+    {"name": "controlplane", "capacity": 120, "instances": ["controller-0.example.com"]},
+    {"name": "default", "capacity": 120, "instances": ["controller-0.example.com"]}
+  ]
+}

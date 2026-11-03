@@ -235,7 +235,7 @@ def test_launch_runtime_failure_continues_unless_fail_fast_and_never_retries(
     fake_aap.seed("job_templates", id=51, name="bad", organization=1)
     fake_aap.seed("job_templates", id=52, name="last", organization=1)
     fake_aap.router.routes.clear()
-    route = fake_aap.router.post("https://aap.example.com/api/v2/job_templates/51/launch/").mock(
+    route = fake_aap.router.post(fake_aap.url("job_templates/51/launch/")).mock(
         side_effect=httpx.ReadTimeout("ambiguous POST")
     )
     fake_aap.install(fake_aap.router)

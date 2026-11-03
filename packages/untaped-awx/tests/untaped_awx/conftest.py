@@ -16,18 +16,43 @@ from pydantic import HttpUrl
 
 from awx_fake_aap import _LAUNCH_PROMPTS, FakeAap
 from awx_test_support import Settings, installed, using
-from untaped.sdk.network import HttpFactory
 from untaped.sdk.testing import ManualClock
-from untaped_awx.settings import AwxServer, AwxSettings
+from untaped_awx.infrastructure import AwxClient
+from untaped_awx.infrastructure.controller import (
+    CONTROLLER_PREFIX,
+    GATEWAY_CONTROLLER_PREFIX,
+    ControllerV2,
+)
+from untaped_awx.server import SERVER_API
+from untaped_awx.settings import TOKEN as TOKEN_CREDENTIAL
+from untaped_awx.settings import AwxServer, AwxSettings, ControllerVersion
 
 #: The token every test runs with, from the collection's variable.
 TOKEN = "secret"
 
 
+#: The version a test that serves no controller pins: AWX, at ``/api/v2/``.
+PINNED = ControllerV2.recorded[0]
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """A test against :class:`FakeAap` runs once per adapter and version it records."""
+    if "fake_aap" in metafunc.fixturenames:
+        recorded = [version for adapter in SERVER_API.adapters for version in adapter.recorded]
+        metafunc.parametrize("recorded", recorded, ids=str, indirect=True)
+
+
 @pytest.fixture
-def settings() -> Settings:
+def recorded(request: pytest.FixtureRequest) -> ControllerVersion:
+    """The controller version the test runs against, pinned through ``awx.server_version``."""
+    version: ControllerVersion = getattr(request, "param", PINNED)
+    return version
+
+
+@pytest.fixture
+def settings(recorded: ControllerVersion) -> Settings:
     """The ``awx`` settings the next run uses; a test changes them before invoking."""
-    return {"server": {"url": "https://aap.example.com"}, "api_prefix": "/api/v2/"}
+    return {"server": {"url": "https://aap.example.com"}, "server_version": str(recorded)}
 
 
 @pytest.fixture(autouse=True)
@@ -48,7 +73,9 @@ def _run(_awx: None) -> Iterator[None]:
 
 
 @pytest.fixture
-def fake_aap(monkeypatch: pytest.MonkeyPatch, clock: ManualClock) -> Iterator[FakeAap]:
+def fake_aap(
+    monkeypatch: pytest.MonkeyPatch, clock: ManualClock, recorded: ControllerVersion
+) -> Iterator[FakeAap]:
     """Fake Controller responses with immediate polls and HTTP retries.
 
     Keep the real cancellation check; timing/backoff is tested separately
@@ -62,7 +89,7 @@ def fake_aap(monkeypatch: pytest.MonkeyPatch, clock: ManualClock) -> Iterator[Fa
         real_pause(ctx, 0)
 
     monkeypatch.setattr(AwxContext, "pause", pause)
-    fake = FakeAap()
+    fake = FakeAap(api_prefix=GATEWAY_CONTROLLER_PREFIX if recorded.gateway else CONTROLLER_PREFIX)
     with respx.mock(base_url=fake.base_url, assert_all_called=False) as mock:
         fake.install(mock)
         yield fake
@@ -129,17 +156,34 @@ def seeded_job_template_with_credentials(
 
 
 @pytest.fixture
-def http() -> Iterator[HttpFactory]:
-    """The HTTP factory of a run of the install, which :class:`AwxClient` takes."""
+def awx_client(awx_config: AwxSettings) -> Iterator[AwxClient]:
+    """A bare :class:`AwxClient` under ``/api/v2/``, as :class:`ControllerV2` builds one.
+
+    For the transport's own tests; everything else reaches the controller
+    through ``SERVER_API.port(settings)``.
+    """
+    server = awx_config.server
+    assert server is not None
     with installed().running() as running:
-        yield running.http
+        http = running.http.client(
+            awx_config,
+            base_url=str(server.url).rstrip("/"),
+            bearer=TOKEN_CREDENTIAL.find(server),
+            verify=server.verify_tls,
+            headers={"Accept": "application/json"},
+        )
+        try:
+            yield AwxClient(http, prefix=CONTROLLER_PREFIX, base_url=str(server.url))
+        finally:
+            http.close()
 
 
 @pytest.fixture
 def awx_config() -> AwxSettings:
     """The settings the ``settings`` fixture holds by default (its token a variable)."""
     return AwxSettings(
-        server=AwxServer(url=HttpUrl("https://aap.example.com")), api_prefix="/api/v2/"
+        server=AwxServer(url=HttpUrl("https://aap.example.com")),
+        server_version=ControllerVersion.parse("AWX 24.6.1"),
     )
 
 

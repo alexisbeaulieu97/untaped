@@ -2,13 +2,13 @@
 
 import json
 from collections.abc import Iterator
+from contextlib import nullcontext
 from typing import Any
 
 import httpx
 import pytest
 import respx
 
-from untaped.sdk.network import HttpFactory
 from untaped_awx.application.resources.apply_ordering import topological_sort
 from untaped_awx.application.resources.apply_verifier import ApplyVerifier
 from untaped_awx.application.resources.delete_resource import DeleteResource
@@ -32,7 +32,6 @@ from untaped_awx.infrastructure.resources.specs import (
     SCHEDULE_SPEC,
 )
 from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
-from untaped_awx.settings import AwxSettings
 
 
 def test_inventory_is_mutable_and_ordered():
@@ -239,13 +238,12 @@ class Controller:
 
 @pytest.fixture
 def controller(
-    awx_config: AwxSettings,
-    http: HttpFactory,
+    awx_client: AwxClient,
 ) -> Iterator[tuple[Controller, BatchMutationEngine, ResourceRepository, HttpFkResolver]]:
     state = Controller()
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         mock.route().mock(side_effect=state.dispatch)
-        with AwxClient(awx_config, http=http) as client:
+        with nullcontext(awx_client) as client:
             repo = ResourceRepository(client)
             catalog = AwxResourceCatalog()
             fk = HttpFkResolver(repo, catalog)

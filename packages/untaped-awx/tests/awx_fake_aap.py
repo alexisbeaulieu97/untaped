@@ -100,6 +100,18 @@ class FakeAap:
         # ``(store, id)`` of a held node job → [reads left, final status, its node's id].
         self._held: dict[tuple[str, int], list[Any]] = {}
 
+    def path(self, relative: str) -> str:
+        """``relative`` (``jobs/7/``) under the controller's API prefix: ``/api/v2/jobs/7/``."""
+        return f"{self.api_prefix}{relative}"
+
+    def url(self, relative: str) -> str:
+        """The full URL of ``relative`` under the controller's API prefix."""
+        return f"{self.base_url}{self.path(relative)}"
+
+    def relative(self, path: str) -> str:
+        """A request's ``path`` without the controller's API prefix: ``jobs/7/``."""
+        return path.removeprefix(self.api_prefix)
+
     def seed(self, api_path: str, **fields: Any) -> dict[str, Any]:
         record_id = fields.pop("id", None) or self._next_id
         self._next_id = max(self._next_id, record_id + 1)

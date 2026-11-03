@@ -13,7 +13,7 @@ from untaped.sdk.testing import ScriptedTerminal
 
 def _posts(fake: Any) -> list[str]:
     return [
-        call.request.url.path.removeprefix("/api/v2/")
+        fake.relative(call.request.url.path)
         for call in fake.router.calls
         if call.request.method == "POST"
     ]
