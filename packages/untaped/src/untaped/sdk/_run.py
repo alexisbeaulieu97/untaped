@@ -187,6 +187,9 @@ class RunNotes:
 
     #: The command previewed through ``Confirm.as_dry_run()`` (a ``--check``).
     preview: bool = False
+    #: Whether core printed anything on stdout for the command yet (a row, a line):
+    #: a call that failed after it can't be run again unseen (``ServerApi``'s rerun).
+    printed: bool = False
 
 
 @dataclass(frozen=True)
@@ -452,6 +455,13 @@ def note_preview() -> None:
     run = _RUN.get()
     if run is not None:
         run.notes.preview = True
+
+
+def note_printed() -> None:
+    """Note on the current run, if any, that core printed something on its stdout."""
+    run = _RUN.get()
+    if run is not None:
+        run.notes.printed = True
 
 
 def fixed_rendering() -> Rendering | None:

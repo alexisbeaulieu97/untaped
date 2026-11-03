@@ -105,12 +105,13 @@ def _is_named_call(node: ast.expr, name: str) -> bool:
     )
 
 
-#: The core builders whose own ``verify=`` may replace the settings' TLS. Nothing under
-#: src passes one yet (see the guard below); the key's TLS will (#811).
+#: The core builders whose own ``verify=`` may replace the settings' TLS: the server API
+#: block passes its credential key's TLS field, found by its type (#811).
 _VERIFY_OVERRIDES = frozenset(
     {
         "packages/untaped/src/untaped/sdk/network/http.py",
         "packages/untaped/src/untaped/sdk/contracts/_declare.py",
+        "packages/untaped/src/untaped/sdk/network/_server_api_port.py",
     }
 )
 

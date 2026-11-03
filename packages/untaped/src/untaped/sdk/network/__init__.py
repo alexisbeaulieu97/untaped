@@ -1,5 +1,8 @@
 """Network and secrets (``untaped.sdk.network``): the HTTP client, its retries, credentials.
 
+``ServerApi`` and its parts keep a plugin's commands independent of the
+server API version its server runs (:mod:`untaped.sdk.network.server_api`).
+
 ``capped`` and ``succeeded`` are the upstream budget every call to an upstream
 reads and reports to, so ``doctor --online`` and a cache's automatic refresh
 fail fast offline.
@@ -24,14 +27,26 @@ if TYPE_CHECKING:
         rejected_token_error,
         same_origin,
     )
+    from untaped.sdk.network.server_api import (
+        ApiAdapter,
+        ApiMismatch,
+        Release,
+        ServerApi,
+        ServerVersion,
+    )
     from untaped.sdk.network.upstream import capped, succeeded
 
 __all__ = [
+    "ApiAdapter",
+    "ApiMismatch",
     "Credential",
     "CredentialKey",
     "HttpClient",
     "HttpFactory",
+    "Release",
     "RetryPolicy",
+    "ServerApi",
+    "ServerVersion",
     "TlsVerify",
     "capped",
     "find_program",
@@ -59,6 +74,7 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "rejected_token_error",
                 "same_origin",
             ),
+            "server_api": ("ApiAdapter", "ApiMismatch", "Release", "ServerApi", "ServerVersion"),
             "upstream": ("capped", "succeeded"),
         },
     )

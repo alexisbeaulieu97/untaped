@@ -52,7 +52,7 @@ class SkillAsset:
 
 
 #: The view's member each owned block kind is read through; ``None`` for a kind
-#: whose own readers find it (state rows, a lock). A ``Dir`` is a store when it
+#: whose own readers find it (state rows, a lock, a server API's port). A ``Dir`` is a store when it
 #: is numbered (its layouts, which references name and doctor lists) or holds
 #: ``items=`` (its item store, which holds use).
 _MEMBERS: dict[str, str | None] = {
@@ -62,6 +62,7 @@ _MEMBERS: dict[str, str | None] = {
     "deprecated-behaviour": "deprecations",
     "state-rows": None,
     "lock": None,
+    "server-api": None,
     "dir": "stores",
 }
 
