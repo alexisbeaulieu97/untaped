@@ -25,7 +25,11 @@ class DemoSettings(BaseModel):
 class SpelledSettings(BaseModel):
     """Settings with an old spelling still read and a retired one."""
 
-    renamed_keys: ClassVar[dict[str, str]] = {"old_size": "size", "old_groups": "groups"}
+    renamed_keys: ClassVar[dict[str, str]] = {
+        "old_size": "size",
+        "old_groups": "groups",
+        "legacy_groups": "groups",
+    }
     retired_keys: ClassVar[dict[str, str]] = {"a_size": "size", "a_groups": "groups"}
 
     size: int = 1
@@ -221,3 +225,27 @@ def test_an_entry_is_read_from_the_map_a_run_reads(_config: Path) -> None:
         encoding="utf-8",
     )
     assert SettingsFileRepository().own_value("spelled.groups.dev") is None
+
+
+@pytest.mark.parametrize(
+    "spelled",
+    [
+        "groups: null\n  old_groups: {dev: {lead: bo}}",
+        "legacy_groups: null\n  old_groups: {dev: {lead: bo}}",
+    ],
+    ids=["its-name", "its-closest-old-spelling"],
+)
+def test_a_null_spelling_a_run_reads_hides_the_others(_config: Path, spelled: str) -> None:
+    """A run reads the null (its name, or the closest old spelling) and ignores ``old_groups``."""
+    _config.write_text(f"format_version: 2\nspelled:\n  {spelled}\n", encoding="utf-8")
+    assert SettingsFileRepository().own_value("spelled.groups.dev.lead") is None
+
+
+def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
+    text = (
+        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n"
+    )
+    _config.write_text(text, encoding="utf-8")
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
+    assert change.outcome.action == "unchanged"
+    assert _config.read_text(encoding="utf-8") == text
