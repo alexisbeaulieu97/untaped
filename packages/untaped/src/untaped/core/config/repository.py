@@ -372,7 +372,7 @@ class SettingsFileRepository:
                 descriptor = descriptors[key]
                 where, name = targets[key]
                 self._carry_old_map(where, descriptor, on_spelling_removed)
-                olds = self._old_paths(descriptor)
+                olds = self._unread_after_write(descriptor)
                 raw_value = update(name, self._own(where, descriptor))
                 if raw_value is None:
                     unset_at_path(where, descriptor.path, keep=descriptor.entry_depth)
@@ -433,36 +433,54 @@ class SettingsFileRepository:
 
         Otherwise the entry would land under the new name, which wins over the
         old one, and the map's other entries would stop being read. Only the
-        spelling the reader reads is carried: the closest one still read.
+        spelling the reader reads is carried (:meth:`_holder`).
         ``only_if_set`` (an unset) leaves the map where it is unless it holds
         ``descriptor``, so removing nothing changes nothing.
         """
         declared = self._declared(descriptor)
-        if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
+        if declared.path == descriptor.path:
             return
-        for old in self._read_paths(declared):  # a retired spelling isn't read, nor carried
-            value = _at_path(data, old)
-            if value is None:
-                continue
-            if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
-                return  # the closest old spelling is the one read; the others are ignored
-            unset_at_path(data, old)
-            set_at_path(data, declared.path, value)
-            if report is not None:
-                report(".".join(old))
+        holder = self._holder(data, declared)
+        if holder is None or holder == declared.path:
             return
+        value = _at_path(data, holder)
+        if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
+            return
+        unset_at_path(data, holder)
+        set_at_path(data, declared.path, value)
+        if report is not None:
+            report(".".join(holder))
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
         """The key's raw value in one profile's ``data``, as a run reads it.
 
-        Its own spelling, else the closest old one still read; a retired
-        spelling's value is no one's, so it is left out.
+        Read from where its setting is read (:meth:`_holder`); an entry of a
+        map, from that map. A spelling the reader ignores or no longer reads is
+        no one's value, so it is left out.
         """
-        paths = [descriptor.path, *self._read_paths(descriptor)]
-        return next(
-            (value for value in (_at_path(data, path) for path in paths) if value is not None),
-            None,
-        )
+        declared = self._declared(descriptor)
+        holder = self._holder(data, declared)
+        if holder is None:
+            return None
+        return _at_path(data, (*holder, *descriptor.path[len(declared.path) :]))
+
+    def _holder(self, data: dict[str, Any], declared: FieldDescriptor) -> tuple[str, ...] | None:
+        """Where a run reads ``declared`` from in one profile's ``data``; ``None``: nowhere.
+
+        Its own name when set, which wins over every old spelling; else the
+        first old spelling still read (:meth:`_read_paths`).
+        """
+        paths = [declared.path, *self._read_paths(declared)]
+        return next((path for path in paths if _at_path(data, path) is not None), None)
+
+    def _unread_after_write(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
+        """Old spellings no run reads once ``descriptor`` is written, so the write removes them.
+
+        A key's own old spellings; for an entry of a map, or a setting inside
+        one, the map's: the entry lands under the map's name, which wins over
+        every one of them.
+        """
+        return self._old_paths(self._declared(descriptor))
 
     def unset_value(
         self,
@@ -479,7 +497,8 @@ class SettingsFileRepository:
         ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
         simply isn't set in the resolved scope is a no-op
         (``removed=False``). Each old spelling removed is reported to
-        ``on_spelling_removed``.
+        ``on_spelling_removed``; removing an entry of a map removes the map's
+        old spellings, and an entry that isn't set changes nothing.
         """
         descriptor = self.descriptor(key)
         removed = False
@@ -490,7 +509,10 @@ class SettingsFileRepository:
             target_data, resolved = self._write_target(data, profile)
             self._carry_old_map(target_data, descriptor, on_spelling_removed, only_if_set=True)
             own = unset_at_path(target_data, descriptor.path, keep=descriptor.entry_depth)
-            olds = _remove_spellings(target_data, self._old_paths(descriptor), on_spelling_removed)
+            # An entry's map changes only when the entry was there to remove.
+            entry = self._declared(descriptor).path != descriptor.path
+            unread = self._unread_after_write(descriptor) if own or not entry else []
+            olds = _remove_spellings(target_data, unread, on_spelling_removed)
             if not (own or olds):
                 return
             removed = True
