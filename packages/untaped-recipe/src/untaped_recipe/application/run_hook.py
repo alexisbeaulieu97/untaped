@@ -194,7 +194,7 @@ def _validate_validate_context(
     content_file: Path | None,
 ) -> None:
     if file is not None or content is not None or content_file is not None:
-        raise ValueError("validate hooks do not accept --file or content options")
+        raise UsageError("validate hooks do not accept --file or content options")
 
 
 def _transform_content(
@@ -205,7 +205,7 @@ def _transform_content(
     content_file: Path | None,
 ) -> tuple[str, Path, Path]:
     if file is None:
-        raise ValueError("transform hooks require --file")
+        raise UsageError("transform hooks require --file")
     if content is not None and content_file is not None:
         raise UsageError("provide --content or --content-file, not both")
     resolved_file = confined_path(target, file, field="file")
