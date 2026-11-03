@@ -1,6 +1,6 @@
 # untaped surface 3
-adapter github.server-api Rest2022  [experimental]
-adapter jira.server-api DataCenter  [experimental]
+adapter github.server-api Rest2022
+adapter jira.server-api DataCenter
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
 cfg ansible.dependency_paths string[] default=["roles/requirements.yml","roles/requirements.yaml","requirements.yml","requirements.yaml","meta/requirements.yml","meta/requirements.yaml","meta/main.yml","meta/main.yaml"]
@@ -7045,26 +7045,26 @@ sdk untaped.sdk.installed_plugins()
 sdk untaped.sdk.key(model)
 sdk untaped.sdk.kind_of(model)
 sdk untaped.sdk.most_severe(errors)
-sdk untaped.sdk.network.ApiAdapter(settings, version)  [experimental]
-sdk untaped.sdk.network.ApiAdapter.connect()  [experimental]
-sdk untaped.sdk.network.ApiAdapter.connect(headers=) default=None  [experimental]
-sdk untaped.sdk.network.ApiAdapter.settings  [experimental]
-sdk untaped.sdk.network.ApiAdapter.stability class  [experimental]
-sdk untaped.sdk.network.ApiAdapter.version  [experimental]
-sdk untaped.sdk.network.ApiMismatch(**attributed)  [experimental]
-sdk untaped.sdk.network.ApiMismatch(answer=) default=None  [experimental]
-sdk untaped.sdk.network.ApiMismatch(message)  [experimental]
-sdk untaped.sdk.network.ApiMismatch(request=) default=None  [experimental]
-sdk untaped.sdk.network.ApiMismatch.answer  [experimental]
-sdk untaped.sdk.network.ApiMismatch.category class  [experimental]
-sdk untaped.sdk.network.ApiMismatch.details class  [experimental]
-sdk untaped.sdk.network.ApiMismatch.exit_code  [experimental]
-sdk untaped.sdk.network.ApiMismatch.hint class  [experimental]
-sdk untaped.sdk.network.ApiMismatch.request  [experimental]
-sdk untaped.sdk.network.ApiMismatch.retryable  [experimental]
-sdk untaped.sdk.network.ApiMismatch.system class  [experimental]
-sdk untaped.sdk.network.ApiMismatch.watch()  [experimental]
-sdk untaped.sdk.network.ApiMismatch.watch(vendor_error=) default=<computed> callback(1)  [experimental]
+sdk untaped.sdk.network.ApiAdapter(settings, version)
+sdk untaped.sdk.network.ApiAdapter.connect()
+sdk untaped.sdk.network.ApiAdapter.connect(headers=) default=None
+sdk untaped.sdk.network.ApiAdapter.settings
+sdk untaped.sdk.network.ApiAdapter.stability class
+sdk untaped.sdk.network.ApiAdapter.version
+sdk untaped.sdk.network.ApiMismatch(**attributed)
+sdk untaped.sdk.network.ApiMismatch(answer=) default=None
+sdk untaped.sdk.network.ApiMismatch(message)
+sdk untaped.sdk.network.ApiMismatch(request=) default=None
+sdk untaped.sdk.network.ApiMismatch.answer
+sdk untaped.sdk.network.ApiMismatch.category class
+sdk untaped.sdk.network.ApiMismatch.details class
+sdk untaped.sdk.network.ApiMismatch.exit_code
+sdk untaped.sdk.network.ApiMismatch.hint class
+sdk untaped.sdk.network.ApiMismatch.request
+sdk untaped.sdk.network.ApiMismatch.retryable
+sdk untaped.sdk.network.ApiMismatch.system class
+sdk untaped.sdk.network.ApiMismatch.watch()
+sdk untaped.sdk.network.ApiMismatch.watch(vendor_error=) default=<computed> callback(1)
 sdk untaped.sdk.network.Credential(*, key)
 sdk untaped.sdk.network.Credential(env=) default=[]
 sdk untaped.sdk.network.Credential(suggest=) default=None
@@ -7135,8 +7135,8 @@ sdk untaped.sdk.network.HttpFactory.client(verify=) default=None
 sdk untaped.sdk.network.HttpFactory.proxy_for(url)
 sdk untaped.sdk.network.HttpFactory.proxy_for(verified=) default=true
 sdk untaped.sdk.network.HttpFactory.trust
-sdk untaped.sdk.network.Release(numbers)  [experimental]
-sdk untaped.sdk.network.Release.parse(text)  [experimental]
+sdk untaped.sdk.network.Release(numbers)
+sdk untaped.sdk.network.Release.parse(text)
 sdk untaped.sdk.network.RetryPolicy()
 sdk untaped.sdk.network.RetryPolicy(backoff_base@2=) default=0.5
 sdk untaped.sdk.network.RetryPolicy(backoff_max@3=) default=30.0
@@ -7158,32 +7158,32 @@ sdk untaped.sdk.network.RetryPolicy.retry_after_max
 sdk untaped.sdk.network.RetryPolicy.retry_on_transport
 sdk untaped.sdk.network.RetryPolicy.retry_statuses
 sdk untaped.sdk.network.RetryPolicy.status_delay(attempt, retry_after)
-sdk untaped.sdk.network.ServerApi(*, server, credential, detect, adapters, override) callback(detect, 2)  [experimental]
-sdk untaped.sdk.network.ServerApi(max_age=) default=<computed>  [experimental]
-sdk untaped.sdk.network.ServerApi.adapters  [experimental]
-sdk untaped.sdk.network.ServerApi.binding  [experimental]
-sdk untaped.sdk.network.ServerApi.bindings  [experimental]
-sdk untaped.sdk.network.ServerApi.block_kind class  [experimental]
-sdk untaped.sdk.network.ServerApi.cache  [experimental]
-sdk untaped.sdk.network.ServerApi.credential  [experimental]
-sdk untaped.sdk.network.ServerApi.derived_name(attribute)  [experimental]
-sdk untaped.sdk.network.ServerApi.detect  [experimental]
-sdk untaped.sdk.network.ServerApi.doctor  [experimental]
-sdk untaped.sdk.network.ServerApi.module  [experimental]
-sdk untaped.sdk.network.ServerApi.name  [experimental]
-sdk untaped.sdk.network.ServerApi.name_problem(name)  [experimental]
-sdk untaped.sdk.network.ServerApi.name_style class  [experimental]
-sdk untaped.sdk.network.ServerApi.override  [experimental]
-sdk untaped.sdk.network.ServerApi.plugin  [experimental]
-sdk untaped.sdk.network.ServerApi.port(refresh=) default=None  [experimental]
-sdk untaped.sdk.network.ServerApi.port(settings)  [experimental]
-sdk untaped.sdk.network.ServerApi.problems()  [experimental]
-sdk untaped.sdk.network.ServerApi.qualified  [experimental]
-sdk untaped.sdk.network.ServerApi.server  [experimental]
-sdk untaped.sdk.network.ServerApi.spelled  [experimental]
-sdk untaped.sdk.network.ServerApi.where  [experimental]
-sdk untaped.sdk.network.ServerVersion implement=  [experimental]
-sdk untaped.sdk.network.ServerVersion.parse(text)  [experimental]
+sdk untaped.sdk.network.ServerApi(*, server, credential, detect, adapters, override) callback(detect, 2)
+sdk untaped.sdk.network.ServerApi(max_age=) default=<computed>
+sdk untaped.sdk.network.ServerApi.adapters
+sdk untaped.sdk.network.ServerApi.binding
+sdk untaped.sdk.network.ServerApi.bindings
+sdk untaped.sdk.network.ServerApi.block_kind class
+sdk untaped.sdk.network.ServerApi.cache
+sdk untaped.sdk.network.ServerApi.credential
+sdk untaped.sdk.network.ServerApi.derived_name(attribute)
+sdk untaped.sdk.network.ServerApi.detect
+sdk untaped.sdk.network.ServerApi.doctor
+sdk untaped.sdk.network.ServerApi.module
+sdk untaped.sdk.network.ServerApi.name
+sdk untaped.sdk.network.ServerApi.name_problem(name)
+sdk untaped.sdk.network.ServerApi.name_style class
+sdk untaped.sdk.network.ServerApi.override
+sdk untaped.sdk.network.ServerApi.plugin
+sdk untaped.sdk.network.ServerApi.port(refresh=) default=None
+sdk untaped.sdk.network.ServerApi.port(settings)
+sdk untaped.sdk.network.ServerApi.problems()
+sdk untaped.sdk.network.ServerApi.qualified
+sdk untaped.sdk.network.ServerApi.server
+sdk untaped.sdk.network.ServerApi.spelled
+sdk untaped.sdk.network.ServerApi.where
+sdk untaped.sdk.network.ServerVersion implement=
+sdk untaped.sdk.network.ServerVersion.parse(text)
 sdk untaped.sdk.network.TlsVerify
 sdk untaped.sdk.network.capped()  [experimental]
 sdk untaped.sdk.network.find_program(name)
@@ -8505,8 +8505,8 @@ sdk untaped_workspace.api.RepoName  [experimental]
 sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
-server-api github.server-api override=github.server_version  [experimental]
-server-api jira.server-api override=jira.server_version  [experimental]
+server-api github.server-api override=github.server_version
+server-api jira.server-api override=jira.server_version
 state ansible.aliases Alias[]
 state ansible.aliases.alias string
 state ansible.aliases.repo string

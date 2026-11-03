@@ -1,5 +1,5 @@
 # untaped surface 3
-adapter jira.server-api DataCenter  [experimental]
+adapter jira.server-api DataCenter
 cfg jira.assigned_jql string default="assignee = currentUser() AND resolution = Unresolved"
 cfg jira.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg jira.default_board_id integer? default=unset
@@ -339,4 +339,4 @@ record jira.user.display_name string?
 record jira.user.email_address string?
 record jira.user.key string?
 record jira.user.name string?
-server-api jira.server-api override=jira.server_version  [experimental]
+server-api jira.server-api override=jira.server_version

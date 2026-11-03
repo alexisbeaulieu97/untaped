@@ -13,8 +13,6 @@ from typing import TYPE_CHECKING, Any, Self, cast
 
 from pydantic_core import core_schema
 
-from untaped.sdk.marks import experimental
-
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler
     from pydantic.json_schema import JsonSchemaValue
@@ -27,14 +25,11 @@ def _text_schema(read: Callable[[Any], Any]) -> core_schema.CoreSchema:
     )
 
 
-@experimental
 class Release(tuple[int, ...]):
     """A dotted release, ``Release.parse("11.2.1")``: a tuple of numbers, so ``>= (12,)`` works.
 
     ``str()`` is ``11.2.1``. As a pydantic field it validates from that text
     (or a sequence of numbers, as an API returns it) and serialises to it.
-
-    Experimental. First consumer: jira.
     """
 
     __slots__ = ()
@@ -84,7 +79,6 @@ class Release(tuple[int, ...]):
         return {"type": "string", "examples": ["11.2.1"]}
 
 
-@experimental
 class ServerVersion:
     """What one server runs: the bound of a :class:`ServerApi`'s version type.
 
@@ -95,8 +89,6 @@ class ServerVersion:
     every recorded version. No order is needed: adapters compare their own
     fields. As a pydantic field (the override setting) it validates from its
     text and serialises to it, so it is one setting value.
-
-    Experimental. First consumer: jira.
     """
 
     @classmethod
