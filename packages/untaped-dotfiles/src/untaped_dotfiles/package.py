@@ -313,7 +313,10 @@ class PackageFile(Where):
       `format` without `merge` is refused. A merge writes the keys the
       source names: mappings (TOML tables) recurse, other values (lists and
       arrays of tables too) replace, and the target's other keys stay, with
-      a YAML or TOML target's comments and order. In TOML, a new table is
+      a YAML or TOML target's comments and order. Dates and timestamps stay
+      dates. An empty mapping in the source makes sure a mapping is there:
+      keys the target holds under it stay the target's, and `remove` leaves
+      them. In TOML, a new table is
       written inline where a `[header]` would capture the keys after it
       (under dotted keys such as `a.b = 1`), and a merge that can't be
       written without changing the target's other keys writes nothing.
