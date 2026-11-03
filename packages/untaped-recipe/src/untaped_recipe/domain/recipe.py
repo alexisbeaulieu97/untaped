@@ -26,8 +26,6 @@ InputScope = Literal["target", "global"]
 class InputSpec(Input):
     """One declared recipe input: the values plugin's input, plus recipe's own fields."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
     type: Literal["str", "int", "bool", "float", "list", "dict"] = "str"
     items: Literal["str", "int", "bool", "float"] | None = Field(
         None, description="A `list` input's element type (default: `str`)."

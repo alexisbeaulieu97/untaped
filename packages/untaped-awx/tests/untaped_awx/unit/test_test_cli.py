@@ -314,7 +314,9 @@ def test_non_interactive_at_a_terminal_names_the_missing_variable_without_asking
         "---\nvariables:\n  env: {}\n---\nkind: AwxTestSuite\njobTemplate: J\ncases: {c: {}}\n",
     )
 
-    result = run(["test", "list", str(test_file), "--non-interactive"], interactive=True)
+    result = run(
+        ["test", "list", str(test_file), "--non-interactive"], interactive=True, terminal=True
+    )
 
     assert result.exit_code == 2
     assert "required 1 variable not provided: env" in result.stderr
