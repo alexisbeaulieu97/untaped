@@ -76,7 +76,7 @@ class HookFailedError(RecipeError):
 
 
 class PackFetchError(RecipeError):
-    """A git command fetching a pack source failed; raise it with the git error's attribution."""
+    """Fetching or writing a git pack source failed; a git failure keeps its attribution."""
 
     category = ErrorCategory.FAILED
     system = System.GIT
