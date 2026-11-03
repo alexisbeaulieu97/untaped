@@ -1,4 +1,5 @@
 # untaped surface 3
+adapter awx.server-api ControllerV2  [experimental]
 adapter jira.server-api DataCenter  [experimental]
 cfg ansible.caches.source_data.max_age_seconds integer(minimum=0) default=86400
 cfg ansible.default_source string? default=unset
@@ -15,12 +16,13 @@ cfg ansible.source_refresh_backend choice=graphql
 cfg ansible.source_refresh_backend string default=auto
 cfg ansible.source_refresh_rate_limit_floor integer(minimum=0) default=500
 cfg ansible.source_refresh_repo_batch_size integer(minimum=1) default=100
-cfg awx.api_prefix string default=/api/controller/v2/
 cfg awx.caches.resources.max_age_seconds integer(minimum=0) default=3600
+cfg awx.caches.server_api.max_age_seconds integer(minimum=0) default=86400
 cfg awx.default_organization string? default=unset
 cfg awx.page_size integer(exclusiveMinimum=0) default=200
 cfg awx.server.url string(format=uri,maxLength=2083,minLength=1) default=unset
 cfg awx.server.verify_tls boolean|string(format=path) default=true
+cfg awx.server_version string? default=unset
 cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
 cfg dotfiles.kept_dir string(format=path)? default=unset  [experimental]
@@ -1937,6 +1939,8 @@ cli untaped awx ping --format choice=pipe
 cli untaped awx ping --format choice=raw
 cli untaped awx ping --format choice=table
 cli untaped awx ping --format choice=yaml
+cli untaped awx ping --refresh negative=--cached
+cli untaped awx ping --refresh switch default=unset
 cli untaped awx projects
 cli untaped awx projects delete
 cli untaped awx projects delete --all switch default=unset
@@ -8500,6 +8504,7 @@ sdk untaped_workspace.api.RepoName  [experimental]
 sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
 sdk untaped_workspace.testing.conformance(provider)  [experimental]
+server-api awx.server-api override=awx.server_version  [experimental]
 server-api jira.server-api override=jira.server_version  [experimental]
 state ansible.aliases Alias[]
 state ansible.aliases.alias string

@@ -1,6 +1,6 @@
 """``untaped awx unified-templates`` — polymorphic templates browser.
 
-Read-only surface over AWX's ``/api/v2/unified_job_templates/`` virtual
+Read-only surface over AWX's ``unified_job_templates/`` virtual
 collection, which aggregates ``JobTemplate``, ``WorkflowJobTemplate``,
 ``Project``, and ``InventorySource`` rows behind a single ``type``
 discriminator string. The AWX UI's "Templates" page shows the same view.

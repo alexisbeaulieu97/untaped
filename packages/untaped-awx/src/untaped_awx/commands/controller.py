@@ -8,11 +8,12 @@ from typing import Final, Literal
 import yaml
 from pydantic import Field
 
-from untaped.sdk import Command, Output, Positional
+from untaped.sdk import Command, Output, Positional, Refresh
 from untaped_awx.application import Ping as PingUseCase
 from untaped_awx.commands._awx import AwxCommand
 from untaped_awx.domain.ping import PingStatus
 from untaped_awx.domain.suites.suite import Suite
+from untaped_awx.server import SERVER_API
 from untaped_awx.settings import AwxSettings
 
 
@@ -22,11 +23,12 @@ class Ping(AwxCommand):
     The row names the authenticated `user`, so it also checks the token.
     """
 
+    refresh: Refresh = Refresh(SERVER_API.cache)
     output: Output[PingStatus] = Output()  # a default, so the doctor probe builds one bare
 
     def run(self) -> PingStatus:
-        with self.awx() as awx:
-            return PingUseCase(awx.client)()
+        with self.awx(refresh=self.refresh.directive) as awx:
+            return PingUseCase(awx.repo)()
 
 
 def probe() -> str:

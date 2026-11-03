@@ -1,10 +1,10 @@
 """The composition root of awx's commands: concrete adapters wired for one invocation.
 
-An :class:`AwxContext` holds an open :class:`AwxClient` plus the catalog,
-foreign-key resolver, strategies and repositories the use cases need. A
-command opens one with :meth:`AwxCommand.awx <untaped_awx.commands._awx.AwxCommand.awx>`,
-which closes the HTTP client after the block; everything downstream takes
-the :class:`AwxSettings` it was built from.
+An :class:`AwxContext` holds the controller's port
+(:data:`~untaped_awx.server.SERVER_API`) plus the catalog, foreign-key
+resolver, strategies and repositories the use cases need. A command opens one
+with :meth:`AwxCommand.awx <untaped_awx.commands._awx.AwxCommand.awx>`; core
+closes the port's connections when the run ends.
 """
 
 from __future__ import annotations
@@ -16,16 +16,16 @@ from typing import TYPE_CHECKING
 from untaped.sdk import UsageError, command_line
 from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.errors import WaitCancelledError
-from untaped_awx.infrastructure import AwxClient, AwxResourceCatalog
+from untaped_awx.infrastructure import AwxResourceCatalog
 from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
 from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
-from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
 from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
 from untaped_awx.infrastructure.resources.unified_template_repo import (
     HttpUnifiedTemplateRepository,
 )
 from untaped_awx.infrastructure.resources.workflow_node_repo import HttpWorkflowNodeRepository
+from untaped_awx.server import SERVER_API
 
 if TYPE_CHECKING:
     from untaped.sdk import Terminal
@@ -35,14 +35,15 @@ if TYPE_CHECKING:
 class AwxContext:
     """Holds wired-up dependencies for a single command invocation."""
 
-    def __init__(self, command: AwxCommand) -> None:
+    def __init__(self, command: AwxCommand, *, refresh: bool | None = None) -> None:
         settings = command.settings
         self._ctx = command.ctx
         #: The stderr handle for messages, failures and progress.
         self.diag = self._ctx.diag
         self.settings = settings
-        self.client = AwxClient(settings, http=self._ctx.http)
-        self.repo = ResourceRepository(self.client, page_size=settings.page_size)
+        #: The controller, served by the adapter for its version; ``refresh`` is a
+        #: ``Refresh(SERVER_API.cache)`` field's directive.
+        self.repo = SERVER_API.port(settings, refresh=refresh)
         self.catalog = AwxResourceCatalog()
         self.fk = HttpFkResolver(
             self.repo,
@@ -84,9 +85,6 @@ class AwxContext:
     def terminal(self) -> Terminal:
         """The terminal, for prompts and screens."""
         return self._ctx.terminal
-
-    def close(self) -> None:
-        self.client.close()
 
 
 def scope_for_command(

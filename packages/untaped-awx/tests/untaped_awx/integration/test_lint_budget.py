@@ -168,8 +168,8 @@ def _seed_schedules(fake: Any) -> None:
         )  # fmt: skip
 
 
-def _group(path: str) -> str:
-    parts = [part for part in path.removeprefix("/api/v2/").split("/") if part]
+def _group(fake: Any, path: str) -> str:
+    parts = [part for part in fake.relative(path).split("/") if part]
     if len(parts) == 1:
         return parts[0]
     if len(parts) == 3 and parts[1].isdigit():
@@ -183,7 +183,7 @@ def measure(fake: Any) -> tuple[Counter[str], float, list[dict[str, Any]]]:
     result = run(["lint", "-f", "json"])
     elapsed = time.perf_counter() - started
     assert result.exit_code in (0, 3), result.output
-    counts = Counter(_group(call.request.url.path) for call in fake.router.calls)
+    counts = Counter(_group(fake, call.request.url.path) for call in fake.router.calls)
     return counts, elapsed, json.loads(result.stdout)
 
 

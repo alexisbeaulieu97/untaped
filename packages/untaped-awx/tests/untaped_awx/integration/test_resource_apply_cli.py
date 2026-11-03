@@ -799,4 +799,4 @@ def test_a_management_job_schedule_applies_under_its_system_job_template(
     result = run(["apply", str(doc), "--yes", "--format", "json"])
     assert result.exit_code == 0, result.output + (result.stderr or "")
     (post,) = _posts(fake_aap)
-    assert post.request.url.path == "/api/v2/system_job_templates/500/schedules/"
+    assert post.request.url.path == fake_aap.path("system_job_templates/500/schedules/")

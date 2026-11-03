@@ -31,7 +31,7 @@ def _config(tmp_path: Path) -> Path:
         awx:
           base_url: https://aap.example.com
           token: secret
-          api_prefix: /api/v2/
+          server_version: AWX 24.6.1
         """
     )
     return cfg

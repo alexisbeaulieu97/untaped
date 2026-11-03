@@ -1,6 +1,6 @@
 """Auth regression guard: a configured token must reach AAP as a Bearer header.
 
-A token-less awx client can hit unauthenticated endpoints (``ping/``).
+A token-less connection can hit unauthenticated endpoints (``ping/``).
 Regressed once: the SDK only read the fields a token-less client required, so
 the configured token was never sent: every authenticated request went out
 unauthenticated and AAP replied 401. Fixed in untaped 1.1.1; a token found for
@@ -15,35 +15,31 @@ import respx
 from pydantic import HttpUrl
 
 from awx_test_support import installed
-from untaped.sdk.network import HttpFactory
-from untaped_awx.infrastructure import AwxClient
-from untaped_awx.settings import TOKEN, AwxServer, AwxSettings
+from untaped_awx.server import SERVER_API
+from untaped_awx.settings import TOKEN, AwxServer, AwxSettings, ControllerVersion
 
 
-def test_awx_client_sends_bearer_token(awx_config: AwxSettings, http: HttpFactory) -> None:
+def test_the_port_sends_bearer_token(awx_config: AwxSettings) -> None:
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         route = mock.get(url__regex=r".*/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0"})
         )
-        with AwxClient(awx_config, http=http) as client:
-            client.ping()
+        SERVER_API.port(awx_config).ping()
 
     assert route.calls.last.request.headers["Authorization"] == "Bearer secret"
 
 
-def test_awx_client_without_token_sends_no_auth(
-    http: HttpFactory, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_the_port_without_token_sends_no_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("CONTROLLER_OAUTH_TOKEN")
     config = AwxSettings(
-        server=AwxServer(url=HttpUrl("https://aap.example.com")), api_prefix="/api/v2/"
+        server=AwxServer(url=HttpUrl("https://aap.example.com")),
+        server_version=ControllerVersion.parse("AWX 24.6.1"),
     )
     with respx.mock(base_url="https://aap.example.com", assert_all_called=False) as mock:
         route = mock.get(url__regex=r".*/ping/").mock(
             return_value=httpx.Response(200, json={"version": "4.5.0"})
         )
-        with AwxClient(config, http=http) as client:
-            client.ping()
+        SERVER_API.port(config).ping()
 
     assert "Authorization" not in route.calls.last.request.headers
 
