@@ -85,9 +85,11 @@ class SetSetting:
         (from :meth:`current`) refuses the write when the profile's own value
         changed since it was read, as ``config edit`` refuses a file changed
         under it. Raises :class:`ConfigError` when the value is invalid or
-        changed; nothing is written then.
+        changed; nothing is written then. A value the key already holds
+        writes nothing and is unchanged.
         """
         removed: list[str] = []
+        unchanged: list[str] = []
         holder = _holder(self._repo, key)
 
         def update(target: str, current: Any) -> str:
@@ -99,8 +101,18 @@ class SetSetting:
             return value
 
         target = self._repo.update_value(
-            key, update, profile=profile, dry_run=dry_run, on_spelling_removed=removed.append
+            key,
+            update,
+            profile=profile,
+            dry_run=dry_run,
+            on_spelling_removed=removed.append,
+            on_unchanged=unchanged.append,
         )
+        if unchanged:
+            note: Note = ("info", f"{key} already holds that value in {_where(target)}")
+            return SettingChange(
+                SettingOutcome(key=key, profile=target, action="unchanged"), (note,)
+            )
         if dry_run:
             return SettingChange(SettingOutcome(key=key, profile=target, action="planned"))
         line = f"set {key} in {_where(target)}{_removed_note(removed)}"
@@ -203,7 +215,8 @@ class SetSettings:
         own value when it was read (:meth:`SetSetting.current`): one key
         changed since refuses the whole write. Raises :class:`ConfigError`
         when a value is invalid or changed; nothing is written then. One
-        change per key, in ``values``' order.
+        change per key, in ``values``' order: a key whose write changes
+        nothing in the file is unchanged.
         """
         expected = expected or {}
         removed: list[str] = []
@@ -272,7 +285,7 @@ class PlannedSettings:
         )
         self._lines = [
             *(
-                self._line(repo_now, key, value, landed[key], removes=key not in unchanged)
+                self._line(repo_now, key, value, landed[key], changes=key not in unchanged)
                 for key, value in self._changes.items()
             ),
             *(f"remove {old}, an old spelling{_landed(landed)}" for old in removed),
@@ -291,10 +304,10 @@ class PlannedSettings:
         return {key: updater(key, value) for key, value in self._changes.items()}
 
     @staticmethod
-    def _line(repo: SettingsWriter, key: str, value: object, target: str, *, removes: bool) -> str:
+    def _line(repo: SettingsWriter, key: str, value: object, target: str, *, changes: bool) -> str:
         where = _where(target)
         if value is None:
-            return f"unset {key} in {where}" if removes else f"{key} is not set in {where}"
+            return f"unset {key} in {where}" if changes else f"{key} is not set in {where}"
         descriptor = repo.descriptor(key)
         shown = (
             "***"
@@ -303,7 +316,9 @@ class PlannedSettings:
         )
         # JSON, so the text "true" and the bool true read apart
         text = json.dumps(shown, separators=(",", ":"), ensure_ascii=False)
-        return f"set {key} to {text} in {where}"
+        return (
+            f"set {key} to {text} in {where}" if changes else f"{key} is already {text} in {where}"
+        )
 
     def preview(self) -> list[PreviewItem]:
         """One line per change, in order."""
@@ -431,8 +446,7 @@ class RankProviders:
             if not plugins and current is not None and _holds_nothing(current, name, method):
                 raise _NothingStored(target)
             extensions = _ranked(_mapping(current), name, method, plugins)
-            # A removal of what is stored (even null) changes it; the writer says if none was.
-            changed = extensions != current or not plugins
+            changed = True  # unless the writer says the file is as it was
             return json.dumps(extensions) if extensions else None
 
         key = f"{owner_name}.extensions"

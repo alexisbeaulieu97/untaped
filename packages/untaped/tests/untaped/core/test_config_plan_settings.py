@@ -439,3 +439,16 @@ def test_a_write_hidden_by_a_picked_profile_says_so(
         result.stderr
     )
     assert _outcomes() == [("shelf.greeting", "default", "updated")]
+
+
+def test_a_value_the_key_already_holds_is_unchanged(_isolated_config: Path) -> None:
+    before = _isolated_config.read_text(encoding="utf-8")
+
+    previewed = _untaped({SHELF.greeting: "hey"}, "shelf", "write", "--dry-run")
+    assert 'shelf.greeting is already "hey" in profile default' in previewed.stderr
+
+    result = _untaped({SHELF.greeting: "hey"}, "shelf", "write", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert _outcomes() == [("shelf.greeting", "default", "unchanged")]
+    assert _isolated_config.read_text(encoding="utf-8") == before

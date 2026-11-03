@@ -1,5 +1,6 @@
 """The config write use cases: what they write, and the lines they return instead of printing."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
@@ -282,3 +283,46 @@ def test_removing_a_key_under_a_null_section_changes_nothing(_config: Path) -> N
     _config.write_text("format_version: 2\nspelled: null\n", encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({"spelled.size": None})
     assert change.outcome.action == "unchanged"
+
+
+def test_setting_a_value_the_key_holds_is_unchanged(_config: Path) -> None:
+    """The outcome follows the file: a value already there writes nothing, dry run or not."""
+    text = "format_version: 2\ndemo: {page_size: 10}\n"
+    _config.write_text(text, encoding="utf-8")
+    repo = SettingsFileRepository()
+    for dry_run in (True, False):
+        change = SetSetting(repo)("demo.page_size", "10", dry_run=dry_run)
+        assert change.outcome.action == "unchanged"
+        assert change.notes == (
+            ("info", "demo.page_size already holds that value in profile default"),
+        )
+    (many,) = SetSettings(repo)({"demo.page_size": "10"})
+    assert (many.outcome.action, many.notes) == ("unchanged", ())
+    assert _config.read_text(encoding="utf-8") == text
+
+
+def test_setting_a_value_still_drops_its_old_spelling(_config: Path) -> None:
+    """The value is the same, but removing the old spelling changes the file."""
+    _config.write_text("format_version: 2\nspelled: {size: 4, a_size: 9}\n", encoding="utf-8")
+    change = SetSetting(SettingsFileRepository())("spelled.size", "4")
+    assert change.outcome.action == "updated"
+    assert read_config_dict(_config)["spelled"] == {"size": 4}
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda: UnsetSetting(SettingsFileRepository())("demo.page_size", profile="prod"),
+        lambda: SetSettings(SettingsFileRepository())({"demo.page_size": None}, profile="prod")[0],
+    ],
+    ids=["unset", "set-settings"],
+)
+def test_a_write_that_changes_nothing_leaves_an_empty_profile_alone(
+    _config: Path, write: Callable[[], object]
+) -> None:
+    """An empty ``prod:`` stays as written, not rewritten as ``prod: {}``."""
+    _config.write_text("format_version: 2\nprofiles:\n  prod:\n", encoding="utf-8")
+    before = _config.read_text(encoding="utf-8")
+    change = write()
+    assert change.outcome.action == "unchanged"  # type: ignore[attr-defined]
+    assert _config.read_text(encoding="utf-8") == before
