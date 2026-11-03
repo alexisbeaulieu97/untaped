@@ -98,16 +98,15 @@ def dump_document(
 ) -> str:
     """Render ``document``; YAML is indented the way ``like`` (the original text) was.
 
-    TOML is refused unless it reads back as ``document``, so a layout
-    ``tomlkit`` can't edit never reaches the file.
+    An edited TOML document is written through :func:`merge_text` or
+    :func:`remove_text`, which check its text.
     """
     if fmt == "json":
         return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
     if fmt == "toml":
-        rendered = _toml_text(document, _unwrap(document))
-        if rendered is None:
-            raise _refused(where)
-        return rendered
+        import tomlkit  # noqa: PLC0415
+
+        return tomlkit.dumps(document)
     out = io.StringIO()
     _yaml(like).dump(document, out)
     return out.getvalue()
@@ -168,8 +167,8 @@ def _edit_toml(
             failure = exc
             continue
         rendered = _toml_text(document, expected)
-        if rendered is not None:
-            return document, rendered
+        if rendered is not None:  # what the file will hold, not tomlkit's edited view of it
+            return load_document(rendered, fmt="toml", where=where), rendered
     raise _refused(where) from failure
 
 
@@ -192,9 +191,12 @@ def _unwrap(document: MutableMapping[str, Any]) -> dict[str, Any]:
 
 def _refused(where: str) -> DotfilesError:
     return DotfilesError(
-        f"could not update {where}: tomlkit can't write its layout without moving "
-        "keys; nothing was written",
-        hint="write the target's tables as [headers] instead of dotted keys, then apply again",
+        f"could not update {where}: tomlkit can't edit its layout without changing "
+        "other keys; nothing was written",
+        hint=(
+            "keep each table's and array of tables' entries together, under [headers] "
+            "rather than dotted keys, then run the command again"
+        ),
         category="invalid",
     )
 

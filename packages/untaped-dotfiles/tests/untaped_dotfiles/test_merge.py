@@ -282,11 +282,3 @@ def test_a_toml_merge_tomlkit_would_lose_a_key_in_is_refused(tmp_path: Path) -> 
     with pytest.raises(DotfilesError, match="nothing was written"):
         placer.merge(b"[[d.b]]\nz = 1\n", target, fmt="toml")
     assert target.read_text() == before
-
-
-def test_toml_that_would_not_read_back_is_refused() -> None:
-    # Without the TOML fit, tomlkit writes `[a.c]` among the dotted keys and captures `other`.
-    document = load_document("a.b = 1\nother = 2\n", fmt="toml", where="t")
-    merge_into(document, {"a": {"c": {"d": 1}}})
-    with pytest.raises(DotfilesError, match="nothing was written"):
-        dump_document(document, fmt="toml", where="t")
