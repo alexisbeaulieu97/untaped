@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from untaped.sdk._lazy import lazy_names
 
 if TYPE_CHECKING:
+    from untaped.sdk.network._versions import Release, ServerVersion
     from untaped.sdk.network.auth import find_program
     from untaped.sdk.network.credentials import Credential, CredentialKey, TlsVerify
     from untaped.sdk.network.http import (
@@ -27,13 +28,7 @@ if TYPE_CHECKING:
         rejected_token_error,
         same_origin,
     )
-    from untaped.sdk.network.server_api import (
-        ApiAdapter,
-        ApiMismatch,
-        Release,
-        ServerApi,
-        ServerVersion,
-    )
+    from untaped.sdk.network.server_api import ApiAdapter, ApiMismatch, ServerApi
     from untaped.sdk.network.upstream import capped, succeeded
 
 __all__ = [
@@ -74,7 +69,8 @@ if not TYPE_CHECKING:  # a type checker reads the imports above; a run reads the
                 "rejected_token_error",
                 "same_origin",
             ),
-            "server_api": ("ApiAdapter", "ApiMismatch", "Release", "ServerApi", "ServerVersion"),
+            "_versions": ("Release", "ServerVersion"),
+            "server_api": ("ApiAdapter", "ApiMismatch", "ServerApi"),
             "upstream": ("capped", "succeeded"),
         },
     )

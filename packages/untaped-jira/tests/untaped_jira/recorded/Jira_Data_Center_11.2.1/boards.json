@@ -1,0 +1,14 @@
+{
+  "maxResults": 50,
+  "startAt": 0,
+  "total": 1,
+  "isLast": true,
+  "values": [
+    {
+      "id": 7,
+      "self": "https://jira.example.com/rest/agile/1.0/board/7",
+      "name": "ACME board",
+      "type": "scrum"
+    }
+  ]
+}

@@ -51,6 +51,11 @@ def _mock_services(mock: respx.MockRouter, *, github_status: int = 200) -> None:
     mock.get("https://api.github.com/user").mock(
         return_value=httpx.Response(github_status, json={"login": "octocat", "id": 1})
     )
+    mock.get("https://jira.example.com/rest/api/2/serverInfo").mock(
+        return_value=httpx.Response(
+            200, json={"deploymentType": "DataCenter", "versionNumbers": [11, 2, 1]}
+        )
+    )
     mock.get("https://jira.example.com/rest/api/2/myself").mock(
         return_value=httpx.Response(200, json={"name": "jdoe"})
     )

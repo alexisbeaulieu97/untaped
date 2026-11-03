@@ -28,6 +28,8 @@ from packaging.utils import canonicalize_name
 from pydantic import BaseModel, HttpUrl, SecretStr
 from release import packages
 
+from untaped.sdk.network import ServerVersion
+
 if TYPE_CHECKING:
     from untaped.core.surface._settings import Section
     from untaped.runtime.registry import PluginCandidate
@@ -90,6 +92,8 @@ def _annotation_name(inner: Any) -> str:
         return "secret"
     if inner is HttpUrl:
         return "URL"
+    if isinstance(inner, type) and issubclass(inner, ServerVersion):
+        return "string"  # a server API's version, set as its text
     if origin is Literal:
         return " \\| ".join(f"`{arg}`" for arg in get_args(inner))
     if origin is Annotated:

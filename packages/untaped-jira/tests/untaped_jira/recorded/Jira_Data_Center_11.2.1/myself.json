@@ -1,0 +1,13 @@
+{
+  "self": "https://jira.example.com/rest/api/2/user?username=alice",
+  "key": "JIRAUSER10005",
+  "name": "alice",
+  "emailAddress": "alice@example.com",
+  "displayName": "Alice Example",
+  "active": true,
+  "timeZone": "UTC",
+  "groups": {
+    "size": 1,
+    "items": []
+  }
+}

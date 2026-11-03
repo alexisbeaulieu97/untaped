@@ -1,0 +1,15 @@
+{
+  "baseUrl": "https://jira.example.com",
+  "version": "9.12.15",
+  "versionNumbers": [
+    9,
+    12,
+    15
+  ],
+  "deploymentType": "DataCenter",
+  "buildNumber": 9120015,
+  "buildDate": "2024-01-15T00:00:00.000+0000",
+  "serverTime": "2026-11-03T08:00:00.000+0000",
+  "scmInfo": "0000000000000000000000000000000000000000",
+  "serverTitle": "Acme Jira"
+}

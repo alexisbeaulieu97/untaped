@@ -9,7 +9,6 @@ from pydantic import Field
 
 from untaped.sdk import Group, Limit, Output
 from untaped_jira.commands._jira import JiraCommand
-from untaped_jira.parse import parse_board
 from untaped_jira.records import Board
 
 
@@ -24,16 +23,15 @@ class List(JiraCommand):
 
     def run(self) -> Iterator[Board]:
         self.output.empty("No boards match the filter.")
-        with self.client() as client, self.ctx.diag.progress("Listing boards"):
-            rows = [
-                parse_board(board)
-                for board in client.list_boards(
-                    project_key_or_id=self.project,
+        with self.ctx.diag.progress("Listing boards"):
+            rows = list(
+                self.client().boards(
+                    project=self.project,
                     name=self.name,
                     board_type=self.type,
                     limit=self.limit.value,
                 )
-            ]
+            )
         yield from rows
 
 

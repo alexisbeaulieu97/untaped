@@ -1,4 +1,4 @@
-"""Issue and project key validation: what may be interpolated into a REST path."""
+"""Issue and project keys: which may be interpolated into a request, and an issue's page."""
 
 from __future__ import annotations
 
@@ -28,3 +28,10 @@ def _validate(value: str, pattern: re.Pattern[str], what: str, example: str) -> 
     if not pattern.fullmatch(key):
         raise UsageError(f"invalid {what} {q(value)}; expected {example} or a numeric id")
     return key
+
+
+def browse_url(base_url: str | None, key: str) -> str | None:
+    """The browser URL of issue ``key`` on the Jira at ``base_url``."""
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/browse/{key}"

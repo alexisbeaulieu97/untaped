@@ -14,6 +14,7 @@ from untaped_jira.commands.issues import Issues
 from untaped_jira.commands.projects import Projects
 from untaped_jira.commands.sprints import Sprints
 from untaped_jira.commands.whoami import Whoami, probe
+from untaped_jira.server_api import SERVER_API
 from untaped_jira.settings import TOKEN, JiraSettings
 
 
@@ -24,6 +25,7 @@ class Jira(Plugin):
     commands = (Whoami, Issues, Projects, Boards, Sprints)
     token = TOKEN
     api = OnlineCheck(probe=probe)
+    server_api = SERVER_API
     skill = StubSkill(
         "Jira Data Center and Server issues (not Jira Cloud): JQL searches, "
         "issue fields, assignees, comments, links and workflow transitions, plus "

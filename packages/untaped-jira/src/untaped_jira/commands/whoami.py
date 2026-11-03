@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from untaped.sdk import Output
 from untaped_jira.commands._jira import JiraCommand
-from untaped_jira.parse import parse_user
 from untaped_jira.records import User
 
 
@@ -17,8 +16,8 @@ class Whoami(JiraCommand):
     output: Output[User] = Output()  # a default, so the doctor probe builds one bare
 
     def run(self) -> User:
-        with self.client() as client, self.ctx.diag.progress("Fetching authenticated user"):
-            return parse_user(client.me())
+        with self.ctx.diag.progress("Fetching authenticated user"):
+            return self.client().me()
 
 
 def probe() -> str:
