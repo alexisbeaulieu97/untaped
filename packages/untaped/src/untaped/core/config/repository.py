@@ -447,12 +447,10 @@ class SettingsFileRepository:
         declared = self._declared(descriptor)
         if declared.path == descriptor.path or _at_path(data, declared.path) is not None:
             return
-        model = self.section_model(declared.path[0])
-        readable = key_mappings(model).readable if model is not None else {}
-        for old in self._old_paths(declared):
+        for old in self._read_paths(declared):  # a retired spelling isn't read, nor carried
             value = _at_path(data, old)
-            if value is None or ".".join(old[1:]) not in readable:
-                continue  # a retired spelling is no longer read, so it isn't carried
+            if value is None:
+                continue
             if only_if_set and _at_path(value, descriptor.path[len(declared.path) :]) is None:
                 return  # the closest old spelling is the one read; the others are ignored
             unset_at_path(data, old)
@@ -462,8 +460,12 @@ class SettingsFileRepository:
             return
 
     def _own(self, data: dict[str, Any], descriptor: FieldDescriptor) -> Any:
-        """The key's raw value in one profile's ``data``: its own spelling, else an old one."""
-        paths = [descriptor.path, *self._old_paths(descriptor)]
+        """The key's raw value in one profile's ``data``, as a run reads it.
+
+        Its own spelling, else the closest old one still read; a retired
+        spelling's value is no one's, so it is left out.
+        """
+        paths = [descriptor.path, *self._read_paths(descriptor)]
         return next(
             (value for value in (_at_path(data, path) for path in paths) if value is not None),
             None,
@@ -570,6 +572,12 @@ class SettingsFileRepository:
 
     def _section_models(self) -> dict[str, type[BaseModel]]:
         return model_sections(self._profile_model())
+
+    def _read_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
+        """:meth:`_old_paths` a run still reads (renamed, not retired), closest first."""
+        model = self.section_model(descriptor.path[0])
+        readable = key_mappings(model).readable if model is not None else {}
+        return [old for old in self._old_paths(descriptor) if ".".join(old[1:]) in readable]
 
     def _old_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
         """Absolute paths of every old spelling of ``descriptor``, closest first."""
