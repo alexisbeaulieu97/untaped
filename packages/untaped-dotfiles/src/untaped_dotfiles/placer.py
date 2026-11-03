@@ -18,13 +18,15 @@ from pathlib import Path
 from typing import Any
 
 from untaped.sdk.storage import atomic_write
-from untaped_dotfiles.documents import dump_document, load_document, plain
+from untaped_dotfiles.documents import load_document, load_values, merge_text, plain, remove_text
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
-from untaped_dotfiles.merge import leaf_paths, merge_into, project, remove_paths
+from untaped_dotfiles.merge import leaf_paths, project
 from untaped_dotfiles.models import KeyPath
 from untaped_dotfiles.package import MergeFormat
 from untaped_dotfiles.states import TargetInfo
+
+_SOURCE = "the merge source"
 
 
 class FilesystemPlacer:
@@ -95,19 +97,17 @@ class FilesystemPlacer:
         return content_hash(data)
 
     def parse(self, source: bytes, *, fmt: MergeFormat) -> dict[str, Any]:
-        document = load_document(source.decode("utf-8"), fmt=fmt, where="the merge source")
-        result: dict[str, Any] = plain(document)
+        result: dict[str, Any] = plain(load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE))
         return result
 
     def _merged(
         self, source: bytes, target: Path, *, fmt: MergeFormat
-    ) -> tuple[str, MutableMapping[str, Any], dict[str, Any]]:
-        """``(original text, merged document, incoming document)``."""
-        incoming = self.parse(source, fmt=fmt)
+    ) -> tuple[MutableMapping[str, Any], str, dict[str, Any]]:
+        """``(merged document, its text, incoming values)``, writing nothing."""
+        incoming = load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE)
         text = target.read_text(encoding="utf-8") if target.is_file() else ""
-        existing = load_document(text, fmt=fmt, where=str(target))
-        merge_into(existing, incoming)
-        return text, existing, incoming
+        merged, rendered = merge_text(text, incoming, fmt=fmt, where=str(target))
+        return merged, rendered, incoming
 
     def read(self, target: Path) -> bytes | None:
         """What a program reading ``target`` gets (through a link); ``None`` when no file."""
@@ -118,24 +118,21 @@ class FilesystemPlacer:
 
     def merged_text(self, source: bytes, target: Path, *, fmt: MergeFormat) -> str:
         """The text :meth:`merge` would write to ``target``, writing nothing."""
-        text, existing, _ = self._merged(source, target, fmt=fmt)
-        return dump_document(existing, fmt=fmt, like=text)
+        return self._merged(source, target, fmt=fmt)[1]
 
     def merge(
         self, source: bytes, target: Path, *, fmt: MergeFormat
     ) -> tuple[str, tuple[KeyPath, ...]]:
-        text, existing, incoming = self._merged(source, target, fmt=fmt)
-        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
+        merged, rendered, incoming = self._merged(source, target, fmt=fmt)
+        atomic_write(target, rendered)
         managed = tuple(leaf_paths(incoming))
-        return value_hash(project(plain(existing), managed)), managed
+        return value_hash(project(plain(merged), managed)), managed
 
     def unmerge(self, target: Path, *, fmt: MergeFormat, managed: tuple[KeyPath, ...]) -> None:
         if not target.is_file():
             return
         text = target.read_text(encoding="utf-8")
-        existing = load_document(text, fmt=fmt, where=str(target))
-        remove_paths(existing, managed)
-        atomic_write(target, dump_document(existing, fmt=fmt, like=text))
+        atomic_write(target, remove_text(text, managed, fmt=fmt, where=str(target)))
 
     def delete(self, target: Path) -> None:
         if target.is_symlink() or target.is_file():

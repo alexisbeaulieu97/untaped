@@ -50,8 +50,8 @@ REFUSED: dict[str, tuple[str, str]] = {
         "is placed twice",
     ),
     "merge with no known format": (
-        _items("      - {path: a, target: ~/a.toml, mode: merge}\n"),
-        "needs a .json, .yml or .yaml extension or a format",
+        _items("      - {path: a, target: ~/a.ini, mode: merge}\n"),
+        "needs a .json, .yml, .yaml or .toml extension or a format",
     ),
     "format without merge": (
         _items("      - {path: a, target: ~/a, format: json}\n"),
@@ -169,10 +169,18 @@ def test_merge_reads_the_format_from_the_target_or_format() -> None:
             "      - {path: a, target: ~/a.json, mode: merge}\n"
             "      - {path: b, target: ~/b.yaml, mode: merge}\n"
             "      - {path: c, target: ~/c.conf, mode: merge, format: yaml}\n"
+            "      - {path: d, target: ~/d.TOML, mode: merge}\n"
+            "      - {path: e, target: ~/e.conf, mode: merge, format: toml}\n"
         ),
         where="dots/x",
     )
-    assert [f.merge_format for f in package.items["x"].files] == ["json", "yaml", "yaml"]
+    assert [f.merge_format for f in package.items["x"].files] == [
+        "json",
+        "yaml",
+        "yaml",
+        "toml",
+        "toml",
+    ]
 
 
 # -- the design's worked example, as package files (example.com stands in for the hosts) --
