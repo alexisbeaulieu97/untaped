@@ -239,6 +239,8 @@ def test_a_null_spelling_a_run_reads_hides_the_others(_config: Path, spelled: st
     """A run reads the null (its name, or the closest old spelling) and ignores ``old_groups``."""
     _config.write_text(f"format_version: 2\nspelled:\n  {spelled}\n", encoding="utf-8")
     assert SettingsFileRepository().own_value("spelled.groups.dev.lead") is None
+    SetSettings(SettingsFileRepository())({"spelled.groups.qa.lead": "cy"})
+    assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
 
 
 def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
