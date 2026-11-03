@@ -16,7 +16,7 @@ import httpx
 import respx
 from pydantic import BaseModel, Field, HttpUrl
 
-from untaped.sdk import Command, Output, Plugin, key
+from untaped.sdk import Command, Output, Plugin, Refresh, key
 from untaped.sdk.errors import HttpStatusError
 from untaped.sdk.health import NeedsSetup
 from untaped.sdk.network import (
@@ -181,11 +181,11 @@ class Get(Command[ToySettings]):
     """Show one item."""
 
     name: str = Field(description="The item.")
-    fresh: bool | None = Field(default=None, description="Detect again (True) or never (False).")
+    refresh: Refresh = Refresh(SERVER_API.cache)
     output: Output[Item]
 
     def run(self) -> Item:
-        return SERVER_API.port(self.settings, refresh=self.fresh).item(self.name)
+        return SERVER_API.port(self.settings, refresh=self.refresh.directive).item(self.name)
 
 
 class Items(Command[ToySettings]):

@@ -1,15 +1,15 @@
 """Root ``untaped doctor`` command group: ``Doctor`` on core's plugin class.
 
-``untaped doctor`` (``Doctor.runs``, :class:`Check`) runs core's plus
-every composed plugin's health checks OFFLINE — config-file reads plus
-in-process model validation only, never network I/O. ``--online`` adds the checks
-plugins contribute with ``DoctorCheck(online=True)``, which contact the
-configured services. A check's ``DoctorResult.fix`` becomes the row's
-``fix``: a complete argv (``--profile`` first) to run after ``untaped``;
-the human view shows it under its row as the command line to type. A row's
-``automatic`` says the fix is safe to run unattended (see ``DoctorResult``).
-Each row is isolated: invalid settings for one plugin surface as failed
-rows while every other row still runs.
+``untaped doctor`` (``Doctor.runs``, :class:`Check`) runs core's plus every
+composed plugin's health checks OFFLINE — config-file reads plus in-process
+model validation only, never network I/O. ``--online`` adds the checks plugins
+contribute with ``DoctorCheck(network="online")``, which contact the configured
+services, and lets ``network="both"`` checks contact them too. A check's
+``DoctorResult.fix`` becomes the row's ``fix``: a complete argv (``--profile``
+first) to run after ``untaped``; the human view shows it under its row as the
+command line to type. A row's ``automatic`` says the fix is safe to run
+unattended (see ``DoctorResult``). Each row is isolated: invalid settings for
+one plugin surface as failed rows while every other row still runs.
 Quarantine records render as failed rows (nonzero exit). Core's own checks
 (config file permissions, unknown keys, the ``pass`` store) are
 ``DoctorCheck`` attributes on ``Core`` (:mod:`untaped.core.doctor_checks`),

@@ -45,6 +45,11 @@ def first_line(text: str | None) -> str:
     return markdown(lines[0].strip()) if lines else ""
 
 
+def cell(text: str) -> str:
+    """``text`` as one Markdown table cell: on one line, its pipes escaped."""
+    return markdown(" ".join(text.split())).replace("|", "\\|")
+
+
 def describe(doc: str | None) -> Described:
     """The summary (the first paragraph), behaviour and examples of the docstring ``doc``."""
     text = inspect.cleandoc(doc or "")

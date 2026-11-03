@@ -508,6 +508,19 @@ repository's own rule modules fill it under the lint file's key.
 controller. A finding's location says which (`templates.yml#2`,
 `job_templates/14`).
 
+**Server API**: the block a plugin declares for the service it talks to: its
+port, detection, adapters and override; see [Server APIs](docs/server-apis.md).
+
+**Port**: the Protocol a plugin's commands call to reach its server, in the
+plugin's own models. Not a folder.
+
+**Adapter**: one class per server API version behind a port, owning that
+version's paths, JSON, paging and auth. (A plugin that only fills contracts
+is a provider; the docs never say "adapter plugin".)
+
+**Detection**: how a plugin finds out which server version it talks to (not
+"probe", which `OnlineCheck(probe=)` already names).
+
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.
 

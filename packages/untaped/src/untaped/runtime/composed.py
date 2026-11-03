@@ -225,6 +225,8 @@ class ComposedPlugin:
         }
         for decl in self.decl.blocks:
             block = held[decl.attribute]
+            if decl.part is not None:
+                block = getattr(block, decl.part)
             member = _MEMBERS.get(decl.block)
             if isinstance(block, Dir):
                 spelled = block._spelled_as(self.name, decl.name)

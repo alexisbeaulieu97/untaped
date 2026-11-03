@@ -104,7 +104,9 @@ A plugin that connects to a service marks what it can't run without, and
 `setup`, `setup plan`, doctor and `auth` read the marks: `NeedsSetup` on an
 `X | None = None` field (set means not `None`); a misplaced mark quarantines
 the plugin. `setup`'s form edits each marked field in the field its type
-takes, and a marked model as its fields that have no default.
+takes, and a marked model as its fields that have no default. Its secrets are
+kept with the server they are sent to ([Credentials](./credentials.md)); a
+server whose API changes between versions has [Server APIs](./server-apis.md).
 
 A setting that locates or describes what a whole home shares is read from the
 home's base only (or a variable): a project's `.untaped/config.yml` that sets
@@ -115,9 +117,6 @@ mark any other on its field, `machine: Annotated[str | None, HomeOnly()] = None`
 A `Dir`'s `at=` names one of the plugin's own settings. Secrets and commands
 untaped runs are refused in a project's file by their type, unmarked; a
 `HomeOnly()` inside a type or on a model quarantines the plugin.
-
-How a plugin keeps a server's secret (stored with the server it is sent to,
-never in configuration) is in [Credentials](./credentials.md).
 
 A complete plugin, with its stub skill and the class the entry point above
 names:
@@ -235,15 +234,15 @@ service (`Service(YourSettings, part="cache")` for a part of it) or a
 and record shapes; interactive screens are in [Screens](./screens.md).
 
 A doctor check (a `DoctorCheck` the plugin class holds) returns a
-`DoctorResult`, its row named after its check. Its `fix` is the `untaped`
-command that repairs a failed or warned row, without the program name: a
-command named by its class (`Refresh.spelled()`,
-`Set.spelled(key(AcmeSettings).url, "<URL>")`), which follows a rename, a
-string split like a shell would, or an argv list; a value the user supplies is
-a `<NAME>` placeholder. `doctor` emits it as the row's `fix` argv, prefixed
-with `--profile NAME` unless it names one, so it runs as is. Set
-`automatic=True` only on a fix that meets the rule in the `DoctorResult`
-docstring.
+`DoctorResult`, its row named after its check; `network=` runs it offline (the
+default), only under `doctor --online` (`"online"`) or both (`"both"`, reading
+`ctx.online`). Its `fix` is the `untaped` command that repairs a failed or
+warned row, without the program name: a command named by its class
+(`Refresh.spelled()`, `Set.spelled(key(AcmeSettings).url, "<URL>")`), which
+follows a rename, a string split like a shell would, or an argv list; a value
+the user supplies is a `<NAME>` placeholder. `doctor` emits it as the row's
+`fix` argv, prefixed with `--profile NAME` unless it names one, so it runs as
+is. Set `automatic=True` only on a fix that meets the `DoctorResult` rule.
 
 ## Keeping what users create
 

@@ -1,6 +1,6 @@
 """``online_probe_rows``: one plugin's online checks against candidate values.
 
-``setup`` calls it before saving. It runs only the plugin's ``online=True``
+``setup`` calls it before saving. It runs only the plugin's ``network="online"``
 checks, over the loaded config with the candidate values laid on top
 (a child run's overlay), and never writes anything.
 """

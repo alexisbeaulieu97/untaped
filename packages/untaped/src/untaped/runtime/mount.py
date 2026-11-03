@@ -162,7 +162,15 @@ class Mount:
         if not declared:
             return ()
         held = held_by(self.plugins[name])
-        return tuple((decl, held[decl.attribute]) for decl in declared)
+        return tuple(
+            (
+                decl,
+                held[decl.attribute]
+                if decl.part is None
+                else getattr(held[decl.attribute], decl.part),
+            )
+            for decl in declared
+        )
 
     def _commands(self, name: str) -> Mapping[tuple[str, ...], type[Command[Any]]]:
         """Plugin ``name``'s commands by their words: its declaration walked beside its class."""

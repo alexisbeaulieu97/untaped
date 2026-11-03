@@ -409,8 +409,7 @@ class _Server:
 
     def could_not_tell(self, why: str, *, anonymous: bool = False) -> ConfigError:
         """``could not tell which version <server> runs``: the one error offering the override."""
-        shape = key_shape(type(self.key))
-        url = shape.token_url or (shape.urls[0] if shape.urls else None)
+        url = self.api._url_field
         where = setting_name(self.api.server) + ("" if url is None else f".{url}")
         recorded = next((each.recorded[0] for each in self.api.adapters if each.recorded), None)
         example = f'untaped config set {self.setting} "{recorded or "<version>"}"'
@@ -441,12 +440,12 @@ class _Server:
 
     def refusal(self, version: ServerVersion, source: Source) -> UnsupportedServer:
         """The exit-4 refusal of a version no adapter serves."""
-        supported = [self._served_text(each) for each in self.api.adapters]
+        supported = [self.served_text(each) for each in self.api.adapters]
         by = f" (set by {self.setting})" if source == "setting" else ""
         hint = (
             f"{self.setting} is set; unset it to detect the version the server runs"
             if source == "setting"
-            else "ask its administrator about an upgrade"
+            else "ask its administrator about an upgrade; `untaped doctor --online` checks again"
         )
         return UnsupportedServer(
             f"{self.distribution} supports {', '.join(supported)}; {self.named} runs {version}{by}",
@@ -460,7 +459,7 @@ class _Server:
             },
         )
 
-    def _served_text(self, adapter: Any) -> str:
+    def served_text(self, adapter: Any) -> str:
         """An adapter's first docstring line, with ``(until untaped-jira 13.0)`` when deprecated."""
         mark = adapter.__dict__.get("stability")
         if not isinstance(mark, Deprecated) or mark.removed_in is None:

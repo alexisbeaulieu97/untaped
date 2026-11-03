@@ -40,10 +40,10 @@ def test_an_executable_check_warns_naming_what_needs_the_program() -> None:
 
 
 def test_an_online_check_probes_the_plugins_own_section() -> None:
-    assert (Demo.probe.id, Demo.probe.title, Demo.probe.online) == (
+    assert (Demo.probe.id, Demo.probe.title, Demo.probe.network) == (
         "demo.probe",
         "demo API reachable",
-        True,
+        "online",
     )
     result = Demo.probe.run(PluginContext(settings=None))
     assert (result.id, result.detail) == ("demo.probe", "skipped: settings are invalid")

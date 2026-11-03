@@ -1,6 +1,6 @@
 """``doctor --online``: plugin-contributed online checks and their fixes.
 
-Online checks (``DoctorCheck(online=True)``) never run in a plain
+Online checks (``DoctorCheck(network="online")``) never run in a plain
 ``doctor``. The shared ``OnlineCheck`` block probes a configured service
 and names the ``untaped`` command that fixes a failure.
 """
@@ -25,6 +25,7 @@ from core_test_support.commands.support import (
 )
 from untaped.sdk import ConfigError, HttpStatusError, HttpTransportError, Plugin
 from untaped.sdk.health import DoctorCheck, DoctorResult, NeedsSetup, OnlineCheck, PluginContext
+from untaped.sdk.marks import UntapedDeprecationWarning
 from untaped.sdk.network import Credential, CredentialKey, HttpClient, RetryPolicy
 from untaped.sdk.testing import CliInvoker, CliResult
 
@@ -80,11 +81,41 @@ def test_plain_doctor_never_runs_online_checks(_isolated_config: Path) -> None:
         calls.append("ran")
         return DoctorResult(id="svc.api", ok=False, detail="down")
 
-    check = DoctorCheck(title="svc API", run=run, online=True)
+    check = DoctorCheck(title="svc API", run=run, network="online")
     result = _doctor(check)
     assert result.exit_code == 0, result.output
     assert calls == []
     assert all(row["check"] != "svc.api" for row in json.loads(result.stdout))
+
+
+def test_a_both_check_runs_every_time_and_knows_whether_it_may_contact(
+    _isolated_config: Path,
+) -> None:
+    seen: list[bool] = []
+
+    def run(ctx: PluginContext) -> DoctorResult:
+        seen.append(ctx.online)
+        return DoctorResult(ok=True, detail="online" if ctx.online else "from local state")
+
+    def check() -> DoctorCheck:
+        return DoctorCheck(title="svc state", run=run, network="both")
+
+    assert _row(_doctor(check()), "svc.api")["detail"] == "from local state"
+    assert _row(_doctor(check(), "--online"), "svc.api")["detail"] == "online"
+    assert seen == [False, True]
+
+
+def test_online_true_is_network_online_with_a_deprecation_warning() -> None:
+    def run(_ctx: PluginContext) -> DoctorResult:
+        return DoctorResult(ok=True, detail="up")
+
+    with pytest.warns(UntapedDeprecationWarning, match=r"DoctorCheck.__init__\(online=\)"):
+        check = DoctorCheck(title="svc API", run=run, online=True)
+    assert check.network == "online"
+    with pytest.warns(UntapedDeprecationWarning, match=r"use DoctorCheck.network"):
+        assert check.online
+    with pytest.raises(ValueError, match="offline, online or both"):
+        DoctorCheck(title="svc API", run=run, network="sometimes")  # type: ignore[arg-type]
 
 
 def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
@@ -93,7 +124,7 @@ def test_online_failure_names_its_fix(_isolated_config: Path) -> None:
             id="svc.api", ok=False, detail="token rejected", fix="config set svc.token --prompt"
         )
 
-    check = DoctorCheck(title="svc API", run=run, online=True)
+    check = DoctorCheck(title="svc API", run=run, network="online")
     result = _doctor(check, "--online")
     assert result.exit_code == 1
     row = _row(result, "svc.api")
@@ -265,7 +296,7 @@ def _fixing(fix: str | list[str]) -> DoctorCheck:
     def run(_ctx: PluginContext) -> DoctorResult:
         return DoctorResult(id="svc.api", ok=False, detail="token rejected", fix=fix)
 
-    return DoctorCheck(title="svc API", run=run, online=True)
+    return DoctorCheck(title="svc API", run=run, network="online")
 
 
 @pytest.mark.parametrize(

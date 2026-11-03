@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Literal
 
-from untaped.core.docs._docstring import describe, markdown
+from untaped.core.docs._docstring import cell, describe, markdown
 from untaped.core.docs._site import ORGANIZED, Site
 from untaped.runtime.declaration import CommandDecl, FieldDecl, KindDecl
 
@@ -92,7 +92,7 @@ def tables(fields: tuple[FieldDecl, ...], path: str = "") -> list[str]:
     if not fields:
         return ["", "No fields."]
     lines = ["", "| Field | Type | Description |", "| --- | --- | --- |"]
-    lines += [f"| `{f.name}` | {_shape(f)} | {_cell(f.description)} |" for f in fields]
+    lines += [f"| `{f.name}` | {_shape(f)} | {cell(f.description)} |" for f in fields]
     for each in fields:
         if each.fields:
             key = f"{path}{each.name}{each.holds}"
@@ -132,7 +132,3 @@ def _default(value: object) -> str:
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
-
-
-def _cell(text: str) -> str:
-    return markdown(" ".join(text.split())).replace("|", "\\|")

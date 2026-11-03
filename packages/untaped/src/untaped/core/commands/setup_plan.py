@@ -201,12 +201,12 @@ def _login_row(plugin: ComposedPlugin, field: MarkedField, profile: str) -> Row:
 def _online_rows(
     plugin: ComposedPlugin, checks: list[Row], *, online: bool, ready: bool
 ) -> list[Row]:
-    """One row per declared online check, ``<service>.online.<check>`` in every state."""
+    """One row per check contacting a service, ``<service>.online.<check>`` in every state."""
     name = plugin.name
     found = {str(row["check"]): row for row in checks if row["plugin"] == name}
     rows = []
     for check in plugin.doctor_checks:
-        if not check.online:
+        if check.network == "offline":
             continue
         step = f"{name}.online.{check.id.removeprefix(f'{name}.')}"
         row = found.get(check.id)

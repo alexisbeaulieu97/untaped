@@ -67,7 +67,9 @@ def _check(
             automatic=automatic and fix_ is not None,
         )
 
-    return DoctorCheck(title=f"{check_id} title", run=run, online=online)
+    return DoctorCheck(
+        title=f"{check_id} title", run=run, network="online" if online else "offline"
+    )
 
 
 def _stub(
@@ -381,7 +383,7 @@ def test_online_reaches_the_collection_and_the_recheck(monkeypatch: pytest.Monke
 
     _FIXES.clear()
     _FIXES["svc.api"] = "config migrate"
-    spec = make_plugin("svc", api=DoctorCheck(title="svc API", run=counted, online=True))
+    spec = make_plugin("svc", api=DoctorCheck(title="svc API", run=counted, network="online"))
     offline = _cli(spec, "--yes", "--format", "json", monkeypatch=monkeypatch)
     assert (offline.stdout, calls) == ("[]\n", [])
     result = _cli(spec, "--yes", "--online", "--format", "json", monkeypatch=monkeypatch)

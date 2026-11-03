@@ -152,6 +152,36 @@ class CacheDecl(_Frozen):
     removed_in: int | None = None
 
 
+class AdapterDecl(_Frozen):
+    """One adapter of a server API: the servers it serves, how, and what its tests recorded."""
+
+    #: The class name: what the surface line and the deprecation warning's id name.
+    name: str
+    #: Its docstring's first line, the servers it serves (``Jira Data Center 12 and later``).
+    summary: str
+    #: The rest of its docstring: how it talks to them.
+    doc: str = ""
+    #: The versions its tests ran against, as the version type writes them.
+    recorded: tuple[str, ...] = ()
+    #: Its own mark; a deprecation's replacement is the replacing adapter's class name.
+    stability: StabilityDecl | None = None
+
+
+class ServerApiDecl(_Frozen):
+    """What a server API's readers (the plugin's page, the surface) need of it."""
+
+    #: The override setting's key inside the plugin's section (``server_version``).
+    override: str
+    #: The server URL setting's key inside the plugin's section (``server.url``).
+    url: str
+    #: ``detect``'s docstring: what it asks the server.
+    detect: str = ""
+    #: The adapters, in the order core tries them.
+    adapters: tuple[AdapterDecl, ...] = ()
+    #: The block's own mark (``experimental`` while the SDK's server API is).
+    stability: StabilityDecl | None = None
+
+
 class BlockDecl(_Frozen):
     """A block a plugin class holds, under the name derived from its attribute."""
 
@@ -162,8 +192,13 @@ class BlockDecl(_Frozen):
     name: str
     #: The module that created the block, which the plugin's import loads.
     module: str
+    #: For a part of the block at ``attribute``, the attribute of that block holding it
+    #: (``cache``: a server API's detection cache); ``None`` for a block held itself.
+    part: str | None = None
     #: A cache's setting; ``None`` for any other block.
     cache: CacheDecl | None = None
+    #: A server API's adapters and settings; ``None`` for any other block.
+    server_api: ServerApiDecl | None = None
     #: A numbered ``Dir``'s layout (the oldest its code opens): what references name.
     layout: int | None = None
     #: Whether a ``Dir`` declares ``items=``: things holders (projects) hold.

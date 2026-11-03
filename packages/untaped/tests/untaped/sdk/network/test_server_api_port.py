@@ -104,7 +104,7 @@ def test_detection_sends_the_credential_when_one_is_set(
     install(Toy, settings=configured()).run(Get(name="a"))
     assert "authorization" not in about.calls.last.request.headers
     monkeypatch.setenv("TOY_TOKEN", "s3cret")
-    install(Toy, settings=configured()).run(Get(name="a", fresh=True))
+    install(Toy, settings=configured()).cli("toy get --name a --refresh")
     assert about.calls.last.request.headers["authorization"] == "Bearer s3cret"
 
 
@@ -125,11 +125,27 @@ def test_past_its_max_age_the_version_is_detected_again(
 
 
 @respx.mock
+def test_the_detection_caches_max_age_is_a_setting_its_refresh_flags_name(
+    install: Installer, clock: ManualClock
+) -> None:
+    about = serve("3.1")
+    _item("/v2")
+    toy = install(Toy, settings=configured())
+    assert toy.cli("config set toy.caches.server_api.max_age_seconds 60").exit == 0
+    toy.run(Get(name="a"))
+    clock.advance(minutes=2)
+    toy.run(Get(name="a"))
+    assert about.call_count == 2
+    shown = toy.cli("toy get --help").stdout
+    assert "toy.caches.server_api.max_age_seconds" in " ".join(shown.split())
+
+
+@respx.mock
 def test_refresh_detects_now_and_cached_never_does(install: Installer) -> None:
     about = serve("3.1")
     _item("/v2")
     toy = install(Toy, settings=configured())
-    never = toy.run(Get(name="a", fresh=False))
+    never = toy.cli("toy get --name a --cached")
     assert never.exit == 1
     assert (
         "no cached server version for the toy server at https://toy.example.com"
@@ -137,9 +153,9 @@ def test_refresh_detects_now_and_cached_never_does(install: Installer) -> None:
     )
     assert about.call_count == 0
     toy.run(Get(name="a"))
-    toy.run(Get(name="a", fresh=True))
+    toy.cli("toy get --name a --refresh")
     assert about.call_count == 2
-    toy.run(Get(name="a", fresh=False))
+    toy.cli("toy get --name a --cached")
     assert about.call_count == 2
 
 
@@ -222,7 +238,7 @@ def test_a_server_error_while_detecting_says_so_and_keeps_its_category(
     install: Installer,
 ) -> None:
     serve("3.1", status=503)
-    ran = install(Toy, settings=configured()).run(Get(name="a", fresh=True))
+    ran = install(Toy, settings=configured()).cli("toy get --name a --refresh")
     assert ran.exit == 5
     assert ran.stderr[0].startswith(
         "error: while checking which version the toy server at https://toy.example.com runs:"
@@ -315,7 +331,7 @@ def test_a_cached_version_nothing_serves_is_refused_under_cached_with_no_request
     about = serve("0.9")
     toy = install(Toy, settings=configured())
     assert toy.run(Get(name="a")).exit == 4  # detected and kept: Toy 0.9
-    ran = toy.run(Get(name="a", fresh=False))
+    ran = toy.cli("toy get --name a --cached")
     assert ran.exit == 4
     assert ran.stderr[0].endswith("runs Toy 0.9")
     assert about.call_count == 1
