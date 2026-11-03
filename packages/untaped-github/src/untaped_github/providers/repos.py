@@ -1,12 +1,12 @@
-"""``GithubRepos``: GitHub fills workspace's ``RepoSource`` with its repository inventory.
+"""``GithubRepos``: GitHub fills the git plugin's ``RepoSource`` with its repository inventory.
 
 ``repos()`` lists the repositories of the inventory scope (``github.inventory.orgs``
 and ``teams``, else ``github.default_org``) live: a failed listing raises, so
 the contract's answer cache is the only place stale repos come from. A
-provider with no scope is not ready, so workspace says which setting to set.
+provider with no scope is not ready, so whoever asks says which setting to set.
 
 ``to_repo`` turns a ``github.repo`` row (listed, or piped from any github
-command) into a workspace repo without an API call: its URL is the row's
+command) into a ``git.repo`` without an API call: its URL is the row's
 clone URL in ``github.git_protocol``, and a row whose URL is on another host,
 or names another repo than ``full_name``, is refused.
 """
@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from untaped.sdk import UsageError, key, kind_of, run_hint, setting_name
 from untaped.sdk.contracts import NotReady, Provider
-from untaped_git.api import store_key
+from untaped_git.api import Repo as GitRepo
+from untaped_git.api import RepoSource, store_key
 from untaped_github.application.inventory import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
@@ -27,12 +28,10 @@ from untaped_github.errors import GithubError
 from untaped_github.infrastructure.github_client import GithubClient
 from untaped_github.records import Repo
 from untaped_github.settings import GithubSettings
-from untaped_workspace.api import Repo as WorkspaceRepo
-from untaped_workspace.api import RepoSource
 
 
 class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
-    """The repositories of GitHub's inventory scope, as workspace repos."""
+    """The repositories of GitHub's inventory scope, as git repos."""
 
     def ready(self) -> NotReady | None:
         unready = super().ready()
@@ -48,7 +47,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
             )
         return None
 
-    def to_repo(self, item: Repo) -> WorkspaceRepo:
+    def to_repo(self, item: Repo) -> GitRepo:
         host = github_web_host(self.settings.api_url) or "github.com"
         if self.settings.git_protocol == "ssh":
             url = item.ssh_url or f"git@{host}:{item.full_name}.git"
@@ -61,7 +60,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
                 f"{what}: its URL {url} is not {item.full_name} on {host}",
                 hint=f"pipe rows from the profile whose {server} lists this repo",
             )
-        return WorkspaceRepo(
+        return GitRepo(
             name=item.full_name,
             url=url,
             default_branch=item.default_branch,
@@ -69,7 +68,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
             archived=item.archived,
         )
 
-    def repos(self) -> list[WorkspaceRepo]:
+    def repos(self) -> list[GitRepo]:
         settings = self.settings
         scope = inventory_scope(settings)
         with GithubClient(settings, http=self.ctx.http) as client, github_failures():

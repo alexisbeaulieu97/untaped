@@ -1,6 +1,6 @@
-"""``GithubRepos``: GitHub fills workspace's ``RepoSource`` with its repository inventory.
+"""``GithubRepos``: GitHub fills git's ``RepoSource`` with its repository inventory.
 
-Asked the way workspace asks it: ``gather`` for the listing and readiness,
+Asked the way git's repo finder asks it: ``gather`` for the listing and readiness,
 ``Stdin(via=RepoSource.to_repo)`` for a piped ``github.repo`` row. The provider's scope helper
 ``inventory_scope`` is tested directly.
 """
@@ -19,11 +19,11 @@ from untaped.runtime.settings import get_settings
 from untaped.sdk import ExitCode, UntapedError, UsageError, home
 from untaped.sdk.contracts import Errored, NoProviderReady, Ok, gather
 from untaped.sdk.testing import assert_fills, compose_with, piped_through
-from untaped_github.providers.workspace import GithubRepos, inventory_scope
+from untaped_git.api import Repo as GitRepo
+from untaped_git.api import RepoSource
+from untaped_github.providers.repos import GithubRepos, inventory_scope
 from untaped_github.records import CorpusRepo, Repo, SweepRepo
 from untaped_github.settings import GithubSettings
-from untaped_workspace.api import Repo as WorkspaceRepo
-from untaped_workspace.api import RepoSource
 
 API = "https://api.github.com"
 
@@ -85,18 +85,18 @@ def configure(**github: object) -> None:
 
 @pytest.fixture(autouse=True)
 def _composed() -> Iterator[None]:
-    with compose_with("git", "github", "workspace"):
+    with compose_with("git", "github"):
         yield
 
 
-def piped(row: BaseModel | dict[str, object]) -> WorkspaceRepo:
-    """A piped row read the way workspace reads one: through the contract's bridge."""
+def piped(row: BaseModel | dict[str, object]) -> GitRepo:
+    """A piped row read the way a consumer reads one: through the contract's bridge."""
     return piped_through(
         RepoSource.to_repo, Repo.model_validate(row) if isinstance(row, dict) else row
     )
 
 
-def listed() -> Ok[list[WorkspaceRepo]]:
+def listed() -> Ok[list[GitRepo]]:
     [answer] = gather(RepoSource.repos, refresh=True)()
     assert isinstance(answer, Ok), answer
     return answer
@@ -115,7 +115,7 @@ def test_github_repos_fills_repo_source() -> None:
 
 
 def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() -> None:
-    # S12: workspace says which setting to set instead of guessing a URL.
+    # S12: the finder says which setting to set instead of guessing a URL.
     configure()
 
     with pytest.raises(NoProviderReady) as caught:
@@ -156,7 +156,7 @@ def test_a_configured_scope_makes_github_ready(github: dict[str, object]) -> Non
 # --- to_repo ---------------------------------------------------------------------------------
 
 
-def test_a_piped_row_becomes_a_workspace_repo_without_an_api_call() -> None:
+def test_a_piped_row_becomes_a_git_repo_without_an_api_call() -> None:
     # S11: search hits piped while GitHub's API is down still resolve.
     configure(default_org="acme")
     hit = Repo(full_name="acme/api", html_url="https://github.com/acme/api")
@@ -229,7 +229,7 @@ def test_github_enterprise_urls_are_on_the_web_host_of_the_api(protocol: str, ur
 def test_a_row_whose_url_is_not_its_repo_on_githubs_host_is_refused(
     record: dict[str, object], base_url: str | None
 ) -> None:
-    # S17: a forged record never becomes a workspace repo.
+    # S17: a forged record never becomes a git repo.
     configure(default_org="acme", **({"base_url": base_url} if base_url else {}))
 
     with pytest.raises(UsageError, match=r"^github\.repo acme/api: its URL") as caught:
@@ -266,7 +266,7 @@ def test_corpus_and_sweep_rows_are_read_as_github_repos() -> None:
 # --- repos -----------------------------------------------------------------------------------
 
 
-def test_repos_lists_the_inventory_scope_as_workspace_repos() -> None:
+def test_repos_lists_the_inventory_scope_as_git_repos() -> None:
     configure(inventory={"orgs": ["acme"]})
 
     with respx.mock(base_url=API) as mock:

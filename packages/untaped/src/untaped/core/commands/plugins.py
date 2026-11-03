@@ -162,7 +162,7 @@ class New(Command[CoreSettings]):
 class Schema(Command[CoreSettings]):
     """Print a record kind's JSON Schema."""
 
-    kind: Positional[str] = Field(description="A record kind, such as workspace.repo.")
+    kind: Positional[str] = Field(description="A record kind, such as git.repo.")
 
     def run(self) -> str:
         return json.dumps(_schema(self.kind, _composition()), indent=2)

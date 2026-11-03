@@ -1,8 +1,9 @@
 """GitHub's declared public module: the only github code other plugins import.
 
 Ansible uses it for repository inventory, client operations, reference
-probing, settings, and result/error types. Workspace never imports github:
-github fills its ``RepoSource`` contract (``providers/workspace.py``). The
+probing, settings, and result/error types. Repo names reach other plugins
+through the git plugin's ``RepoSource`` contract, which github fills
+(``providers/repos.py``), never through this module. The
 closed :data:`__all__` keeps the boundary explicit; everything else under
 ``untaped_github`` is private to GitHub.
 """

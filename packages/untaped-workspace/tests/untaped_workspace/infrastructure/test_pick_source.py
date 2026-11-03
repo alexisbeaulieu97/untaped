@@ -11,9 +11,9 @@ from untaped.sdk import Source, UntapedError
 from untaped.sdk.contracts import Answers, Errored, NoProviderReady, NotReady, Ok, Skipped
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock
-from untaped_workspace.api import Repo
+from untaped_git.api import Repo
 from untaped_workspace.domain.models import RepoArg, StoredRepo
-from untaped_workspace.domain.naming import looks_like_url, repo_key
+from untaped_workspace.domain.naming import repo_key
 from untaped_workspace.infrastructure.pick_source import RepoPickSource
 from workspace_test_support import composed, listing, repo
 
@@ -42,12 +42,12 @@ class FakeGit:
 
 
 def answers(*items: Ok[list[Repo]] | Errored | Skipped) -> Answers[list[Repo]]:
-    return Answers(items, owner="workspace", contract="repo_source", method="repos")
+    return Answers(items, owner="git", contract="repo_source", method="repos")
 
 
 def ok(plugin: str, *repos: Repo, **fields: object) -> Ok[list[Repo]]:
     """``plugin``'s answer listing ``repos``, each stamped with ``plugin`` as its source."""
-    source = Source(plugin=plugin, kind="workspace.repo")
+    source = Source(plugin=plugin, kind="git.repo")
     stamped = [r.model_copy(update={"source": source}) for r in repos]
     return Ok(plugin, stamped, **fields)  # type: ignore[arg-type]
 
@@ -135,7 +135,7 @@ def test_a_provider_without_repos_says_why(answer: Errored | Skipped, note: str)
 def test_with_no_provider_ready_the_store_alone_is_offered() -> None:
     def nobody(refresh: bool | None) -> Answers[list[Repo]]:
         raise NoProviderReady(
-            "no provider of workspace.repo_source.repos is ready: github: no inventory scope",
+            "no provider of git.repo_source.repos is ready: github: no inventory scope",
             not_ready={"github": NotReady("no inventory scope")},
         )
 
@@ -143,7 +143,7 @@ def test_with_no_provider_ready_the_store_alone_is_offered() -> None:
     catalog = source.catalog(refresh=None)
     assert [i.id for i in catalog.items] == ["github.com/team/tool"]
     assert catalog.note == (
-        "stored repos only — no provider of workspace.repo_source.repos is ready: "
+        "stored repos only — no provider of git.repo_source.repos is ready: "
         "github: no inventory scope · 1 stored only"
     )
 
@@ -258,24 +258,6 @@ def test_a_stored_id_never_shadows_a_listed_id() -> None:
     assert ids == ["acme/api", "acme/old"]
     picked = source.pick_arg(RepoArg(ident="acme/api"))
     assert picked.repo is not None and picked.repo.url == API.url
-
-
-@pytest.mark.parametrize(
-    ("ident", "expected"),
-    [
-        ("git@host:o/r.git", True),
-        ("git@host:o/r", True),
-        ("https://h/o/r", True),
-        ("/srv/r.git", True),
-        ("~/r", True),
-        ("api.git", True),
-        ("./x", False),
-        ("acme/api", False),
-        ("api", False),
-    ],
-)
-def test_looks_like_url(ident: str, expected: bool) -> None:
-    assert looks_like_url(ident) is expected
 
 
 def test_the_real_providers_first_pass_serves_stored_answers_then_the_refresh_asks(

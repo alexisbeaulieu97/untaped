@@ -67,7 +67,7 @@ class Repo(Record):
     so a raw REST row validates as it is and unknown fields are dropped; only
     ``full_name`` is required, and a field the row's source didn't report is
     ``None``: a cache row lacks most of GitHub's metadata. github fills
-    workspace's ``RepoSource`` with it, so a piped row becomes a workspace repo
+    the git plugin's ``RepoSource`` with it, so a piped row becomes a ``git.repo``
     without an API call.
     """
 

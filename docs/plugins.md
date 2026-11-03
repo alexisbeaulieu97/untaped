@@ -263,13 +263,13 @@ scaffold:
 
 ```bash
 untaped plugin contracts
-untaped plugin new gitlab --fills workspace.repo_source
+untaped plugin new gitlab --fills git.repo_source
 ```
 
 `plugin new` writes `untaped-gitlab/` in the current directory (`--path`
 elsewhere, `--dry-run` to list the files first): the package with its plugin
 class (`plugin.py`) filling the owner's contract, the provider
-(`providers/workspace.py`) with every method of the contract and its docstring
+(`providers/git.py`) with every method of the contract and its docstring
 (the required ones as stubs, the optional ones and the bridge commented out,
 since a stub would count as filling them), tests mirroring the package (lint's
 `assert_clean` and `assert_surface` beside the plugin, `assert_fills` with a

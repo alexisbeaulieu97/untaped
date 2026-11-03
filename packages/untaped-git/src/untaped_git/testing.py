@@ -16,6 +16,8 @@ without a network.
 Tests run under ``untaped.sdk.testing.plugin``'s hermetic ``HOME``: the
 fixtures write to its ``~/.gitconfig``. Experimental (``docs/versioning.md``):
 the module may change in a minor release while the store gets its consumers.
+:func:`conformance` is the owner's check untaped's plugin checks run on every
+provider of git's contracts; a provider's own tests may call it too.
 """
 
 from __future__ import annotations
@@ -28,14 +30,17 @@ import subprocess
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-import pytest
+from typing import TYPE_CHECKING, Any
 
 from untaped.sdk import experimental
+from untaped_git.repos import RepoSource
+
+if TYPE_CHECKING:
+    import pytest
 
 __all__ = [
     "GitRemote",
+    "conformance",
     "git_remote",
     "git_shim",
     "global_config",
@@ -235,6 +240,20 @@ def git_remote(base: Path, name: str = "app", *, host: str = "git.example") -> G
     remote.allow_filter(True)
     remote.commit("README.md", f"# {name}\n")
     return remote
+
+
+def conformance(provider: object) -> None:
+    """Fail unless every repo a ``RepoSource`` provider lists has a name of its own.
+
+    untaped's plugin checks call it for every provider of git's contracts; a
+    ``GitHost`` provider has nothing to check here. Repos are found by name, so
+    two repos one provider lists under one name could never be told apart.
+    """
+    if not isinstance(provider, RepoSource):
+        return
+    names = [repo.name.lower() for repo in provider.repos()]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    assert not duplicates, f"repos share a name: {', '.join(duplicates)}"
 
 
 @experimental

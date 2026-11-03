@@ -9,7 +9,7 @@ from pydantic import Field
 
 from untaped.sdk import Output, Parallel, Positional, Short, Stdin, UsageError, now, plural, q
 from untaped.sdk.storage import ProgressHandle
-from untaped_workspace.api import Repo, RepoSource
+from untaped_git.api import Repo, RepoSource
 from untaped_workspace.application.provision import ProvisionRepos
 from untaped_workspace.commands._workspace import NAME_HELP, WORKERS, WorkspaceCommand
 from untaped_workspace.commands.picker import Picker, choose_repos
@@ -74,12 +74,12 @@ class Provisions(WorkspaceCommand):
 
     def provisioner(self, warn: Callable[[str], None]) -> ProvisionRepos:
         """The ``create``/``add`` use case wired to the real adapters."""
-        from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415
+        from untaped_git.api import RepoFinder  # noqa: PLC0415  # loads the contracts machinery
 
         return ProvisionRepos(
             self.store(),
             self.git_worktrees(),
-            RepoSources(),
+            RepoFinder(),
             workspaces_dir=self.workspaces_dir,
             branch_template=self.settings.branch_template,
             parallel=self.parallel.value,

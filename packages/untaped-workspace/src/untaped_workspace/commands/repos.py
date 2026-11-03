@@ -25,10 +25,11 @@ class Resolve(WorkspaceCommand):
     output: Output[ResolveOutcome]
 
     def run(self) -> Iterator[ResolveOutcome]:
-        from untaped_workspace.infrastructure.catalog import RepoSources  # noqa: PLC0415
+
+        from untaped_git.api import RepoFinder  # noqa: PLC0415  # loads the contracts machinery
 
         record = self.locate(self.name)
-        resolve = ResolveRepos(self.store(), self.git_worktrees(), RepoSources())
+        resolve = ResolveRepos(self.store(), self.git_worktrees(), RepoFinder())
         rows = resolve(record)
         self.output.empty("No repos found.")
         self.report(rows, lambda row: f"{row.workspace}/{row.dir}")

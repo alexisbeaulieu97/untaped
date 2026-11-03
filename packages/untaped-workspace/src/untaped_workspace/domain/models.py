@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, RootModel, field_validator
 
 from untaped.sdk import Key, UtcTimestamp
 from untaped.sdk.projects import Project
-from untaped_workspace.domain.repo import Repo
+from untaped_git.api import Repo
 
 
 class RepoSpec(Repo):

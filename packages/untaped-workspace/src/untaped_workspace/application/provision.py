@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError, UsageError, bounded_map, q
 from untaped.sdk.storage import NO_PROGRESS
+from untaped_git.api import Repo
 from untaped_workspace.application.locate import workspace_root
 from untaped_workspace.application.status import resumes
 from untaped_workspace.domain.models import (
@@ -32,7 +33,6 @@ from untaped_workspace.domain.naming import (
     repo_key,
     validate_workspace_name,
 )
-from untaped_workspace.domain.repo import Repo
 from untaped_workspace.errors import WorkspaceError
 from untaped_workspace.records import RepoOutcome
 

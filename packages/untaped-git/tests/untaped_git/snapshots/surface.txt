@@ -1,6 +1,9 @@
 # untaped surface 3
+cfg git.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cli untaped git
@@ -33,9 +36,23 @@ contract git.Credential(password, username)
 contract git.Credential.password string(format=password)
 contract git.Credential.username string
 contract git.Credential.verify_tls boolean|string(format=path) default=true
+contract git.Repo(name, url)
+contract git.Repo.archived boolean default=false
+contract git.Repo.default_branch string? default=None
+contract git.Repo.description string? default=None
+contract git.Repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)
+contract git.Repo.source Source? default=None
+contract git.Repo.url string
+contract git.Source(kind, plugin)
+contract git.Source.kind string
+contract git.Source.plugin string
+contract git.Source.record object default={}
 contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
+contract git.repo_source abstract=repos  [experimental]
+contract git.repo_source.repos() -> Repo[]  [experimental]
+contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 record git.RepoCount
 record git.RepoCount.repos integer
 record git.RepoCount.size_bytes integer
@@ -45,6 +62,13 @@ record git.host.helpers_first string[]
 record git.host.host string
 record git.host.missing_helper string?
 record git.host.plugins string[]
+record git.repo
+record git.repo.archived boolean
+record git.repo.default_branch string?
+record git.repo.description string?
+record git.repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)
+record git.repo.source Source?
+record git.repo.url string
 record git.store_report
 record git.store_report.exclusive_bytes object
 record git.store_report.filter_ignored object
@@ -116,6 +140,27 @@ sdk untaped_git.api.Released.stash
 sdk untaped_git.api.Removed()
 sdk untaped_git.api.Removed(freed_bytes@1=) default=0
 sdk untaped_git.api.Removed.freed_bytes
+sdk untaped_git.api.Repo base=untaped.sdk.Issued
+sdk untaped_git.api.Repo base=untaped.sdk.Record
+sdk untaped_git.api.Repo extra=forbid
+sdk untaped_git.api.Repo(*, name, url)
+sdk untaped_git.api.Repo(archived=) default=false
+sdk untaped_git.api.Repo(default_branch=) default=None
+sdk untaped_git.api.Repo(description=) default=None
+sdk untaped_git.api.Repo(source=) default=None
+sdk untaped_git.api.Repo.archived
+sdk untaped_git.api.Repo.default_branch
+sdk untaped_git.api.Repo.description
+sdk untaped_git.api.Repo.name
+sdk untaped_git.api.Repo.url
+sdk untaped_git.api.RepoFinder()
+sdk untaped_git.api.RepoFinder.admit(repo)
+sdk untaped_git.api.RepoFinder.reask(repo)
+sdk untaped_git.api.RepoFinder.resolve(ident)
+sdk untaped_git.api.RepoFinder.resolve(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoName
+sdk untaped_git.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_git.api.RepoSource implement=repos  [experimental]
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
 sdk untaped_git.api.RepoStore(plain_clone=) default=false
@@ -189,6 +234,7 @@ sdk untaped_git.api.default_branch(url)
 sdk untaped_git.api.git_toplevel(git=) default=git
 sdk untaped_git.api.git_toplevel(path)
 sdk untaped_git.api.git_toplevel(timeout=) default=30.0
+sdk untaped_git.api.looks_like_url(ident)
 sdk untaped_git.api.ls_remote(patterns@2=) default=[]
 sdk untaped_git.api.ls_remote(url)
 sdk untaped_git.api.repo_url_parts(url)
@@ -210,6 +256,7 @@ sdk untaped_git.api.run_git(sleep=) default=<computed> callback(1)
 sdk untaped_git.api.run_git(stdin=) default=None
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
+sdk untaped_git.api.typed_repo(url)
 sdk untaped_git.api.validate_git_url(value)
 sdk untaped_git.testing.GitRemote(path, work, url)  [experimental]
 sdk untaped_git.testing.GitRemote.allow_filter()  [experimental]
@@ -234,6 +281,7 @@ sdk untaped_git.testing.GitRemote.tag(message=) default=None  [experimental]
 sdk untaped_git.testing.GitRemote.tag(name)  [experimental]
 sdk untaped_git.testing.GitRemote.url  [experimental]
 sdk untaped_git.testing.GitRemote.work  [experimental]
+sdk untaped_git.testing.conformance(provider)
 sdk untaped_git.testing.git_remote(base)  [experimental]
 sdk untaped_git.testing.git_remote(host=) default=git.example  [experimental]
 sdk untaped_git.testing.git_remote(name@2=) default=app  [experimental]

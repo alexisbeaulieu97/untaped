@@ -21,9 +21,8 @@ from typing import ClassVar
 from untaped.sdk import Record, UntapedError, UsageError, home
 from untaped.sdk.contracts import NotReady, Provider
 from untaped.sdk.testing import Ran, Running, install
-from untaped_git.api import Credential, GitHost, store_key
+from untaped_git.api import Credential, GitHost, Repo, RepoSource, store_key
 from untaped_git.testing import GitRemote
-from untaped_workspace.api import Repo, RepoSource
 from untaped_workspace.domain.models import RepoSpec, WorkspaceRecord
 from untaped_workspace.infrastructure import ProjectWorkspaceStore
 from untaped_workspace.plugin import WorkspacePlugin
@@ -199,12 +198,12 @@ def rank(*plugins: str) -> None:
     """Rank ``plugins`` (first first) for ``RepoSource.repos``, as a user would in config.yml.
 
     Install the plugins after: ``install`` keeps the ranking core keeps in
-    workspace's section.
+    git's section.
     """
     path = home().expanduser() / "config.yml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        "format_version: 2\nworkspace:\n  extensions:\n    repo_source:\n"
+        "format_version: 2\ngit:\n  extensions:\n    repo_source:\n"
         f"      rank:\n        repos: [{', '.join(plugins)}]\n",
         encoding="utf-8",
     )

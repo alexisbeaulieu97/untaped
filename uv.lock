@@ -962,14 +962,12 @@ source = { editable = "packages/untaped-github" }
 dependencies = [
     { name = "untaped" },
     { name = "untaped-git" },
-    { name = "untaped-workspace" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
-    { name = "untaped-workspace", editable = "packages/untaped-workspace" },
 ]
 
 [[package]]

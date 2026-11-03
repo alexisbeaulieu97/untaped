@@ -1,7 +1,7 @@
-"""``RepoSources``: what the user typed, resolved over every plugin filling ``RepoSource``.
+"""``RepoFinder``: what the user typed, resolved over every plugin filling ``RepoSource``.
 
-The providers are fakes named ``github`` and ``gitlab`` (design §15's scenarios);
-workspace asks them only through ``untaped.sdk.contracts``.
+The providers are fakes named ``github`` and ``gitlab`` (the workspace sources
+design's scenarios); the finder asks them only through ``untaped.sdk.contracts``.
 """
 
 from __future__ import annotations
@@ -13,13 +13,12 @@ from datetime import timedelta
 import pytest
 from pydantic import BaseModel
 
+from git_test_support import composed, host, invalid_repo, listing, rank, repo
 from untaped.sdk import ErrorCategory, Source, UntapedError, UsageError, key
 from untaped.sdk.contracts import Ambiguous, NotReady, gather
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.testing import ManualClock, Running
-from untaped_workspace.api import Repo, RepoSource
-from untaped_workspace.infrastructure.catalog import RepoSources
-from workspace_test_support import composed, host, invalid_repo, listing, rank, repo
+from untaped_git.api import Repo, RepoFinder, RepoSource
 
 GITLAB = "gitlab.example"
 
@@ -37,13 +36,13 @@ NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
 
 @contextmanager
 def providers(**plugins: Sequence[type]) -> Iterator[Running]:
-    """Workspace composed with fake plugins, each filling contracts with its provider classes."""
+    """Git composed with fake plugins, each filling contracts with its provider classes."""
     with composed({name: tuple(p) for name, p in plugins.items()}) as running:
         yield running
 
 
 def _resolve(ident: str) -> Repo:
-    return RepoSources().resolve(ident)
+    return RepoFinder().resolve(ident)
 
 
 def test_an_unconfigured_provider_is_not_asked_and_the_other_answers() -> None:
@@ -53,7 +52,7 @@ def test_an_unconfigured_provider_is_not_asked_and_the_other_answers() -> None:
         found = _resolve("acme/api")
     assert (found.url, found.source) == (
         "https://github.com/acme/api.git",
-        Source(plugin="github", kind="workspace.repo"),
+        Source(plugin="github", kind="git.repo"),
     )
     assert gitlab.calls == 0
 
@@ -76,9 +75,7 @@ def test_a_repo_two_unranked_providers_list_is_ambiguous_until_ranked() -> None:
     with providers(**lists), pytest.raises(Ambiguous) as caught:
         _resolve("acme/api")
     assert isinstance(caught.value, UsageError)
-    assert (
-        caught.value.hint == "run `untaped plugin rank workspace.repo_source repos github gitlab`"
-    )
+    assert caught.value.hint == "run `untaped plugin rank git.repo_source repos github gitlab`"
 
 
 def test_ranking_picks_the_first_ranked_providers_repo() -> None:
@@ -89,8 +86,8 @@ def test_ranking_picks_the_first_ranked_providers_repo() -> None:
         "gitlab": [listing(repo("acme/api", GITLAB), repo("infra/team/api", GITLAB))],
     }
     with providers(**lists):
-        catalog = RepoSources()
-        mirrored, only_gitlab = catalog.resolve("acme/api"), catalog.resolve("infra/team/api")
+        finder = RepoFinder()
+        mirrored, only_gitlab = finder.resolve("acme/api"), finder.resolve("infra/team/api")
     assert mirrored.url == "https://github.com/acme/api.git"
     assert only_gitlab.source is not None and only_gitlab.source.plugin == "gitlab"
 
@@ -149,8 +146,8 @@ def test_a_stale_listing_that_has_the_repo_answers_with_one_stale_line(clock: Ma
     assert github.calls == 2  # the second call failed; the stored answer stood in
     [stale] = emitted
     assert isinstance(stale, Stale)
-    assert (stale.plugin, stale.cache) == ("github", "workspace.repo_source_repos")
-    assert stale.hint is None  # workspace has no --cached to suggest
+    assert (stale.plugin, stale.cache) == ("github", "git.repo_source_repos")
+    assert stale.hint is None  # the finder has no --cached to suggest
 
 
 def test_an_expired_token_blocks_with_its_own_category_never_not_found() -> None:
@@ -231,14 +228,14 @@ def test_with_no_provider_installed_a_name_is_not_found() -> None:
     with providers(), pytest.raises(UsageError) as caught:
         _resolve("acme/api")
     assert caught.value.hint == (
-        "no provider of workspace.repo_source.repos is ready: no installed plugin fills it; "
-        "install or upgrade a plugin that lists repos (untaped[github]), "
+        "no provider of git.repo_source.repos is ready: no installed plugin fills it; "
+        "install or upgrade a plugin that lists repos, "
         "or pass the repo's clone URL"
     )
 
 
 def test_a_listed_url_on_another_host_than_its_source_serves_is_refused() -> None:
-    """S17 (workspace's side): github serves github.com, so its repo on evil.example is
+    """S17 (the finder's side): github serves github.com, so its repo on evil.example is
     refused (exit 2) before anything is fetched."""
     forged = Repo(name="acme/api", url="https://evil.example/acme/api.git")
     with (
@@ -252,18 +249,18 @@ def test_a_listed_url_on_another_host_than_its_source_serves_is_refused() -> Non
 def test_admit_checks_a_chosen_repo_against_its_source_host() -> None:
     """S17: a piped or picked repo passes the same check; a plugin serving no host is not
     checked, and neither is a repo without a source."""
-    on_github = Source(plugin="github", kind="workspace.repo")
+    on_github = Source(plugin="github", kind="git.repo")
     forged = repo("acme/api", "evil.example", source=on_github)
     with providers(github=[listing(), host("GitHub.com")], gitlab=[listing()]):
-        catalog = RepoSources()
+        finder = RepoFinder()
         with pytest.raises(UsageError):
-            catalog.admit(forged)
+            finder.admit(forged)
         genuine = repo("acme/api", source=on_github)
-        assert catalog.admit(genuine) is genuine
+        assert finder.admit(genuine) is genuine
         unchecked = repo("acme/api", "evil.example", source=Source(plugin="gitlab", kind=""))
-        assert catalog.admit(unchecked) is unchecked
+        assert finder.admit(unchecked) is unchecked
         typed = repo("acme/api", "evil.example")
-        assert catalog.admit(typed) is typed
+        assert finder.admit(typed) is typed
 
 
 def test_owner_slash_name_matches_exactly_in_any_case() -> None:
@@ -308,14 +305,14 @@ def test_an_unknown_name_suggests_close_matches(ident: str, suggested: str) -> N
     assert suggested in str(caught.value)
 
 
-def test_the_providers_are_asked_once_per_catalog() -> None:
+def test_the_providers_are_asked_once_per_finder() -> None:
     """A failed answer is not stored, so a second ask would call again."""
     down = listing(error=HTTP_503)
     with providers(github=[down]):
-        catalog = RepoSources()
+        finder = RepoFinder()
         for ident in ("api", "web"):
             with pytest.raises(UntapedError, match="HTTP 503"):
-                catalog.resolve(ident)
+                finder.resolve(ident)
     assert down.calls == 1
 
 
@@ -323,36 +320,36 @@ def test_reask_asks_the_repos_source_live_and_admits_what_it_lists_now() -> None
     github = listing(repo("acme/api"))
     gitlab = listing(repo("infra/api", GITLAB))
     with providers(github=[github, host("github.com")], gitlab=[gitlab]):
-        catalog = RepoSources()
-        saved = catalog.resolve("acme/api")  # github's answer is stored, fresh
+        finder = RepoFinder()
+        saved = finder.resolve("acme/api")  # github's answer is stored, fresh
         github.rows = [repo("acme/api", description="moved")]
-        again = catalog.reask(saved)
+        again = finder.reask(saved)
         assert again is not None and again.description == "moved"
         assert (github.calls, gitlab.calls) == (2, 1)  # live, and only the source is asked
-        assert catalog.reask(catalog.resolve("https://github.com/acme/api.git")) is None
+        assert finder.reask(finder.resolve("https://github.com/acme/api.git")) is None
         github.rows = [repo("acme/api", "evil.example")]
         with pytest.raises(UsageError, match="refusing to fetch it"):
-            RepoSources().reask(saved)
+            RepoFinder().reask(saved)
 
 
 def test_reask_lists_each_source_once_however_many_repos_it_sourced() -> None:
     github = listing(repo("acme/api"), repo("acme/web"), repo("acme/docs"))
     with providers(github=[github, host("github.com")]):
-        saved = [RepoSources().resolve(name) for name in ("acme/api", "acme/web", "acme/docs")]
+        saved = [RepoFinder().resolve(name) for name in ("acme/api", "acme/web", "acme/docs")]
         calls = github.calls
-        catalog = RepoSources()
-        assert [catalog.reask(each) for each in saved] == saved
+        finder = RepoFinder()
+        assert [finder.reask(each) for each in saved] == saved
         assert github.calls == calls + 1
 
 
 def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer() -> None:
     github = listing(repo("acme/api"))
     with providers(github=[github]) as running:
-        catalog = RepoSources()
-        saved = catalog.resolve("acme/api")  # github's answer is stored
+        finder = RepoFinder()
+        saved = finder.resolve("acme/api")  # github's answer is stored
         github.error = HTTP_503
         with pytest.raises(UntapedError) as caught:
-            catalog.reask(saved)
+            finder.reask(saved)
     emitted = running.diagnostics
     assert caught.value is HTTP_503
     assert [each for each in emitted if isinstance(each, Stale)] == []  # the error says it
@@ -361,8 +358,8 @@ def test_reask_of_a_source_that_is_down_raises_its_error_not_the_stored_answer()
 def test_reask_of_a_source_that_is_gone_or_not_ready_is_none() -> None:
     gitlab = listing(repo("infra/api", GITLAB), not_ready=NO_BASE_URL)
     with providers(github=[listing(repo("acme/api"))], gitlab=[gitlab]):
-        catalog = RepoSources()
+        finder = RepoFinder()
         from_gitlab = repo("infra/api", GITLAB, source=Source(plugin="gitlab", kind=""))
-        assert catalog.reask(from_gitlab) is None
+        assert finder.reask(from_gitlab) is None
         gone = repo("infra/api", GITLAB, source=Source(plugin="gitea", kind=""))
-        assert catalog.reask(gone) is None
+        assert finder.reask(gone) is None

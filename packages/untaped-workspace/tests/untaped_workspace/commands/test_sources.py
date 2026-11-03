@@ -18,8 +18,8 @@ from pydantic import BaseModel
 from untaped.sdk import Source, UntapedError, key
 from untaped.sdk.contracts import NotReady
 from untaped.sdk.testing import ManualClock, Ran, Running
+from untaped_git.api import Repo
 from untaped_git.testing import GitRemote
-from untaped_workspace.api import Repo
 from untaped_workspace.infrastructure import LocalGitWorktrees
 from workspace_test_support import (
     Listing,
@@ -46,7 +46,7 @@ class _Github(BaseModel):
 
 
 NO_BASE_URL = NotReady("no base URL", key(_Gitlab).base_url)
-GITHUB = Source(plugin="github", kind="workspace.repo")
+GITHUB = Source(plugin="github", kind="git.repo")
 
 
 @contextmanager
@@ -99,9 +99,7 @@ def test_a_repo_two_unranked_providers_list_is_a_usage_error_naming_the_rank_com
         result = run(["create", "J-1", "--repo", "acme/api"])
     assert result.exit == 2, err(result)
     assert "error: github, gitlab each have a match; rank them to choose" in err(result)
-    assert "hint: run `untaped plugin rank workspace.repo_source repos github gitlab`" in (
-        err(result)
-    )
+    assert "hint: run `untaped plugin rank git.repo_source repos github gitlab`" in (err(result))
     assert _nothing_created(workspace_env)
 
 
@@ -241,7 +239,7 @@ def test_a_piped_workspace_repo_is_read_as_it_is(
 ) -> None:
     api = make_upstream("api")
     github = listing()
-    piped = _pipe(("workspace.repo", {"name": "acme/api", "url": api.url, "description": "API"}))
+    piped = _pipe(("git.repo", {"name": "acme/api", "url": api.url, "description": "API"}))
     with providers(github=[github]):
         created = run(["create", "J-1", "--stdin", "--format", "json"], input=piped)
     assert created.exit == 0, err(created)
@@ -258,7 +256,7 @@ def test_a_piped_workspace_repo_is_read_as_it_is(
 
 
 def test_a_piped_workspace_repo_with_a_local_url_is_invalid_input(workspace_env: Path) -> None:
-    piped = _pipe(("workspace.repo", {"name": "acme/api", "url": "file:///srv/acme/api.git"}))
+    piped = _pipe(("git.repo", {"name": "acme/api", "url": "file:///srv/acme/api.git"}))
     result = run(["create", "J-1", "--stdin"], input=piped)
     assert result.exit == 1, err(result)
     assert result.stderr == ["error: line 1: url: file:// is not an accepted Git URL scheme"]
@@ -277,7 +275,7 @@ def test_a_piped_record_no_provider_reads_is_a_usage_error(workspace_env: Path) 
     piped = _pipe(("forge.project", {"path": "acme/api", "clone_url": "https://x.example/a.git"}))
     result = run(["create", "J-1", "--stdin"], input=piped)  # no forge composed
     assert result.exit == 2, err(result)
-    assert "no installed provider reads forge.project records as workspace.repo" in err(result)
+    assert "no installed provider reads forge.project records as git.repo" in err(result)
     assert _nothing_created(workspace_env)
 
 

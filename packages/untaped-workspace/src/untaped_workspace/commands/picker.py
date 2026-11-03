@@ -20,7 +20,6 @@ from untaped_workspace.application.provision import refuse_occupied
 from untaped_workspace.domain.models import RepoArg, WorkspaceRecord
 from untaped_workspace.domain.naming import (
     branch_for,
-    looks_like_url,
     repo_key,
     validate_workspace_name,
 )
@@ -90,6 +89,8 @@ def build_request(
 
 def _adhoc(query: str) -> PickItem | None:
     """A typed git URL becomes an extra item."""
+    from untaped_git.api import looks_like_url  # noqa: PLC0415  # keeps CLI startup free of git
+
     if looks_like_url(query):
         return PickItem(id=query, label=query, description="git URL")
     return None

@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 from untaped.sdk import UsageError, now
 from untaped.sdk.contracts import Answers, Errored, NoProviderReady, Ok, Reason, Skipped, gather
 from untaped.sdk.prompt import PickCatalog, PickItem
-from untaped_workspace.api import Repo, RepoSource
+from untaped_git.api import Repo, RepoSource, typed_repo
 from untaped_workspace.domain.models import RepoArg
-from untaped_workspace.domain.naming import repo_key, typed_repo
+from untaped_workspace.domain.naming import repo_key
 
 if TYPE_CHECKING:
     from untaped_workspace.application.ports import GitWorktrees

@@ -33,8 +33,11 @@ cfg dotfiles.os string? default=unset  [experimental]
 cfg dotfiles.repos_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.state_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
+cfg git.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cfg github.caches.sweep.max_age_seconds integer(minimum=0) default=3600
@@ -97,9 +100,6 @@ cfg untaped.ui.hide_empty_columns boolean? default=unset
 cfg untaped.ui.symbols object default={}
 cfg untaped.ui.theme string default=default
 cfg workspace.branch_template string default={name}  [experimental]
-cfg workspace.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600  [experimental]
-cfg workspace.extensions.repo_source.rank.repos string[] default=[]  [experimental]
-cfg workspace.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg workspace.parallel integer(minimum=1)? default=unset  [experimental]
 cfg workspace.workspaces_dir string(format=path)? default=unset  [experimental]
 cli untaped --deprecated switch
@@ -4212,9 +4212,23 @@ contract git.Credential(password, username)
 contract git.Credential.password string(format=password)
 contract git.Credential.username string
 contract git.Credential.verify_tls boolean|string(format=path) default=true
+contract git.Repo(name, url)
+contract git.Repo.archived boolean default=false
+contract git.Repo.default_branch string? default=None
+contract git.Repo.description string? default=None
+contract git.Repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)
+contract git.Repo.source Source? default=None
+contract git.Repo.url string
+contract git.Source(kind, plugin)
+contract git.Source.kind string
+contract git.Source.plugin string
+contract git.Source.record object default={}
 contract git.git_host abstract=credential,home  [experimental]
 contract git.git_host.credential(url: string) -> Credential?  [experimental]
 contract git.git_host.home() -> string?  [experimental]
+contract git.repo_source abstract=repos  [experimental]
+contract git.repo_source.repos() -> Repo[]  [experimental]
+contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 contract lint.Failure(category, message, system)
 contract lint.Failure.category choice=auth
 contract lint.Failure.category choice=config
@@ -4267,20 +4281,6 @@ contract lint.linter.findings(record: Record) -> Finding[]  [experimental]
 contract lint.linter.rules() -> Rule[]  [experimental]
 contract lint.tree_reader abstract=read  [experimental]
 contract lint.tree_reader.read(tree: Tree) -> Record[]  [experimental]
-contract workspace.Repo(name, url)  [experimental]
-contract workspace.Repo.archived boolean default=false  [experimental]
-contract workspace.Repo.default_branch string? default=None  [experimental]
-contract workspace.Repo.description string? default=None  [experimental]
-contract workspace.Repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
-contract workspace.Repo.source Source? default=None  [experimental]
-contract workspace.Repo.url string  [experimental]
-contract workspace.Source(kind, plugin)
-contract workspace.Source.kind string
-contract workspace.Source.plugin string
-contract workspace.Source.record object default={}
-contract workspace.repo_source abstract=repos  [experimental]
-contract workspace.repo_source.repos() -> Repo[]  [experimental]
-contract workspace.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 convention attribute renamed_keys
 convention attribute retired_keys
 convention entry-point untaped.plugins
@@ -5180,6 +5180,18 @@ record git.host.helpers_first string[]
 record git.host.host string
 record git.host.missing_helper string?
 record git.host.plugins string[]
+record git.repo  [experimental]
+record git.repo(name, url)  [experimental]
+record git.repo.archived boolean  [experimental]
+record git.repo.archived default=false  [experimental]
+record git.repo.default_branch default=None  [experimental]
+record git.repo.default_branch string?  [experimental]
+record git.repo.description default=None  [experimental]
+record git.repo.description string?  [experimental]
+record git.repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
+record git.repo.source Source?  [experimental]
+record git.repo.source default=None  [experimental]
+record git.repo.url string  [experimental]
 record git.store_report
 record git.store_report.exclusive_bytes object
 record git.store_report.filter_ignored object
@@ -6119,18 +6131,6 @@ record workspace.remove_outcome.error Failure?  [experimental]
 record workspace.remove_outcome.repo string  [experimental]
 record workspace.remove_outcome.target_path string(format=path)  [experimental]
 record workspace.remove_outcome.workspace string  [experimental]
-record workspace.repo  [experimental]
-record workspace.repo(name, url)  [experimental]
-record workspace.repo.archived boolean  [experimental]
-record workspace.repo.archived default=false  [experimental]
-record workspace.repo.default_branch default=None  [experimental]
-record workspace.repo.default_branch string?  [experimental]
-record workspace.repo.description default=None  [experimental]
-record workspace.repo.description string?  [experimental]
-record workspace.repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
-record workspace.repo.source Source?  [experimental]
-record workspace.repo.source default=None  [experimental]
-record workspace.repo.url string  [experimental]
 record workspace.repo_outcome  [experimental]
 record workspace.repo_outcome(action, dir, repo, target_path, workspace)  [experimental]
 record workspace.repo_outcome.action choice=checked_out  [experimental]
@@ -8092,6 +8092,27 @@ sdk untaped_git.api.Released.stash
 sdk untaped_git.api.Removed()
 sdk untaped_git.api.Removed(freed_bytes@1=) default=0
 sdk untaped_git.api.Removed.freed_bytes
+sdk untaped_git.api.Repo base=untaped.sdk.Issued
+sdk untaped_git.api.Repo base=untaped.sdk.Record
+sdk untaped_git.api.Repo extra=forbid
+sdk untaped_git.api.Repo(*, name, url)
+sdk untaped_git.api.Repo(archived=) default=false
+sdk untaped_git.api.Repo(default_branch=) default=None
+sdk untaped_git.api.Repo(description=) default=None
+sdk untaped_git.api.Repo(source=) default=None
+sdk untaped_git.api.Repo.archived
+sdk untaped_git.api.Repo.default_branch
+sdk untaped_git.api.Repo.description
+sdk untaped_git.api.Repo.name
+sdk untaped_git.api.Repo.url
+sdk untaped_git.api.RepoFinder()
+sdk untaped_git.api.RepoFinder.admit(repo)
+sdk untaped_git.api.RepoFinder.reask(repo)
+sdk untaped_git.api.RepoFinder.resolve(ident)
+sdk untaped_git.api.RepoFinder.resolve(progress=) default=NO_PROGRESS
+sdk untaped_git.api.RepoName
+sdk untaped_git.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_git.api.RepoSource implement=repos  [experimental]
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)
 sdk untaped_git.api.RepoStore(path, *, url, plugin, error)
 sdk untaped_git.api.RepoStore(plain_clone=) default=false
@@ -8165,6 +8186,7 @@ sdk untaped_git.api.default_branch(url)
 sdk untaped_git.api.git_toplevel(git=) default=git
 sdk untaped_git.api.git_toplevel(path)
 sdk untaped_git.api.git_toplevel(timeout=) default=30.0
+sdk untaped_git.api.looks_like_url(ident)
 sdk untaped_git.api.ls_remote(patterns@2=) default=[]
 sdk untaped_git.api.ls_remote(url)
 sdk untaped_git.api.repo_url_parts(url)
@@ -8186,6 +8208,7 @@ sdk untaped_git.api.run_git(sleep=) default=<computed> callback(1)
 sdk untaped_git.api.run_git(stdin=) default=None
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
+sdk untaped_git.api.typed_repo(url)
 sdk untaped_git.api.validate_git_url(value)
 sdk untaped_git.testing.GitRemote(path, work, url)  [experimental]
 sdk untaped_git.testing.GitRemote.allow_filter()  [experimental]
@@ -8210,6 +8233,7 @@ sdk untaped_git.testing.GitRemote.tag(message=) default=None  [experimental]
 sdk untaped_git.testing.GitRemote.tag(name)  [experimental]
 sdk untaped_git.testing.GitRemote.url  [experimental]
 sdk untaped_git.testing.GitRemote.work  [experimental]
+sdk untaped_git.testing.conformance(provider)
 sdk untaped_git.testing.git_remote(base)  [experimental]
 sdk untaped_git.testing.git_remote(host=) default=git.example  [experimental]
 sdk untaped_git.testing.git_remote(name@2=) default=app  [experimental]
@@ -8539,23 +8563,6 @@ sdk untaped_values.api.resolve(known=) default=[]  [experimental]
 sdk untaped_values.api.resolve(label=) default=""  [experimental]
 sdk untaped_values.api.resolve(specs, given)  [experimental]
 sdk untaped_values.api.terminal_ask(terminal, vars)  [experimental]
-sdk untaped_workspace.api.Repo base=untaped.sdk.Issued  [experimental]
-sdk untaped_workspace.api.Repo base=untaped.sdk.Record  [experimental]
-sdk untaped_workspace.api.Repo extra=forbid  [experimental]
-sdk untaped_workspace.api.Repo(*, name, url)  [experimental]
-sdk untaped_workspace.api.Repo(archived=) default=false  [experimental]
-sdk untaped_workspace.api.Repo(default_branch=) default=None  [experimental]
-sdk untaped_workspace.api.Repo(description=) default=None  [experimental]
-sdk untaped_workspace.api.Repo(source=) default=None  [experimental]
-sdk untaped_workspace.api.Repo.archived  [experimental]
-sdk untaped_workspace.api.Repo.default_branch  [experimental]
-sdk untaped_workspace.api.Repo.description  [experimental]
-sdk untaped_workspace.api.Repo.name  [experimental]
-sdk untaped_workspace.api.Repo.url  [experimental]
-sdk untaped_workspace.api.RepoName  [experimental]
-sdk untaped_workspace.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
-sdk untaped_workspace.api.RepoSource implement=repos  [experimental]
-sdk untaped_workspace.testing.conformance(provider)  [experimental]
 server-api awx.server-api override=awx.server_version  [experimental]
 server-api jira.server-api override=jira.server_version  [experimental]
 state ansible.aliases Alias[]
