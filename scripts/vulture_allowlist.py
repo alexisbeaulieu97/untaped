@@ -167,3 +167,6 @@ Policy.ONCE  # dotfiles: `policy: once`
 
 # The contract answers' views: SDK API, read by the shelf example and third-party owners.
 Answers.errored
+
+# A contract method providers fill; github fills it with its selector (#620).
+RepoSource.to_selector

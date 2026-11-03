@@ -310,7 +310,7 @@ class _Scaffold:
         commented: list[str] = []
         for method_name, method in info.methods.items():
             text = _method(method_name, method.function, param, model)
-            if method.bridge:
+            if method.item_bridge:
                 commented.append(
                     "# Only when this provider issues records of its own: subclass "
                     f"{info.cls.__name__}[YourRecord]\n# and turn each into the owner's.\n"

@@ -37,6 +37,7 @@ from untaped.sdk.contracts._declare import (
     ContractInfo,
     NotReady,
     bind,
+    bridge_takes,
     contract_of,
     fills,
     item_type,
@@ -330,11 +331,26 @@ def _check(
             "so a piped record can't find its way back to it",
             info.cls,
         )
+    unread = [
+        name
+        for name, method in info.methods.items()
+        if method.bridge
+        and not method.item_bridge
+        and fills(provider, info, name)
+        and not _has_kind(bridge_takes(provider, info, name), kinds)
+    ]
+    if unread:
+        return quarantined(
+            Reason.unresolved_item_type,
+            f"{provider.__qualname__} fills {', '.join(unread)} without naming the record it "
+            "takes: annotate the parameter with a record of the plugin's own",
+            info.cls,
+        )
     if not binding.owns_item:
         missing = [
             name
             for name, method in info.methods.items()
-            if method.bridge and not fills(provider, info, name)
+            if method.item_bridge and not fills(provider, info, name)
         ]
         if missing:
             return quarantined(
@@ -353,6 +369,11 @@ def _check(
         )
     bind(value, binding)
     return BoundProvider(value, binding)
+
+
+def _has_kind(model: type[BaseModel] | None, kinds: Callable[[type[BaseModel]], str]) -> bool:
+    """Whether ``model`` is a record with a kind, so a piped one finds its way back."""
+    return model is not None and bool(kinds(model))
 
 
 def _uses_missing(

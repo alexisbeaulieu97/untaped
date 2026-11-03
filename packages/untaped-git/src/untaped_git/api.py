@@ -4,7 +4,8 @@
 shared by plugins, each in its own ref namespace); ``GitHost`` is the
 contract a forge plugin fills to supply credentials and a proxy for its host;
 ``RepoSource`` is the contract plugins fill to list the repos a person can
-name, issuing ``Repo`` records, and ``RepoFinder`` resolves a typed name or
+name, issuing ``Repo`` records (and ``RepoSelector`` records from a
+provider's own selector), and ``RepoFinder`` resolves a typed name or
 URL to one of them (``typed_repo`` names a URL with no provider asked);
 ``ls_remote`` and ``default_branch`` query a remote with those credentials,
 and ``clone`` makes a working copy with them that its owner keeps;
@@ -28,7 +29,14 @@ from untaped_git.namespace import check_names
 from untaped_git.records import TreeEntry
 from untaped_git.release import Released, Removed
 from untaped_git.repo_finder import RepoFinder
-from untaped_git.repos import Repo, RepoName, RepoSource, looks_like_url, typed_repo
+from untaped_git.repos import (
+    Repo,
+    RepoName,
+    RepoSelector,
+    RepoSource,
+    looks_like_url,
+    typed_repo,
+)
 from untaped_git.run import GitCommandError, GitResult, git_toplevel, run_git
 from untaped_git.settings import store_root
 from untaped_git.store import RepoStore
@@ -50,6 +58,7 @@ __all__ = [
     "Repo",
     "RepoFinder",
     "RepoName",
+    "RepoSelector",
     "RepoSource",
     "RepoStore",
     "TreeEntry",
