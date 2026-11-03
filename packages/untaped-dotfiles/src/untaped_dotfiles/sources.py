@@ -203,6 +203,11 @@ class Clones:
     def tree(self, record: CloneRecord) -> StoreTree:
         return StoreTree(self.repo(record.url), self.head(record))
 
+    def checked_out_tree(self, record: CloneRecord) -> StoreTree | None:
+        """The tree of the commit the clone has checked out (without its local changes)."""
+        commit = self.checked_out(record)
+        return StoreTree(self.repo(record.url), commit) if commit is not None else None
+
     def fetch(self, record: CloneRecord) -> None:
         self.repo(record.url).fetch(branches=[record.ref])
 

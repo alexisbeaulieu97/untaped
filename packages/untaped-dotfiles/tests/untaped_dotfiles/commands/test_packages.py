@@ -35,10 +35,10 @@ def test_add_turns_a_package_on_with_its_authors_policy(make_remote: MakeRemote)
 
 def test_add_policy_is_this_machines_choice(make_remote: MakeRemote) -> None:
     subscribe(make_remote().url, "--add", "fish")
-    [row] = as_json(["add", "fish", "--policy", "sync"])
-    assert (row["policy"], row["suggested"], row["chosen"]) == ("sync", "manual", True)
+    [row] = as_json(["add", "fish", "--policy", "manual"])
+    assert (row["policy"], row["suggested"], row["chosen"]) == ("manual", "sync", True)
     [shown] = as_json(["show", "fish"])
-    assert shown["policy"] == "sync" and shown["chosen"] is True
+    assert shown["policy"] == "manual" and shown["chosen"] is True
 
 
 def test_add_an_item_turns_its_package_on_with_the_other_items_off(

@@ -33,6 +33,9 @@ def test_status_before_apply_is_pending_and_writes_the_status_files(
     }
     assert json.loads((dotfiles_env / "status.json").read_text())["pending"] == 4
     assert (dotfiles_env / "attention").read_text() == "0\n"
+    assert json.loads((dotfiles_env / "status.json").read_text())["apply"] == 4
+    assert run(["status", "--check"]).exit_code == 3  # something for apply to do
+    as_json(["apply", "--yes"])
     assert run(["status", "--check"]).exit_code == 0
 
 
@@ -57,7 +60,10 @@ def test_a_source_change_is_behind_until_apply_and_check_exits_3(
     assert found["~/.config/starship.toml"] == "behind"
     assert found["~/.config/fish/config.fish"] == "behind"
     assert run(["status", "--check"]).exit_code == 3
-    assert (dotfiles_env / "attention").read_text() == "2\n"
+    assert json.loads((dotfiles_env / "status.json").read_text())["apply"] == 2  # both sync
+    assert (dotfiles_env / "attention").read_text() == "0\n"
+    as_json(["add", "starship", "--policy", "manual"])
+    assert (dotfiles_env / "attention").read_text() == "1\n"  # manual waits for a person
 
 
 def test_a_local_edit_is_modified(make_remote: MakeRemote, user_home: Path) -> None:

@@ -99,6 +99,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | Key | Type | Description |
 |---|---|---|
 | `dotfiles.cloned` | list | The clone untaped made for a git source: a detached worktree of the git plugin's store. |
+| `dotfiles.items` | list | An item applied here at least once, so an entry its author adds later is ``new``. |
 | `dotfiles.placed` | list | One placed path: what untaped wrote there and from which entry of which package. |
 
 ## `git`

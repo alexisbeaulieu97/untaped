@@ -246,9 +246,11 @@ untaped workspace status NAME --format pipe \
 `dotfiles status` run without selectors (and `dotfiles apply`, `dotfiles
 remove` and `dotfiles unsubscribe` after their changes) writes two files
 under `dotfiles.state_dir`: `status.json`, the counts of the entries in
-each state with `checked_at`, `total` and `attention`, and `attention`, one
-line holding that count (the entries that need a person), for prompt
-segments.
+each state with `checked_at`, `total`, `apply` (the entries the next
+`apply` changes on its own) and `attention` (those only a person can
+settle), and `attention`, one line holding that last count, for prompt
+segments. `dotfiles apply` rows carry a `diff` field (not a column): the
+target's content before and after, a new file's whole content included.
 
 ## git
 
