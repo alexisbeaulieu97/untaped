@@ -1,8 +1,8 @@
 """Ports of the resource use cases (the "ports" of hexagonal architecture).
 
 Use cases depend on these — never on concrete infrastructure types — so
-they can be tested with simple stubs. Concrete adapters live in
-``infrastructure/resources/`` and are wired together by the commands.
+they can be tested with simple stubs. The controller's adapter
+(``infrastructure/controller/``) serves them, wired together by the commands.
 """
 
 from __future__ import annotations
