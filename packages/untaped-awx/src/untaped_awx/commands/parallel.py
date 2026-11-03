@@ -15,11 +15,10 @@ from collections.abc import Callable
 
 from untaped.sdk import UntapedError, bounded_map
 from untaped_awx.application import WatchJob
-from untaped_awx.application.jobs.ports import JobMonitor
-from untaped_awx.application.resources.ports import RawHttpResourceClient
+from untaped_awx.application.jobs.ports import JobMonitor, JobRecords
 from untaped_awx.application.scheduling import MAX_PARALLEL, idle
 from untaped_awx.domain import Job
-from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.domain.jobs.job import JOB_KINDS
 
 
 def drain_parallel_with_worker(
@@ -136,7 +135,7 @@ def drain_parallel(
         # a slow or failing fetch never blocks the main thread's queue
         # drain.
         try:
-            if not JOB_ROUTES[job.kind].stdout:
+            if not JOB_KINDS[job.kind].stdout:
                 final = job
                 for status in monitor.stream_status(job):
                     q.put((name, status))
@@ -167,7 +166,7 @@ def drain_parallel(
 
 
 def wait_parallel(
-    client: RawHttpResourceClient,
+    client: JobRecords,
     jobs: list[tuple[str, Job]],
     *,
     sleep: Callable[[float], None] | None = None,

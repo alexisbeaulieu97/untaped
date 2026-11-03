@@ -1,8 +1,7 @@
-"""Poll kind-specific Controller status, stdout and event endpoints.
+"""Follow an execution: its status, its log, its events, by polling the controller.
 
-Ordinary jobs expose job_events; project/inventory updates and ad-hoc commands
-expose events. Workflow jobs expose status only: they have neither events nor
-stdout, so following one uses stream_status without inventing child routes.
+Workflow jobs have status only: neither events nor stdout, so following one
+uses stream_status.
 
 Events are the one incremental reader of a log: following a log
 (:meth:`PollingJobMonitor.stream_stdout`) asks each poll only for the events
@@ -24,11 +23,11 @@ from typing import TYPE_CHECKING, Any
 from untaped.sdk import plural
 from untaped.sdk.network import paginate_pages
 from untaped_awx.domain import Job, JobEvent
-from untaped_awx.domain.jobs.job import JOB_ROUTES, poll_until_terminal
+from untaped_awx.domain.jobs.job import JOB_KINDS, JobKind, poll_until_terminal
 from untaped_awx.errors import AwxApiError
 
 if TYPE_CHECKING:
-    from untaped_awx.application.resources.ports import RawHttpResourceClient
+    from untaped_awx.application.jobs.ports import Executions
 
 SleepFn = Callable[[float], None]
 _EVENT_PAGE_SIZE = 200
@@ -41,11 +40,11 @@ _FULL_TEXT = {"no_truncate": "1"}
 
 
 class PollingJobMonitor:
-    """Polling-based :class:`JobMonitor` adapter."""
+    """The :class:`JobMonitor`: polls the controller's :class:`Executions`."""
 
     def __init__(
         self,
-        client: RawHttpResourceClient,
+        client: Executions,
         *,
         sleep: SleepFn = time.sleep,
         poll_interval: float = 2.0,
@@ -63,8 +62,7 @@ class PollingJobMonitor:
         """Seconds each follow loop polls before giving up; ``None`` waits until terminal."""
 
     def fetch(self, job: Job) -> Job:
-        api_path = _api_path_for(job)
-        record = self._client.request("GET", f"{api_path}/{job.id}/")
+        record = self._client.job(kind=job.kind, job_id=job.id)
         return Job.model_validate({**record, "kind": job.kind})
 
     def _poll(self, job: Job) -> Iterator[Job]:
@@ -81,17 +79,9 @@ class PollingJobMonitor:
             previous = current.status
 
     def fetch_stdout(self, job: Job) -> list[str]:
-        api_path = _api_path_for(job)
-        if not JOB_ROUTES[job.kind].stdout:
+        if not _kind(job).stdout:
             raise AwxApiError(f"{job.kind} does not expose stdout; use jobs get/wait for status")
-        # ``txt`` answers large logs with a "too large to display" stub, and
-        # neither honours ``start_line``; ``txt_download`` has no size cap.
-        text = self._client.request_text(
-            "GET",
-            f"{api_path}/{job.id}/stdout/",
-            params={"format": "txt_download"},
-        )
-        return text.splitlines()
+        return self._client.job_stdout(job).splitlines()
 
     def settled(self, job: Job) -> Job:
         """``job`` re-read (a few times at most) until AWX has saved all its events.
@@ -121,7 +111,7 @@ class PollingJobMonitor:
         until it has enough lines, at most :data:`_TAIL_MAX_PAGES` pages.
         Usually one request, however long the log.
         """
-        path = _events_path(job)
+        _with_events(job)
         first = min(max(2 * lines, 1), _EVENT_PAGE_SIZE)
         pages = 0
 
@@ -132,7 +122,7 @@ class PollingJobMonitor:
             query = {"order_by": "-counter", "page_size": str(size), **_FULL_TEXT}
             if below is not None:
                 query["counter__lt"] = below
-            results = list(self._client.request("GET", path, params=query).get("results") or [])
+            results = self._client.job_events_page(job, query)
             more = len(results) >= size and pages < _TAIL_MAX_PAGES
             return results, str(results[-1]["counter"]) if more else None
 
@@ -224,7 +214,7 @@ class PollingJobMonitor:
         query = {**(params or {}), "counter__gt": str(counter), "order_by": "counter"}
         # AWX caps a page; a busy job writes thousands of events between polls,
         # so one read walks every page.
-        for record in self._client.paginate_path(_events_path(job), params=query):
+        for record in self._client.job_events(_with_events(job), query):
             yield JobEvent.model_validate(record)
 
     def _read_into(
@@ -272,16 +262,15 @@ def _unsaved(job: Job) -> bool:
     return job.is_terminal and job.event_processing_finished is False
 
 
-def _events_path(job: Job) -> str:
-    api_path = _api_path_for(job)
-    events_path = JOB_ROUTES[job.kind].events
-    if events_path is None:
-        raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
-    return f"{api_path}/{job.id}/{events_path}/"
-
-
-def _api_path_for(job: Job) -> str:
-    routes = JOB_ROUTES.get(job.kind)
-    if routes is None:
+def _kind(job: Job) -> JobKind:
+    kind = JOB_KINDS.get(job.kind)
+    if kind is None:
         raise AwxApiError(f"unsupported execution kind: {job.kind}")
-    return routes.collection
+    return kind
+
+
+def _with_events(job: Job) -> Job:
+    """``job``, when its kind has events to read."""
+    if not _kind(job).events:
+        raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
+    return job

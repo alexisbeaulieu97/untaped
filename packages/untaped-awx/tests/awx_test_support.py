@@ -23,7 +23,10 @@ from untaped.sdk.testing.fixtures import current_terminal
 from untaped_awx.commands.context import AwxContext
 from untaped_awx.commands.controller import Ping
 from untaped_awx.infrastructure import AwxClient
-from untaped_awx.infrastructure.resources.resource_repo import ResourceRepository
+from untaped_awx.infrastructure.controller.jobs import Jobs
+from untaped_awx.infrastructure.controller.resources import ResourceRepository
+from untaped_awx.infrastructure.controller.unified_templates import UnifiedTemplates
+from untaped_awx.infrastructure.controller.workflow_nodes import WorkflowNodes
 from untaped_awx.plugin import Awx
 from untaped_awx.settings import AwxSettings
 
@@ -119,3 +122,69 @@ class ClientRepository(ResourceRepository):
     @property
     def _client(self) -> AwxClient:
         return self._given
+
+
+type Call = tuple[str, str, dict[str, str]]
+
+
+class RecordingController(Jobs, WorkflowNodes, UnifiedTemplates):
+    """The controller's parts, recording each call instead of sending it.
+
+    ``answers`` are the JSON answers, in order (an empty page once they run
+    out); a listing reads its pages from them, following each page's
+    ``next``. ``texts`` are the text answers, in order.
+    """
+
+    _page_size = 200
+
+    def __init__(
+        self,
+        *,
+        answers: Sequence[dict[str, Any]] = (),
+        texts: Sequence[str] = (),
+    ) -> None:
+        self._answers = list(answers)
+        self._texts = list(texts)
+        #: Every JSON request: method, path, params.
+        self.json_calls: list[Call] = []
+        #: The body of each JSON request, in order (``None``: none sent).
+        self.bodies: list[dict[str, Any] | None] = []
+        #: Every listing: path, params, limit.
+        self.listings: list[tuple[str, dict[str, str], int | None]] = []
+        #: Every text request: method, path, params.
+        self.text_calls: list[Call] = []
+
+    @property
+    def _client(self) -> AwxClient:
+        raise AssertionError("a recording controller sends nothing")
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.json_calls.append((method, path, dict(params or {})))
+        self.bodies.append(json)
+        return self._answers.pop(0) if self._answers else {"results": [], "next": None}
+
+    def _paginate(
+        self,
+        path: str,
+        *,
+        params: Mapping[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        self.listings.append((path, dict(params or {}), limit))
+        page = self._request("GET", path, params=params)
+        while True:
+            yield from page.get("results") or []
+            if not page.get("next"):
+                return
+            page = self._request("GET", page["next"])
+
+    def _text(self, path: str, *, params: Mapping[str, str] | None = None) -> str:
+        self.text_calls.append(("GET", path, dict(params or {})))
+        return self._texts.pop(0) if self._texts else ""

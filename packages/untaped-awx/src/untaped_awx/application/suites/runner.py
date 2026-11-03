@@ -46,7 +46,7 @@ from untaped_awx.application.suites.plan import (
 )
 from untaped_awx.application.suites.workflow import JobRead, WorkflowRun
 from untaped_awx.domain import Job
-from untaped_awx.domain.jobs.job import JOB_ROUTES
+from untaped_awx.domain.jobs.job import JOB_KINDS
 from untaped_awx.domain.suites.case_failure import (
     CaseFailure,
     FailureEvidence,
@@ -377,7 +377,7 @@ class RunTestSuite:
             path, node = stalled
             failure = stalled_node_failure(node, f"still {node.status} {waited}; {fate}")
             execution = node.execution
-            if self._options.evidence and execution is not None and node.kind in JOB_ROUTES:
+            if self._options.evidence and execution is not None and node.kind in JOB_KINDS:
                 failure = _gather(self._reading, execution, failure, JobRead(source=execution))
             failure = in_node(failure, path)
         fields["result"] = "timeout"

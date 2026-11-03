@@ -27,7 +27,7 @@ from untaped.sdk import (
 from untaped_awx.application.resources.mutation_values import error_text
 from untaped_awx.commands._job_targets import JobsCommand, as_job_id
 from untaped_awx.commands.context import AwxContext
-from untaped_awx.domain.jobs.job import JOB_ROUTES, TERMINAL_STATUSES
+from untaped_awx.domain.jobs.job import JOB_KINDS, TERMINAL_STATUSES
 from untaped_awx.records import JobCancelOutcome, JobRelaunchOutcome
 
 _CANCEL_COLUMNS = (
@@ -146,7 +146,7 @@ def _read_targets(
 
     def read(ident: str) -> dict[str, Any]:
         job_kind = kinds.get(ident, kind)
-        record = ctx.jobs.get(kind=job_kind, job_id=as_job_id(ident))
+        record = ctx.repo.job(kind=job_kind, job_id=as_job_id(ident))
         targets.append((job_kind, record))
         return record
 
@@ -181,7 +181,7 @@ def _cancel_plan(kind: str, record: dict[str, Any]) -> JobCancelOutcome:
 
 def _cancel_one(ctx: AwxContext, row: JobCancelOutcome) -> JobCancelOutcome:
     try:
-        ctx.jobs.cancel(kind=row.kind, job_id=row.id)
+        ctx.repo.cancel_job(kind=row.kind, job_id=row.id)
     except UntapedError as exc:
         ctx.diag.failure(exc, item=_label(row.kind, row.id, row.name))
         return row.model_copy(update=_failure(exc))
@@ -199,7 +199,7 @@ def _failure(exc: UntapedError) -> dict[str, Any]:
 
 
 def _check_relaunchable(kind: str, *, failed_hosts: bool) -> None:
-    if not JOB_ROUTES[kind].relaunch:
+    if not JOB_KINDS[kind].relaunch:
         raise UsageError(
             f"{kind} executions cannot be relaunched; sync or launch the template instead"
         )
@@ -209,7 +209,7 @@ def _check_relaunchable(kind: str, *, failed_hosts: bool) -> None:
 
 def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcome:
     try:
-        created = ctx.jobs.relaunch(
+        created = ctx.repo.relaunch_job(
             kind=row.kind,
             job_id=row.target_id,
             hosts="failed" if row.hosts == "failed" else None,
@@ -221,7 +221,7 @@ def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcom
     return row.model_copy(
         update={
             "id": created.get("id"),
-            "kind": new_kind if new_kind in JOB_ROUTES else row.kind,
+            "kind": new_kind if new_kind in JOB_KINDS else row.kind,
             "status": created.get("status"),
             "action": "relaunched",
         }

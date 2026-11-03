@@ -1,15 +1,80 @@
-"""Ports of the job use cases: watching, following and cancelling an execution.
+"""Ports of the job use cases: reading, watching, following and cancelling an execution.
 
-Concrete adapters live in ``infrastructure/jobs/`` and are wired together at
-the CLI composition root.
+The controller's adapter serves :class:`JobRecords` and :class:`JobOutput`
+(:mod:`untaped_awx.infrastructure.controller`); a :class:`JobMonitor`
+(:mod:`untaped_awx.application.jobs.monitor`) polls over both, its
+:class:`Executions`.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Protocol
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any, Protocol
 
 from untaped_awx.domain import Job, JobEvent
+
+
+class JobRecords(Protocol):
+    """Execution records: listed, read, cancelled and relaunched; a run's hosts and nodes.
+
+    ``kind`` is a :class:`Job` kind (``job``, ``workflow_job``, ...).
+    """
+
+    def jobs(
+        self,
+        *,
+        kind: str,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """``kind`` executions ``params`` select, newest first unless they order them."""
+        ...
+
+    def job(self, *, kind: str, job_id: int) -> dict[str, Any]:
+        """One execution record."""
+        ...
+
+    def job_host_summaries(
+        self, job: Job, params: Mapping[str, str] | None = None
+    ) -> Iterator[dict[str, Any]]:
+        """``job``'s PLAY RECAP per host, read lazily, failed and unreachable hosts first."""
+        ...
+
+    def workflow_job_nodes(self, job: Job) -> Iterator[dict[str, Any]]:
+        """The nodes of a workflow job, as they ran."""
+        ...
+
+    def decide_approval(self, approval_id: int, *, approve: bool) -> None:
+        """Approve or deny a pending workflow approval."""
+        ...
+
+    def cancel_job(self, *, kind: str, job_id: int) -> None:
+        """Ask the controller to cancel an execution; it stops it later."""
+        ...
+
+    def relaunch_job(self, *, kind: str, job_id: int, hosts: str | None = None) -> dict[str, Any]:
+        """Relaunch an execution (on ``hosts`` alone, when given); the new execution record."""
+        ...
+
+
+class JobOutput(Protocol):
+    """An execution's log: its whole stdout at once, or its events."""
+
+    def job_stdout(self, job: Job) -> str:
+        """``job``'s whole log as text, never truncated."""
+        ...
+
+    def job_events(self, job: Job, params: Mapping[str, str]) -> Iterator[dict[str, Any]]:
+        """Every page of ``job``'s events ``params`` select."""
+        ...
+
+    def job_events_page(self, job: Job, params: Mapping[str, str]) -> list[dict[str, Any]]:
+        """One page of ``job``'s events, as ``params`` order and size it."""
+        ...
+
+
+class Executions(JobRecords, JobOutput, Protocol):
+    """Execution records and their logs: what a :class:`JobMonitor` polls."""
 
 
 class Canceller(Protocol):
@@ -83,4 +148,4 @@ class JobMonitor(Protocol):
         ...
 
 
-__all__ = ["Canceller", "JobMonitor"]
+__all__ = ["Canceller", "Executions", "JobMonitor", "JobOutput", "JobRecords"]

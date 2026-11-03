@@ -330,9 +330,9 @@ class Run(_SuiteCommand):
                 watcher=WatchJob(ctx.repo, sleep=ctx.pause),
                 specs=ctx.catalog.get,
                 fk_prefetcher=ctx.fk,
-                approver=ctx.jobs.decide_approval,
+                approver=ctx.repo.decide_approval,
                 preflight=preflight,
-                canceller=ctx.jobs.cancel if self.cancel else None,
+                canceller=ctx.repo.cancel_job if self.cancel else None,
                 jt_scope=default_scope,
                 stop=ctx.stop,
             )
@@ -341,8 +341,8 @@ class Run(_SuiteCommand):
                 log_reader=ctx.monitor.fetch_stdout,
                 event_reader=ctx.monitor.stream_events,
                 tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
-                host_reader=ctx.jobs.host_summaries,
-                node_reader=ctx.jobs.workflow_nodes,
+                host_reader=ctx.repo.job_host_summaries,
+                node_reader=ctx.repo.workflow_job_nodes,
                 job_url=ctx.repo.job_url,
             )
             options = SuiteOptions(

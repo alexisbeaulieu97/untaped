@@ -546,9 +546,7 @@ def test_nodes_changed_after_planning_are_a_conflict(fake_aap: Any) -> None:
     with context() as ctx:
         document = Resource.model_validate(_export())
         _nodes({"spec": document.spec})["deploy"]["prompts"]["limit"] = "db*"
-        engine = BatchMutationEngine(
-            ctx.repo, ctx.catalog, ctx.fk, ctx.strategies, nodes=ctx.workflow_nodes
-        )
+        engine = BatchMutationEngine(ctx.repo, ctx.catalog, ctx.fk, ctx.strategies, nodes=ctx.repo)
         plan = engine.prepare([document])
         fake_aap.get_record("workflow_nodes", 203)["limit"] = "edited elsewhere"
 

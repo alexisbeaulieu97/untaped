@@ -1,8 +1,9 @@
 """The composition root of awx's commands: concrete adapters wired for one invocation.
 
 An :class:`AwxContext` holds the controller's port
-(:data:`~untaped_awx.server.SERVER_API`) plus the catalog, foreign-key
-resolver, strategies and repositories the use cases need. A command opens one
+(:data:`~untaped_awx.server.SERVER_API`), which serves resources, executions,
+workflow nodes and unified templates, plus the catalog, foreign-key resolver,
+strategies and job monitor the use cases need. A command opens one
 with :meth:`AwxCommand.awx <untaped_awx.commands._awx.AwxCommand.awx>`; core
 closes the port's connections when the run ends.
 """
@@ -14,17 +15,12 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from untaped.sdk import UsageError, command_line
+from untaped_awx.application.jobs.monitor import PollingJobMonitor
 from untaped_awx.domain import Job, ResourceSpec
 from untaped_awx.errors import WaitCancelledError
 from untaped_awx.infrastructure import AwxResourceCatalog
-from untaped_awx.infrastructure.jobs.job_monitor import PollingJobMonitor
-from untaped_awx.infrastructure.jobs.job_record_repo import JobRecordRepository
 from untaped_awx.infrastructure.resources.fk_resolver import HttpFkResolver
 from untaped_awx.infrastructure.resources.strategy_resolver import StaticStrategyResolver
-from untaped_awx.infrastructure.resources.unified_template_repo import (
-    HttpUnifiedTemplateRepository,
-)
-from untaped_awx.infrastructure.resources.workflow_node_repo import HttpWorkflowNodeRepository
 from untaped_awx.server import SERVER_API
 
 if TYPE_CHECKING:
@@ -54,9 +50,6 @@ class AwxContext:
         # Set on Ctrl-C so polling workers stop instead of blocking the exit.
         self.stop = threading.Event()
         self.monitor = self._monitor(timeout=None)
-        self.jobs = JobRecordRepository(self.repo)
-        self.ujts = HttpUnifiedTemplateRepository(self.repo)
-        self.workflow_nodes = HttpWorkflowNodeRepository(self.repo)
         self.default_organization = settings.default_organization
 
     def _warn(self, message: str) -> None:

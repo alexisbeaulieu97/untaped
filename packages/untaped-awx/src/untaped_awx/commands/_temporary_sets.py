@@ -117,7 +117,7 @@ def temporary_sets(ctx: AwxContext) -> TemporarySets:
         strategies=ctx.strategies,
         warn=warn,
         allow_unverified=True,
-        nodes=ctx.workflow_nodes,
+        nodes=ctx.repo,
     )
     return TemporarySets(engine=engine, client=ctx.repo, catalog=ctx.catalog, fk=ctx.fk)
 

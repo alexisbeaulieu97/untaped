@@ -36,7 +36,7 @@ def build_mutation_engine(
         strategies=ctx.strategies,
         warn=ctx.diag.warning,
         allow_unverified=allow_unverified,
-        nodes=ctx.workflow_nodes,
+        nodes=ctx.repo,
     )
 
 

@@ -154,7 +154,7 @@ def _fill(ctx: AwxContext, _key: str, progress: ProgressHandle) -> Filled[Resour
         client=ctx.repo,
         fk=ctx.fk,
         catalog=ctx.catalog,
-        nodes=ctx.workflow_nodes,
+        nodes=ctx.repo,
         playbooks=ctx.repo,
         path_of=_path_of,
         progress=progress,

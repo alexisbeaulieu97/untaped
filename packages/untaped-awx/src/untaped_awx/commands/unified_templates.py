@@ -84,7 +84,7 @@ class List(AwxCommand):
             filters["type"] = self.type_
         self.output.empty("No templates found. Try a different --type or --filter.")
         with self.awx() as awx, awx.diag.progress("Loading templates"):
-            records = list(awx.ujts.list(params=filters, limit=self.limit.value))
+            records = list(awx.repo.unified_templates(params=filters, limit=self.limit.value))
         yield from (UnifiedTemplate.model_validate(record) for record in records)
 
 
@@ -116,7 +116,7 @@ class Get(AwxCommand):
                     "for name lookup",
                 )
         with self.awx() as awx:
-            records, missing = GetUnifiedTemplate(awx.ujts)(ids=identifiers)
+            records, missing = GetUnifiedTemplate(awx.repo)(ids=identifiers)
         for raw in missing:
             self.ctx.diag.failure(
                 Failure(

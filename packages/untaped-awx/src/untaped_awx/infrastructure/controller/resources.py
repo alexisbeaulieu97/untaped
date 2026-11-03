@@ -32,7 +32,6 @@ contravariant parameter type holds while the runtime read of
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -48,7 +47,7 @@ from untaped_awx.errors import (
     PartialWriteError,
     ResourceNotFoundError,
 )
-from untaped_awx.infrastructure.awx_client import AwxClient
+from untaped_awx.infrastructure.controller._part import ControllerPart
 from untaped_awx.infrastructure.errors import map_awx_errors
 from untaped_awx.infrastructure.pagination import paginate
 from untaped_awx.infrastructure.resources.spec import awx_api_path, awx_relationship_path
@@ -87,20 +86,8 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
         ) from exc
 
 
-class ResourceRepository(ABC):
-    """Spec-driven reads and writes over an :class:`AwxClient`.
-
-    :class:`~untaped_awx.infrastructure.controller.ControllerV2` implements it:
-    it supplies the client its version's prefix calls for, and the page size.
-    """
-
-    #: Results requested per list page (``awx.page_size``).
-    _page_size: int
-
-    @property
-    @abstractmethod
-    def _client(self) -> AwxClient:
-        """The controller client every request goes through."""
+class ResourceRepository(ControllerPart):
+    """Spec-driven reads and writes: :class:`ResourceClient` and :class:`ProjectPlaybooks`."""
 
     def list(
         self,
@@ -274,37 +261,7 @@ class ResourceRepository(ABC):
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Escape hatch: ad-hoc URL under the controller API prefix (no spec required)."""
-        with map_awx_errors():
-            return self._client.request_json(  # type: ignore[no-any-return]
-                method, path, params=params, json=json
-            )
-
-    def paginate_path(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        with map_awx_errors():
-            yield from paginate(
-                self._client,
-                path,
-                params=params,
-                page_size=self._page_size,
-                limit=limit,
-            )
-
-    def request_text(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-    ) -> str:
-        """Ad-hoc URL returning a text body (e.g. job stdout)."""
-        with map_awx_errors():
-            return self._client.request_text(method, path, params=params)
+        return self._request(method, path, params=params, json=json)
 
     def sub_endpoint_request(
         self,

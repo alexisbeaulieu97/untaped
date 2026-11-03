@@ -101,7 +101,9 @@ def run_action_selection(
         return _action_error(exc, spec, target, payload)
 
     labels = _monitor_labels(targets)
-    abandon = AbandonJobs(ctx.jobs.cancel if waiting.cancel else None, refresher=ctx.monitor.fetch)
+    abandon = AbandonJobs(
+        ctx.repo.cancel_job if waiting.cancel else None, refresher=ctx.monitor.fetch
+    )
     outcomes = _submit(
         targets,
         labels,
