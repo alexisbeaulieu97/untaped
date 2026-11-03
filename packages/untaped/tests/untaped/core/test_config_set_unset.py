@@ -336,3 +336,10 @@ def test_unset_leaving_an_invalid_profile_fails_naming_key_and_profile(
     assert "mandatory" in str(exc_info.value)
     assert profile in str(exc_info.value)
     assert _isolate_settings.read_text() == initial
+
+
+def test_a_key_outside_any_section_is_its_own_value(_isolate_settings: Path) -> None:
+    """A write's ``expected`` sees a top-level key as a run reads it."""
+    _isolate_settings.write_text("format_version: 2\nmandatory: x\n")
+    repo = SettingsFileRepository(settings_cls=cast(type[Settings], StrictSettings))
+    assert repo.own_value("mandatory", profile="default") == "x"

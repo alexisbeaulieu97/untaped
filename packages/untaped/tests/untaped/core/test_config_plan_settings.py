@@ -229,6 +229,20 @@ def test_none_unsets_an_entry_and_a_key_not_set_is_unchanged(_isolated_config: P
     ]
 
 
+def test_none_unsets_a_null_a_run_reads(_isolated_config: Path) -> None:
+    """A null is set, as a run reads it: removing it is a change, not "not set"."""
+    _isolated_config.write_text(HOME.replace("  greeting: hey", "  token: null\n  greeting: hey"))
+
+    previewed = _untaped({SHELF.token: None}, "shelf", "write", "--dry-run")
+    assert "unset shelf.token in profile default" in previewed.stderr
+
+    result = _untaped({SHELF.token: None}, "shelf", "write", "--yes")
+
+    assert result.exit_code == 0, result.output
+    assert "token" not in _file(_isolated_config)["shelf"]  # type: ignore[operator]
+    assert _outcomes() == [("shelf.token", "default", "deleted")]
+
+
 @pytest.fixture
 def _held() -> Iterator[None]:
     """A run of what the test composes, current for the test: plugin code called directly."""
