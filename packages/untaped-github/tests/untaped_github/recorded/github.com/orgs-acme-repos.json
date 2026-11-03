@@ -1,0 +1,85 @@
+{
+  "request": "GET /orgs/acme/repos",
+  "status": 200,
+  "headers": {},
+  "body": [
+    {
+      "id": 1296269,
+      "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+      "name": "api",
+      "full_name": "acme/api",
+      "private": false,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization"
+      },
+      "html_url": "https://github.com/acme/api",
+      "description": "Synthetic repository for tests",
+      "fork": false,
+      "url": "https://api.github.com/repos/acme/api",
+      "clone_url": "https://github.com/acme/api.git",
+      "ssh_url": "git@github.com:acme/api.git",
+      "language": "Python",
+      "stargazers_count": 3,
+      "forks_count": 1,
+      "archived": false,
+      "default_branch": "main",
+      "pushed_at": "2026-10-30T12:00:00Z",
+      "updated_at": "2026-10-30T12:00:00Z",
+      "visibility": "public"
+    },
+    {
+      "id": 1296269,
+      "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+      "name": "old",
+      "full_name": "acme/old",
+      "private": false,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization"
+      },
+      "html_url": "https://github.com/acme/old",
+      "description": "Synthetic repository for tests",
+      "fork": false,
+      "url": "https://api.github.com/repos/acme/old",
+      "clone_url": "https://github.com/acme/old.git",
+      "ssh_url": "git@github.com:acme/old.git",
+      "language": "Python",
+      "stargazers_count": 3,
+      "forks_count": 1,
+      "archived": true,
+      "default_branch": "main",
+      "pushed_at": "2026-10-30T12:00:00Z",
+      "updated_at": "2026-10-30T12:00:00Z",
+      "visibility": "public"
+    },
+    {
+      "id": 1296269,
+      "node_id": "MDEwOlJlcG9zaXRvcnkxMjk2MjY5",
+      "name": "web",
+      "full_name": "acme/web",
+      "private": false,
+      "owner": {
+        "login": "acme",
+        "id": 9919,
+        "type": "Organization"
+      },
+      "html_url": "https://github.com/acme/web",
+      "description": "Synthetic repository for tests",
+      "fork": true,
+      "url": "https://api.github.com/repos/acme/web",
+      "clone_url": "https://github.com/acme/web.git",
+      "ssh_url": "git@github.com:acme/web.git",
+      "language": "Python",
+      "stargazers_count": 3,
+      "forks_count": 1,
+      "archived": false,
+      "default_branch": "main",
+      "pushed_at": "2026-10-30T12:00:00Z",
+      "updated_at": "2026-10-30T12:00:00Z",
+      "visibility": "public"
+    }
+  ]
+}

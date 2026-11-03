@@ -85,6 +85,8 @@ def _type_name(row: Row) -> str:
 
 
 def _annotation_name(inner: Any) -> str:
+    from untaped.sdk.network import ServerVersion  # noqa: PLC0415 - the generator's own imports
+
     origin = get_origin(inner)
     if inner is SecretStr:
         return "secret"
@@ -102,6 +104,8 @@ def _annotation_name(inner: Any) -> str:
         return "mapping"
     if inner is Path:
         return "path"
+    if isinstance(inner, type) and issubclass(inner, ServerVersion):
+        return "server version"  # one text: the plugin's ServerVersion reads and writes it
     if isinstance(inner, type):
         return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(
             inner.__name__, inner.__name__

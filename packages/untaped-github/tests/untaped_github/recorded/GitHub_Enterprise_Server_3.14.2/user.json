@@ -1,0 +1,15 @@
+{
+  "request": "GET /user",
+  "status": 200,
+  "headers": {},
+  "body": {
+    "login": "octocat",
+    "id": 583231,
+    "node_id": "MDQ6VXNlcjU4MzIzMQ==",
+    "type": "User",
+    "name": "Mona Octocat",
+    "email": null,
+    "html_url": "https://ghe.example.com/octocat",
+    "url": "https://ghe.example.com/api/v3/users/octocat"
+  }
+}

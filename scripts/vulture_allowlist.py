@@ -139,6 +139,9 @@ drop_tasks  # the root conftest's cleanup of a leaked progress task
 # Wire fields read by stderr's JSON readers, never by untaped itself.
 Stale.age_seconds
 
+# Wire fields required so an answer reads as the vendor's, never read by name.
+ApiRoot.current_user_url  # github detection: GitHub's API root
+
 # Data file fields kept for the record and shown by `backups get`, never read by name.
 BackupEntry.before_hash
 
