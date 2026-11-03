@@ -23,22 +23,34 @@ def as_is(parent: MutableMapping[str, Any], value: Any) -> Any:
 
 
 def merge_into(
-    target: MutableMapping[str, Any],
-    source: Mapping[str, Any],
-    *,
-    fit: Fit = as_is,
+    target: MutableMapping[str, Any], source: Mapping[str, Any], *, fit: Fit = as_is
 ) -> None:
     """Merge ``source`` into ``target`` in place; ``fit(parent, value)`` shapes what it writes."""
+    _merge(target, (), source, fit)
+
+
+def _merge(
+    root: MutableMapping[str, Any], path: KeyPath, source: Mapping[str, Any], fit: Fit
+) -> None:
     for key, value in source.items():
-        current = target.get(key)
+        # Looked up again for each key: a tomlkit table view goes stale once written through.
+        node = _at(root, path)
+        current = node.get(key)
         if isinstance(value, Mapping) and isinstance(current, MutableMapping):
-            merge_into(current, value, fit=fit)
+            _merge(root, (*path, key), value, fit)
         elif isinstance(value, Mapping):
             fresh: dict[str, Any] = {}
             merge_into(fresh, value)
-            target[key] = fit(target, fresh)
+            node[key] = fit(node, fresh)
         else:
-            target[key] = fit(target, value)
+            node[key] = fit(node, value)
+
+
+def _at(root: MutableMapping[str, Any], path: KeyPath) -> MutableMapping[str, Any]:
+    node = root
+    for key in path:
+        node = node[key]
+    return node
 
 
 def leaf_paths(source: Mapping[str, Any], prefix: KeyPath = ()) -> Iterator[KeyPath]:

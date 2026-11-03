@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from untaped_dotfiles import documents
 from untaped_dotfiles.documents import dump_document, load_document
 from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.hashing import content_hash, value_hash
@@ -214,6 +215,16 @@ _TOML_SHAPES: dict[str, tuple[str, str]] = {
     "tables out of order": ("[a]\nx = 1\n[b]\ny = 1\n[a.sub]\nz = 1\n", "[a.sub]\nw = 2\n"),
     "a table gains keys and a table": ("[n]\nk = 1\n[m]\nj = 1\n", "[n]\nsub.q = 1\nz = 1\n"),
     "split dotted keys gain a table": ("a.b = 1\na.s = 2\nother = 2\n", "[a.c]\nd = 1\n"),
+    "an array of tables under an implicit table": ("[[tool.x]]\nh = 1\n", "[[tool.x]]\nh = 2\n"),
+    "a deep new array of tables": ("", "[[a.b.c]]\ne = 1\n"),
+    "an implicit table gains a table": (
+        "[tool.x]\nh = 1\n",
+        "[tool.y]\nz = 2\n[tool.y.w]\nq = 1\n",
+    ),
+    "split dotted keys: a table becomes a scalar": (
+        "tool.ruff.x = 1\ntool.ruff.y = 2\ntool.z = 2\n",
+        "[tool]\nruff = false\nz = 4\n",
+    ),
     "unicode and dates": ('"clé" = "été"\n', "[t]\nat = 07:32:00\nday = 2024-01-02\n"),
 }
 
@@ -240,6 +251,26 @@ def test_toml_merge_and_unmerge_read_back_as_plain_values_would(shape: str, tmp_
     expected = tomllib.loads(merged)
     remove_paths(expected, managed)
     assert tomllib.loads(target.read_text()) == expected
+
+
+def test_a_header_table_stays_a_header_table(tmp_path: Path) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text("[tool.x]\nh = 1\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    placer.merge(b"[tool.y]\nz = 2\n", target, fmt="toml")
+    assert target.read_text() == "[tool.x]\nh = 1\n\n[tool.y]\nz = 2\n"
+
+
+def test_a_toml_merge_no_layout_can_hold_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "config.toml"
+    target.write_text("a = 1\n")
+    monkeypatch.setattr(documents, "_toml_text", lambda document: None)
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    with pytest.raises(DotfilesError, match="nothing was written"):
+        placer.merge(b"b = 2\n", target, fmt="toml")
+    assert target.read_text() == "a = 1\n"
 
 
 def test_toml_that_would_not_read_back_is_refused() -> None:
