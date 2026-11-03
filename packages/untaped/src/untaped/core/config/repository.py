@@ -234,14 +234,7 @@ class SettingsFileRepository:
     def _env_spelling(self, descriptor: FieldDescriptor) -> tuple[str, str | None] | None:
         """The set variable for ``descriptor`` and the old key it spells (``None``: its own)."""
         names: list[tuple[str, str | None]] = [(self.env_var_for(descriptor), None)]
-        model = self.section_model(descriptor.path[0])
-        if model is not None:
-            readable = key_mappings(model).readable
-            names += [
-                (env_var_name((descriptor.path[0], *old.split("."))), old)
-                for old in old_spellings(model, _relative(descriptor))
-                if old in readable
-            ]
+        names += [(env_var_name(old), ".".join(old[1:])) for old in self._read_paths(descriptor)]
         return next((found for found in names if found[0] in os.environ), None)
 
     def _resolve(self) -> ResolvedConfig:
@@ -580,7 +573,7 @@ class SettingsFileRepository:
         return [old for old in self._old_paths(descriptor) if ".".join(old[1:]) in readable]
 
     def _old_paths(self, descriptor: FieldDescriptor) -> list[tuple[str, ...]]:
-        """Absolute paths of every old spelling of ``descriptor``, closest first."""
+        """Absolute paths of every old spelling of ``descriptor``: read ones first, then closest."""
         section = descriptor.path[0]
         model = self.section_model(section)
         if model is None:

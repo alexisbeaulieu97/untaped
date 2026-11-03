@@ -18,6 +18,7 @@ from untaped.sdk.health.deprecated_keys import (
     key_mappings,
     mapping_errors,
     migration_moves,
+    old_spellings,
     rename_keys,
     scan_keys,
 )
@@ -282,3 +283,35 @@ def test_scan_reports_deleted_keys_with_their_note() -> None:
 
     assert (found.old, found.new, found.kind) == ("older_path", None, "deleted")
     assert found.message == "deleted in 11.0 (via store_path); the store lives elsewhere"
+
+
+class ChainedRanks(BaseModel):
+    """``cur``: read through ``y`` (one hop) and ``x`` (two), retired ``r`` one hop away."""
+
+    renamed_keys: ClassVar[dict[str, str]] = {"x": "y", "y": "cur"}
+    retired_keys: ClassVar[dict[str, str]] = {"r": "cur"}
+
+    cur: int = 0
+
+
+def test_a_spelling_runs_read_ranks_ahead_of_a_closer_retired_one() -> None:
+    assert old_spellings(ChainedRanks, "cur") == ["y", "x", "r"]
+
+    renamed, _ = rename_keys(ChainedRanks, {"r": 1, "x": 2})
+    moves = migration_moves(ChainedRanks, {"r": 1, "x": 2})
+
+    assert renamed["cur"] == 2  # the reader never reads a retired key
+    assert KeyMove("x", "cur", "renamed") in moves
+    assert KeyMove("r", "x", "dropped") in moves
+
+
+def test_with_only_retired_spellings_the_closest_is_kept() -> None:
+    class Retiring(BaseModel):
+        retired_keys: ClassVar[dict[str, str]] = {"r": "cur", "z": "r2", "r2": "cur"}
+
+        cur: int = 0
+
+    assert migration_moves(Retiring, {"r": 1, "z": 3}) == [
+        KeyMove("r", "cur", "renamed"),
+        KeyMove("z", "r", "dropped"),
+    ]

@@ -637,7 +637,8 @@ def migration_moves(model: type[BaseModel], data: Mapping[str, Any]) -> list[Key
     """What ``config migrate`` does to one section's data in one profile.
 
     Every renamed or retired key moves to its current field; when the field
-    or a closer old spelling is also set, the other spelling is dropped.
+    or an old spelling ranked ahead of it (:func:`_rank`: one still read,
+    then the closest) is also set, the other spelling is dropped.
     Every key whose chain ends at a :class:`Retired` key is deleted.
     """
     mappings = key_mappings(model)
