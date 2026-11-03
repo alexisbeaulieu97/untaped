@@ -387,7 +387,7 @@ class Inventory:
     def _placement(
         self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
     ) -> Placement:
-        target, unanswered = self._render(offer, file.target)
+        target, unanswered = self.render_target(offer, file.target)
         return Placement(
             offer=offer,
             item=item,
@@ -403,7 +403,7 @@ class Inventory:
             unanswered=unanswered,
         )
 
-    def _render(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
+    def render_target(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
         """The target ``text`` names here, or ``(None, why)`` while an input has no value."""
         package = offer.package
         assert package is not None

@@ -168,9 +168,10 @@ class EntryStatus(Record):
         default=None,
         description="How the file is placed here (a `link` only under `sync`); null for a step.",
     )
-    policy: Annotated[Policy, Column] = Field(
+    policy: Annotated[Policy | None, Column] = Field(
         description="The policy the entry follows: for a file, this machine's choice else the "
-        "author's; for a step, this machine's choice else `manual`."
+        "author's; for a step, this machine's choice else `manual`; null for a working copy, "
+        "which is cloned once whatever the policy."
     )
     chosen: bool = False
     state: Annotated[EntryState, Column, ENTRY_STATE_ROLES] = Field(

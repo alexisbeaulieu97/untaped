@@ -78,7 +78,8 @@ class Apply(DotfilesCommand):
     exit 1). A step follows only a policy this machine chose, else
     `manual`. Its own inputs are asked at a terminal each run (or given
     with --var) and never kept; a secret one reaches only the program's
-    stdin.
+    stdin. Then each working copy (`repos:`) whose target is absent is
+    cloned; one already there is never moved.
     """
 
     selectors: Positional[list[str]] = Field(
@@ -121,10 +122,17 @@ class Apply(DotfilesCommand):
             self._report_stuck(steps, stuck)
             listed = [e for e in svc.steps.entries(selections) if e.excluded is None]
             step_plans = svc.steps.failing(svc.steps.plan(listed, follow=follow), stuck)
-            planned = [*svc.applier.planned(steps), *svc.steps.planned(step_plans)]
+            copies = [e for e in svc.repos.entries(selections) if e.excluded is None]
+            repo_plans = svc.repos.plan(copies)
+            planned = [
+                *svc.applier.planned(steps),
+                *svc.steps.planned(step_plans),
+                *svc.repos.planned(repo_plans),
+            ]
             todo = [
                 *(s for s in steps if s.action in ("apply", "remove") or s.converts),
                 *(p for p in step_plans if p.action in ("apply", "remove")),
+                *(p for p in repo_plans if p.action in ("apply", "remove")),
             ]
             moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
             if todo:
@@ -140,6 +148,7 @@ class Apply(DotfilesCommand):
             ):
                 rows = planned
                 waiting += svc.applier.waiting(steps) + svc.steps.waiting(step_plans)
+                waiting += svc.repos.waiting(repo_plans)
             else:
                 waited = {  # items applied for the first time: their waiting entries were asked
                     owner: entries
@@ -158,8 +167,9 @@ class Apply(DotfilesCommand):
                     ask=terminal_ask(self.ctx.terminal, self.vars),
                     relay=self.ctx.diag.info,
                 )
-                rows = [*rows, *ran]
-                waiting += waits
+                cloned, copies_waiting = svc.repos.execute(repo_plans)
+                rows = [*rows, *ran, *cloned]
+                waiting += waits + copies_waiting
                 for owner, entries in waited.items():
                     svc.store.note_waited(owner, entries)
                 if kept is not None:

@@ -102,6 +102,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `dotfiles.items` | list | An item applied here at least once, so an entry its author adds later is ``new``. |
 | `dotfiles.placed` | list | One placed path: what untaped wrote there and from which entry of which package. |
 | `dotfiles.steps` | list | One step as last applied here: what ``status`` checks, and what a changed step differs from. It holds no secret, not even hashed. |
+| `dotfiles.repos` | list | A working copy untaped cloned for a ``repos:`` entry; the copy is the person's. |
 
 ## `git`
 

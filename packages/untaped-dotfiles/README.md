@@ -38,7 +38,7 @@ docstring of the
 [package model](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/package.py)
 (`untaped plugin schema dotfiles.package_file` prints its schema). A
 package that breaks a rule is one row with an `error`; the other packages
-still load. Repos load and show, but `apply` doesn't clone them yet.
+still load.
 
 A step is a check plus what fixes it, run with no shell in your home
 folder:
@@ -61,6 +61,19 @@ step the author adds or changes later waits for `apply PKG`. A step's own
 `inputs` are asked each time it runs and never kept; a secret reaches the
 program only on its stdin (`stdin: NAME`), and what a run prints is shown
 with every secret masked.
+
+A `repos:` entry is a working copy you work in, cloned once through the
+git plugin (its credentials and proxy, nothing left in the copy's config)
+when its target is absent:
+
+```yaml
+    repos:
+      - {url: https://git.example.com/acme/app.git, target: ~/Projects/app}
+```
+
+After that untaped never moves it: it is yours. A checkout of the URL
+already there counts as applied; anything else there is `foreign` and left
+alone. Policy doesn't apply, and `remove` forgets the copy and leaves it.
 
 On Windows, `link` needs symlink permission (Developer Mode or elevation);
 `copy` and `merge` work. Nothing is tested there yet.

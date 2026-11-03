@@ -125,6 +125,15 @@ class Policy(StrEnum):
     asked for. `remove`, `unsubscribe` and turning an item on again forget
     its steps; nothing a step did is undone.
 
+    ## Working copies
+
+    A `repos:` entry is cloned once, whatever the policy, and then never
+    moved: `pending` (the target is absent: `apply` clones it), `applied` (a
+    checkout whose `origin` is the entry's URL), `foreign` (something else is
+    there: reported, never touched), `orphan` (cloned for an entry the
+    package dropped: forgotten), `off`, `excluded` or `error`. `remove` and
+    `unsubscribe` forget a copy untaped cloned and leave it in place.
+
     ## What needs a person
 
     `status --check` exits 3 when there is something for `apply` or a person

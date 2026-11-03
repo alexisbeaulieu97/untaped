@@ -248,7 +248,7 @@ class Remove(DotfilesCommand):
                 for (source, package), choice in updated.items()
             }
             owners = [_owner(selection) for selection in chosen]
-            steps = svc.steps.forgetting(owners)
+            steps = [*svc.steps.forgetting(owners), *svc.repos.forgetting(owners)]
             if not changes and not records and not steps:
                 self.ctx.diag.info(f"already off: {', '.join(s.spelled for s in chosen)}")
                 return iter([])
@@ -274,6 +274,7 @@ class Remove(DotfilesCommand):
             if plan is not None:
                 plan.write()
             rows += svc.steps.forgetting(owners, done=True)
+            rows += svc.repos.forgetting(owners, done=True)
             for owner in owners:
                 svc.store.forget_applied(owner)
             self.services(_with_choices(self.settings, updated)).refresh_status()

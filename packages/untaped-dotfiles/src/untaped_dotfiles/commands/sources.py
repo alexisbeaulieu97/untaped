@@ -198,7 +198,7 @@ class Unsubscribe(DotfilesCommand):
                     if self.settings.sources
                     else None,
                 )
-            steps = svc.steps.forgetting([(name,)])
+            steps = [*svc.steps.forgetting([(name,)]), *svc.repos.forgetting([(name,)])]
             planned = [
                 *svc.applier.removal(
                     records, keep_files=self.keep_files, clone=clone if self.keep_files else None
@@ -233,6 +233,7 @@ class Unsubscribe(DotfilesCommand):
                     self.ctx.diag.failure(exc, item=name)
                 svc.store.remove_clone(name)
             rows += svc.steps.forgetting([(name,)], done=True)
+            rows += svc.repos.forgetting([(name,)], done=True)
             svc.store.forget_applied((name,))
             remaining = {k: v for k, v in self.settings.sources.items() if k != name}
             self.services(self.settings.model_copy(update={"sources": remaining})).refresh_status()
