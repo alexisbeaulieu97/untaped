@@ -549,10 +549,11 @@ class SettingsFileRepository:
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit
-        ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
-        simply isn't set in the resolved scope is a no-op
-        (``removed=False``). Each old spelling removed is reported to
-        ``on_spelling_removed``; for an entry of a map, those are the map's.
+        ``profile`` the layout cannot satisfy raises ``ConfigError``.
+        Removing a key that isn't set in the resolved scope removes only its
+        retired spellings; with none, it is a no-op (``removed=False``). Each
+        old spelling removed is reported to ``on_spelling_removed``; for an
+        entry of a map, those are the map's.
         """
         descriptor = self.descriptor(key)
         removed = False

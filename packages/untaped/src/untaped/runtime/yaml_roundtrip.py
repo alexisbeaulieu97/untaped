@@ -56,7 +56,9 @@ def same_data(left: Any, right: Any) -> bool:
         return left.keys() == right.keys() and all(same_data(left[k], right[k]) for k in left)
     if isinstance(left, list) and isinstance(right, list):
         return len(left) == len(right) and all(map(same_data, left, right, strict=True))
-    return _kind(left) is _kind(right) and left == right
+    if _kind(left) is not _kind(right):
+        return False
+    return left == right or (left != left and right != right)  # a NaN is the same NaN
 
 
 def _kind(value: Any) -> type:

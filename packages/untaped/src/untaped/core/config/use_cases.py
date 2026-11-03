@@ -176,7 +176,11 @@ class UnsetSetting:
     def __call__(
         self, key: str, *, profile: str | None = None, dry_run: bool = False
     ) -> SettingChange:
-        """Unset ``key`` in ``profile`` (--profile's, else the base); a key not set is unchanged."""
+        """Unset ``key`` in ``profile`` (--profile's, else the base); unchanged when nothing goes.
+
+        A key that isn't set still loses its retired spellings, which the
+        line names.
+        """
         spellings: list[str] = []
         holder = _holder(self._repo, key)
         removed, target = self._repo.unset_value(

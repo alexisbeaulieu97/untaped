@@ -22,6 +22,7 @@ from untaped.sdk.errors import ConfigError, UsageError
 class DemoSettings(BaseModel):
     page_size: int = Field(50, gt=0)
     extra: dict[str, Any] = {}
+    ratio: float = 1.0
 
 
 class SpelledSettings(BaseModel):
@@ -354,3 +355,13 @@ def test_a_value_of_another_kind_is_a_change(_config: Path) -> None:
     change = SetSetting(SettingsFileRepository())("demo.extra", '{"x": true}')
     assert change.outcome.action == "updated"
     assert read_config_dict(_config)["demo"]["extra"]["x"] is True
+
+
+def test_a_nan_in_the_file_is_the_same_nan(_config: Path) -> None:
+    """A file holding ``.nan`` is not rewritten (or stripped of comments) by a no-op write."""
+    text = "format_version: 2\n# keep me\ndemo:\n  ratio: .nan\n  page_size: 5\n"
+    _config.write_text(text, encoding="utf-8")
+    assert SetSetting(SettingsFileRepository())("demo.page_size", "5").outcome.action == "unchanged"
+    assert _config.read_text(encoding="utf-8") == text
+    SetSetting(SettingsFileRepository())("demo.page_size", "6")
+    assert "# keep me" in _config.read_text(encoding="utf-8")
