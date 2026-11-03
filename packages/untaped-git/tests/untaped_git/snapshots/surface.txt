@@ -4,6 +4,7 @@ cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.to_selector string[] default=[]  [experimental]
 cfg git.store_dir string(format=path)? default=unset
 cfg git.untaped_helper_only boolean default=false
 cli untaped git
@@ -43,6 +44,9 @@ contract git.Repo.description string? default=None  [experimental]
 contract git.Repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
 contract git.Repo.source Source? default=None  [experimental]
 contract git.Repo.url string  [experimental]
+contract git.RepoSelector()  [experimental]
+contract git.RepoSelector.match string[] default=[]  [experimental]
+contract git.RepoSelector.source Source? default=None  [experimental]
 contract git.Source(kind, plugin)
 contract git.Source.kind string
 contract git.Source.plugin string
@@ -53,6 +57,7 @@ contract git.git_host.home() -> string?  [experimental]
 contract git.repo_source abstract=repos  [experimental]
 contract git.repo_source.repos() -> Repo[]  [experimental]
 contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
+contract git.repo_source.to_selector(item: any) -> RepoSelector  [experimental]
 record git.RepoCount
 record git.RepoCount.repos integer
 record git.RepoCount.size_bytes integer
@@ -69,6 +74,9 @@ record git.repo.description string?  [experimental]
 record git.repo.name string(pattern=^[^/\s]+(/[^/\s]+)*$)  [experimental]
 record git.repo.source Source?  [experimental]
 record git.repo.url string  [experimental]
+record git.repo_selector  [experimental]
+record git.repo_selector.match string[]  [experimental]
+record git.repo_selector.source Source?  [experimental]
 record git.store_report
 record git.store_report.exclusive_bytes object
 record git.store_report.filter_ignored object
@@ -159,6 +167,13 @@ sdk untaped_git.api.RepoFinder.reask(repo)  [experimental]
 sdk untaped_git.api.RepoFinder.resolve(ident)  [experimental]
 sdk untaped_git.api.RepoFinder.resolve(progress=) default=NO_PROGRESS  [experimental]
 sdk untaped_git.api.RepoName
+sdk untaped_git.api.RepoSelector base=untaped.sdk.Issued  [experimental]
+sdk untaped_git.api.RepoSelector base=untaped.sdk.Record  [experimental]
+sdk untaped_git.api.RepoSelector extra=forbid  [experimental]
+sdk untaped_git.api.RepoSelector()  [experimental]
+sdk untaped_git.api.RepoSelector(match=) default=[]  [experimental]
+sdk untaped_git.api.RepoSelector(source=) default=None  [experimental]
+sdk untaped_git.api.RepoSelector.match  [experimental]
 sdk untaped_git.api.RepoSource base=untaped.sdk.contracts.Contract  [experimental]
 sdk untaped_git.api.RepoSource implement=repos  [experimental]
 sdk untaped_git.api.RepoStore(map_error=) default=None callback(1)

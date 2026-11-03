@@ -37,6 +37,7 @@ from untaped.sdk.contracts._declare import (
     ContractInfo,
     NotReady,
     bind,
+    bridge_takes,
     contract_of,
     fills,
     item_type,
@@ -312,6 +313,7 @@ def _check(
         return Quarantined(plugin.name, owner, Reason.uses_missing, detail, info.cls, fix)
     try:
         item = item_type(provider, info)
+        record_kinds = _record_kinds(provider, info, kinds)
     except ContractError as exc:
         return quarantined(_reason(exc.reason), str(exc), info.cls)
     binding = Binding(
@@ -322,6 +324,7 @@ def _check(
         profile=profile,
         item_kind="" if item is None else kinds(item),
         owner_kind="" if info.item is None else kinds(info.item),
+        record_kinds=record_kinds,
     )
     if not binding.owns_item and item is not None and not binding.item_kind:
         return quarantined(
@@ -334,7 +337,7 @@ def _check(
         missing = [
             name
             for name, method in info.methods.items()
-            if method.bridge and not fills(provider, info, name)
+            if method.item_bridge and not fills(provider, info, name)
         ]
         if missing:
             return quarantined(
@@ -353,6 +356,33 @@ def _check(
         )
     bind(value, binding)
     return BoundProvider(value, binding)
+
+
+def _record_kinds(
+    provider: type[Contract], info: ContractInfo, kinds: Callable[[type[BaseModel]], str]
+) -> dict[type, str]:
+    """The kinds of what ``provider``'s record bridges take and issue, read now for its threads.
+
+    Raises :class:`ContractError` (``unresolved-item-type``) for a fill that names
+    no record with a kind, so a piped one can't find its way back to it.
+    """
+    found: dict[type, str] = {}
+    for name, method in info.methods.items():
+        if not method.bridge or method.item_bridge:
+            continue
+        issued = method.hints["return"]
+        found[issued] = kinds(issued)
+        if not fills(provider, info, name):
+            continue
+        takes = bridge_takes(provider, info, name)
+        if takes is None or not kinds(takes):
+            raise ContractError(
+                f"{provider.__qualname__} fills {name} without naming a record of its own "
+                "that has a kind: annotate the parameter with one of the plugin's records",
+                reason="unresolved-item-type",
+            )
+        found[takes] = kinds(takes)
+    return found
 
 
 def _uses_missing(

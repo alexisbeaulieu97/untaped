@@ -61,9 +61,13 @@ class Library(Plugin):
   otherwise. `shell=` is reserved for shell plugins. The types are the
   declaration: a method returning a `list` is a listing, whose rows stand
   alone (an invalid row is dropped and the rest kept, where any other
-  method's invalid item fails the provider's whole answer), and the method
+  method's invalid item fails the provider's whole answer), the method
   taking `T` and returning the owner's model is the bridge (a contract has
-  at most one). `@cached(max_age=, label=)` keeps answers per provider, its
+  at most one), and a method of a contract with `T` taking just a
+  `ProviderRecord` and returning an `Issued` model is a record bridge: an
+  optional way for a provider to issue another record of its own, such as
+  a selector (below); `ProviderRecord` anywhere else is a `TypeError`.
+  `@cached(max_age=, label=)` keeps answers per provider, its
   settings and the arguments in a [`Cache`](caches.md) core makes for the
   owner, named `<contract>_<method>` (its user setting is
   `<owner>.caches.<name>.max_age_seconds`); it is refused on a method that
@@ -80,7 +84,21 @@ class Library(Plugin):
   (`BookSource[Volume]`) directly, never through a generic base of its own,
   and fills the bridge, which stamps `source` with the
   provider's plugin and record. A provider of the owner's model fills no
-  bridge.
+  bridge. Inside a provider, `self.own(item)` reads its own record back from
+  an issued one.
+- **Record bridges.** `def to_selector(self, item: ProviderRecord) ->
+  RepoSelector` lets any provider, whatever its `T`, turn another record of
+  its own into the owner's issued model. A provider fills it by annotating
+  the parameter with that record (`item: GithubRepoSelector`), which gives
+  the record its kind under the provider's plugin and routes it: piped rows,
+  `assert_fills` samples and `source` all follow the annotation, so import
+  the record at run time, not only under `TYPE_CHECKING`. A fill whose
+  annotation names no record with a kind, or doesn't resolve, is
+  quarantined (`unresolved-item-type`).
+  The provider reads it back typed with `self.own(selector,
+  GithubRepoSelector)`, which fails as `invalid` when the selector was
+  issued by another plugin or from another record, or no longer validates.
+  Leaving a record bridge unfilled is not `missing-bridge`.
 - **Filling.** A provider subclasses the contract and `Provider[S]`, as a
   command is `Command[S]`: `self.settings` is the plugin's section (S is the
   plugin's `settings` model, which composition checks), plain `Provider`
@@ -117,7 +135,10 @@ class Library(Plugin):
   those `plugins` when given: provider classes where the code holds one,
   plugin names at the user edge), in rank order, each item validated once
   as the owner's model. The views `.ok`, `.errored` and `.skipped` split
-  them by outcome, so no caller writes `isinstance` loops. A skip's or
+  them by outcome, so no caller writes `isinstance` loops. A plugin named in
+  `plugins` that doesn't fill the method (an optional one) answers
+  `Skipped` with `Reason.not_filled`, so a caller falling back to another
+  method can say why. A skip's or
   error's `reason` is a `Reason` (`Reason.not_configured`,
   `Reason.raised`...), each answer typed by the reasons it can carry; its
   value is the word on the wire (`not-configured`). `progress` counts the providers on the caller's task as they
@@ -137,7 +158,10 @@ class Library(Plugin):
   row that doesn't validate as its record exits 1; an unready provider
   whose row arrived, or a bridge returning an invalid `Book`, exits 4. A
   provider's tests read one of its rows the same way with
-  `untaped.sdk.testing.piped_through(Contract.bridge, row)`.
+  `untaped.sdk.testing.piped_through(Contract.bridge, row)`. A record
+  bridge reads the same way: `Stdin[RepoSelector](via=RepoSource.to_selector)`
+  takes `git.repo_selector` rows as they are and a provider's own selector
+  rows through the fill that names their record.
   [How providers are loaded and chosen](#how-providers-are-loaded-and-chosen)
   gives the rules they follow.
 
@@ -148,7 +172,8 @@ loaded on the first ask for one of its owner's contracts, once per process
 and profile.
 A provider that breaks a rule is quarantined alone, never with the plugin's
 commands or its other offers: `missing-bridge` (it issues its own records but
-doesn't fill the bridge), `unresolved-item-type` (its record has no kind), `duplicate-kind`,
+doesn't fill the bridge), `unresolved-item-type` (its record has no kind, or a
+record bridge's fill names no record it can resolve), `duplicate-kind`,
 `unserialisable-signature`, `uses-missing` (a parameter the contract can't
 pass it by name), or `bad-provider` (building it raised). A
 provider whose plugin requires an owner below its floor, or a disabled one,
@@ -159,7 +184,8 @@ composition problem (`bad-provider`) that quarantines its plugin. A provider met
 the contract no longer has (`unused-method`) is simply never called.
 
 Each ask goes to every provider that fills the method. One not configured in
-the profile is skipped silently; with none ready `gather` raises
+the profile is skipped silently; with none ready, and no plugin named in
+`plugins` answering `not-filled`, `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
 isn't ready and `quarantined` each refused offer to its reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
@@ -303,9 +329,10 @@ def test_the_library_fills_the_shelf_contract() -> None:
     assert_fills(LibraryBooks, samples=[Volume(shelf_mark="A1", name="Dune")])
 ```
 
-- `assert_fills(Provider, samples=[...])` checks that each sample (a `T`
-  or a mapping of one) survives a JSON round trip, and that each bridge
-  method turns it into a valid owner record whose `source` gives it back.
+- `assert_fills(Provider, samples=[...])` checks that each sample (a `T`,
+  a mapping of one, or a record a record bridge's fill takes) survives a
+  JSON round trip, and that each bridge taking it turns it into a valid
+  issued record whose `source` reads back as the sample through `own`.
   `samples=` is required when `T` is not the owner's model. Nothing is
   recorded: what guards a provider against an owner that moved is the
   owner floor in its `pyproject.toml` (`unmet-requirement`), validation of

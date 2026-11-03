@@ -20,6 +20,8 @@ class Reason(StrEnum):
     """The provider's ``ready()`` said no: its settings are missing or don't validate."""
     no_cache = "no-cache"
     """Asked for a cached answer only (``--cached``), and none is stored."""
+    not_filled = "not-filled"
+    """A plugin ``gather(plugins=)`` names doesn't fill the method asked (an optional one)."""
     invalid_item = "invalid-item"
     """The answer doesn't validate as the owner's model."""
     unbridged_item = "unbridged-item"
@@ -58,6 +60,7 @@ SkipReason = (
     Literal[
         Reason.not_configured,
         Reason.no_cache,
+        Reason.not_filled,
         Reason.invalid_item,
         Reason.unbridged_item,
     ]

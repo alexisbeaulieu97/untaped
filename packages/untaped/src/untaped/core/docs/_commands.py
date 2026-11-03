@@ -269,7 +269,8 @@ def _outputs(site: Site, command: CommandDecl) -> list[str]:
         lines += ["", f"Accepts on stdin (`--stdin`): {_kinds(site, named)}."]
     via = command.stdin_via
     found = None if via is None else site.point(via)
-    provided = [] if via is None else site.provided(via)
+    bridge = command.stdin_via_bridge
+    provided = [] if via is None or bridge is None else site.provided(via, bridge)
     if found is not None and provided:
         owner, point = found
         lines += [
