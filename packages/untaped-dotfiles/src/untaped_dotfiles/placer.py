@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, MutableMapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -84,7 +84,7 @@ class FilesystemPlacer:
 
     def link(self, destination: Path, target: Path) -> str:
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.is_symlink():
+        if target.is_symlink() or target.is_file():  # a copy of ours becoming a link
             replace_symlink(destination, target)
         else:
             os.symlink(destination, target)
@@ -100,12 +100,30 @@ class FilesystemPlacer:
         result: dict[str, Any] = plain(load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE))
         return result
 
-    def merge(
+    def _merged(
         self, source: bytes, target: Path, *, fmt: MergeFormat
-    ) -> tuple[str, tuple[KeyPath, ...]]:
+    ) -> tuple[MutableMapping[str, Any], str, dict[str, Any]]:
+        """``(merged document, its text, incoming values)``, writing nothing."""
         incoming = load_values(source.decode("utf-8"), fmt=fmt, where=_SOURCE)
         text = target.read_text(encoding="utf-8") if target.is_file() else ""
         merged, rendered = merge_text(text, incoming, fmt=fmt, where=str(target))
+        return merged, rendered, incoming
+
+    def read(self, target: Path) -> bytes | None:
+        """What a program reading ``target`` gets (through a link); ``None`` when no file."""
+        try:
+            return target.read_bytes() if target.is_file() else None
+        except OSError as exc:
+            raise DotfilesError(f"could not read {target}: {exc.strerror or exc}") from exc
+
+    def merged_text(self, source: bytes, target: Path, *, fmt: MergeFormat) -> str:
+        """The text :meth:`merge` would write to ``target``, writing nothing."""
+        return self._merged(source, target, fmt=fmt)[1]
+
+    def merge(
+        self, source: bytes, target: Path, *, fmt: MergeFormat
+    ) -> tuple[str, tuple[KeyPath, ...]]:
+        merged, rendered, incoming = self._merged(source, target, fmt=fmt)
         atomic_write(target, rendered)
         managed = tuple(leaf_paths(incoming))
         return value_hash(project(plain(merged), managed)), managed

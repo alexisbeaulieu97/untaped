@@ -31,6 +31,19 @@ class CloneRecord(BaseModel):
     subscribed_at: UtcTimestamp
 
 
+class ItemRecord(BaseModel):
+    """An item applied here at least once, so an entry its author adds later is ``new``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    item: Annotated[str, Key]
+    """``SOURCE/PKG/ITEM``."""
+    first_applied_at: UtcTimestamp
+    waited: tuple[tuple[str, str], ...] = ()
+    """``(entry, declared target)`` of each entry that waited on an input when the item was
+    applied: asked for with the item, so ``pending`` once answered, not ``new``."""
+
+
 class PlacedRecord(BaseModel):
     """One placed path: what untaped wrote there and from which entry of which package."""
 
@@ -45,6 +58,9 @@ class PlacedRecord(BaseModel):
     """The source-relative path placed (a folder entry's child, or the entry's path)."""
     entry: str
     """The package file entry's ``path`` (a folder for its children)."""
+    declared: str = ""
+    """The entry's target as the package wrote it (``{{ input }}`` unrendered): the same
+    declaration placing elsewhere means an input moved it."""
     placed_as: Mode
     fmt: MergeFormat | None = None
     """``merge`` only: the format untaped wrote, so taking it back writes the file the same way."""

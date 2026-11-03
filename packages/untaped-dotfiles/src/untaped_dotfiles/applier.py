@@ -11,19 +11,23 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from untaped.sdk import Failure, UntapedError
+from untaped.sdk import Failure, UntapedError, plural, run_hint, unified_diff_text
 from untaped_dotfiles.errors import DotfilesError
+from untaped_dotfiles.hashing import content_hash
+from untaped_dotfiles.merge import leaf_paths
 from untaped_dotfiles.models import CloneRecord, PlacedRecord
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome
-from untaped_dotfiles.states import Action, target_modified
+from untaped_dotfiles.states import Action, decide, decide_asked, target_modified
+from untaped_dotfiles.status import ADDED
 
 if TYPE_CHECKING:
     from untaped_dotfiles.inventory import Inventory, Placement
+    from untaped_dotfiles.package import Mode
     from untaped_dotfiles.ports import DotfilesStore, Placer
     from untaped_dotfiles.status import Evaluation, Evaluator
 
@@ -37,6 +41,12 @@ class Step:
     action: Action | None
     """``None``: refused (a ``modified`` or ``conflict`` path without ``--force``)."""
     detail: str = ""
+    diff: str | None = None
+
+    @property
+    def converts(self) -> bool:
+        """A link to make a copy of what it shows, before the clone moves."""
+        return self.found.converts
 
 
 class Applier:
@@ -59,31 +69,92 @@ class Applier:
 
     # -- planning ------------------------------------------------------------
 
-    def plan_apply(self, placements: Sequence[Placement], *, force: bool) -> list[Step]:
-        """Every placed path, whatever its policy; local edits need ``--force``."""
+    def plan_apply(
+        self, placements: Sequence[Placement], *, force: bool, follow: bool
+    ) -> list[Step]:
+        """What ``apply`` does with each placement.
+
+        ``follow``: by each entry's policy (no selector); else whatever the
+        policy, with local edits refused unless ``force``.
+        """
         self._evaluator.prime_changes(placements)
         steps: list[Step] = []
         for placement in placements:
             found = self._evaluator.evaluate(placement)
-            steps.append(Step(placement, found, *self._apply_action(found, force=force)))
+            action, detail = self._action(placement, found, force=force, follow=follow)
+            step = Step(placement, found, action, detail)
+            if action == "apply" and found.error is None:
+                step = self._previewed(step)
+            steps.append(step)
         return steps
 
     @staticmethod
-    def _apply_action(found: Evaluation, *, force: bool) -> tuple[Action | None, str]:
-        state = found.state
+    def _action(
+        placement: Placement, found: Evaluation, *, force: bool, follow: bool
+    ) -> tuple[Action | None, str]:
+        state, detail = found.state, found.detail
         if found.error is not None:
-            return "report", found.detail
-        if state in ("pending", "foreign", "behind", "missing"):
-            return "apply", found.detail
-        if state == "applied":
-            return "skip", "already applied"
+            return "report", detail
         if state == "excluded":
-            return "skip", f"{found.detail}; left as it is"
-        if state == "orphan":
-            return "remove", found.detail
-        if force:
-            return "apply", f"{found.detail}; the local version is kept aside"
-        return None, f"{found.detail}; pass --force to replace it (kept aside)"
+            return "skip", f"{detail}; left as it is"
+        if state == "off":
+            return "report", detail
+        if follow:
+            action: Action | None = decide(placement.policy, state, moved=placement.moved)
+            if action == "report" and state in ("modified", "conflict"):
+                return action, f"{detail}; {_asked(placement, force=True)} replaces it (kept aside)"
+            if action == "report":
+                return action, f"{detail}; {placement.policy} waits: {_asked(placement)}"
+            if action == "skip" and state != "applied":
+                return action, f"{detail}; {placement.policy} leaves it"
+        else:
+            action = decide_asked(state, force=force)
+            if action is None:
+                return None, f"{detail}; pass --force to replace it (kept aside)"
+            if action == "apply" and state in ("modified", "conflict"):
+                return action, f"{detail}; the local version is kept aside"
+        if action == "skip":
+            return action, detail or "already applied"
+        return action, detail
+
+    def _previewed(self, step: Step) -> Step:
+        """``step`` with what placing changes: a new file's size, or a diff of the content."""
+        p = step.placement
+        assert p.target is not None
+        try:
+            before = self._placer.read(p.target)
+            data = p.source.tree.read(p.path)
+            if p.placed_as == "merge":
+                assert p.fmt is not None  # checked when the package loads
+                after = self._placer.merged_text(data, p.target, fmt=p.fmt).encode("utf-8")
+            else:
+                after = data
+        except UntapedError, OSError:  # the run itself says why
+            return step
+        state, record = step.found.state, step.found.record
+        if state == "pending" and before is not None and before == after:  # already in place
+            notes = [step.detail]
+        else:
+            lead = {"pending": "", "foreign": "", "new": ADDED}.get(state, step.detail)
+            notes = [lead] if lead else []
+            if p.placed_as == "merge" and before is not None:
+                assert p.fmt is not None
+                keys = sum(1 for _ in leaf_paths(self._placer.parse(data, fmt=p.fmt)))
+                notes.append(f"merges {plural(keys, 'key')} into the existing file")
+            elif before is None:
+                notes.append(_size(after))
+            elif record is None:
+                notes.append("yours is kept aside first")
+        diff = _diff(before, after, p.shown)
+        if before is not None and before != after and diff is None:
+            notes.append(
+                f"binary, {plural(len(after), 'byte')}"
+                if _binary(after)
+                else "replaces a binary file"
+            )
+        if p.mode == "link" and p.placed_as == "copy" and record is None:
+            notes.append(f"{p.policy} places a copy")
+        return replace(step, detail="; ".join(notes), diff=diff)
 
     # -- executing -----------------------------------------------------------
 
@@ -92,12 +163,70 @@ class Applier:
         rows: list[ApplyOutcome] = []
         for step in steps:
             action = self._planned_action(step)
+            if step.converts and action in ("skipped", "unchanged"):
+                action = "planned"
             error = step.found.error if action == "failed" else None
-            rows.append(self._row(step, action, step.detail, error=error))
+            rows.append(self._row(step, action, step.detail, error=error, diff=step.diff))
         return rows
 
-    def execute(self, steps: Sequence[Step]) -> list[ApplyOutcome]:
-        rows = [self._run(step) for step in steps]
+    @staticmethod
+    def waiting(steps: Sequence[Step]) -> int:
+        """How many steps wait for a person: ``apply`` reports them, and exits 3."""
+        return sum(1 for s in steps if s.action == "report" and s.found.error is None)
+
+    def convert(self, steps: Sequence[Step]) -> dict[str, ApplyOutcome]:
+        """Make each link whose item no longer follows ``sync`` a copy of what it shows now,
+        before the clone moves, so nothing a program reads changes; the rows, by target."""
+        rows: dict[str, ApplyOutcome] = {}
+        for step in steps:
+            if not step.converts:
+                continue
+            p, record = step.placement, step.found.record
+            assert p.target is not None and record is not None
+            try:
+                data = self._inventory.link_destination(p.source, p.path).read_bytes()
+                committed = self._evaluator.committed(p)
+                self._placer.copy(data, p.target, executable=p.executable)
+            except (UntapedError, OSError) as exc:
+                rows[p.key] = self._failed(step, exc)
+                continue
+            source = data if committed is None else committed
+            # untaped wrote the source: an edit the clone held reads as edited here
+            self._store.put_placed(
+                record.model_copy(
+                    update={
+                        "placed_as": "copy",
+                        "source_hash": self._evaluator.source_hash(p, source),
+                        "target_hash": content_hash(source),
+                        "applied_at": self._now(),
+                    }
+                )
+            )
+            detail = f"became a copy of what it showed: {p.policy} places copies"
+            if source != data:
+                detail += "; it holds your edit, so it reads modified"
+            rows[p.key] = self._row(step, "updated", detail, mode="copy")
+        self._evaluator.reset()
+        return rows
+
+    def execute(
+        self, steps: Sequence[Step], converted: dict[str, ApplyOutcome] | None = None
+    ) -> list[ApplyOutcome]:
+        """Run ``steps``; a path :meth:`convert` changed keeps that row unless placed again."""
+        converted = converted or {}
+        rows: list[ApplyOutcome] = []
+        for step in steps:
+            row = self._run(step)
+            done = converted.get(step.placement.key)
+            if done is not None:
+                if row.action in ("created", "updated", "failed"):
+                    detail = "; ".join(filter(None, ("became a copy", row.detail)))
+                    row = row.model_copy(update={"detail": detail})
+                elif step.action == "report" and done.action != "failed":
+                    row = done.model_copy(update={"detail": f"{done.detail}; {row.detail}"})
+                else:
+                    row = done
+            rows.append(row)
         self._evaluator.reset()
         return rows
 
@@ -121,25 +250,36 @@ class Applier:
             if step.action == "remove":
                 record = step.found.record
                 kept = self._take_back(record) if record is not None else None
-                gone = "taken back; the source no longer has it"
+                gone = step.found.detail or "the source no longer has it"
+                gone = f"taken back; {gone}"
                 return self._row(
                     step, "deleted", f"{gone}; kept the edited version at {kept}" if kept else gone
                 )
             kept = self._place(step)
             done: ApplyAction = "created" if step.found.record is None else "updated"
-            return self._row(step, done, f"kept the previous version at {kept}" if kept else "")
+            detail = f"kept the previous version at {kept}" if kept else ""
+            return self._row(step, done, detail, mode=step.placement.placed_as, diff=step.diff)
         except (UntapedError, OSError) as exc:
-            failure = exc if isinstance(exc, UntapedError) else DotfilesError(str(exc))
-            return self._row(
-                step,
-                "failed",
-                str(failure),
-                error=Failure.from_exception(failure, message=str(failure)),
-            )
+            return self._failed(step, exc)
 
-    @staticmethod
+    def _failed(self, step: Step, exc: Exception) -> ApplyOutcome:
+        failure = exc if isinstance(exc, UntapedError) else DotfilesError(str(exc))
+        return self._row(
+            step,
+            "failed",
+            str(failure),
+            error=Failure.from_exception(failure, message=str(failure)),
+        )
+
     def _row(
-        step: Step, action: ApplyAction, detail: str, *, error: Failure | None = None
+        self,
+        step: Step,
+        action: ApplyAction,
+        detail: str,
+        *,
+        error: Failure | None = None,
+        mode: Mode | None = None,
+        diff: str | None = None,
     ) -> ApplyOutcome:
         p = step.placement
         assert p.target is not None  # a placement waiting on an input is never planned
@@ -148,10 +288,11 @@ class Applier:
             package=p.package,
             item=p.item,
             entry=p.shown,
-            mode=p.mode,
+            mode=mode or self._evaluator.mode(p),
             action=action,
             state=step.found.state,
             detail=detail,
+            diff=diff,
             target_path=p.target,
             error=error,
         )
@@ -166,7 +307,8 @@ class Applier:
         ours = record is not None and found.state in ("behind", "applied", "missing")
         present = target.is_symlink() or target.exists()
         kept: Path | None = None
-        if p.mode == "merge":
+        mode = p.placed_as
+        if mode == "merge":
             if present and not ours:
                 kept = self._placer.keep_aside(target, owner=owner, copy=True)
             data = p.source.tree.read(p.path)
@@ -177,7 +319,7 @@ class Applier:
             if present and not ours:
                 kept = self._placer.keep_aside(target, owner=owner)
             managed = ()
-            if p.mode == "link":
+            if mode == "link":
                 destination = self._inventory.link_destination(p.source, p.path)
                 target_hash = self._placer.link(destination, target)
                 source_hash = target_hash
@@ -185,6 +327,7 @@ class Applier:
                 data = p.source.tree.read(p.path)
                 target_hash = self._placer.copy(data, target, executable=p.executable)
                 source_hash = self._evaluator.source_hash(p, data)
+        now = self._now()
         self._store.put_placed(
             PlacedRecord(
                 target=p.key,
@@ -193,15 +336,17 @@ class Applier:
                 item=p.item,
                 path=p.path,
                 entry=p.entry,
-                placed_as=p.mode,
+                declared=p.declared,
+                placed_as=mode,
                 fmt=p.fmt,
                 source_commit=found.commit,
                 source_hash=source_hash,
                 target_hash=target_hash,
                 managed=managed,
-                applied_at=self._now(),
+                applied_at=now,
             )
         )
+        self._store.put_applied(owner, now)
         return kept
 
     # -- taking back ---------------------------------------------------------
@@ -366,3 +511,42 @@ class Applier:
             target_path=target,
             error=error,
         )
+
+
+def _asked(placement: Placement, *, force: bool = False) -> str:
+    """The ``apply`` that places ``placement`` whatever its policy."""
+    from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
+
+    args = [placement.spelled, *(["--force"] if force else [])]
+    return run_hint(Apply.spelled(*args))
+
+
+def _size(data: bytes) -> str:
+    """``new, N lines`` (or ``new, binary, N bytes``)."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"new, binary, {plural(len(data), 'byte')}"
+    lines = text.count("\n") + (0 if not text or text.endswith("\n") else 1)
+    return f"new, {plural(lines, 'line')}"
+
+
+def _binary(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
+def _diff(before: bytes | None, after: bytes, shown: str) -> str | None:
+    """A unified diff from ``before`` (``None``: no file) to ``after``; ``None`` when nothing
+    changes, or for binary content."""
+    if before == after:
+        return None
+    try:
+        old = before.decode("utf-8") if before is not None else None
+        new = after.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return unified_diff_text(old, new, path=shown.removeprefix("/")) or None

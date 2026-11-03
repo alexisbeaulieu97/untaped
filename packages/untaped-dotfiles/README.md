@@ -61,11 +61,28 @@ lists its packages. A git source gets a clone under `dotfiles.clones_dir`
 through the git plugin's repo store, so its credentials and proxy apply;
 a local folder is read as it stands, never fetched. `add` turns packages
 or items on and places nothing; `remove` takes back what they placed and
-turns them off (`--keep-files` leaves the files). `apply` fetches each
-git source, moves its clone to the fetched commit, shows what it will do,
-asks, then places the files. A local file in the way is never destroyed:
-it moves to `dotfiles.kept_dir`, and the row says where. A file edited on
-this machine is refused unless `--force`.
+turns them off (`--keep-files` leaves the files).
+
+`apply` fetches each git source, moves its clone to the fetched commit,
+shows one preview (every entry with its destination, then a diff wherever
+existing content changes), asks, then places the files. With no selector
+each entry follows its policy: `sync` keeps up with the source, `once`
+places a file once and leaves it, and `manual` waits for `apply PKG`.
+Naming packages or items, or `--all`, places them whatever their policy.
+A `link` is a link only under `sync`, else a copy. A local file in the way
+is never destroyed: it moves to `dotfiles.kept_dir`, and the row says
+where. A file edited on this machine waits for a person, and `apply PKG`
+refuses it unless `--force`.
+
+An input a target uses (`{{ git_profile }}`) is asked at a terminal and
+kept in `config.yml`; `--var NAME=VALUE` and `--vars-file` answer it
+ahead, on `apply` or `add`, for every package named (or, with no
+selector, every package that is on) that declares the name:
+
+```bash
+untaped dotfiles add git --var git_email=alex@example.com
+untaped dotfiles apply --var git_profile=work
+```
 
 A selector is `PKG`, `PKG/ITEM`, `SOURCE/PKG` or `SOURCE/PKG/ITEM`; a
 bare name that two sources offer exits 2, naming both spellings.
@@ -85,8 +102,9 @@ places what is on.
 
 ```bash
 untaped dotfiles status
-untaped dotfiles status --check  # exit 3 while anything needs a person
-untaped dotfiles apply fish
+untaped dotfiles status --check  # exit 3 while there is something for apply or a person
+untaped dotfiles apply --yes     # each entry by its policy
+untaped dotfiles apply fish      # this one whatever its policy
 ```
 
 `status` reads nothing from the network: `behind` is as of the last fetch,
@@ -94,6 +112,24 @@ which `apply` (or `apply --dry-run`) makes. What each state means, what
 `apply` does with it and what needs a person is the policy guide, the
 docstring of
 [`Policy`](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/policy.py).
+
+`apply` exits 0 when done with nothing left for a person, 3 when done
+with something left (an entry its policy only reports, or one waiting on
+an input), 1 when an entry failed, and 2 without a terminal and without
+`--yes`. A timer treats 3 as routine news, not a failure; the
+`attention` file below counts what waits, and `untaped dotfiles status`
+lists it:
+
+```ini
+# ~/.config/systemd/user/untaped-dotfiles.service
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/untaped dotfiles apply --yes
+SuccessExitStatus=3
+```
+
+launchd has no such setting, so its `ProgramArguments` run
+`sh -c 'untaped dotfiles apply --yes; c=$?; [ $c -eq 0 ] || [ $c -eq 3 ]'`.
 
 ## Show it in the prompt
 

@@ -101,13 +101,19 @@ def test_apply_refuses_a_local_edit_unless_forced(make_remote: MakeRemote, user_
     as_json(["apply", "--yes"])
     target = user_home / ".config/starship.toml"
     target.write_text("edited\n")
-    refused = run(["apply", "--yes", "--format", "json"])
+    reported = run(["apply", "--yes", "--format", "json"])  # by its policy: a person decides
+    assert reported.exit_code == 3, reported.output
+    [row] = json_rows(reported)
+    assert row["action"] == "skipped" and "apply dotfiles/starship/config --force" in str(
+        row["detail"]
+    )
+    refused = run(["apply", "starship", "--yes", "--format", "json"])
     assert refused.exit_code == 1
     assert [r["action"] for r in json_rows(refused)] == ["conflict"]
     assert target.read_text() == "edited\n"
-    dry = run(["apply", "--dry-run", "--format", "json"])
+    dry = run(["apply", "starship", "--dry-run", "--format", "json"])
     assert dry.exit_code == 1
-    [row] = as_json(["apply", "--yes", "--force"])
+    [row] = as_json(["apply", "starship", "--yes", "--force"])
     assert row["action"] == "updated" and target.read_text().startswith("[character]")
 
 
@@ -208,9 +214,9 @@ def test_an_input_with_no_value_leaves_its_entries_pending(
     rows = {r["entry"]: r for r in as_json(["status"])}
     waiting = rows["~/.config/git/{{ git_profile }}.inc"]
     assert waiting["state"] == "pending"
-    assert "dotfiles.sources.dotfiles.packages.git.inputs.git_profile" in str(waiting["detail"])
+    assert "add dotfiles/git --var git_profile=VALUE" in str(waiting["detail"])
     result = run(["apply", "--yes", "--format", "json"])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 3, result.output
     assert [r["entry"] for r in json_rows(result)] == ["~/.config/git/ignore"]
     assert "git_profile" in result.stderr
     ran = installed().cli(
@@ -251,7 +257,14 @@ items:
     files:
       - {path: a.txt, target: ~/.config/starship.toml, mode: copy}
 """
-_LINK = "version: 1\nitems:\n  config:\n    files:\n      - {path: a.txt, target: ~/a.txt}\n"
+_LINK = """\
+version: 1
+policy: sync
+items:
+  config:
+    files:
+      - {path: a.txt, target: ~/a.txt}
+"""
 
 
 def test_a_clone_with_local_changes_fails_its_source_and_the_rest_applies(
@@ -289,7 +302,10 @@ def test_a_package_that_leaves_its_source_is_taken_back(
     publish(remote, {}, "drop starship")
     as_json(["apply", "--dry-run"])  # fetch
     assert states(["starship"]) == {"~/.config/starship.toml": "orphan"}
+    # its policy left with its file, so nothing but this machine's choice says sync
     rows = {r["entry"]: r["action"] for r in as_json(["apply", "--yes"])}
+    assert rows["~/.config/starship.toml"] == "skipped"
+    rows = {r["entry"]: r["action"] for r in as_json(["apply", "dotfiles/starship", "--yes"])}
     assert rows["~/.config/starship.toml"] == "deleted"
     assert not (user_home / ".config/starship.toml").exists()
     shown = run(["show", "starship", "--format", "json"])

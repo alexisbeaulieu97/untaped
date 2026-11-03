@@ -1,11 +1,21 @@
-"""The state of a placed path, and which states need a person."""
+"""The state of a placed path, how a file is placed, and what apply does in each state."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+
 from untaped_dotfiles.models import PlacedRecord
-from untaped_dotfiles.states import SourceInfo, TargetInfo, file_state, needs_attention
+from untaped_dotfiles.policy import Policy
+from untaped_dotfiles.states import (
+    SourceInfo,
+    TargetInfo,
+    decide,
+    decide_asked,
+    file_state,
+    placed_as,
+)
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
 
@@ -121,15 +131,75 @@ def test_merge_modified_means_the_managed_keys_changed() -> None:
     )
 
 
-# -- attention ------------------------------------------------------------------
+# -- the policy table (design 7.2) -----------------------------------------------
+
+#: Each state's action under sync, once and manual, as design 7.2 has it.
+_TABLE = {
+    "pending": ("apply", "apply", "apply"),
+    "foreign": ("apply", "apply", "apply"),
+    "new": ("apply", "apply", "report"),
+    "applied": ("skip", "skip", "skip"),
+    "behind": ("apply", "skip", "report"),
+    "modified": ("report", "skip", "report"),
+    "conflict": ("report", "skip", "report"),
+    "missing": ("apply", "report", "report"),
+    "orphan": ("remove", "report", "report"),
+    "off": ("report", "report", "report"),
+    "excluded": ("skip", "skip", "skip"),
+}
 
 
-def test_attention_counts_what_needs_a_person() -> None:
-    assert needs_attention("manual", "behind")
-    assert needs_attention("sync", "modified")
-    assert needs_attention("sync", "conflict")
-    assert not needs_attention("sync", "applied")
-    assert not needs_attention("sync", "pending")
-    assert not needs_attention("once", "behind")
-    assert needs_attention("once", "missing")
-    assert not needs_attention("manual", "excluded")
+@pytest.mark.parametrize(
+    ("state", "policy", "action"),
+    [
+        (state, policy, actions[column])
+        for state, actions in _TABLE.items()
+        for column, policy in enumerate(("sync", "once", "manual"))
+    ],
+)
+def test_each_cell_of_the_policy_table(state: str, policy: str, action: str) -> None:
+    assert decide(Policy(policy), state, moved=False) == action  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("policy", list(Policy))
+def test_an_orphan_an_input_moved_goes_whatever_the_policy(policy: Policy) -> None:
+    assert decide(policy, "orphan", moved=True) == "remove"
+
+
+@pytest.mark.parametrize(
+    ("policy", "mode", "placed"),
+    [
+        ("sync", "link", "link"),
+        ("once", "link", "copy"),
+        ("manual", "link", "copy"),
+        ("sync", "copy", "copy"),
+        ("once", "copy", "copy"),
+        ("manual", "copy", "copy"),
+        ("sync", "merge", "merge"),
+        ("once", "merge", "merge"),
+        ("manual", "merge", "merge"),
+    ],
+)
+def test_a_link_is_a_link_only_under_sync(policy: str, mode: str, placed: str) -> None:
+    assert placed_as(Policy(policy), mode) == placed  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("state", "force", "action"),
+    [
+        ("pending", False, "apply"),
+        ("new", False, "apply"),
+        ("behind", False, "apply"),
+        ("missing", False, "apply"),
+        ("orphan", False, "remove"),
+        ("modified", False, None),
+        ("conflict", False, None),
+        ("modified", True, "apply"),
+        ("off", False, "report"),
+        ("applied", False, "skip"),
+    ],
+)
+def test_naming_a_package_applies_it_whatever_its_policy(
+    state: str, force: bool, action: str | None
+) -> None:
+    assert decide_asked(state, force=force) == action  # type: ignore[arg-type]

@@ -76,6 +76,11 @@ class FileDetail(_Detail):
     path: str
     target: str = Field(description="As the package writes it.")
     mode: Mode
+    placed_as: Mode | None = Field(
+        default=None,
+        description="How it is placed here: a `link` only under `sync`, else a copy; "
+        "null while the item is off.",
+    )
     excluded: str | None = None
     state: FileState | None = Field(
         default=None, description="Its state here; null while the item is off."
@@ -151,7 +156,7 @@ class PackageDetail(Record):
 
 
 class EntryStatus(Record):
-    """The state of one entry of a package that is on: a file, for now."""
+    """The state of one entry: a file, for now, of a package that is on or was placed before."""
 
     source: str
     package: Annotated[str, Column]
@@ -160,7 +165,9 @@ class EntryStatus(Record):
     entry: Annotated[str, Column] = Field(
         description="A file's target as the user reads it (`~/...`)."
     )
-    mode: Annotated[Mode | None, Column] = None
+    mode: Annotated[Mode | None, Column] = Field(
+        default=None, description="How the file is placed here (a `link` only under `sync`)."
+    )
     policy: Annotated[Policy, Column]
     chosen: bool = False
     state: Annotated[FileState, Column, FILE_STATE_ROLES] = Field(
@@ -176,18 +183,24 @@ class StatusSummary(Record):
 
     checked_at: UtcTimestamp
     total: int
+    apply: int = Field(
+        0,
+        description="Rows the next `apply` (no selector) changes on its own, by their policy.",
+    )
     attention: int = Field(
-        description="Rows that need a person, `error` rows included. They make "
-        "`status --check` exit 3, or 1 when one is an `error` row."
+        description="Rows only a person can settle, `error` rows included. With `apply`, they "
+        "make `status --check` exit 3 (1 when one is an `error` row)."
     )
     pending: int = 0
     foreign: int = 0
+    new: int = 0
     applied: int = 0
     behind: int = 0
     modified: int = 0
     conflict: int = 0
     missing: int = 0
     orphan: int = 0
+    off: int = 0
     error: int = 0
 
 
@@ -212,4 +225,9 @@ class ApplyOutcome(OutcomeRecord, TargetRecord):
         "`behind` differs from one that was `applied`; the policy guide explains each state.",
     )
     detail: Annotated[str, Column] = ""
+    diff: str | None = Field(
+        default=None,
+        description="A unified diff of the target's content, before and after, when the "
+        "action changes it (a new file's whole content included); null otherwise.",
+    )
     target_path: AbsolutePath

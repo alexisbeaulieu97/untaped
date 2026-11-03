@@ -1,7 +1,7 @@
 """``StateDotfilesStore``: clones and placed paths, kept as the plugin's state rows.
 
 What untaped did, which no source can give back: the clone it made for each
-git source, and every path it placed. The machine's choices live in
+git source, every item it applied once, and every path it placed. The machine's choices live in
 ``config.yml`` instead (``dotfiles.sources``). The rows and the operation lock
 are blocks the plugin class holds (:class:`~untaped_dotfiles.plugin.Dotfiles`);
 the lock keeps two runs that change files from interleaving. The store also
@@ -11,12 +11,13 @@ one-line ``attention``).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from untaped.sdk.storage import Lock, StateRows, atomic_write
-from untaped_dotfiles.models import CloneRecord, PlacedRecord
+from untaped_dotfiles.models import CloneRecord, ItemRecord, PlacedRecord
 from untaped_dotfiles.records import StatusSummary
 
 STATUS_FILE = "status.json"
@@ -24,6 +25,8 @@ ATTENTION_FILE = "attention"
 
 #: The clone untaped made for each git source, by source name.
 CLONED = StateRows[CloneRecord]()
+#: Each item applied here at least once, by ``SOURCE/PKG/ITEM``.
+ITEMS = StateRows[ItemRecord]()
 #: One row per placed path, by its absolute path.
 PLACED = StateRows[PlacedRecord]()
 #: Held by every command that changes files, clones or choices.
@@ -50,6 +53,29 @@ class StateDotfilesStore:
 
     def remove_clone(self, source: str) -> bool:
         return CLONED.delete(source) > 0
+
+    def applied_item(self, owner: tuple[str, str, str]) -> ItemRecord | None:
+        return ITEMS.get("/".join(owner))
+
+    def put_applied(self, owner: tuple[str, str, str], at: datetime) -> None:
+        if ITEMS.get("/".join(owner)) is None:
+            ITEMS.put(ItemRecord(item="/".join(owner), first_applied_at=at))
+
+    def note_waited(self, owner: tuple[str, str, str], entries: Iterable[tuple[str, str]]) -> None:
+        """Add ``entries`` to the waited ones of an item applied here (nothing otherwise)."""
+        row = ITEMS.get("/".join(owner))
+        if row is None:
+            return
+        waited = tuple(dict.fromkeys((*row.waited, *entries)))
+        if waited != row.waited:
+            ITEMS.put(row.model_copy(update={"waited": waited}))
+
+    def forget_applied(self, prefix: tuple[str, ...]) -> None:
+        """Forget every item under ``prefix`` (a source, a package or one item): turned off."""
+        start = "/".join(prefix)
+        for row in ITEMS.all():
+            if row.item == start or row.item.startswith(start + "/"):
+                ITEMS.delete(row.item)
 
     def placed(self) -> list[PlacedRecord]:
         return PLACED.all()

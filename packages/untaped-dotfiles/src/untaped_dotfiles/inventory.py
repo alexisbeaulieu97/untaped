@@ -3,31 +3,33 @@
 A folder entry is placed per child: the target folder stays a real folder,
 each file under the entry gets its own placement at the same relative path,
 and files other programs write there are never touched. A target renders
-``{{ name }}`` from this machine's answer (``inputs`` in the package's
-choice), else the input's default; an input with neither leaves its
-entries pending, naming the ``config set`` key that answers it, and what
-the entry placed before stays as it is.
+``{{ name }}`` from this run's answers (``--var``, ``--vars-file``, a
+prompt), else this machine's (``inputs`` in the package's choice), else the
+input's default; an input with none leaves its entries waiting, naming the
+``add --var`` that answers it, and what the entry placed before stays as it
+is.
 
 A path untaped placed that its entry no longer places is an ``orphan``:
 the entry left the package, the file left the source's folder, the input
-moved the target, or the package file left the source. A path whose entry
-is now left out on this machine (``os``, ``only``, ``unless``) is
-``excluded`` and stays as it is. Two packages placing one target are an
-error for each, and neither is placed.
+moved the target (``moved``: the machine asked, so it goes whatever the
+policy), or the package file left the source. A path whose entry is now
+left out on this machine (``os``, ``only``, ``unless``) is ``excluded`` and
+stays as it is; one whose package or item is off now is ``off``. Two
+packages placing one target are an error for each, and neither is placed.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, key, q, run_hint
+from untaped.sdk import UntapedError, q, run_hint
 from untaped_dotfiles.errors import PackageError
 from untaped_dotfiles.policy import Policy
-from untaped_dotfiles.settings import DotfilesSettings
-from untaped_values.api import InputError, placeholders, render
+from untaped_dotfiles.states import placed_as
+from untaped_values.api import InputError, coerce, placeholders, render
 
 if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Catalog, Offer, Selection
@@ -62,6 +64,22 @@ class Placement:
     unanswered: str | None = None
     orphan: bool = False
     """A placed record the package or the tree no longer lists."""
+    moved: bool = False
+    """An ``orphan`` whose entry places elsewhere now: an input moved its target."""
+    asked: bool = False
+    """The new place of a ``moved`` entry: ``pending`` rather than ``new``."""
+    off: bool = False
+    """A placed record whose package or item is off now."""
+
+    @property
+    def placed_as(self) -> Mode:
+        """How the file is placed under its policy (:func:`~untaped_dotfiles.states.placed_as`)."""
+        return placed_as(self.policy, self.mode)
+
+    @property
+    def spelled(self) -> str:
+        """``SOURCE/PKG/ITEM``."""
+        return f"{self.offer.spelled}/{self.item}"
 
     @property
     def source(self) -> Source:
@@ -99,6 +117,22 @@ class Inventory:
         self._store = store
         self._home = home.resolve()
         self._machine = machine
+        self._answers: dict[str, dict[str, object]] = {}
+        self._failed: dict[str, UntapedError] = {}
+
+    def answer(self, offer: Offer, values: dict[str, object]) -> None:
+        """Use ``values`` for ``offer``'s inputs this run, over this machine's answers."""
+        self._answers[offer.spelled] = dict(values)
+
+    def fail(self, offer: Offer, error: UntapedError) -> None:
+        """Report ``offer`` as ``error`` this run (an answer that doesn't fit its input): its
+        files stay as they are and the other packages go on."""
+        self._failed[offer.spelled] = error
+
+    def values(self, offer: Offer) -> dict[str, object]:
+        """``offer``'s plain top-level input values here: this run's answers, this machine's,
+        else the defaults."""
+        return input_values(offer) | self._answers.get(offer.spelled, {})
 
     @property
     def machine(self) -> Machine:
@@ -140,10 +174,15 @@ class Inventory:
         return [Selection(offer) for offer in self._catalog.offers() if offer.on]
 
     def placements(
-        self, selections: Sequence[Selection], *, include_excluded: bool = False
+        self, selections: Sequence[Selection] | None = None, *, include_excluded: bool = False
     ) -> Resolved:
-        """The placements of ``selections`` (items that are on only), plus what untaped placed
-        for them that they no longer place (``orphan``) or that is now left out (``excluded``)."""
+        """The placements of ``selections`` (items that are on only; every package that is on
+        when ``None``), plus what untaped placed for them that they no longer place
+        (``orphan``), that is now left out (``excluded``), or whose package or item is off
+        now (``off``: within the selections, or in any subscribed source when ``None``)."""
+        everything = selections is None
+        if selections is None:
+            selections = self.on()
         found: list[Placement] = []
         problems: list[tuple[str, UntapedError]] = []
         resolved: dict[tuple[str, str, str], Offer] = {}
@@ -159,6 +198,13 @@ class Inventory:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
+            failed = self._failed.get(offer.spelled)
+            if failed is None and (stale := self._stale(offer)) is not None:
+                self._failed[offer.spelled] = failed = stale  # said once per package
+            if failed is not None:
+                if (offer.spelled, failed) not in problems:
+                    problems.append((offer.spelled, failed))
+                continue
             try:
                 placed, waiting = self._item(offer, item)
             except UntapedError as exc:
@@ -173,15 +219,61 @@ class Inventory:
         fought = self._fought()
         found, claimed = _claims(found, fought)
         problems.extend(claimed)
+        found = self._with_records(
+            found,
+            resolved,
+            held,
+            fought,
+            off=self._off_scope(selections, everything=everything),
+            include_excluded=include_excluded,
+        )
+        return Resolved(found, problems)
+
+    def _with_records(
+        self,
+        found: list[Placement],
+        resolved: dict[tuple[str, str, str], Offer],
+        held: dict[tuple[str, str, str, str], Placement | None],
+        fought: dict[str, set[str]],
+        *,
+        off: dict[tuple[str, str, str], Offer],
+        include_excluded: bool,
+    ) -> list[Placement]:
+        """``found``, plus a placement for each record it no longer places: ``orphan``
+        (``moved`` when an input moved it), ``excluded`` or ``off``."""
         placed_keys = {p.key for p in found}
+        bases = {
+            (*p.owner, p.entry, p.declared): _base(p.target, p.entry, p.path)
+            for p in found
+            if p.target
+        }
+        """Where each declaration places now: a record of the same declaration placed
+        elsewhere was moved by an input; one whose declaration changed is the author's edit."""
+        asked: set[tuple[str, str, str, str, str]] = set()
         for record in self._store.placed():
             owner = (record.source, record.package, record.item)
             owned = resolved.get(owner)
-            if owned is None or record.target in placed_keys or record.target in fought:
+            if record.target in placed_keys or record.target in fought:
                 continue  # a disputed target keeps its file until the dispute is settled
+            if owned is None:
+                offer = off.get(owner) or off.get((record.source, record.package, ""))
+                if offer is None:
+                    continue
+                if not offer.item_on(record.item):
+                    found.append(self._from_record(record, offer, off=True))
+                elif offer.package is not None and record.item not in offer.package.items:
+                    found.append(self._from_record(record, offer, orphan=True))  # item left
+                continue
             at = (*owner, record.entry)
             if at not in held:
-                found.append(self._from_record(record, owned, orphan=True))
+                declared = (*at, record.declared)
+                base = bases.get(declared)
+                moved = base is not None and base != _base(
+                    Path(record.target), record.entry, record.path
+                )
+                if moved:
+                    asked.add(declared)
+                found.append(self._from_record(record, owned, orphan=True, moved=moved))
                 continue
             excluded = held[at]
             if excluded is not None:
@@ -192,7 +284,39 @@ class Inventory:
                 )
                 if include_excluded:  # the record's own row stands for its entry
                     found = [p for p in found if p is not excluded]
-        return Resolved(found, problems)
+        if asked:
+            found = [
+                replace(p, asked=True)
+                if not p.orphan and (*p.owner, p.entry, p.declared) in asked
+                else p
+                for p in found
+            ]
+        return found
+
+    def _stale(self, offer: Offer) -> UntapedError | None:
+        """Why this machine's answers don't fit ``offer``'s inputs (an input's type changed),
+        unless this run answered them; ``None`` when they fit."""
+        package = offer.package
+        if package is None or offer.spelled in self._answers or offer.choice is None:
+            return None
+        for name, value in offer.choice.inputs.items():
+            spec = package.inputs.get(name)
+            if spec is None or spec.secret:
+                continue
+            try:
+                coerce(spec, value, name=name)
+            except InputError as exc:
+                return exc
+        return None
+
+    def _off_scope(
+        self, selections: Sequence[Selection], *, everything: bool
+    ) -> dict[tuple[str, str, str], Offer]:
+        """The packages (``(source, package, "")``) and items whose records count as ``off``
+        when they are off: every subscribed package, or only what ``selections`` name."""
+        if everything:
+            return {(o.source.name, o.name, ""): o for o in self._catalog.offers()}
+        return {(s.offer.source.name, s.offer.name, s.item or ""): s.offer for s in selections}
 
     def _fought(self) -> dict[str, set[str]]:
         """Each target two packages that are on place here, with their ``SOURCE/PKG`` names;
@@ -265,7 +389,7 @@ class Inventory:
         """The target ``text`` names here, or ``(None, why)`` while an input has no value."""
         package = offer.package
         assert package is not None
-        values = input_values(offer)
+        values = self.values(offer)
         missing = [name for name in placeholders(text, field="target") if name not in values]
         if missing:
             return None, unanswered(offer, missing)
@@ -299,6 +423,8 @@ class Inventory:
         offer: Offer,
         *,
         orphan: bool = False,
+        moved: bool = False,
+        off: bool = False,
         excluded: str | None = None,
         declared: str = "",
     ) -> Placement:
@@ -319,6 +445,8 @@ class Inventory:
             fmt=record.fmt,
             excluded=excluded,
             orphan=orphan,
+            moved=moved,
+            off=off,
         )
 
 
@@ -385,11 +513,19 @@ def input_values(offer: Offer) -> dict[str, object]:
 
 
 def unanswered(offer: Offer, names: Iterable[str]) -> str:
-    """``input 'x' has no value: `untaped config set ... VALUE```."""
-    from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
+    """``input 'x' has no value: `untaped dotfiles add PKG --var x=VALUE```."""
+    from untaped_dotfiles.commands.packages import Add  # noqa: PLC0415 - a cycle
 
     named = list(names)
-    setting = key(DotfilesSettings).sources[offer.source.name].packages[offer.name]
-    hints = [run_hint(Set.spelled(setting.inputs[name], "VALUE")) for name in named]
+    flags = [word for name in named for word in ("--var", f"{name}=VALUE")]
     which = ", ".join(q(name) for name in named)
-    return f"input {which} has no value: {'; '.join(hints)}"
+    return f"input {which} has no value: {run_hint(Add.spelled(offer.spelled, *flags))}"
+
+
+def _base(target: Path, entry: str, path: str) -> Path:
+    """The target of entry ``entry`` itself, from the target of its file ``path`` (a child
+    of a folder entry sits under it)."""
+    if path == entry:
+        return target
+    depth = len(PurePosixPath(path).relative_to(entry).parts)
+    return target.parents[depth - 1]
