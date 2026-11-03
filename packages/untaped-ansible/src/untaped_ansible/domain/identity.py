@@ -39,10 +39,6 @@ class IdentityResolver:
             return ResolvedDependency(declaration=declaration, repo=repo)
         return ResolvedDependency(declaration=declaration, unresolved=key)
 
-    def repo_of(self, url: str) -> str | None:
-        """The ``owner/repo`` a clone URL on a GitHub host names, else ``None``."""
-        return self._repo_from_source(url)
-
     def _repo_from_source(self, source: str) -> str | None:
         value = source.strip()
         if _OWNER_REPO_RE.fullmatch(value):

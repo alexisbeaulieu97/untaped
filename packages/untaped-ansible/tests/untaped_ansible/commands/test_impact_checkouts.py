@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import BaseModel
 
 from ansible_index_support import make_edge, prod, seed
 from ansible_test_support import Result, run, use_config
-from untaped.sdk import Message, Plugin, Record, Stale, UntapedError, key
+from untaped.sdk import Failure, Message, Plugin, Record, Stale, UntapedError, key
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_ansible.api import Checkout, CheckoutSource
 from untaped_ansible.domain.payloads import SourceRepoMetadata
@@ -35,8 +36,8 @@ class RunnerSettings(BaseModel):
     url: str | None = None
 
 
-#: What the runner answers next: its jobs, or the error it raises.
-ANSWER: list[Job] | UntapedError = []
+#: What the runner answers next: its jobs (checkouts it built itself, a bad row), or its error.
+ANSWER: list[Any] | UntapedError = []
 
 
 class Jobs(CheckoutSource[Job], Provider[RunnerSettings]):
@@ -52,10 +53,12 @@ class Jobs(CheckoutSource[Job], Provider[RunnerSettings]):
             name=item.name, url=item.repo_url, ref=item.branch or None, via=f"job {item.id}"
         )
 
-    def checkouts(self) -> list[Checkout]:
+    def checkouts(self) -> list[Any]:  # a bad row, too
         if isinstance(ANSWER, UntapedError):
             raise ANSWER
-        return [self.to_checkout(job) for job in ANSWER]
+        return [
+            job if isinstance(job, Checkout | dict) else self.to_checkout(job) for job in ANSWER
+        ]
 
 
 class Runner(Plugin):
@@ -155,7 +158,9 @@ def test_s4_a_checkout_at_another_ref_or_the_default_branch(
             Job(id=1, name="Release web", repo_url=url, branch="release-2.1"),
             Job(id=2, name="Nightly web", repo_url=url),
             Job(id=3, name="Deploy api", repo_url="git@github.com:acme/api.git", branch="v2.1"),
-            Job(id=4, name="Unrelated", repo_url="https://github.com/acme/other.git"),
+            Job(id=4, name="Port web", repo_url="ssh://git@GitHub.com:22/Acme/Web.git"),
+            Job(id=5, name="Nightly api", repo_url="https://github.com/acme/api.git"),
+            Job(id=6, name="Unrelated", repo_url="https://github.com/acme/other.git"),
         ],
     )
 
@@ -165,6 +170,8 @@ def test_s4_a_checkout_at_another_ref_or_the_default_branch(
     assert _rows(result) == [
         ("Deploy api", "v2.1", "acme/api@v2.1"),
         ("Nightly web", None, "acme/web@main"),
+        ("Port web", None, "acme/web@main"),
+        ("Nightly api", None, None),  # acme/api's default branch isn't known
         ("Release web", "release-2.1", None),
     ]
 
@@ -195,19 +202,75 @@ def test_s5_a_runner_not_set_up_hints_its_setting(
     ]
 
 
-def test_s6_a_failure_without_a_cache_warns_and_exits_0(
+def test_s6_a_failure_without_a_cache_is_its_own_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _seed(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        __name__ + ".ANSWER", UntapedError("runner is down", category="unavailable")
+        __name__ + ".ANSWER",
+        UntapedError("runner is down", category="unavailable", system="runner"),
     )
+
+    result = _checkouts("-f", "json")
+
+    assert result.exit_code == 5, result.output  # unavailable: retry later
+    assert json.loads(result.stdout) == []
+    [failure] = [d for d in result.diagnostics if isinstance(d, Failure)]
+    assert (failure.message, failure.category, failure.system) == (
+        "runner is down",
+        "unavailable",
+        "runner",
+    )
+
+
+class Unbridged(CheckoutSource[Job], Provider[RunnerSettings]):
+    """Lists checkouts with its own record but fills no bridge: set aside at composition."""
+
+    def checkouts(self) -> list[Checkout]:
+        return []
+
+
+class Broken(Plugin):
+    """A runner whose provider can't be used."""
+
+    settings = RunnerSettings
+    fills = (Unbridged,)
+
+
+def test_a_provider_set_aside_says_so(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _seed(tmp_path, monkeypatch)
+
+    result = run("impact", "checkouts", _ROLE, "--source", "prod", also=(Broken,))
+
+    assert result.exit_code == 0, result.output
+    assert _said(result, "warning") == ["broken's checkouts are set aside (missing-bridge)"]
+
+
+def test_an_answer_with_an_unstamped_checkout_is_set_aside(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed(tmp_path, monkeypatch)
+    unstamped = Checkout(name="Hand-made", url="https://github.com/acme/web.git")
+    monkeypatch.setattr(__name__ + ".ANSWER", [_WEB, unstamped])
 
     result = _checkouts("-f", "json")
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout) == []
-    assert _said(result, "warning") == ["runner: no checkouts: runner is down"]
+    [warning] = _said(result, "warning")
+    assert warning.startswith("runner's checkouts are set aside (unbridged-item): ")
+
+
+def test_rows_that_do_not_read_are_counted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _seed(tmp_path, monkeypatch)
+    monkeypatch.setattr(__name__ + ".ANSWER", [_WEB, {"name": "No URL"}])
+
+    result = _checkouts("-f", "json")
+
+    assert result.exit_code == 0, result.output
+    assert _rows(result) == [("Deploy web", "main", "acme/web@main")]
+    [warning] = _said(result, "warning")
+    assert warning.startswith("runner: 1 checkout left out as invalid: ")
 
 
 def test_s6_a_failure_with_a_cache_serves_it_stale(
@@ -216,7 +279,8 @@ def test_s6_a_failure_with_a_cache_serves_it_stale(
     _seed(tmp_path, monkeypatch)
     assert _checkouts().exit_code == 0  # fills the cache
     monkeypatch.setattr(
-        __name__ + ".ANSWER", UntapedError("runner is down", category="unavailable")
+        __name__ + ".ANSWER",
+        UntapedError("runner is down", category="unavailable", system="runner"),
     )
     monkeypatch.setenv("UNTAPED_ANSIBLE__CACHES__CHECKOUT_SOURCE_CHECKOUTS__MAX_AGE_SECONDS", "0")
 

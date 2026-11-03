@@ -68,7 +68,7 @@ class AwxTemplates(CheckoutSource[JobTemplate], Provider[AwxSettings]):
                     found.append(self.to_checkout(JobTemplate.model_validate(row)))
                     continue
                 except ValidationError, UsageError:
-                    why = "repository URL untaped can't read"
+                    why = "with a repository URL untaped can't read"
             skipped[why] += 1
         if skipped:
             reasons = ", ".join(f"{count} {why}" for why, count in sorted(skipped.items()))

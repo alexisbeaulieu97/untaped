@@ -211,7 +211,8 @@ class CheckoutHit(Checkout):
     dependent: FoundIn | None = Field(
         description=(
             "The dependent at the ref it checks out; null when the source holds that repo "
-            "as a dependent at other refs only (the checkout is not in the source)."
+            "as a dependent at other refs only, or, for a checkout naming no ref, doesn't "
+            "know the repo's default branch."
         )
     )
 

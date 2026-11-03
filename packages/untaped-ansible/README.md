@@ -72,10 +72,11 @@ version, beside its dependency files.
 untaped ansible impact checkouts acme/base-role
 ```
 
-One row per checkout of a dependent: an AWX job template, say, with awx
-installed and its controller set. Each names the dependent it checks out at
-its ref, or none when the source doesn't hold that ref. The plugins that
-were not asked, or failed, say so on stderr; their answers are cached for
+One row per checkout of a dependent, from every installed plugin that fills
+ansible's `CheckoutSource` contract (with its job templates, say). Each
+names the dependent it checks out at its ref, or none when the source
+doesn't hold that ref. A plugin that wasn't asked gets a hint, and one that
+failed is an error with its own exit code; their answers are cached for
 `ansible.caches.checkout_source_checkouts.max_age_seconds` (one hour), and
 `--refresh`/`--cached` reach them too.
 

@@ -33,6 +33,7 @@ def _seed(fake: Any) -> None:
         scm_branch="", allow_override=False,
     )  # fmt: skip
     fake.seed("projects", id=12, name="local", organization=1, scm_type="", scm_url="")
+    fake.seed("projects", id=14, name="path", organization=1, scm_type="git", scm_url="/srv/web")
     fake.seed(
         "projects", id=13, name="old", organization=1, scm_type="svn",
         scm_url="https://svn.example.com/web",
@@ -44,6 +45,7 @@ def _seed(fake: Any) -> None:
         (45, "Local", 12, ""),
         (46, "Legacy", 13, ""),
         (47, "Orphan", None, ""),
+        (48, "On disk", 14, ""),
     ]:
         fake.seed(
             "job_templates",
@@ -93,8 +95,8 @@ def test_s7_templates_that_check_out_no_git_repository_are_counted_once(
     _, warnings = _checkouts()
 
     assert warnings == [
-        "awx: 3 job templates left out (1 on a local-path project, 1 on a project of type svn, "
-        "1 without a readable project)"
+        "awx: 4 job templates left out (1 on a local-path project, 1 on a project of type svn, "
+        "1 with a repository URL untaped can't read, 1 without a readable project)"
     ]
 
 

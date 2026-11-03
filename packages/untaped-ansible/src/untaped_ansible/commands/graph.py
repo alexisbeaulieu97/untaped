@@ -1,8 +1,9 @@
 """``deps``, ``impact``, ``find`` and ``graph``: Ansible dependency answers over a source or GitHub.
 
-``deps``, ``impact`` (with ``impact uses``) and ``find`` answer one question
-each and print rows (``ansible.dependency``, ``ansible.dependent``,
-``ansible.variable_use_hit``, ``ansible.dependency_match``); ``graph`` renders
+``deps``, ``impact`` (with ``impact uses`` and ``impact checkouts``) and
+``find`` answer one question each and print rows (``ansible.dependency``,
+``ansible.dependent``, ``ansible.variable_use_hit``, ``ansible.checkout_hit``,
+``ansible.dependency_match``); ``graph`` renders
 the whole graph as a tree, Mermaid or JSON document, both directions at once
 by default. All of them report warnings on stderr, share the source data
 options (:class:`~untaped_ansible.commands._source_data.SourceData`) and fall
@@ -37,7 +38,7 @@ from untaped.sdk import (
     run_hint,
     tree_text,
 )
-from untaped.sdk.contracts import Errored, NoProviderReady, Ok, gather
+from untaped.sdk.contracts import Errored, NoProviderReady, Ok, Reason, gather
 from untaped_ansible.application.graph import GraphDirection
 from untaped_ansible.checkouts import Checkout, CheckoutSource
 from untaped_ansible.commands._graph import (
@@ -53,7 +54,7 @@ from untaped_ansible.commands._graph import (
     within,
 )
 from untaped_ansible.commands.source import Refresh as SourceRefresh
-from untaped_ansible.domain.checkout_hits import checkout_hits
+from untaped_ansible.domain.checkout_hits import checkout_hits, github_repo
 from untaped_ansible.domain.containment import find_matches
 from untaped_ansible.domain.graph import DependencyGraph, EdgeRelation
 from untaped_ansible.domain.graph_roots import (
@@ -64,7 +65,7 @@ from untaped_ansible.domain.graph_roots import (
     root_from_line,
     root_from_record,
 )
-from untaped_ansible.domain.identity import IdentityResolver, repo_key
+from untaped_ansible.domain.identity import repo_key
 from untaped_ansible.domain.reach import Reach, reach
 from untaped_ansible.domain.renderers import graph_tree, render_graph
 from untaped_ansible.domain.variable_queries import (
@@ -328,13 +329,15 @@ class Checkouts(_Reaching):
     Asks every installed plugin that fills ansible's CheckoutSource (with
     its job templates, say) for its checkouts, and keeps those of a
     dependent's repo. Each one hangs under the dependent at the ref it checks
-    out, its repo's default branch when it names none; one at a ref the
-    source holds no dependent at comes with no dependent (not in the source:
-    an empty cell in a table). A plugin
-    that wasn't asked, failed, or answered from its cache says so on stderr,
-    and the command still exits 0: an empty answer then means nobody was
-    asked, not that nothing checks the dependents out. --refresh and
-    --cached reach the checkouts as well as the source data.
+    out, its repo's default branch when it names none. One at a ref the
+    source holds no dependent at, or naming no ref when the source doesn't
+    know the repo's default branch, comes with no dependent (an empty cell in
+    a table). A plugin that wasn't asked (not set up, or nothing cached under
+    --cached) gets a hint, so an empty answer may mean nobody was asked; one
+    set aside, or whose rows don't read, gets a warning; one that failed is
+    an error with its own exit code, and the others' rows still print. A
+    stale cached answer says so. --refresh and --cached reach the checkouts
+    as well as the source data.
 
     Examples
     --------
@@ -375,30 +378,46 @@ class Checkouts(_Reaching):
             repo_key(repo): next((ref.default_branch for ref in refs if ref.default_branch), None)
             for repo, refs in cached.items()
         }
-        resolver = IdentityResolver(github_host=self.github_host)
+        hosts = {host for host in ("github.com", self.github_host) if host}
         yield from checkout_hits(
-            rows, checkouts, repo_of=resolver.repo_of, default_branches=defaults
+            rows,
+            checkouts,
+            repo_of=lambda url: github_repo(url, hosts=hosts),
+            default_branches=defaults,
         )
 
     def _checkouts(self) -> list[Checkout]:
-        """Every provider's checkouts; who wasn't asked, or failed, is said on stderr, uncounted."""
+        """Every provider's checkouts; who wasn't asked or was set aside is said on stderr.
+
+        A provider that failed is a counted failure: its category picks the
+        exit code, and the other providers' checkouts still count.
+        """
         try:
             answers = gather(CheckoutSource.checkouts, refresh=self.refresh.directive)()
         except NoProviderReady as exc:
             for plugin, ready in exc.not_ready.items():
                 setting = f": set {ready.spelled}" if ready.spelled else ""
                 self.ctx.diag.hint(f"{plugin} wasn't asked for checkouts: {ready.reason}{setting}")
+            for plugin, reason in exc.quarantined.items():
+                self.ctx.diag.warning(f"{plugin}'s checkouts are set aside ({reason})")
             return []
         found: list[Checkout] = []
         for answer in answers:
             if isinstance(answer, Ok):
                 found.extend(answer.value)
+                if answer.invalid:
+                    self.ctx.diag.warning(
+                        f"{answer.plugin}: {plural(len(answer.invalid), 'checkout')} left out "
+                        f"as invalid: {'; '.join(answer.invalid)}"
+                    )
             elif isinstance(answer, Errored):
-                self.ctx.diag.warning(
-                    f"{answer.plugin}: no checkouts: {answer.error}", hint=answer.error.hint
-                )
-            else:
+                self.ctx.diag.failure(answer.error)
+            elif answer.reason in (Reason.not_configured, Reason.no_cache):
                 self.ctx.diag.hint(f"{answer.plugin} wasn't asked for checkouts: {answer.detail}")
+            else:
+                self.ctx.diag.warning(
+                    f"{answer.plugin}'s checkouts are set aside ({answer.reason}): {answer.detail}"
+                )
         return found
 
 
