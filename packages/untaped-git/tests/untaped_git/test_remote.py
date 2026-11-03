@@ -348,9 +348,7 @@ def test_clone_refuses_a_folder_that_is_not_empty(remote: GitRemote, tmp_path: P
     assert [path.name for path in dest.iterdir()] == ["notes.txt"]
 
 
-def test_a_clone_s_option_shaped_url_is_never_an_option(
-    remote: GitRemote, tmp_path: Path
-) -> None:
+def test_a_clone_s_option_shaped_url_is_never_an_option(remote: GitRemote, tmp_path: Path) -> None:
     planted = tmp_path / "planted"
     # Read as an option, the URL would run its upload-pack against ``dest``, a real repo.
     with pytest.raises(GitError):
