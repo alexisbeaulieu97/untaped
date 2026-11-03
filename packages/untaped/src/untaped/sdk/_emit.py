@@ -22,6 +22,7 @@ from untaped.sdk._rows import (
     _rows_kind,
     _validate_kind,
 )
+from untaped.sdk._run import note_printed
 from untaped.sdk._ui import Ui
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import OperationCancelledError
@@ -34,6 +35,7 @@ def echo(message: object = "", *, nl: bool = True) -> None:
     Each message is flushed, so lines a command prints as it goes stream
     through a pipe.
     """
+    note_printed()
     print(message, end="\n" if nl else "", flush=True)
 
 

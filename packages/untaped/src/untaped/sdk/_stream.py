@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pydantic import BaseModel
 
 from untaped.sdk._output import Output, print_rendered
+from untaped.sdk._run import note_printed
 
 if TYPE_CHECKING:
     from untaped.sdk._render import OutputFormat
@@ -31,6 +32,7 @@ class _Stream:
         )
 
         output = self.output
+        note_printed()
         count_failed_actions([record])
         renderer = output.render.get(output.format)
         if output.format == "table" and output._requested is not None:
