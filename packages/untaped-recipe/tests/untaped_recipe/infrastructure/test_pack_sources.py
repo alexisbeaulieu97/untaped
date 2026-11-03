@@ -6,6 +6,7 @@ import os
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -30,7 +31,14 @@ def remote(tmp_path: Path) -> GitRemote:
     return remote
 
 
-_EPOCH = "2000-01-01T00:00:00Z"
+_FIXED = {
+    "GIT_AUTHOR_NAME": "Test",
+    "GIT_AUTHOR_EMAIL": "test@example.invalid",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z",
+    "GIT_COMMITTER_NAME": "Test",
+    "GIT_COMMITTER_EMAIL": "test@example.invalid",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z",
+}
 
 
 def _store(url: str, plugin: str = "recipe") -> RepoStore:
@@ -309,15 +317,15 @@ def test_an_annotated_tag_object_id_resolves_to_its_commit(
 def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
     remote: GitRemote, tmp_path: Path
 ) -> None:
-    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
-    parent = remote.oid("main")
-    tree = f"{parent}^{{tree}}"
+    tree = f"{remote.oid('main')}^{{tree}}"
+    env = {**os.environ, **_FIXED}
+    parent: list[str] = []  # the chain starts at a root commit: its ids repeat run to run
     seen: dict[str, str] = {}
     while True:
         commit = subprocess.run(
-            ["git", *author, f"--git-dir={remote.path}", "commit-tree", tree, "-p", parent],
+            ["git", f"--git-dir={remote.path}", "commit-tree", tree, *parent],
             input=f"commit {len(seen)}\n",
-            env={**os.environ, "GIT_AUTHOR_DATE": _EPOCH, "GIT_COMMITTER_DATE": _EPOCH},
+            env=env,
             capture_output=True,
             text=True,
             check=True,
@@ -325,7 +333,7 @@ def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
         if commit[:4] in seen:
             break
         seen[commit[:4]] = commit
-        parent = commit
+        parent = ["-p", commit]
     subprocess.run(
         ["git", f"--git-dir={remote.path}", "update-ref", "refs/heads/main", commit], check=True
     )
@@ -338,21 +346,17 @@ def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
     assert resolved == commit
 
 
-@pytest.mark.parametrize("cut", [b"abc", b"0123456789"], ids=["inside", "no-newline"])
+@pytest.mark.parametrize("drop", [1, 4], ids=["no-newline", "inside"])
 def test_cut_short_blob_output_is_a_fetch_error(
-    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut: bytes
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, drop: int
 ) -> None:
-    oid = subprocess.run(
-        ["git", f"--git-dir={remote.path}", "rev-parse", "main:pyproject.toml"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    run = Prefetched.run
 
-    def short(self: Prefetched, argv: Sequence[str], **_: object) -> GitResult:
-        return GitResult(returncode=0, stdout=f"{oid} blob 10\n".encode() + cut, stderr="")
+    def cut(self: Prefetched, argv: Sequence[str], **kwargs: Any) -> GitResult:
+        result = run(self, argv, **kwargs)
+        return GitResult(result.returncode, result.stdout[:-drop], result.stderr)
 
-    monkeypatch.setattr(Prefetched, "run", short)
+    monkeypatch.setattr(Prefetched, "run", cut)
 
     with pytest.raises(PackFetchError, match="could not read") as raised:
         fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
