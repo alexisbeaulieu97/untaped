@@ -130,13 +130,15 @@ def _detached(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_detached(item) for item in value]
     if isinstance(value, date):  # datetime and ruamel's TimeStamp are dates too
-        return value
+        # A new object each time: one object written twice becomes an anchor and aliases in
+        # the target. replace(), since a copy drops a ruamel TimeStamp's offset or fraction.
+        return value.replace()
     return plain(value)
 
 
 def _key(key: Any) -> str:
     if isinstance(key, str):
-        return str(key)
+        return key
     found: str = next(iter(plain({key: None})))
     return found
 

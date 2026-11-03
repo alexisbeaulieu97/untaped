@@ -339,3 +339,30 @@ def test_an_empty_mapping_the_merge_creates_is_taken_back(tmp_path: Path) -> Non
     assert json.loads(path.read_text()) == {"keep": 1, "a": {}}
     placer.unmerge(path, fmt="json", managed=managed)
     assert json.loads(path.read_text()) == {"keep": 1}
+
+
+def test_an_aliased_yaml_date_is_written_as_plain_dates(tmp_path: Path) -> None:
+    target = tmp_path / "t.yaml"
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    source = (
+        b"a: &d 2001-12-14\nb: *d\nc: [*d]\nd: {e: *d}\nt: &t 2001-12-14t21:59:43.10-05:00\nu: *t\n"
+    )
+    placer.merge(source, target, fmt="yaml")
+    assert target.read_text() == (
+        "a: 2001-12-14\nb: 2001-12-14\nc:\n- 2001-12-14\nd:\n  e: 2001-12-14\n"
+        "t: 2001-12-14T21:59:43.100000-05:00\nu: 2001-12-14T21:59:43.100000-05:00\n"
+    )
+
+
+def test_a_nested_empty_source_mapping_leaves_the_targets_keys_under_it(tmp_path: Path) -> None:
+    path = tmp_path / "t.yaml"
+    path.write_text("a:\n  b:\n    x: 1\n  keep: 2\n")
+    placer = FilesystemPlacer(home=tmp_path, kept_dir=tmp_path / "kept")
+    target_hash, managed = placer.merge(b"a: {b: {}}\n", path, fmt="yaml")
+    assert managed == (("a", "b"),)
+    path.write_text(path.read_text().replace("x: 1", "x: 3"))
+    assert placer.observe(path, fmt="yaml", managed=managed).hash == target_hash
+    placer.unmerge(path, fmt="yaml", managed=managed)
+    assert load_document(path.read_text(), fmt="yaml", where="t") == {
+        "a": {"b": {"x": 3}, "keep": 2}
+    }
