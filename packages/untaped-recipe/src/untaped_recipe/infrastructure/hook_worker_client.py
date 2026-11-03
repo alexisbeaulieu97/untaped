@@ -21,6 +21,7 @@ from untaped_recipe.domain.hook_project import UvHookRef
 from untaped_recipe.domain.plan import HookWorkerCallResult
 from untaped_recipe.errors import HookFailedError, RecipeError, UvMissingError
 from untaped_recipe.infrastructure.uv_project import uv_environment
+from untaped_values.api import renderer_file
 
 APPLY_DIAGNOSTIC_LIMIT = 4000
 DEBUG_DIAGNOSTIC_LIMIT = 10 * 1024 * 1024
@@ -450,6 +451,8 @@ class UvHookWorker:
                     # so no engine file can shadow a pack's top-level modules.
                     "-P",
                     str(worker_path),
+                    # The renderer the worker loads by path, as it loads its siblings.
+                    str(renderer_file().resolve()),
                 ],
                 cwd=self._project_root,
                 env=env,

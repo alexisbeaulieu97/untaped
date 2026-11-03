@@ -153,7 +153,7 @@ class Run(RecipeCommand):
     `./pack/hook` ref; running inside a cloned repo never runs its hooks.
     Without --project a bare NAME is looked up across installed packs, then
     the built-ins. The context (fixture values included) and the hook's
-    warnings go to stderr; --quiet keeps sensitive values out.
+    warnings go to stderr; --quiet keeps secret values out.
 
     Examples
     --------

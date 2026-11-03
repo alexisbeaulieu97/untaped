@@ -1,0 +1,17 @@
+[project]
+name = "untaped-values"
+version = "11.1.0"
+description = "Values plugin for untaped: the inputs a file declares and a person or script answers."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Alexis Beaulieu", email = "alexisbeaulieu97@gmail.com" }]
+requires-python = ">=3.14.1"
+dependencies = ["untaped==11.1.0"]
+
+[project.entry-points."untaped.plugins"]
+values = "untaped_values.plugin:Values"
+
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"

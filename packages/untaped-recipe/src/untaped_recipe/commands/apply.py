@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from untaped.sdk import (
     Confirm,
     Document,
-    ExistingFile,
     Failure,
     KeyValue,
     Matched,
@@ -29,7 +28,6 @@ from untaped.sdk import (
 from untaped_recipe.application import RunBulkApply
 from untaped_recipe.application.apply_recipe import ApplyRecipe
 from untaped_recipe.application.files import read_recipe_file
-from untaped_recipe.application.ports import PromptFunc
 from untaped_recipe.application.resolution import resolve_apply_recipe
 from untaped_recipe.application.run_bulk import resolve_targets
 from untaped_recipe.application.targets import Target, target_of
@@ -37,7 +35,6 @@ from untaped_recipe.commands._recipe import (
     RECIPE_REF,
     Hooks,
     RecipeCommand,
-    merge_vars,
     recipe_errors,
 )
 from untaped_recipe.commands.preview import PlanCounts, PreviewMode, preview_items
@@ -47,12 +44,14 @@ from untaped_recipe.errors import RecipeError
 from untaped_recipe.infrastructure.backup import BackupDraft
 from untaped_recipe.infrastructure.file_writer import ApplyWriteError, flush_changes
 from untaped_recipe.records import ApplyOutcome
+from untaped_values.api import Vars, terminal_ask
 
 
 class Inputs(BaseModel):
-    """Where each recipe input's value comes from, how values are parsed, and when it prompts.
+    """Where a recipe input's value comes from, and values derived per target.
 
-    Read before passing inputs to `recipe apply`.
+    Read before passing inputs to `recipe apply`; how values are given,
+    parsed and asked: `untaped docs values guides vars`.
 
     ## Where a value comes from
 
@@ -62,18 +61,11 @@ class Inputs(BaseModel):
     2. the recipe's `from` candidates;
     3. the recipe's `default`;
     4. a prompt, for a required input only;
-    5. otherwise a `missing required input` error.
+    5. otherwise a `missing required input` error, naming every missing
+       input at once.
 
-    An input name the recipe doesn't declare is rejected. `untaped recipe get
-    REF` lists a recipe's inputs.
-
-    ## How values are parsed
-
-    - `--var` parses its value as YAML only for inputs declared `list` or
-      `dict` (`--var 'cols=[name, owner]'`); a scalar input takes the literal
-      string.
-    - `--vars-file` values are YAML, so `3.10` becomes `3.1`: quote
-      version-like strings.
+    `untaped recipe get REF` lists a recipe's inputs; an input not declared
+    `required: true` and with no default is left unset.
 
     ## Values per target
 
@@ -95,34 +87,17 @@ class Inputs(BaseModel):
 
     ## Prompts
 
-    Only a required input with no value prompts, and only when stdin is a
-    terminal; a sensitive input prompts hidden, and `list`/`dict` inputs never
-    prompt. Prompts run in target order before planning starts.
-
-    With no terminal (piped `--stdin` included), `--non-interactive` or
-    `--check`, a missing input fails with `missing required input: NAME`: a
-    global input fails the run, a target input fails that target's row.
+    Prompts run in target order before planning starts, and never under
+    `--check`. With no terminal (piped `--stdin` included), `--non-interactive`
+    or `--check`, a missing input fails with `missing required input: NAME`
+    (`missing required inputs: A, B` for several): a global input fails the
+    run, a target input fails that target's row.
     """
 
-    var: list[KeyValue] = Field(
-        default_factory=list,
-        description="Input value as KEY=VALUE (repeatable; wins over --vars-file).",
-    )
-    vars_file: list[ExistingFile] = Field(
-        default_factory=list,
-        description="YAML mapping of input values (repeatable; later files win).",
-    )
     input_from: list[KeyValue] = Field(
         default_factory=list,
         description="Derive one input from a per-target Jinja expression as KEY=TEMPLATE.",
     )
-    non_interactive: bool = Field(
-        False, description="Fail on missing required inputs instead of prompting on a terminal."
-    )
-
-    def values(self) -> dict[str, object]:
-        """The ``--vars-file`` mappings in order, then ``--var`` pairs over them."""
-        return merge_vars(self.vars_file, dict(self.var), flag="--vars-file")
 
 
 @dataclass
@@ -162,7 +137,7 @@ class Apply(RecipeCommand):
     kind, line counts). Past `recipe.preview_max_rows` it collapses to one row
     per target, then truncates with `showing first N of M targets`; --preview
     diff prints unified diffs that `patch` accepts, the only full view then.
-    Targets that resolve a sensitive input show no file detail or diff, and
+    Targets that resolve a secret input show no file detail or diff, and
     the value appears as `***` in rows, warnings, errors and backup
     metadata; templates and hooks still get the real value, so the written
     files can hold it.
@@ -203,6 +178,7 @@ class Apply(RecipeCommand):
     dirs: Positional[list[Path]] = Field(default_factory=list, description="Target directories.")
     recipe: str | None = Field(None, description="Recipe name when applying a local pack path.")
     stdin: Stdin[Record]
+    vars: Vars = Field(default_factory=Vars)
     inputs: Inputs = Field(default_factory=Inputs)
     hooks: Hooks = Field(default_factory=Hooks)
     check: bool = Field(
@@ -272,9 +248,10 @@ class Apply(RecipeCommand):
         resolved = resolve_targets(
             loaded,
             targets,
-            inputs=self.inputs.values(),
+            inputs=self.vars.values(),
             input_from={name: template for name, template in self.inputs.input_from},
-            prompt=self._prompt(),
+            # Never under --check, the mode for CI: a missing input then fails with a --var hint.
+            ask=None if self.check else terminal_ask(self.ctx.terminal, self.vars),
         )
         workers = self.parallel.value
         with self.executor(self.hooks, workers=workers) as executor:
@@ -289,22 +266,6 @@ class Apply(RecipeCommand):
                     on_progress=lambda done, total: progress.update(done=done, total=total),
                     on_abort=executor.stop,
                 )
-
-    def _prompt(self) -> PromptFunc | None:
-        """Ask for a missing required input on a terminal; ``None`` when nothing may ask.
-
-        Never without a TTY stdin (piped ``--stdin`` included), under
-        ``--non-interactive``, or under ``--check``, the mode for CI: the
-        missing input then fails with a ``--var`` hint.
-        """
-        terminal = self.ctx.terminal
-        if self.inputs.non_interactive or self.check or not terminal.can_prompt:
-            return None
-
-        def ask(message: str, *, sensitive: bool) -> object:
-            return terminal.secret(message) if sensitive else terminal.text(message)
-
-        return ask
 
     def _preview(
         self, loaded: RecipeFile, plans: list[TargetPlan], preview: PreviewMode

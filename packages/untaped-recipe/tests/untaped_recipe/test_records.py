@@ -139,7 +139,7 @@ _CASES: list[tuple[BaseModel, list[str]]] = [
                     required=False,
                     default="acme",
                     description="",
-                    sensitive=False,
+                    secret=False,
                 )
             ],
             steps=[RecipeStep(type="validate", files=[], globs=[], exclude=[], hook="h")],

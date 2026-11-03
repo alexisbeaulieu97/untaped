@@ -26,6 +26,7 @@ EXPECTED_MEMBERS = [
     "untaped-jira",
     "untaped-lint",
     "untaped-recipe",
+    "untaped-values",
     "untaped-workspace",
 ]
 
@@ -148,7 +149,7 @@ def test_dependent_plugins_pin_their_siblings() -> None:
         "dotfiles": ("untaped-git",),
         "github": ("untaped-git", "untaped-workspace"),
         "lint": ("untaped-git",),
-        "recipe": ("untaped-git",),
+        "recipe": ("untaped-git", "untaped-values"),
         "workspace": ("untaped-git",),
     }
     for name, needs in siblings.items():

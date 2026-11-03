@@ -19,8 +19,8 @@ def wide_preview_tables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COLUMNS", "500")
 
 
-def _recipe(*, sensitive: bool = False) -> RecipeFile:
-    inputs = {"token": {"type": "str", "sensitive": True}} if sensitive else {}
+def _recipe(*, secret: bool = False) -> RecipeFile:
+    inputs = {"token": {"type": "str", "secret": True}} if secret else {}
     return RecipeFile.model_validate({"version": 1, "inputs": inputs, "steps": []})
 
 
@@ -154,28 +154,28 @@ def test_table_preview_tier_three_truncates_target_rows(
     assert "showing first 2 of 3 targets (use --preview diff for full detail)" in stderr
 
 
-def test_table_preview_keeps_sensitive_and_error_tables_when_collapsed(
+def test_table_preview_keeps_secret_and_error_tables_when_collapsed(
     tmp_path: Path,
 ) -> None:
     normal = tmp_path / "normal"
-    sensitive = tmp_path / "sensitive"
+    secret = tmp_path / "secret"
     error = tmp_path / "error"
     plans = [
         _plan(normal, _change(normal, "first.txt", after="one\n")),
         _plan(normal, _change(normal, "second.txt", after="two\n")),
         _plan(
-            sensitive,
-            _change(sensitive, "secret.txt", after="token\n"),
+            secret,
+            _change(secret, "secret.txt", after="token\n"),
             display_inputs={"token": "***"},
         ),
         TargetPlan(target=error, status="error", error="failed planning"),
     ]
 
-    shown = _preview(_recipe(sensitive=True), plans, preview="table", preview_max_rows=1)
+    shown = _preview(_recipe(secret=True), plans, preview="table", preview_max_rows=1)
 
     stderr = shown
     assert "files_changed" in stderr
-    assert str(sensitive) in stderr
+    assert str(secret) in stderr
     assert "secret.txt" not in stderr
     assert "failed planning" in stderr
 

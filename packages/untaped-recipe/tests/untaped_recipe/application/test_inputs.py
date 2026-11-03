@@ -10,9 +10,8 @@ from untaped.sdk import UsageError
 from untaped_recipe.application.inputs import (
     InputResolutionConfig,
     InputResolutionResult,
-    has_sensitive_inputs,
+    has_secret_inputs,
     prepare_input_resolution,
-    redact_inputs,
     resolve_global_values,
     resolve_target_inputs,
 )
@@ -20,21 +19,22 @@ from untaped_recipe.application.targets import Target
 from untaped_recipe.domain.input_jinja import InputSourceError
 from untaped_recipe.domain.recipe import RecipeFile
 from untaped_recipe.errors import RecipeError
+from untaped_values.api import Input, InputError
 
 
 class PromptRecorder:
-    """Test prompt backend for input-resolution unit tests."""
+    """An ``Ask`` for input-resolution unit tests: answers by name, records each question."""
 
     def __init__(self, answers: dict[str, str]) -> None:
         self.answers = answers
         self.messages: list[str] = []
 
-    def ask(self, message: str, *, sensitive: bool) -> str:
-        self.messages.append(f"{message}|sensitive={sensitive}")
+    def ask(self, name: str, spec: Input, *, label: str) -> str:
+        self.messages.append(f"{name}|{label}|secret={spec.secret}")
         try:
-            return self.answers[message]
+            return self.answers[name]
         except KeyError as exc:
-            raise AssertionError(f"unexpected prompt: {message}") from exc
+            raise AssertionError(f"unexpected prompt: {name}") from exc
 
 
 def _recipe() -> RecipeFile:
@@ -63,7 +63,7 @@ def _recipe() -> RecipeFile:
                     "scope": "global",
                     "required": True,
                     "description": "API token.",
-                    "sensitive": True,
+                    "secret": True,
                 },
                 "label": {
                     "type": "str",
@@ -86,7 +86,7 @@ def _config(
         recipe,
         fixed_values=fixed_values or {},
         input_from=input_from or {},
-        prompt=None if prompt is None else prompt.ask,
+        ask=None if prompt is None else prompt.ask,
     )
 
 
@@ -276,12 +276,7 @@ def test_interactive_prompts_for_global_and_target_inputs() -> None:
             },
         }
     )
-    prompt = PromptRecorder(
-        {
-            "owner (Owning team.)": "platform",
-            "service for /work/acme/api (Service name.)": "api",
-        }
-    )
+    prompt = PromptRecorder({"owner": "platform", "service": "api"})
 
     result = _resolve(
         recipe,
@@ -291,8 +286,8 @@ def test_interactive_prompts_for_global_and_target_inputs() -> None:
 
     assert result.values == {"owner": "platform", "service": "api"}
     assert prompt.messages == [
-        "owner (Owning team.)|sensitive=False",
-        "service for /work/acme/api (Service name.)|sensitive=False",
+        "owner||secret=False",
+        "service|/work/acme/api|secret=False",
     ]
 
 
@@ -302,7 +297,7 @@ def test_prompting_never_asks_for_defaulted_or_optional_inputs() -> None:
             "version": 1,
             "inputs": {
                 "replicas": {"type": "int", "default": 2},
-                "token": {"type": "str", "scope": "global", "sensitive": True, "default": "x"},
+                "token": {"type": "str", "scope": "global", "secret": True, "default": "x"},
                 "cols": {"type": "list", "default": ["name", "path"]},
                 "label": {"type": "str"},
                 "tags": {"type": "list"},
@@ -321,12 +316,12 @@ def test_prompting_never_asks_for_defaulted_or_optional_inputs() -> None:
     assert prompt.messages == []
 
 
-def test_required_sensitive_input_prompts_as_a_secret() -> None:
+def test_required_secret_input_prompts_as_a_secret() -> None:
     recipe = RecipeFile.model_validate(
         {
             "version": 1,
             "inputs": {
-                "token": {"type": "str", "scope": "global", "sensitive": True, "required": True}
+                "token": {"type": "str", "scope": "global", "secret": True, "required": True}
             },
         }
     )
@@ -340,7 +335,7 @@ def test_required_sensitive_input_prompts_as_a_secret() -> None:
 
     assert result.values == {"token": "s3cret"}
     assert result.display_values == {"token": "***"}
-    assert prompt.messages == ["token|sensitive=True"]
+    assert prompt.messages == ["token||secret=True"]
 
 
 def test_missing_required_structured_input_never_prompts() -> None:
@@ -455,9 +450,23 @@ def test_jinja_allows_scalar_literals_and_target_record_field_access() -> None:
         pytest.param(
             {"type": "list", "from": "{{ record.value }}"},
             {"value": [["nested"]]},
-            ValueError,
+            InputError,
             "cannot coerce value to list",
             id="structured-rejects-nesting",
+        ),
+        pytest.param(
+            {"type": "list", "from": "{{ record.value }}"},
+            {"value": "[api, web]"},
+            InputError,
+            "cannot coerce value to list",
+            id="derived-text-is-not-parsed-as-a-list",
+        ),
+        pytest.param(
+            {"type": "dict", "from": "{{ record.value }}"},
+            {"value": "{team: core}"},
+            InputError,
+            "cannot coerce value to dict",
+            id="derived-text-is-not-parsed-as-a-mapping",
         ),
     ],
 )
@@ -510,13 +519,6 @@ def test_fixed_values_are_coerced_once_during_input_preparation() -> None:
     assert config.fixed_values == {"replicas": 3}
 
 
-def test_has_sensitive_inputs_detects_declared_sensitive_display_values() -> None:
-    assert has_sensitive_inputs(_recipe().inputs, {"token": "***"})
-    assert not has_sensitive_inputs(_recipe().inputs, {"service": "api"})
-
-
-def test_redact_inputs_only_redacts_sensitive_declared_inputs() -> None:
-    assert redact_inputs(_recipe().inputs, {"service": "api", "token": "secret"}) == {
-        "service": "api",
-        "token": "***",
-    }
+def test_has_secret_inputs_detects_declared_secret_display_values() -> None:
+    assert has_secret_inputs(_recipe().inputs, {"token": "***"})
+    assert not has_secret_inputs(_recipe().inputs, {"service": "api"})

@@ -39,6 +39,7 @@ from untaped_recipe.infrastructure.hook_worker_client import (
     UvHookWorkerPool,
 )
 from untaped_recipe.infrastructure.pack_files import read_hook_project
+from untaped_values.api import renderer_file
 
 
 def _write_hook_project(
@@ -737,7 +738,7 @@ def _run_worker_script(
         path.write_text(source)
     worker = Path(__file__).parents[3] / "src/untaped_recipe/_worker/hook_worker.py"
     proc = subprocess.run(
-        [sys.executable, str(worker)],
+        [sys.executable, str(worker), str(renderer_file())],
         cwd=tmp_path,
         env={"PYTHONPATH": str(tmp_path / "src")},
         input=json.dumps({"id": "1", "target": str(tmp_path), "args": {}, **request}) + "\n",
@@ -782,6 +783,29 @@ def test_worker_script_executes_hooks_and_redirects_prints_to_stderr(tmp_path: P
     }
     assert "diagnostic from import" in stderr
     assert "diagnostic from hook" in stderr
+
+
+def test_worker_script_renders_through_the_values_renderer_file(tmp_path: Path) -> None:
+    response, _ = _run_worker_script(
+        tmp_path,
+        {
+            "worker_hooks/sample.py": (
+                "import sys\n"
+                "def transform(content, *, inputs, target, file, args, helpers):\n"
+                "    loaded = [m for m in sys.modules if m.endswith('renderer')]\n"
+                "    return helpers.render_template(content, inputs) + ' ' + ','.join(loaded)\n"
+            )
+        },
+        {
+            "kind": "transform",
+            "module": "worker_hooks.sample",
+            "content": "owner={{ owner }}",
+            "inputs": {"owner": "platform"},
+            "file": str(tmp_path / "local.yml"),
+        },
+    )
+
+    assert response["result"] == "owner=platform _untaped_recipe_worker_renderer"
 
 
 def test_worker_script_prefers_cli_sibling_modules_over_hook_env_package(tmp_path: Path) -> None:

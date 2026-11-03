@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import traceback
-
 import pytest
 from pydantic import ValidationError
 
@@ -16,6 +14,7 @@ from untaped_recipe.domain.recipe import (
     TransformStep,
     ValidateStep,
 )
+from untaped_values.api import Input, coerce
 
 
 def test_recipe_schema_accepts_all_v1_step_types() -> None:
@@ -119,77 +118,21 @@ def test_recipe_rejects_unknown_version_and_step_type() -> None:
         )
 
 
-_INT_LIST = {"type": "list", "items": "int"}
-_INT_DICT = {"type": "dict", "values": "int"}
+def test_input_spec_is_the_values_input_with_recipes_own_fields() -> None:
+    spec = InputSpec.model_validate({"type": "int", "default": "3"})
+
+    assert isinstance(spec, Input)
+    assert coerce(spec, "4") == 4
 
 
-@pytest.mark.parametrize(
-    ("spec", "value", "expected"),
-    [
-        ({"type": "str"}, "api", "api"),
-        ({"type": "int"}, "3", 3),
-        ({"type": "bool"}, "false", False),
-        ({"type": "float"}, "2.25", 2.25),
-        (_INT_LIST, ["1", 2], [1, 2]),
-        (_INT_LIST, (), []),
-        (
-            {"type": "dict", "values": "bool"},
-            {"on": "true", "off": False},
-            {"on": True, "off": False},
-        ),
-        ({"type": "dict", "values": "bool"}, {}, {}),
-        # Structured shapes default to string elements.
-        ({"type": "list"}, [1, "api"], ["1", "api"]),
-        ({"type": "dict"}, {"replicas": 3}, {"replicas": "3"}),
-    ],
-)
-def test_input_spec_coerces_declared_types(
-    spec: dict[str, object], value: object, expected: object
-) -> None:
-    assert InputSpec.model_validate(spec).coerce(value) == expected
+def test_input_spec_rejects_a_required_input_with_a_default() -> None:
+    with pytest.raises(ValidationError, match="required input cannot declare a default"):
+        InputSpec.model_validate({"type": "str", "required": True, "default": "x"})
 
 
-@pytest.mark.parametrize(
-    ("spec", "value", "match"),
-    [
-        (_INT_LIST, "not-a-list", "cannot coerce value to list"),
-        (_INT_LIST, ["not-an-int"], "cannot coerce value to list"),
-        (_INT_LIST, [["nested"]], "cannot coerce value to list"),
-        (_INT_DICT, "not-a-dict", "cannot coerce value to dict"),
-        (_INT_DICT, {1: "2"}, "dict input keys must be strings"),
-        (_INT_DICT, {"replicas": "not-an-int"}, "cannot coerce value to dict"),
-    ],
-)
-def test_input_spec_structured_coercion_errors_use_pinned_messages(
-    spec: dict[str, object], value: object, match: str
-) -> None:
-    with pytest.raises(ValueError, match=match):
-        InputSpec.model_validate(spec).coerce(value)
-
-
-def test_input_spec_rejects_invalid_structured_shape_metadata() -> None:
-    with pytest.raises(ValidationError, match="items is only valid with type list"):
-        InputSpec.model_validate({"type": "str", "items": "int"})
-
-    with pytest.raises(ValidationError, match="values is only valid with type dict"):
-        InputSpec.model_validate({"type": "str", "values": "int"})
-
-
-@pytest.mark.parametrize("input_type", ["int", "float", "bool"])
-def test_input_spec_coercion_errors_do_not_echo_values(input_type: str) -> None:
-    secret = "TOP-SECRET-9000"
-
-    with pytest.raises(ValueError, match=f"cannot coerce value to {input_type}") as excinfo:
-        InputSpec(type=input_type).coerce(secret)  # type: ignore[arg-type]
-
-    assert secret not in str(excinfo.value)
-    assert secret not in "".join(
-        traceback.format_exception(
-            type(excinfo.value),
-            excinfo.value,
-            excinfo.value.__traceback__,
-        )
-    )
+def test_input_spec_refuses_the_old_sensitive_spelling() -> None:
+    with pytest.raises(ValidationError, match="sensitive"):
+        InputSpec.model_validate({"type": "str", "sensitive": True})
 
 
 def test_input_spec_supports_metadata_scope_and_from_fallbacks() -> None:
@@ -199,14 +142,14 @@ def test_input_spec_supports_metadata_scope_and_from_fallbacks() -> None:
             "description": "Service name.",
             "required": True,
             "from": ["{{ record.repo }}", "{{ target.name }}"],
-            "sensitive": True,
+            "secret": True,
         }
     )
 
     assert spec.description == "Service name."
     assert spec.scope == "target"
     assert spec.from_ == ("{{ record.repo }}", "{{ target.name }}")
-    assert spec.sensitive is True
+    assert spec.secret is True
     assert InputSpec.model_validate({"type": "str"}).scope == "global"
 
 

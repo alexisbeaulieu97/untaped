@@ -21,7 +21,7 @@ each package directory instead (one line, so it pastes unchanged in bash and
 PowerShell):
 
 ```
-uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-git" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-lint" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
+uv tool install --force "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-ansible" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-awx" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-dotfiles" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-git" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-github" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-jira" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-lint" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-recipe" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-values" --with "git+https://github.com/alexisbeaulieu97/untaped#subdirectory=packages/untaped-workspace"
 ```
 
 To pick a ref, put `@<branch-or-sha>` before `#subdirectory=` in each URL.
@@ -520,6 +520,10 @@ is a provider; the docs never say "adapter plugin".)
 
 **Detection**: how a plugin finds out which server version it talks to (not
 "probe", which `OnlineCheck(probe=)` already names).
+
+**Input**: a value a file declares and whoever runs it gives, by `--var`,
+`--vars-file` or an answer at a prompt; the values plugin's `Input`. A
+secret input is never placed in a path, a target or a command line.
 
 **Setting**: one value a user tunes, named `section.key`, set in a profile or
 by an `UNTAPED_*` environment variable.

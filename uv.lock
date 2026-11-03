@@ -17,6 +17,7 @@ members = [
     "untaped-jira",
     "untaped-lint",
     "untaped-recipe",
+    "untaped-values",
     "untaped-workspace",
 ]
 
@@ -817,6 +818,7 @@ all = [
     { name = "untaped-jira" },
     { name = "untaped-lint" },
     { name = "untaped-recipe" },
+    { name = "untaped-values" },
     { name = "untaped-workspace" },
 ]
 ansible = [
@@ -842,6 +844,9 @@ lint = [
 ]
 recipe = [
     { name = "untaped-recipe" },
+]
+values = [
+    { name = "untaped-values" },
 ]
 workspace = [
     { name = "untaped-workspace" },
@@ -877,10 +882,12 @@ requires-dist = [
     { name = "untaped-lint", marker = "extra == 'lint'", editable = "packages/untaped-lint" },
     { name = "untaped-recipe", marker = "extra == 'all'", editable = "packages/untaped-recipe" },
     { name = "untaped-recipe", marker = "extra == 'recipe'", editable = "packages/untaped-recipe" },
+    { name = "untaped-values", marker = "extra == 'all'", editable = "packages/untaped-values" },
+    { name = "untaped-values", marker = "extra == 'values'", editable = "packages/untaped-values" },
     { name = "untaped-workspace", marker = "extra == 'all'", editable = "packages/untaped-workspace" },
     { name = "untaped-workspace", marker = "extra == 'workspace'", editable = "packages/untaped-workspace" },
 ]
-provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira", "lint", "recipe", "workspace"]
+provides-extras = ["all", "ansible", "awx", "dotfiles", "git", "github", "jira", "lint", "recipe", "values", "workspace"]
 
 [[package]]
 name = "untaped-ansible"
@@ -998,6 +1005,7 @@ dependencies = [
     { name = "tomlkit" },
     { name = "untaped" },
     { name = "untaped-git" },
+    { name = "untaped-values" },
 ]
 
 [package.metadata]
@@ -1006,7 +1014,19 @@ requires-dist = [
     { name = "tomlkit", specifier = ">=0.13,<1" },
     { name = "untaped", editable = "packages/untaped" },
     { name = "untaped-git", editable = "packages/untaped-git" },
+    { name = "untaped-values", editable = "packages/untaped-values" },
 ]
+
+[[package]]
+name = "untaped-values"
+version = "11.1.0"
+source = { editable = "packages/untaped-values" }
+dependencies = [
+    { name = "untaped" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "untaped", editable = "packages/untaped" }]
 
 [[package]]
 name = "untaped-workspace"
