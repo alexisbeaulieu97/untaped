@@ -324,7 +324,7 @@ class SettingsFileRepository:
         own; writing or removing the key removes every old spelling in the
         target profile, each reported to ``on_spelling_removed``. For an entry
         of a map, those are the map's. Removing a key or entry that isn't set
-        (a run reads it from nowhere in the target, even as null) changes
+        (no run reads it from the target, not even as null) changes
         nothing, and leaves its retired spellings for ``config migrate``.
         """
         return self.update_values(
@@ -370,6 +370,7 @@ class SettingsFileRepository:
             nonlocal resolved
             target_data, written = self._write_target(data, profile)
             resolved = written
+            untouched: set[str] = set()
             targets = {
                 key: (data, DEFAULT_PROFILE) if key in based else (target_data, written)
                 for key in updates
@@ -382,9 +383,13 @@ class SettingsFileRepository:
                 changed = self._write(
                     where, descriptor, value, on_spelling_removed, remove=raw_value is None
                 )
-                if not changed and on_unchanged is not None:
-                    on_unchanged(key)
+                if not changed:
+                    untouched.add(key)
+                    if on_unchanged is not None:
+                        on_unchanged(key)
             for key, descriptor in descriptors.items():
+                if key in untouched:
+                    continue  # a removal that changed nothing has nothing to validate or blame
                 # A key sent to the base is read under the profile the others land in too.
                 for reader in dict.fromkeys((targets[key][1], written)):
                     try:
@@ -482,9 +487,6 @@ class SettingsFileRepository:
         the map a run reads (:meth:`_holder`). A retired spelling is no one's.
         """
         declared = self._declared(descriptor)
-        if self.section_model(declared.path[0]) is None:
-            # Outside any settings section: no old spellings, only its own path.
-            return _has(data, descriptor.path)
         holder = self._holder(data, declared)
         if holder is None:
             return False
@@ -511,8 +513,11 @@ class SettingsFileRepository:
         """
         section = declared.path[0]
         model = self.section_model(section)
+        if model is None:
+            # Outside any settings section: no old spellings, only its own path.
+            return declared.path if _has(data, declared.path) else None
         section_data = data.get(section)
-        if model is None or not isinstance(section_data, Mapping):
+        if not isinstance(section_data, Mapping):
             return None
         spelled = read_spelling(model, _relative(declared), section_data)
         return None if spelled is None else (section, *spelled.split("."))
@@ -525,7 +530,7 @@ class SettingsFileRepository:
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
     ) -> tuple[bool, str]:
-        """Remove ``key``, and every old spelling of it, from the resolved write scope.
+        """Remove ``key``, and every old spelling of it, from the resolved write scope, when set.
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit

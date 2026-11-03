@@ -275,3 +275,10 @@ def test_removing_a_null_a_run_reads_is_a_change(_config: Path) -> None:
         ("success", "unset spelled.size in profile default; removed spelled.a_size"),
     )
     assert not read_config_dict(_config).get("spelled")
+
+
+def test_removing_a_key_under_a_null_section_changes_nothing(_config: Path) -> None:
+    """Nothing is set under a null section, so nothing is validated or blamed either."""
+    _config.write_text("format_version: 2\nspelled: null\n", encoding="utf-8")
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.size": None})
+    assert change.outcome.action == "unchanged"

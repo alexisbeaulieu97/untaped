@@ -272,7 +272,7 @@ class PlannedSettings:
         )
         self._lines = [
             *(
-                self._line(repo_now, key, value, landed[key], had=key not in unchanged)
+                self._line(repo_now, key, value, landed[key], removes=key not in unchanged)
                 for key, value in self._changes.items()
             ),
             *(f"remove {old}, an old spelling{_landed(landed)}" for old in removed),
@@ -291,10 +291,10 @@ class PlannedSettings:
         return {key: updater(key, value) for key, value in self._changes.items()}
 
     @staticmethod
-    def _line(repo: SettingsWriter, key: str, value: object, target: str, *, had: bool) -> str:
+    def _line(repo: SettingsWriter, key: str, value: object, target: str, *, removes: bool) -> str:
         where = _where(target)
         if value is None:
-            return f"unset {key} in {where}" if had else f"{key} is not set in {where}"
+            return f"unset {key} in {where}" if removes else f"{key} is not set in {where}"
         descriptor = repo.descriptor(key)
         shown = (
             "***"
