@@ -249,11 +249,7 @@ def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
 
 def test_input_resolution_rejects_input_from_for_explicit_global_scope() -> None:
     with pytest.raises(UsageError, match="scope global"):
-        _config(
-            _recipe(),
-            fixed_values={"token": "secret"},
-            input_from={"token": "{{ target.name }}"},
-        )
+        _config(_recipe(), input_from={"token": "{{ target.name }}"})
 
 
 def test_input_from_naming_undeclared_inputs_is_a_usage_error_like_var() -> None:

@@ -60,9 +60,17 @@ def prepare_input_resolution(
     one fails the whole run before any target, and a name the recipe doesn't
     declare is refused.
     """
-    _validate_input_from(recipe, fixed_values=fixed_values, input_from=input_from)
+    conflicts = sorted(set(fixed_values) & set(input_from))
+    if conflicts:
+        raise UsageError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
     given = {name: spec for name, spec in recipe.inputs.items() if name in fixed_values}
-    typed_fixed_values = resolve(given, [fixed_values], known=recipe.inputs).values
+    # Values refuses a name the recipe doesn't declare, from either flag. No
+    # --input-from name is in ``given`` (conflicts are refused), so its
+    # expression text is never converted.
+    typed_fixed_values = resolve(given, [fixed_values, input_from], known=recipe.inputs).values
+    for name in input_from:
+        if recipe.inputs[name].scope == "global":
+            raise UsageError(f"cannot use --input-from for input {name!r} with scope global")
     cli_sources = {name: _compile_cli_source(name, text) for name, text in input_from.items()}
     recipe_sources = {
         name: _compile_named_source(name, spec.from_)
@@ -177,22 +185,6 @@ def _missing_message(missing: tuple[str, ...]) -> str:
         return f"missing required input: {name}; pass --var {name}=VALUE or --vars-file FILE"
     names = ", ".join(missing)
     return f"missing required inputs: {names}; pass --var NAME=VALUE or --vars-file FILE"
-
-
-def _validate_input_from(
-    recipe: RecipeFile,
-    *,
-    fixed_values: Mapping[str, object],
-    input_from: Mapping[str, str],
-) -> None:
-    # Values refuses the names the recipe doesn't declare, in the same words as --var.
-    resolve({}, [input_from], known=recipe.inputs)
-    for name in input_from:
-        if recipe.inputs[name].scope == "global":
-            raise UsageError(f"cannot use --input-from for input {name!r} with scope global")
-    conflicts = sorted(set(fixed_values) & set(input_from))
-    if conflicts:
-        raise UsageError(f"cannot combine --var/--vars-file and --input-from for {conflicts[0]}")
 
 
 def _compile_cli_source(name: str, text: str) -> CompiledInputSource:

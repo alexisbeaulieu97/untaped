@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from untaped.sdk import not_found, plural, q
+from untaped.sdk import UsageError, not_found, plural, q
 from untaped_recipe.application.ports import PackLibraryPort
 from untaped_recipe.domain.pack import InstalledPack, RecipeEntry, parse_ref
 from untaped_recipe.domain.paths import is_path_ref
@@ -80,7 +80,7 @@ def resolve_apply_recipe(
     """Resolve an apply ref: explicit path, pack path + --recipe, or library ref."""
     if recipe_id is not None:
         if not is_explicit_recipe_path(ref_text):
-            raise ValueError("--recipe requires an explicit pack path")
+            raise UsageError("--recipe requires an explicit pack path")
         return resolve_explicit_recipe(library, Path(ref_text).expanduser(), recipe_id=recipe_id)
     if is_explicit_recipe_path(ref_text):
         try:
