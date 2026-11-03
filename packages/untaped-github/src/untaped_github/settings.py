@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from untaped.sdk.health import Retired, Suggest
 from untaped.sdk.network import Credential, CredentialKey, TlsVerify
 from untaped.sdk.storage import Cache
+from untaped_github.version import GithubVersion
 
 #: The GitHub CLI's token variables, in its order.
 _TOKEN_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
@@ -113,6 +114,13 @@ class GithubSettings(BaseModel):
             "How `sweep`, `cache sync` and any plugin that names repos through "
             "git's `RepoSource` fetch repos on the GitHub host: `https` or `ssh` "
             "(`git@HOST:OWNER/NAME.git`, with your own SSH keys)."
+        ),
+    )
+    server_version: GithubVersion | None = Field(
+        default=None,
+        description=(
+            "Which GitHub the server runs, instead of detecting it: `github.com` or "
+            "`GitHub Enterprise Server 3.14.2`."
         ),
     )
     sweep: SweepSettings = Field(default_factory=SweepSettings)

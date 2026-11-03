@@ -25,8 +25,8 @@ from untaped_github.application.scopes import normalize_team_scopes
 from untaped_github.domain.errors import github_failures
 from untaped_github.domain.hosts import github_web_host
 from untaped_github.errors import GithubError
-from untaped_github.infrastructure.github_client import GithubClient
 from untaped_github.records import Repo
+from untaped_github.server import github_api
 from untaped_github.settings import GithubSettings
 
 
@@ -71,8 +71,8 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
     def repos(self) -> list[GitRepo]:
         settings = self.settings
         scope = inventory_scope(settings)
-        with GithubClient(settings, http=self.ctx.http) as client, github_failures():
-            rows = ResolveRepositoryInventory(client)(scope)
+        with github_failures():
+            rows = ResolveRepositoryInventory(github_api(settings))(scope)
         return [self.to_repo(row) for row in rows]
 
 

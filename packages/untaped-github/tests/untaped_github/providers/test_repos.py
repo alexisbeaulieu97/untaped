@@ -403,7 +403,11 @@ def test_a_bare_team_resolves_against_the_single_inventory_org() -> None:
 
 
 def test_github_enterprise_lists_from_its_own_api() -> None:
-    configure(base_url="https://ghe.example.com/api/v3", inventory={"orgs": ["acme"]})
+    configure(
+        base_url="https://ghe.example.com/api/v3",
+        server_version="GitHub Enterprise Server 3.14.2",
+        inventory={"orgs": ["acme"]},
+    )
     rows = [{"full_name": "acme/api", "clone_url": "https://ghe.example.com/acme/api.git"}]
 
     with respx.mock(base_url="https://ghe.example.com/api/v3") as mock:

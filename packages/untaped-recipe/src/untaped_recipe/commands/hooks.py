@@ -211,7 +211,7 @@ class Run(RecipeCommand):
                     f"hook {name!r} exports both transform() and validate(); pass --kind or --file"
                 ) from exc
             if verb == "validate" and self.diff:
-                raise UsageError("validate hooks do not accept --file or content options")
+                raise UsageError("validate hooks do not accept --diff")
             RunHook.validate_context(
                 kind=verb,
                 target=self.target,

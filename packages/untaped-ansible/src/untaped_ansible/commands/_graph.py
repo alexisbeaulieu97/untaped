@@ -14,7 +14,6 @@ built in :mod:`untaped_ansible.commands._graph_build`.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NamedTuple
@@ -49,7 +48,7 @@ from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
 from untaped_ansible.refresh import GIT_PARALLEL_CAP, Backend, serve_sources
 from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, alias_map
-from untaped_github.api import GithubClient, GithubSettings
+from untaped_github.api import GithubSettings, github_api
 
 CommandName = Literal["graph", "deps", "impact", "find"]
 
@@ -88,9 +87,7 @@ class GraphCommand(AnsibleCommand):
 
     # -- the source -------------------------------------------------------------
 
-    def env(
-        self, stack: ExitStack, *, command: CommandName, live: bool, all_refs: bool
-    ) -> GraphEnv:
+    def env(self, *, command: CommandName, live: bool, all_refs: bool) -> GraphEnv:
         """Resolve settings and the selected source into what every root's build shares.
 
         Nothing is refreshed yet (see :meth:`answer`), so arguments can be
@@ -147,8 +144,7 @@ class GraphCommand(AnsibleCommand):
             depth=parse_depth(self.depth),
             all_refs=all_refs,
             live_reads=LiveReads(
-                stack,
-                open_client=lambda: GithubClient(github, http=self.ctx.http),
+                lambda: github_api(github),
                 wrapped=index,
                 aliases=aliases,
                 settings=settings,

@@ -151,6 +151,9 @@ command) is marked with `@experimental` in the code and listed here, not in a
 - Server APIs: `ServerApi`, `ApiAdapter`, `ApiMismatch`, `ServerVersion` and
   `Release` in `untaped.sdk.network`, which keep a plugin's commands
   independent of the API version its server runs.
+- `HttpFactory` in `untaped.sdk.network`: what `self.ctx.http` and `http_of`
+  return, which builds a plugin's HTTP clients and gives untaped's proxy and
+  trust, while the HTTP client's place outside core is designed.
 
 ## Names plugins use
 

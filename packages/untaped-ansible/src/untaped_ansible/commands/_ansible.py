@@ -52,7 +52,6 @@ class AnsibleCommand(Command[AnsibleSettings]):
             aliases=alias_map(),
             settings=self.settings,
             github_settings=self.github,
-            http=self.ctx.http,
             plugin=self.ctx.plugin,
             warn=self.ctx.diag.warning,
             concurrency=parallel,

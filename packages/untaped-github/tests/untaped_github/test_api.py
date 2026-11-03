@@ -1,7 +1,7 @@
 """The closed surface of github's public ``api`` module.
 
 Proves ``untaped_github.api`` exports exactly the pinned names,
-each identical to its canonical implementation, plus the client signatures
+each identical to its canonical implementation, plus the port signatures
 ansible calls. The rest of their behaviour is tested with the owning modules;
 other plugins read github's repos through git's ``RepoSource`` (``providers/test_repos.py``),
 never through this module.
@@ -12,13 +12,16 @@ from __future__ import annotations
 import inspect
 from typing import Any
 
+import httpx
+import respx
+
 import untaped.sdk as sdk
 from github_test_support import Settings, installed
-from untaped_github import api as github_api
+from untaped_github import api as module
 from untaped_github.api import (
     BatchRepoRefsFailure,
     BatchRepoRefsResult,
-    GithubClient,
+    GithubApi,
     GithubGraphqlError,
     GithubGraphqlErrorKind,
     GithubSettings,
@@ -27,6 +30,7 @@ from untaped_github.api import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
     TeamScope,
+    github_api,
     github_settings,
     github_web_host,
     is_global_github_failure,
@@ -37,7 +41,7 @@ from untaped_github.api import (
 EXPECTED_ALL = [
     "BatchRepoRefsFailure",
     "BatchRepoRefsResult",
-    "GithubClient",
+    "GithubApi",
     "GithubGraphqlError",
     "GithubGraphqlErrorKind",
     "GithubSettings",
@@ -46,6 +50,7 @@ EXPECTED_ALL = [
     "RepositoryInventoryScope",
     "ResolveRepositoryInventory",
     "TeamScope",
+    "github_api",
     "github_settings",
     "github_token_found",
     "github_web_host",
@@ -56,18 +61,19 @@ EXPECTED_ALL = [
 
 
 def test_surface_is_closed() -> None:
-    assert github_api.__all__ == EXPECTED_ALL
+    assert module.__all__ == EXPECTED_ALL
 
 
 def test_exports_are_canonical_objects() -> None:
     import untaped_github.application.inventory as inventory
+    import untaped_github.application.ports as ports
     import untaped_github.application.scopes as scopes
     import untaped_github.domain.errors as errors
     import untaped_github.domain.hosts as hosts
     import untaped_github.domain.models as models
     import untaped_github.domain.repo_id as repo_id
     import untaped_github.errors as error_classes
-    import untaped_github.infrastructure.github_client as client
+    import untaped_github.server as server
     import untaped_github.settings as settings
 
     assert ResolveRepositoryInventory is inventory.ResolveRepositoryInventory
@@ -83,7 +89,8 @@ def test_exports_are_canonical_objects() -> None:
     assert RepoRefs is models.RepoRefs
     assert RepoRef is models.RepoRef
     assert split_repo_id is repo_id.split_repo_id
-    assert GithubClient is client.GithubClient
+    assert GithubApi is ports.GithubApi
+    assert github_api is server.github_api
     assert GithubSettings is settings.GithubSettings
 
 
@@ -95,10 +102,10 @@ def test_github_specific_api_does_not_leak_into_sdk() -> None:
 
 
 def _params(name: str) -> Any:
-    return inspect.signature(getattr(GithubClient, name)).parameters
+    return inspect.signature(getattr(GithubApi, name)).parameters
 
 
-def test_client_covers_ansible_reader_operations() -> None:
+def test_the_port_covers_ansible_reader_operations() -> None:
     params = _params  # local alias for compact assertions below
     for name in (
         "get_repository",
@@ -109,11 +116,8 @@ def test_client_covers_ansible_reader_operations() -> None:
         "get_raw_content",
         "batch_repo_refs",
         "batch_default_branch_refs",
-        "close",
-        "__enter__",
-        "__exit__",
     ):
-        assert callable(getattr(GithubClient, name)), name
+        assert callable(getattr(GithubApi, name)), name
     assert params("get_repository").keys() == {"self", "owner", "repo"}
     assert list(params("list_team_repos")) == ["self", "org", "team_slug"]
     assert list(params("list_matching_refs")) == ["self", "owner", "repo", "namespace"]
@@ -140,3 +144,14 @@ def test_github_settings_reads_the_active_github_section(settings: Settings) -> 
 
     assert isinstance(found, GithubSettings)
     assert found.default_org == "acme"
+
+
+def test_github_api_is_the_port_served_for_the_servers_version() -> None:
+    with (
+        installed().running(),
+        respx.mock(base_url="https://api.github.com") as mock,
+    ):
+        route = mock.get("/user").mock(return_value=httpx.Response(200, json={"login": "octo"}))
+        assert github_api(github_settings()).me() == {"login": "octo"}
+
+    assert route.calls[0].request.headers["X-GitHub-Api-Version"] == "2022-11-28"

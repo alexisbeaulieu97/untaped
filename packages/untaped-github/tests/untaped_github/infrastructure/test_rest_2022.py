@@ -1,4 +1,4 @@
-"""GithubClient REST reads used only by the ansible plugin (search/repos go via the CLI)."""
+"""``Rest2022``'s REST reads that only ansible makes (search and repos go through the CLI)."""
 
 from __future__ import annotations
 
@@ -6,13 +6,15 @@ import httpx
 import respx
 
 from untaped.sdk.testing import Running
-from untaped_github.infrastructure import GithubClient
+from untaped_github.application.ports import GithubApi
+from untaped_github.server import SERVER_API
 from untaped_github.settings import GithubSettings
 
 
-def _client(composed: Running) -> GithubClient:
-    """A client built as a command builds its own; its token belongs to the composed plugin."""
-    return GithubClient(GithubSettings(), http=composed.http)
+def _client(composed: Running) -> GithubApi:
+    """github's port as a command reaches it; its token belongs to the composed plugin."""
+    del composed  # the run the port's calls are made in
+    return SERVER_API.port(GithubSettings())
 
 
 def test_list_matching_refs_returns_branch_and_tag_refs(composed: Running) -> None:
@@ -32,9 +34,9 @@ def test_list_matching_refs_returns_branch_and_tag_refs(composed: Running) -> No
                 json=[{"ref": "refs/tags/v1.0.0", "object": {"sha": "123", "type": "commit"}}],
             )
         )
-        with _client(composed) as client:
-            branches = list(client.list_matching_refs("acme", "site", "heads"))
-            tags = list(client.list_matching_refs("acme", "site", "tags"))
+        client = _client(composed)
+        branches = list(client.list_matching_refs("acme", "site", "heads"))
+        tags = list(client.list_matching_refs("acme", "site", "tags"))
 
     assert [ref["ref"] for ref in branches] == ["refs/heads/main", "refs/heads/release/1"]
     assert [ref["ref"] for ref in tags] == ["refs/tags/v1.0.0"]
@@ -52,8 +54,8 @@ def test_get_tree_can_request_recursive_tree(composed: Running) -> None:
                 },
             )
         )
-        with _client(composed) as client:
-            tree = client.get_tree("acme", "site", "main", recursive=True)
+        client = _client(composed)
+        tree = client.get_tree("acme", "site", "main", recursive=True)
 
     assert route.calls[0].request.url.params["recursive"] == "1"
     assert tree["tree"][0]["path"] == "roles/requirements.yml"
@@ -64,13 +66,13 @@ def test_get_raw_content_reads_file_at_ref(composed: Running) -> None:
         route = mock.get("/repos/acme/site/contents/roles/requirements.yml").mock(
             return_value=httpx.Response(200, text="- src: https://github.com/acme/base\n")
         )
-        with _client(composed) as client:
-            content = client.get_raw_content(
-                "acme",
-                "site",
-                "roles/requirements.yml",
-                ref="release/1",
-            )
+        client = _client(composed)
+        content = client.get_raw_content(
+            "acme",
+            "site",
+            "roles/requirements.yml",
+            ref="release/1",
+        )
 
     assert route.calls[0].request.url.params["ref"] == "release/1"
     assert route.calls[0].request.headers["accept"] == "application/vnd.github.raw"
@@ -82,8 +84,8 @@ def test_a_search_with_no_room_asks_nothing(composed: Running) -> None:
         route = mock.get("/search/repositories").mock(
             return_value=httpx.Response(200, json={"items": [{"id": 1}]})
         )
-        with _client(composed) as client:
-            assert list(client.search_repositories("x", limit=0)) == []
+        client = _client(composed)
+        assert list(client.search_repositories("x", limit=0)) == []
     assert route.call_count == 0
 
 
@@ -92,5 +94,5 @@ def test_a_search_reads_the_rows_under_items(composed: Running) -> None:
         mock.get("/search/code").mock(
             return_value=httpx.Response(200, json={"total_count": 1, "items": [{"id": 1}]})
         )
-        with _client(composed) as client:
-            assert list(client.search_code("x")) == [{"id": 1}]
+        client = _client(composed)
+        assert list(client.search_code("x")) == [{"id": 1}]

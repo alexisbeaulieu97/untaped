@@ -116,10 +116,12 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `github.server.verify_tls` | boolean or path | `true` | `UNTAPED_GITHUB__SERVER__VERIFY_TLS` | Check the server's certificate: `true` (untaped's trust), `false`, or a CA file for this server alone. |
 | `github.default_org` | string (optional) | unset | `UNTAPED_GITHUB__DEFAULT_ORG` | Org scope for `repos list`, `search` (repos, code, issues), `sweep`, `cache sync` and `cache prune` when no scope flag is given. Without it, search uses `@me`. |
 | `github.git_protocol` | `https` \| `ssh` | `https` | `UNTAPED_GITHUB__GIT_PROTOCOL` | How `sweep`, `cache sync` and any plugin that names repos through git's `RepoSource` fetch repos on the GitHub host: `https` or `ssh` (`git@HOST:OWNER/NAME.git`, with your own SSH keys). |
+| `github.server_version` | string (optional) | unset | `UNTAPED_GITHUB__SERVER_VERSION` | Which GitHub the server runs, instead of detecting it: `github.com` or `GitHub Enterprise Server 3.14.2`. |
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists as repos you can name in commands. With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists as repos you can name. |
 | `github.caches.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS` | Seconds repo data is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `github.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `jira`
 

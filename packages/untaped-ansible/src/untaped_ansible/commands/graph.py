@@ -16,7 +16,6 @@ import os
 import re
 import shlex
 from collections.abc import Iterator
-from contextlib import ExitStack
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Literal, NamedTuple, cast
@@ -92,20 +91,19 @@ class _Reaching(GraphCommand):
         """Each repository reached, after the warnings and the depth hint on stderr."""
         relation: EdgeRelation = "requires" if direction == "deps" else "impacts"
         check_all_refs(ref, all_refs=all_refs)
-        with ExitStack() as stack:
-            env = self.env(stack, command=direction, live=live, all_refs=all_refs)
-            repo = require_repo(env, self.role, target_repo=self.target_repo)
+        env = self.env(command=direction, live=live, all_refs=all_refs)
+        repo = require_repo(env, self.role, target_repo=self.target_repo)
 
-            def read() -> _Reached:
-                graph = self.target_graph(
-                    env, target=self.role, ref=ref, target_repo=repo, direction=direction
-                ).graph
-                return _Reached(graph, reach(graph, relation))
+        def read() -> _Reached:
+            graph = self.target_graph(
+                env, target=self.role, ref=ref, target_repo=repo, direction=direction
+            ).graph
+            return _Reached(graph, reach(graph, relation))
 
-            graph, rows = self.answer(env, direction, read, empty=lambda found: not found.rows)
-            self.report_warnings(graph.warnings)
-            self.report_depth_stops(graph, env.depth)
-            return rows
+        graph, rows = self.answer(env, direction, read, empty=lambda found: not found.rows)
+        self.report_warnings(graph.warnings)
+        self.report_depth_stops(graph, env.depth)
+        return rows
 
 
 class Deps(_Reaching):
@@ -216,41 +214,40 @@ class Uses(_Reaching):
     def run(self) -> Iterator[VariableUseHit]:
         names = _variable_names(self.name)
         depth = parse_depth(self.depth)
-        with ExitStack() as stack:
-            env = self.env(stack, command="impact", live=False, all_refs=False)
-            repo = require_repo(env, self.role, target_repo=self.target_repo)
+        env = self.env(command="impact", live=False, all_refs=False)
+        repo = require_repo(env, self.role, target_repo=self.target_repo)
 
-            def read() -> _Reached:
-                graph = self.target_graph(
-                    env, target=self.role, ref=self.ref, target_repo=repo, direction="impact"
-                ).graph
-                return _Reached(graph, reach(graph, "impacts"))
+        def read() -> _Reached:
+            graph = self.target_graph(
+                env, target=self.role, ref=self.ref, target_repo=repo, direction="impact"
+            ).graph
+            return _Reached(graph, reach(graph, "impacts"))
 
-            graph, rows = self.answer(env, "impact", read, empty=lambda found: not found.rows)
-            self.report_warnings(graph.warnings)
-            self.report_depth_stops(graph, depth)
-            commits = {
-                (hit.row.repo, sha) for hit in rows if hit.row.repo is not None for sha in hit.shas
-            }
-            facts = env.sqlite_index.variable_facts(commits, names)
-            self._hint_undefined(env, repo=repo, names=names)
-            skipped = skipped_files(rows, facts)
-            if skipped:
-                self.ctx.diag.warning(
-                    f"{plural(len(skipped), 'file')} in the dependents could not be read for "
-                    f"variables: {'; '.join(skipped)}"
-                )
-            missing = unanalysed(rows, facts)
-            if not missing:
-                # With a dependent unanalysed, "no dependents use it" is not known.
-                self.output.empty(f"No dependents use {' or '.join(names)}{within(depth)}.")
-            if len(names) > 1:
-                self.output.columns.add(key(VariableUseHit).variable, first=True)
-            table = self.output.format == "table"
-            for hit in dependent_uses(rows, facts, names):
-                yield _table_key(hit) if table else hit
-            if missing:
-                self._report_unanalysed(env, missing, [hit.row for hit in rows if hit.row.repo])
+        graph, rows = self.answer(env, "impact", read, empty=lambda found: not found.rows)
+        self.report_warnings(graph.warnings)
+        self.report_depth_stops(graph, depth)
+        commits = {
+            (hit.row.repo, sha) for hit in rows if hit.row.repo is not None for sha in hit.shas
+        }
+        facts = env.sqlite_index.variable_facts(commits, names)
+        self._hint_undefined(env, repo=repo, names=names)
+        skipped = skipped_files(rows, facts)
+        if skipped:
+            self.ctx.diag.warning(
+                f"{plural(len(skipped), 'file')} in the dependents could not be read for "
+                f"variables: {'; '.join(skipped)}"
+            )
+        missing = unanalysed(rows, facts)
+        if not missing:
+            # With a dependent unanalysed, "no dependents use it" is not known.
+            self.output.empty(f"No dependents use {' or '.join(names)}{within(depth)}.")
+        if len(names) > 1:
+            self.output.columns.add(key(VariableUseHit).variable, first=True)
+        table = self.output.format == "table"
+        for hit in dependent_uses(rows, facts, names):
+            yield _table_key(hit) if table else hit
+        if missing:
+            self._report_unanalysed(env, missing, [hit.row for hit in rows if hit.row.repo])
 
     def _hint_undefined(self, env: GraphEnv, *, repo: str, names: list[str]) -> None:
         """Hint when ROLE (indexed, or a local checkout) defines none of ``names``: a typo, likely.
@@ -362,37 +359,36 @@ class Find(GraphCommand):
         if not self.stdin.requested and not self.root:
             raise UsageError("provide --root or --stdin")
         depth = parse_depth(self.depth)
-        with ExitStack() as stack:
-            inputs = (
-                self._piped_roots()
-                if self.stdin.requested
-                else list(dict.fromkeys((root_from_line(r), RootInput()) for r in self.root))
-            )
-            env = self.env(stack, command="find", live=self.live, all_refs=self.all_refs)
-            wanted = [require_repo(env, repo) for repo in self.target]
-            resolved = [(root, source, require_repo(env, root.target)) for root, source in inputs]
+        inputs = (
+            self._piped_roots()
+            if self.stdin.requested
+            else list(dict.fromkeys((root_from_line(r), RootInput()) for r in self.root))
+        )
+        env = self.env(command="find", live=self.live, all_refs=self.all_refs)
+        wanted = [require_repo(env, repo) for repo in self.target]
+        resolved = [(root, source, require_repo(env, root.target)) for root, source in inputs]
 
-            def read() -> _Found:
-                # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
-                graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
-                found = _Found()
-                for root, source, repo in resolved:
-                    local = root.target if Path(root.target).expanduser().exists() else None
-                    key = (repo_key(repo), root.ref, local)
-                    graph = graphs.get(key)
-                    if graph is None:
-                        graph = graphs[key] = self.target_graph(
-                            env,
-                            target=root.target,
-                            ref=root.ref,
-                            target_repo=repo,
-                            direction="deps",
-                        ).graph
-                        found.graphs.append((_root_label(root), graph))
-                    found.matches.extend(find_matches(graph, wanted, source=source))
-                return found
+        def read() -> _Found:
+            # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
+            graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
+            found = _Found()
+            for root, source, repo in resolved:
+                local = root.target if Path(root.target).expanduser().exists() else None
+                key = (repo_key(repo), root.ref, local)
+                graph = graphs.get(key)
+                if graph is None:
+                    graph = graphs[key] = self.target_graph(
+                        env,
+                        target=root.target,
+                        ref=root.ref,
+                        target_repo=repo,
+                        direction="deps",
+                    ).graph
+                    found.graphs.append((_root_label(root), graph))
+                found.matches.extend(find_matches(graph, wanted, source=source))
+            return found
 
-            found = self.answer(env, "deps", read, empty=lambda found: not found.matches)
+        found = self.answer(env, "deps", read, empty=lambda found: not found.matches)
         for label, graph in found.graphs:
             for warning in graph.warnings:
                 self.ctx.diag.warning(f"{label}: {warning}")
@@ -518,17 +514,16 @@ class Graph(GraphCommand):
     def run(self) -> GraphDocument | None:
         check_all_refs(self.ref, all_refs=self.all_refs)
         direction = _DIRECTIONS[self.direction]
-        with ExitStack() as stack:
-            env = self.env(stack, command="graph", live=self.live, all_refs=self.all_refs)
-            repo = require_repo(env, self.target, target_repo=self.target_repo)
-            built = self.answer(
-                env,
-                direction,
-                lambda: self.target_graph(
-                    env, target=self.target, ref=self.ref, target_repo=repo, direction=direction
-                ),
-                empty=lambda built: not built.graph.edges,
-            )
+        env = self.env(command="graph", live=self.live, all_refs=self.all_refs)
+        repo = require_repo(env, self.target, target_repo=self.target_repo)
+        built = self.answer(
+            env,
+            direction,
+            lambda: self.target_graph(
+                env, target=self.target, ref=self.ref, target_repo=repo, direction=direction
+            ),
+            empty=lambda built: not built.graph.edges,
+        )
         self.report_warnings(built.graph.warnings)
         self.report_depth_stops(built.graph, env.depth)
         depth = "unlimited depth" if env.depth is None else f"depth {env.depth}"

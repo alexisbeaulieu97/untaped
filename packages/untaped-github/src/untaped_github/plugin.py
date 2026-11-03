@@ -16,6 +16,7 @@ from untaped_github.commands.sweep import SweepGroup
 from untaped_github.commands.whoami import Whoami, probe
 from untaped_github.providers.git import GithubHost
 from untaped_github.providers.repos import GithubRepos
+from untaped_github.server import SERVER_API
 from untaped_github.settings import SWEEP, TOKEN, GithubSettings
 
 
@@ -28,6 +29,7 @@ class Github(Plugin):
     token = TOKEN
     sweep = SWEEP
     api = OnlineCheck(probe=probe)
+    server_api = SERVER_API
     skill = StubSkill(
         "GitHub and GitHub Enterprise from untaped: org and team repository "
         "inventories; repository, code, issue and user search; and grep-style sweeps "

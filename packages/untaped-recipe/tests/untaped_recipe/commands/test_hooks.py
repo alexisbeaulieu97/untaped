@@ -464,12 +464,12 @@ def test_hook_run_rejects_kind_specific_context_options(tmp_path: Path) -> None:
         ],
     )
 
-    assert validate_with_file.exit_code != 0
+    assert validate_with_file.exit_code == 2  # a usage error
     assert "validate hooks do not accept --file or content options" in validate_with_file.output
-    assert validate_with_diff.exit_code != 0
-    assert "validate hooks do not accept --file or content options" in validate_with_diff.output
+    assert validate_with_diff.exit_code == 2
+    assert "validate hooks do not accept --diff" in validate_with_diff.output
     assert not marker.exists()
-    assert transform_without_file.exit_code != 0
+    assert transform_without_file.exit_code == 2
     assert "transform hooks require --file" in transform_without_file.output
 
 

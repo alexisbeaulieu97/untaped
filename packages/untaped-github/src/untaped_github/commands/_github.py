@@ -13,10 +13,11 @@ from untaped_github.application.scopes import TeamScope, normalize_team_scopes
 from untaped_github.domain import ArchivedMode, github_web_host
 from untaped_github.domain.errors import github_failures
 from untaped_github.records import CorpusRepo, Repo, SweepRepo
+from untaped_github.server import github_api
 from untaped_github.settings import GithubSettings
 
 if TYPE_CHECKING:
-    from untaped_github.infrastructure import GithubClient
+    from untaped_github.application.ports import GithubApi
     from untaped_github.infrastructure.git_corpus import GitCorpusCache
 
 #: Whether forks are kept, dropped or the only ones kept.
@@ -124,12 +125,13 @@ class GithubCommand(Command[GithubSettings]):
     """A command that reads GitHub through the profile's ``github`` settings."""
 
     @contextmanager
-    def client(self) -> Iterator[GithubClient]:
-        """A GitHub client for this run, closed after the block; a rejected token gets a hint."""
-        from untaped_github.infrastructure import GithubClient  # noqa: PLC0415 - httpx's cost
+    def client(self) -> Iterator[GithubApi]:
+        """github's port for this run's settings; a rejected token in the block gets a hint.
 
-        with GithubClient(self.settings, http=self.ctx.http) as client, github_failures():
-            yield client
+        The adapter serving it is the one for the server's version (``github.server_api``).
+        """
+        with github_failures():
+            yield github_api(self.settings)
 
     def corpus(self) -> GitCorpusCache:
         """The local corpus in the repo store, fetching over ``github.git_protocol``."""

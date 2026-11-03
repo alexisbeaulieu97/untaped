@@ -223,7 +223,7 @@ class LsRemoteGit(Protocol):
 
 
 class BatchRepoRefsClient(Protocol):
-    """The slice of ``untaped_github.api.GithubClient`` the probe needs."""
+    """The slice of ``untaped_github.api.GithubApi`` the probe needs."""
 
     def batch_repo_refs(
         self,

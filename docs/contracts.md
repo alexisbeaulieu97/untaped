@@ -94,7 +94,7 @@ class Library(Plugin):
   that would make it ready, which core spells in full for doctor and the
   `config set` hint (`NotReady.spelled`). The contract decides what is
   `@cached`; a provider never adds it. Build HTTP clients with
-  `self.ctx.http.client(self.settings, ...)`, as a command does: they carry
+  `self.ctx.http.client(self.settings, ...)` (experimental), as a command does: they carry
   the profile's proxy, CA and timeout. Keep helper methods private
   (`_name`): doctor reports a public method the contract doesn't have as
   `unused-method`, unless its function carries
