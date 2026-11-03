@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
 from untaped.sdk import ErrorCategory, UsageError
-from untaped_git.api import RepoStore
+from untaped_git.api import GitResult, Prefetched, RepoStore
 from untaped_git.testing import GitRemote, git_remote
 from untaped_recipe.errors import PackFetchError
 from untaped_recipe.infrastructure import pack_sources
@@ -27,6 +28,9 @@ def remote(tmp_path: Path) -> GitRemote:
     remote = git_remote(tmp_path, "acme/pack")
     remote.commit("pyproject.toml", "[project]\nname = 'pack'\n")
     return remote
+
+
+_EPOCH = "2000-01-01T00:00:00Z"
 
 
 def _store(url: str, plugin: str = "recipe") -> RepoStore:
@@ -313,6 +317,7 @@ def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
         commit = subprocess.run(
             ["git", *author, f"--git-dir={remote.path}", "commit-tree", tree, "-p", parent],
             input=f"commit {len(seen)}\n",
+            env={**os.environ, "GIT_AUTHOR_DATE": _EPOCH, "GIT_COMMITTER_DATE": _EPOCH},
             capture_output=True,
             text=True,
             check=True,
@@ -331,3 +336,25 @@ def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
 
     assert raised.value.category is ErrorCategory.CONFLICT
     assert resolved == commit
+
+
+@pytest.mark.parametrize("cut", [b"abc", b"0123456789"], ids=["inside", "no-newline"])
+def test_cut_short_blob_output_is_a_fetch_error(
+    remote: GitRemote, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cut: bytes
+) -> None:
+    oid = subprocess.run(
+        ["git", f"--git-dir={remote.path}", "rev-parse", "main:pyproject.toml"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    def short(self: Prefetched, argv: Sequence[str], **_: object) -> GitResult:
+        return GitResult(returncode=0, stdout=f"{oid} blob 10\n".encode() + cut, stderr="")
+
+    monkeypatch.setattr(Prefetched, "run", short)
+
+    with pytest.raises(PackFetchError, match="could not read") as raised:
+        fetch_pack_source(remote.url, rev=None, dest=tmp_path / "pack", plugin="recipe")
+
+    assert raised.value.category is ErrorCategory.FAILED

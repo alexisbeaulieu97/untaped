@@ -49,8 +49,9 @@ def network_git(source: str) -> list[int]:
     arguments of a call to a function whose name holds ``git``
     (``_git(cwd, "fetch")``). Anything but a string literal (a name holding
     git's path, a ``*base`` splice, an f-string) is passed over, then
-    ``"git"`` and git's own options, up to the command. A command built from
-    a shell string (``shlex.split``, ``shell=True``) is out of reach.
+    ``"git"`` and git's own options, up to the command; an f-string's leading
+    literal part counts where options after the command are read. A command
+    built from a shell string (``shlex.split``, ``shell=True``) is out of reach.
     """
     lines = set()
     for node in ast.walk(ast.parse(source)):
