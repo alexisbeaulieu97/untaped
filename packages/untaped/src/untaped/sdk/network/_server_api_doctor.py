@@ -8,7 +8,7 @@ an override the server contradicts (``--online`` only) warns with the
 command unsetting it, and when detection can't answer the override does.
 Nothing detected yet passes: the first command detects it. Reaching the
 server is the plugin's own online check's question, so a server this row
-can't reach is a warning.
+can't reach is a warning (with the override set, the override's row).
 """
 
 from __future__ import annotations
@@ -53,7 +53,8 @@ def server_api_row(api: ServerApi[Any, Any, Any], ctx: PluginContext) -> DoctorR
         if isinstance(exc, ConfigError):  # could not tell, or the token was refused
             return DoctorResult(ok=False, detail=_text(exc))
         return DoctorResult(ok=True, warn=True, detail=f"not checked: {exc}")
-    _remember(server, detected)
+    with suppress(UntapedError):  # best effort: the row reports what it detected either way
+        _remember(server, detected)
     if override is None:
         return _served(server, detected, f"{detected}, detected now")
     if detected != override:

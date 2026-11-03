@@ -9,7 +9,7 @@ command unsetting it, and nothing detected yet passes.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 import httpx
@@ -18,6 +18,8 @@ import respx
 
 from core_test_support.server_api import URL, Get, Toy, configured, route, serve
 from core_test_support.server_api_legacy import Fetch, Legacy, LegacySettings
+from untaped.sdk.errors import ConfigError
+from untaped.sdk.storage._cache_files import CacheFiles
 from untaped.sdk.testing import Install, ManualClock
 
 Installer = Callable[..., Install]
@@ -122,6 +124,21 @@ def test_online_keeps_what_it_detected(install: Installer) -> None:
     _row(toy, "--online")
     assert _row(toy)["detail"] == "Toy 3.1, detected 0 s ago · Toy 3 and later"
     assert about.call_count == 1
+
+
+@respx.mock
+def test_a_detection_it_cannot_keep_still_shows(
+    install: Installer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serve("3.1")
+    toy = install(Toy, settings=configured())
+
+    def busy(*_args: object, **_kwargs: object) -> Iterator[None]:
+        raise ConfigError("cache lock busy")
+
+    monkeypatch.setattr(CacheFiles, "locked", busy)
+    row = _row(toy, "--online")
+    assert (row["status"], row["detail"]) == ("pass", "Toy 3.1, detected now · Toy 3 and later")
 
 
 @respx.mock
