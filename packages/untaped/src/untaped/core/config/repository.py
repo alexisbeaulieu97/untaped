@@ -51,7 +51,7 @@ from untaped.runtime.settings import (
 from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
-from untaped.runtime.yaml_roundtrip import KeyRename
+from untaped.runtime.yaml_roundtrip import KeyRename, same_data
 from untaped.sdk._keys import map_value_type, model_in
 from untaped.sdk._schema import EntryNameError, FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
@@ -392,7 +392,7 @@ class SettingsFileRepository:
                 value = None if raw_value is None else _stored(key, descriptor, raw_value)
                 before = copy.deepcopy(data)
                 self._write(where, descriptor, value, on_spelling_removed, remove=raw_value is None)
-                if data == before:
+                if same_data(data, before):
                     untouched.add(key)
                     if raw_value is None:
                         removed_nothing.add(key)
@@ -414,8 +414,7 @@ class SettingsFileRepository:
                             f"invalid value for {blamed!r}{read}: {_issue(blamed, exc)}",
                             category="invalid",
                         ) from exc
-            if len(untouched) == len(updates):
-                _restore(data, initial)
+            _keep_empty_profile(data, initial, written)
 
         self._mutate(_apply, dry_run=dry_run)
         # ``_mutate`` always runs ``_apply``, which sets ``resolved`` from
@@ -565,8 +564,8 @@ class SettingsFileRepository:
             target_data, resolved = self._write_target(data, profile)
             before = copy.deepcopy(data)
             self._write(target_data, descriptor, None, on_spelling_removed, remove=True)
-            if data == before:
-                _restore(data, initial)
+            if same_data(data, before):
+                _keep_empty_profile(data, initial, resolved)
                 return
             removed = True
             # Symmetric with ``update_value``: re-validate the key's section so a
@@ -761,14 +760,17 @@ def _has(data: Any, path: tuple[str, ...]) -> bool:
     return True
 
 
-def _restore(data: dict[str, Any], initial: dict[str, Any]) -> None:
-    """Put ``data`` back as it was: a write that changed nothing leaves the file alone.
+def _keep_empty_profile(data: dict[str, Any], initial: dict[str, Any], name: str) -> None:
+    """Leave an empty ``name:`` profile (YAML null) as it was when no write landed in it.
 
-    Choosing where a write lands may already have touched it (an empty
-    ``name:`` profile becomes a mapping to write into).
+    Choosing where a write lands makes it a mapping to write into; a write
+    that left it empty changed nothing there, so the file shouldn't either.
     """
-    data.clear()
-    data.update(initial)
+    before, after = initial.get("profiles"), data.get("profiles")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return
+    if name in before and before[name] is None and after.get(name) == {}:
+        after[name] = None
 
 
 def _remove_spellings(

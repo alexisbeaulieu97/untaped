@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -21,6 +21,7 @@ from untaped.sdk.errors import ConfigError, UsageError
 
 class DemoSettings(BaseModel):
     page_size: int = Field(50, gt=0)
+    extra: dict[str, Any] = {}
 
 
 class SpelledSettings(BaseModel):
@@ -345,3 +346,11 @@ def test_a_write_that_changes_nothing_leaves_an_empty_profile_alone(
     change = write()
     assert change.outcome.action == "unchanged"  # type: ignore[attr-defined]
     assert _config.read_text(encoding="utf-8") == before
+
+
+def test_a_value_of_another_kind_is_a_change(_config: Path) -> None:
+    """``1`` and ``true`` compare equal in Python, but the file holds one of them."""
+    _config.write_text("format_version: 2\ndemo:\n  extra: {x: 1}\n", encoding="utf-8")
+    change = SetSetting(SettingsFileRepository())("demo.extra", '{"x": true}')
+    assert change.outcome.action == "updated"
+    assert read_config_dict(_config)["demo"]["extra"]["x"] is True
