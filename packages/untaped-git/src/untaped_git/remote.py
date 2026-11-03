@@ -15,12 +15,8 @@ from untaped_git.errors import GitError
 from untaped_git.host_auth import host_config
 from untaped_git.hosts import HostAuth
 from untaped_git.run import GitCommandError, run_git
-from untaped_git.store import (
-    ATTEMPTS,
-    TIMEOUT,
-    parse_symref,
-    record_default_branch,
-)
+from untaped_git.store_fetch import parse_symref, record_default_branch
+from untaped_git.store_git import ATTEMPTS, TIMEOUT
 from untaped_git.url import store_key
 
 

@@ -10,6 +10,7 @@ import pytest
 from git_test_support import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
 from untaped_git.store import RepoStore
+from untaped_git.store_git import StoreGit
 from untaped_git.testing import GitRemote, global_config
 
 MAIN = "refs/untaped/github/heads/main"
@@ -27,14 +28,14 @@ def test_v0_refusal_is_unavailable(
     remote: GitRemote, fetched: RepoStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     remote.refuse_by_oid()
-    real = RepoStore._missing
+    real = StoreGit.missing
     listings: list[int] = []
 
-    def missing(self: RepoStore, revisions: Sequence[str], paths: Sequence[str] = ()) -> list[str]:
+    def missing(self: StoreGit, revisions: Sequence[str], paths: Sequence[str] = ()) -> list[str]:
         listings.append(1)
         return real(self, revisions, paths)
 
-    monkeypatch.setattr(RepoStore, "_missing", missing)
+    monkeypatch.setattr(StoreGit, "missing", missing)
 
     with pytest.raises(StoreError) as caught:
         fetched.prefetched(trees=[MAIN], paths=["src"])
@@ -50,15 +51,15 @@ def test_v0_refusal_is_unavailable(
 def test_a_planted_leftover_is_unavailable(
     fetched: RepoStore, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    real = RepoStore._missing
+    real = StoreGit.missing
     calls: list[int] = []
 
-    def missing(self: RepoStore, revisions: Sequence[str], paths: Sequence[str] = ()) -> list[str]:
+    def missing(self: StoreGit, revisions: Sequence[str], paths: Sequence[str] = ()) -> list[str]:
         found = real(self, revisions, paths)
         calls.append(len(found))
         return found if len(calls) == 1 else ["0" * 40]
 
-    monkeypatch.setattr(RepoStore, "_missing", missing)
+    monkeypatch.setattr(StoreGit, "missing", missing)
 
     with pytest.raises(StoreError) as caught:
         fetched.prefetched(trees=[MAIN], paths=["src"])

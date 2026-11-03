@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from git_test_support import StoreFor, git
-from untaped_git import store as store_module
+from untaped_git import store_git
 from untaped_git.store import RepoStore
 from untaped_git.testing import GitRemote, trace2_events
 
@@ -64,13 +64,13 @@ def test_no_lazy_fetch_env(
     store = store_for("github")
     store.fetch(branches=["main"])
     calls: list[tuple[list[str], dict[str, str]]] = []
-    real = store_module.run_git
+    real = store_git.run_git
 
     def spy(args: Any, **kwargs: Any) -> Any:
         calls.append((list(args), dict(kwargs.get("env") or {})))
         return real(args, **kwargs)
 
-    monkeypatch.setattr(store_module, "run_git", spy)
+    monkeypatch.setattr(store_git, "run_git", spy)
     tree = git(store.path, "rev-parse", "refs/untaped/github/heads/main^{tree}").strip()
 
     handle = store.prefetched(trees=[tree])

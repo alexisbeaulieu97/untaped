@@ -10,6 +10,7 @@ import pytest
 
 from git_test_support import StoreError, StoreFor, git
 from untaped.sdk import ErrorCategory
+from untaped_git.store_prefetch import missing_blobs
 from untaped_git.testing import GitRemote, git_shim, trace2_events
 
 #: The sweep's pinned grep flags (github's git_corpus), spelled out here.
@@ -242,7 +243,7 @@ def test_a_missing_blob_is_listed_without_a_lazy_fetch(
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
 
     # only gits older than 2.38 would fetch here (mktree did): a guard against regressions
-    assert store._missing_blobs([blob]) == [blob]
+    assert missing_blobs(store._repo, [blob]) == [blob]
 
     starts = [e["argv"] for e in trace2_events(trace) if e.get("event") == "start"]
     assert len(starts) == 1  # rev-list alone: no lazy fetch child

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from git_test_support import StoreError, all_refs, ensure, git, objects
-from untaped_git import store as store_module
+from untaped_git import store_fetch, store_git
 from untaped_git.store import RepoStore
 from untaped_git.testing import GitRemote, git_remote, hostile_git_home
 
@@ -46,7 +46,7 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
     remote.tag("v1")
     store = _store(base, remote)
     seen: list[list[str]] = []
-    real = store_module.run_git
+    real = store_git.run_git
 
     def spy(args: Any, **kwargs: Any) -> Any:
         seen.append(
@@ -59,7 +59,9 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
         )
         return real(args, **kwargs)
 
-    monkeypatch.setattr(store_module, "run_git", spy)
+    # Every git the store runs: the repo's own, and the default branch a fetch records.
+    monkeypatch.setattr(store_git, "run_git", spy)
+    monkeypatch.setattr(store_fetch, "run_git", spy)
     tree = base / "trees" / "work"
     steps: list[tuple[str, Any]] = [
         ("ensure", lambda: ensure(store)),
@@ -85,7 +87,8 @@ def _exercise(base: Path, monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, li
         if name not in ("ensure", "fetch"):
             assert "refs/tags/wip-local" in refs, name
         assert objects(store.path)["count"] == 0, name
-    monkeypatch.setattr(store_module, "run_git", real)
+    monkeypatch.setattr(store_git, "run_git", real)
+    monkeypatch.setattr(store_fetch, "run_git", real)
     config = git(store.path, "config", "--local", "--list").lower()
     assert "fetch.prune" not in config
     assert "fetch.prunetags" not in config

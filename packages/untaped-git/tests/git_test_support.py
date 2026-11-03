@@ -18,8 +18,8 @@ class StoreError(GitError):
 
 def ensure(store: RepoStore) -> bool:
     """Create the repo and reconcile its policy, as every writer does first; created?"""
-    with store._locked():
-        return store._ensure()
+    with store._repo.locked():
+        return store._repo.ensure()
 
 
 def git(repo: Path, *args: str, bare: bool = True, input: str | None = None) -> str:
