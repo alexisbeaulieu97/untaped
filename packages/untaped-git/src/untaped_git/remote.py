@@ -1,12 +1,14 @@
-"""Remote queries that need no store repo: ``ls-remote`` with untaped's credentials.
+"""Remote commands that need no store repo: ``ls-remote`` and ``clone`` with untaped's credentials.
 
-Both run from the store root with discovery stopped there, so a repository
-around the process's working directory is never read, and ask
-:class:`~untaped_git.hosts.GitHost` for the URL's credentials; core gives its proxy.
+Each runs from the store root with discovery stopped there, so a repository
+around the process's working directory is never read, and asks
+:class:`~untaped_git.hosts.GitHost` for the URL's credentials; core gives its
+proxy. Both reach git at command scope only, so a clone keeps neither.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -16,7 +18,7 @@ from untaped_git.host_auth import host_config
 from untaped_git.hosts import HostAuth
 from untaped_git.run import GitCommandError, run_git
 from untaped_git.store_fetch import parse_symref, record_default_branch
-from untaped_git.store_git import ATTEMPTS, TIMEOUT
+from untaped_git.store_git import ATTEMPTS, SLOW_TIMEOUT, TIMEOUT
 from untaped_git.url import store_key
 
 
@@ -58,9 +60,53 @@ def default_branch(url: str, *, root: Path, auth: Callable[[str], HostAuth | Non
     return branch
 
 
+def clone(
+    url: str,
+    dest: Path,
+    *,
+    branch: str | None,
+    root: Path,
+    auth: Callable[[str], HostAuth | None],
+) -> None:
+    """Clone ``url`` into ``dest`` (absent or an empty folder), on ``branch`` or the remote's HEAD.
+
+    A full clone: the working copy is its owner's afterwards, and a partial one
+    would fetch missing blobs later with the owner's credentials alone. The
+    credential and proxy reach this one command; the clone's config keeps
+    neither, nor a credential helper, so its later fetches are the owner's own.
+    """
+    target = Path(os.path.abspath(dest))
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise GitError(
+            f"could not create {target.parent}: {exc.strerror or exc}", system=System.LOCAL
+        ) from exc
+    picked = ["--branch", branch] if branch is not None else []
+    _remote(
+        url,
+        ["clone", "--quiet", *picked, "--", url, str(target)],
+        root=root,
+        auth=auth,
+        timeout=SLOW_TIMEOUT,
+    )
+
+
 def _ls_remote(
     url: str, args: Sequence[str], *, root: Path, auth: Callable[[str], HostAuth | None]
 ) -> str:
+    return _remote(url, ["ls-remote", *args], root=root, auth=auth, timeout=TIMEOUT)
+
+
+def _remote(
+    url: str,
+    argv: Sequence[str],
+    *,
+    root: Path,
+    auth: Callable[[str], HostAuth | None],
+    timeout: float,
+) -> str:
+    """Run ``argv`` from ``root`` with ``url``'s credential and proxy; its stdout."""
     try:
         root.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -71,9 +117,9 @@ def _ls_remote(
     secret, config = host_config(url, auth(url))
     try:
         result = run_git(
-            ["ls-remote", *args],
+            argv,
             cwd=root,
-            timeout=TIMEOUT,
+            timeout=timeout,
             capture=True,
             auth_config=secret,
             ceiling=True,

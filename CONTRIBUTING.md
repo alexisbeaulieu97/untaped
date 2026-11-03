@@ -148,7 +148,8 @@ or becomes an SDK helper that every plugin can use. Declare a
 - **Lazy imports on CLI startup paths** (`tests/repo/test_import_cost.py`
   budgets them); `# noqa: PLC0415` only where Ruff flags it.
 - **Git through `untaped_git.api`**: clones and fetches through `RepoStore`,
-  remote queries through `ls_remote` (`tests/repo/test_network_git.py`), any
+  remote queries through `ls_remote`, a working copy someone keeps through
+  `clone` (`tests/repo/test_network_git.py`), any
   other command through `run_git` and `git_toplevel`; advisory file locks
   through `file_lock` from `untaped.sdk`. Never hand-rolled `subprocess` git
   plumbing. A child in its own process group

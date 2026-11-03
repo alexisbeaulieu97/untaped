@@ -1,20 +1,24 @@
-"""ls-remote and default branch without a store repo, and the credential helpers `hosts` lists."""
+"""ls-remote, default branch and clone without a store repo, and the helpers `hosts` lists."""
 
 from __future__ import annotations
 
 import os
+import shutil
+from collections.abc import Iterator
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from pydantic import SecretStr
 
 from git_test_support import StoreError, StoreFor, ensure, git
+from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import install
 from untaped_git import api
 from untaped_git.errors import GitError
 from untaped_git.helpers import missing_helper, user_helpers
-from untaped_git.host_auth import host_config
-from untaped_git.hosts import Credential, HostAuth
+from untaped_git.host_auth import basic_header, host_config
+from untaped_git.hosts import Credential, GitHost, HostAuth
 from untaped_git.plugin import Git
 from untaped_git.remote import default_branch, ls_remote
 from untaped_git.settings import store_root
@@ -197,3 +201,113 @@ def test_the_store_follows_the_home_unless_the_setting_names_a_folder(
     monkeypatch.setenv("UNTAPED_GIT__STORE_DIR", str(tmp_path / "elsewhere"))
     with install(Git).running():
         assert store_root() == tmp_path / "elsewhere"
+
+
+# ── clone: a working copy someone keeps ───────────────────────────────────
+
+
+class _Forge(GitHost, Provider):
+    """Fills ``GitHost`` for ``git.example`` and records the URLs it is asked about."""
+
+    asked: ClassVar[list[str]] = []
+
+    def home(self) -> str | None:
+        return "git.example"
+
+    def credential(self, url: str) -> Credential | None:
+        type(self).asked.append(url)
+        return Credential(username="hub", password=SecretStr("clone-token"))
+
+
+@pytest.fixture
+def forge() -> Iterator[list[str]]:
+    """git with a ``hub`` plugin filling ``GitHost``; the URLs it is asked about."""
+    _Forge.asked = []
+    with install(Git, providers={"hub": (_Forge,)}).running():
+        yield _Forge.asked
+
+
+def _seen_header(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str) -> Path:
+    """Put a ``git`` on ``PATH`` that logs the header a ``clone`` would send to ``url``."""
+    real = shutil.which("git")
+    assert real is not None
+    log = tmp_path / "header.log"
+    shim = tmp_path / "shim" / "git"
+    shim.parent.mkdir()
+    shim.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "clone" ]; then\n'
+        f'  "{real}" config --get-urlmatch http.extraheader "{url}" >> "{log}"\n'
+        "fi\n"
+        f'exec "{real}" "$@"\n',
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{shim.parent}{os.pathsep}{os.environ.get('PATH', '')}")
+    return log
+
+
+def test_clone_makes_a_working_copy_on_the_default_branch(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    dest = tmp_path / "code" / "app"
+
+    api.clone(remote.url, dest)
+
+    assert (dest / "README.md").read_text(encoding="utf-8") == "# app\n"
+    assert git(dest, "symbolic-ref", "--short", "HEAD", bare=False).strip() == "main"
+    assert git(dest, "config", "remote.origin.url", bare=False).strip() == remote.url
+    assert "promisor" not in (dest / ".git" / "config").read_text(encoding="utf-8")
+
+
+def test_clone_checks_out_the_branch_asked_for(remote: GitRemote, tmp_path: Path) -> None:
+    remote.branch("dev")
+    remote.commit("dev.txt", "dev\n", branch="dev")
+
+    api.clone(remote.url, tmp_path / "app", branch="dev")
+
+    assert git(tmp_path / "app", "rev-parse", "HEAD", bare=False).strip() == remote.oid("dev")
+
+
+def test_clone_sends_the_host_s_credential_and_keeps_none(
+    remote: GitRemote,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    forge: list[str],
+) -> None:
+    log = _seen_header(tmp_path, monkeypatch, remote.url)
+    dest = tmp_path / "app"
+
+    api.clone(remote.url, dest)
+
+    assert forge == [remote.url]
+    assert log.read_text(encoding="utf-8").strip() == basic_header("hub", "clone-token")
+    kept = (dest / ".git" / "config").read_text(encoding="utf-8").lower()
+    assert "extraheader" not in kept
+    assert "helper" not in kept
+    assert "include" not in kept
+    assert "clone-token" not in kept
+
+
+def test_an_ssh_url_asks_no_provider(tmp_path: Path, forge: list[str]) -> None:
+    with pytest.raises(GitError):  # nothing answers at git.example over ssh
+        api.clone("git@git.example:acme/app.git", tmp_path / "app")
+
+    assert forge == []
+
+
+def test_clone_refuses_a_folder_that_is_not_empty(remote: GitRemote, tmp_path: Path) -> None:
+    dest = tmp_path / "app"
+    dest.mkdir()
+    (dest / "notes.txt").write_text("mine\n", encoding="utf-8")
+
+    with pytest.raises(GitError, match="already exists and is not an empty directory"):
+        api.clone(remote.url, dest)
+    assert [path.name for path in dest.iterdir()] == ["notes.txt"]
+
+
+def test_a_clone_s_option_shaped_url_is_never_an_option(tmp_path: Path) -> None:
+    planted = tmp_path / "planted"
+    with pytest.raises(GitError):
+        api.clone(f"--upload-pack=touch {planted}", tmp_path / "app")
+    assert not planted.exists()
