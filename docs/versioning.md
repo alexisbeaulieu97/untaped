@@ -92,8 +92,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `plan_release` in `untaped.sdk.testing`. See [Projects](./projects.md).
 - `GitHost` in `untaped_git.api`: the contract a plugin fills to supply
   credentials for a Git host.
-- `clone` in `untaped_git.api`: a working copy someone keeps, cloned with
-  untaped's credentials for its host.
+- `clone` in `untaped_git.api`: a working copy the user owns afterwards,
+  cloned with untaped's credentials for its host.
 - `Stdin.text` in `untaped.sdk`: stdin's whole text for an argument whose
   `-` the command tells from a value itself.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:

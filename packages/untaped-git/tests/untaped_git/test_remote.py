@@ -209,7 +209,7 @@ def test_the_store_follows_the_home_unless_the_setting_names_a_folder(
         assert store_root() == tmp_path / "elsewhere"
 
 
-# ── clone: a working copy someone keeps ───────────────────────────────────
+# ── clone: a working copy the user owns afterwards ────────────────────────
 
 
 class _Forge(GitHost, Provider):
@@ -227,7 +227,7 @@ class _Forge(GitHost, Provider):
 
 @pytest.fixture
 def forge() -> Iterator[list[str]]:
-    """git with a ``hub`` plugin filling ``GitHost``; the URLs it is asked about."""
+    """git with a ``hub`` plugin filling ``GitHost``; the URLs it is asked a credential for."""
     _Forge.asked = []
     with install(Git, providers={"hub": (_Forge,)}).running():
         yield _Forge.asked

@@ -73,7 +73,7 @@ def default_branch(url: str) -> str | None:
 
 @experimental
 def clone(url: str, dest: Path, *, branch: str | None = None) -> None:
-    """Clone ``url`` into ``dest`` as a working copy someone keeps, with untaped's credentials.
+    """Clone ``url`` into ``dest``, a copy the user owns afterwards, with untaped's credentials.
 
     ``dest`` is absent or an empty folder, relative to the working directory;
     ``branch`` (a branch, or a tag for a detached copy) is checked out, else
