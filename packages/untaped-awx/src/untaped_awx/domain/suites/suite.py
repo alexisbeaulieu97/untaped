@@ -7,8 +7,9 @@ one job template or one workflow (its :class:`TemplateBinding`). Each
 meet (status, log, host summaries, failed tasks, idempotence, and for a
 workflow each node's
 :class:`~untaped_awx.domain.suites.expectations.NodeExpectation`), and for a
-workflow what to answer its approvals; :class:`VariableSpec` declares an
-input the user supplies (CLI / vars file / interactive prompt). A run's
+workflow what to answer its approvals; :class:`VariableSpec` declares a
+value given by ``--var``, ``--vars-file`` or a prompt (the values plugin's
+:class:`~untaped_values.api.Input`). A run's
 results compared with a :class:`~untaped_awx.domain.suites.results.Baseline`
 say how each case changed. Pure domain — no I/O, no Jinja2, no httpx.
 
@@ -33,10 +34,12 @@ from pydantic import (
     model_validator,
 )
 from pydantic.config import JsonDict
+from pydantic.json_schema import SkipJsonSchema
 
 from untaped.sdk import ConfigError, q
 from untaped_awx.domain.suites.expectations import Expectation
 from untaped_awx.domain.suites.results import case_keys
+from untaped_values.api import Input
 
 
 @dataclass(frozen=True)
@@ -88,47 +91,22 @@ class TemplateBinding:
     passes it a launch-time ``scm_branch``."""
 
 
-class VariableSpec(BaseModel):
-    """One frontmatter ``variables`` entry."""
+class VariableSpec(Input):
+    """One frontmatter ``variables`` entry: the values plugin's input, named.
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    The values plugin converts, asks for and refuses values
+    (`untaped docs values guides vars`); a variable without a default is
+    required.
+    """
 
     name: str = Field(description="The variable's key under the header's `variables:`.")
     type: VariableType = Field(
         default="string",
         description="How a supplied value is converted: `string`, `int`, `bool` "
         "(`true/false`, `yes/no`, `on/off`, `1/0`), `choice` (one of `choices`) or `list` "
-        "(a YAML list, or a comma-separated string).",
+        "(a YAML list, or a comma-separated string; `items` types its elements).",
     )
-    description: str | None = Field(
-        default=None, description="The prompt text when asked interactively (default: the name)."
-    )
-    default: Any = Field(
-        default=None,
-        description="The value when neither `--var` nor `--vars-file` sets it; "
-        "without a default the variable is required.",
-    )
-    choices: tuple[Any, ...] = Field(
-        default=(),
-        description="The allowed values of a `choice` variable; required for that type, "
-        "and a default must be one of them.",
-    )
-    secret: bool = Field(default=False, description="Prompt without echoing the answer.")
-
-    @property
-    def required(self) -> bool:
-        """A variable without a default must be supplied (CLI/file/prompt)."""
-        return self.default is None
-
-    @model_validator(mode="after")
-    def _choices_required_for_choice_type(self) -> VariableSpec:
-        if self.type == "choice" and not self.choices:
-            raise ValueError("type='choice' requires a non-empty 'choices' tuple")
-        if self.type == "choice" and self.default is not None and self.default not in self.choices:
-            raise ValueError(
-                f"default {self.default!r} is not one of choices {list(self.choices)!r}"
-            )
-        return self
+    values: SkipJsonSchema[None] = Field(None, exclude=True)  # a dict's; awx has no dict
 
 
 def _document_schema(schema: JsonDict) -> None:

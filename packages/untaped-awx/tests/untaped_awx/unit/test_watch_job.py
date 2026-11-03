@@ -9,31 +9,20 @@ import pytest
 
 import untaped_awx.domain.jobs.job as job_module
 from untaped_awx.application import WatchJob
-from untaped_awx.application.resources.ports import RawHttpResourceClient
+from untaped_awx.application.jobs.ports import JobRecords
 from untaped_awx.domain import Job
 
 
 class _StubClient:
-    """Minimal stub covering the raw-HTTP ``request`` port.
-
-    ``WatchJob`` polls via ``request("GET", "<api_path>/<job_id>/")`` —
-    other ``ResourceClient`` methods aren't touched.
-    """
+    """The one :class:`JobRecords` method ``WatchJob`` polls: ``job``."""
 
     def __init__(self, *, request_results: list[dict[str, Any]]) -> None:
         self._request_results = request_results
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, int]] = []
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+    def job(self, *, kind: str, job_id: int) -> dict[str, Any]:
         idx = len(self.calls)
-        self.calls.append((method, path))
+        self.calls.append((kind, job_id))
         return self._request_results[idx] if idx < len(self._request_results) else {}
 
 
@@ -45,7 +34,7 @@ def test_watch_job_polls_until_terminal() -> None:
         ]
     )
     sleeps: list[float] = []
-    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=0.0)
+    use = WatchJob(cast(JobRecords, client), sleep=sleeps.append, poll_interval=0.0)
     job = Job(id=1, kind="job", status="running")
     final = use(job)
     assert final.status == "successful"
@@ -55,7 +44,7 @@ def test_watch_job_polls_until_terminal() -> None:
 def test_watch_job_returns_immediately_if_terminal() -> None:
     client = _StubClient(request_results=[])
     sleeps: list[float] = []
-    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=0.0)
+    use = WatchJob(cast(JobRecords, client), sleep=sleeps.append, poll_interval=0.0)
     job = Job(id=1, kind="job", status="successful")
     assert use(job) is job
     assert sleeps == []
@@ -68,17 +57,17 @@ def test_watch_job_respects_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
         request_results=[{"id": 1, "status": "running"}, {"id": 1, "status": "waiting"}]
     )
     sleeps: list[float] = []
-    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append, poll_interval=1.0)
+    use = WatchJob(cast(JobRecords, client), sleep=sleeps.append, poll_interval=1.0)
     final = use(Job(id=1, kind="job", status="pending"), timeout=2.0)
     assert final.status == "waiting"
     assert sleeps == [1.0, 1.0]
-    assert client.calls == [("GET", "jobs/1/"), ("GET", "jobs/1/")]
+    assert client.calls == [("job", 1), ("job", 1)]
 
 
 def test_watch_job_zero_timeout_does_not_poll() -> None:
     client = _StubClient(request_results=[])
     sleeps: list[float] = []
-    use = WatchJob(cast(RawHttpResourceClient, client), sleep=sleeps.append)
+    use = WatchJob(cast(JobRecords, client), sleep=sleeps.append)
     job = Job(id=1, kind="job", status="running")
     assert use(job, timeout=0.0) is job
     assert sleeps == []

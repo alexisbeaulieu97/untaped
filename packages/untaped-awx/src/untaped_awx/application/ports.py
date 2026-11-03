@@ -13,23 +13,41 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from untaped_awx.application.resources.ports import ProjectPlaybooks, RawHttpResourceClient
+from untaped_awx.application.jobs.ports import Executions
+from untaped_awx.application.resources.ports import (
+    NestedResourceClient,
+    ProjectPlaybooks,
+    UnifiedTemplateRepository,
+    WorkflowNodeRepository,
+)
 from untaped_awx.domain import Job
 
 
 class AwxPingService(Protocol):
-    """Returns the raw AAP ``/ping/`` payload; :class:`Ping` validates
+    """The controller's raw health payload; :class:`Ping` validates
     the shape into a :class:`PingStatus` entity."""
 
     def ping(self) -> dict[str, Any]: ...
 
     def me(self) -> dict[str, Any]:
-        """Authenticated ``/me/`` list payload; fails when the token is rejected."""
+        """The signed-in user's payload; fails when the token is rejected."""
         ...
 
 
-class AwxApi(RawHttpResourceClient, ProjectPlaybooks, AwxPingService, Protocol):
-    """The controller, as awx's commands reach it: resources, raw paths, health and links."""
+class AwxApi(
+    NestedResourceClient,
+    ProjectPlaybooks,
+    Executions,
+    UnifiedTemplateRepository,
+    WorkflowNodeRepository,
+    AwxPingService,
+    Protocol,
+):
+    """The controller, as awx's commands reach it.
+
+    Resources, executions and their logs, workflow nodes, unified templates,
+    health and links.
+    """
 
     def job_url(self, job: Job) -> str | None:
         """The web UI page of ``job``'s output; ``None`` for a kind the UI doesn't show."""

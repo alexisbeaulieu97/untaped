@@ -18,7 +18,6 @@ SCHEDULE_SPEC = AwxResourceSpec(
     kind="Schedule",
     record=Schedule,
     cli_name="schedules",
-    api_path="schedules",
     identity_keys=("name",),  # uniqueness is name-within-parent; parent is in metadata.parent
     canonical_fields=(
         "description",

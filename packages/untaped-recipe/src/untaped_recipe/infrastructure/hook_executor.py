@@ -16,6 +16,7 @@ from untaped_recipe._worker import worker_protocol as protocol
 from untaped_recipe._worker.helpers import HookHelpers
 from untaped_recipe.domain.hook_project import HookKind, UvHookRef, ensure_hook_supports
 from untaped_recipe.domain.plan import HookDebugResult, Verdict
+from untaped_recipe.domain.templates import render_template
 from untaped_recipe.errors import RecipeError
 from untaped_recipe.infrastructure.hook_resolver import HookResolver
 from untaped_recipe.infrastructure.hook_worker_client import (
@@ -144,7 +145,7 @@ class HookExecutor:
             )
         # A fresh helpers instance per call keeps warn() isolated per target
         # (and per planning thread).
-        helpers = HookHelpers()
+        helpers = HookHelpers(render_template)
         module = ref.module
         execution = _call_builtin_with_capture(
             lambda: call.invoke(module, hook, helpers),

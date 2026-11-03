@@ -123,7 +123,7 @@ def _inputs(recipe: RecipeFile) -> list[RecipeInput]:
             required=spec.required,
             default=spec.default,
             description=spec.description,
-            sensitive=spec.sensitive,
+            secret=spec.secret,
         )
         for name, spec in sorted(recipe.inputs.items())
     ]

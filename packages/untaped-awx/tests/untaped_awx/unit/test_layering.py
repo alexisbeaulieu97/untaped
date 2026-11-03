@@ -78,3 +78,46 @@ def test_the_suite_runner_never_imports_the_commands_at_module_level() -> None:
                 eager.append(f"{name}:{node.lineno} imports {module}")
     assert not eager, eager
     assert lazy == LAZY_COMMAND_IMPORTS
+
+
+SOURCE_DIR = APPLICATION_DIR.parent
+#: How the controller is reached over HTTP: its client, and its paging.
+TRANSPORT = frozenset(
+    {
+        "untaped_awx.infrastructure.awx_client",
+        "untaped_awx.infrastructure.AwxClient",
+        "untaped_awx.infrastructure.pagination",
+    }
+)
+#: A module that exports the transport, which an import of the module itself reaches.
+TRANSPORT_EXPORTERS = frozenset({"untaped_awx.infrastructure"})
+#: The modules that are the transport, or export it.
+TRANSPORT_MODULES = frozenset(
+    {"infrastructure/__init__.py", "infrastructure/awx_client.py", "infrastructure/pagination.py"}
+)
+
+
+def test_only_the_adapter_reaches_the_controller() -> None:
+    """Every request goes through the adapter, ``infrastructure/controller/``, so a path
+    the controller moves is the adapter's change alone; the rest of awx calls the port."""
+    reaching = sorted(
+        f"{name}:{node.lineno} imports {module}"
+        for py_file in sorted(SOURCE_DIR.rglob("*.py"))
+        if (name := py_file.relative_to(SOURCE_DIR).as_posix()) not in TRANSPORT_MODULES
+        and not name.startswith("infrastructure/controller/")
+        for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8")))
+        for module in _imported(node)
+        if module in TRANSPORT or (module in TRANSPORT_EXPORTERS and _binds_module(node))
+    )
+    assert not reaching, reaching
+
+
+def _binds_module(node: ast.AST) -> bool:
+    """Whether ``node`` binds a module itself, whose attributes then reach what it exports.
+
+    ``import untaped_awx.infrastructure`` and ``from untaped_awx import infrastructure``
+    do; ``from untaped_awx.infrastructure import errors`` names what it takes.
+    """
+    if isinstance(node, ast.Import):
+        return True
+    return isinstance(node, ast.ImportFrom) and node.module == "untaped_awx"

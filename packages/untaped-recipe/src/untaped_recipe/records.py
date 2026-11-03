@@ -125,7 +125,7 @@ class RecipeInput(BaseModel):
     required: bool
     default: object
     description: str
-    sensitive: bool
+    secret: bool
 
 
 class RecipeStep(BaseModel):

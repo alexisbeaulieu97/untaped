@@ -15,9 +15,7 @@ from untaped_awx.domain.suites.results import CaseResult, SuiteRunOutcome
 from untaped_awx.domain.suites.suite import Case, RefSentinel, Suite, TemplateBinding, VariableSpec
 
 
-def test_variable_spec_is_required_unless_it_has_a_default() -> None:
-    assert VariableSpec(name="env", type="string").required is True
-    assert VariableSpec(name="env", type="string", default="dev").required is False
+def test_a_choice_variable_keeps_a_default_among_its_choices() -> None:
     assert VariableSpec(name="env", type="choice", choices=("a", "b"), default="a").default == "a"
 
 

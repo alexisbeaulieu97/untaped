@@ -18,26 +18,24 @@ from pydantic import (
 )
 
 from untaped_recipe.domain.paths import safe_relative_path
+from untaped_values.api import Input
 
-ScalarInputType = Literal["str", "int", "bool", "float"]
-InputType = Literal["str", "int", "bool", "float", "list", "dict"]
 InputScope = Literal["target", "global"]
 
 
-class InputSpec(BaseModel):
-    """One declared recipe input."""
+class InputSpec(Input):
+    """One declared recipe input: the values plugin's input, plus recipe's own fields."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    type: InputType = "str"
-    default: object | None = None
+    type: Literal["str", "int", "bool", "float", "list", "dict"] = "str"
+    items: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `list` input's element type (default: `str`)."
+    )
+    values: Literal["str", "int", "bool", "float"] | None = Field(
+        None, description="A `dict` input's value type (default: `str`)."
+    )
     required: bool = False
-    description: str = ""
-    sensitive: bool = False
     scope: InputScope = "global"
     from_: tuple[str, ...] = Field(default=(), alias="from")
-    items: ScalarInputType | None = None
-    values: ScalarInputType | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -45,6 +43,11 @@ class InputSpec(BaseModel):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        # Recipe's list elements and dict values are text unless the recipe types them.
+        if data.get("type") == "list" and data.get("items") is None:
+            data["items"] = "str"
+        if data.get("type") == "dict" and data.get("values") is None:
+            data["values"] = "str"
         raw_from = data.get("from", ())
         if raw_from is None:
             from_values: tuple[str, ...] = ()
@@ -61,110 +64,12 @@ class InputSpec(BaseModel):
         return data
 
     @model_validator(mode="after")
-    def _validate_input_spec(self) -> InputSpec:
+    def _validate_recipe_input(self) -> InputSpec:
         if self.scope == "global" and self.from_:
             raise ValueError("input with scope global cannot declare from")
-        if self.items is not None and self.type != "list":
-            raise ValueError("items is only valid with type list")
-        if self.values is not None and self.type != "dict":
-            raise ValueError("values is only valid with type dict")
-        if self.default is not None:
-            if self.required:
-                raise ValueError("required input cannot declare a default")
-            try:
-                self.coerce(self.default)
-            except ValueError as exc:
-                raise ValueError(f"default: {exc}") from exc
+        if self.default is not None and self.required:
+            raise ValueError("required input cannot declare a default")
         return self
-
-    def coerce(self, value: object) -> object:
-        """Coerce a CLI/YAML-supplied value to this input's declared type."""
-        if self.type == "list":
-            if not isinstance(value, Sequence) or isinstance(value, str | bytes):
-                raise ValueError("cannot coerce value to list")
-            item_type = self.items or "str"
-            try:
-                return [_coerce_scalar_element(item, item_type) for item in value]
-            except ValueError:
-                raise ValueError("cannot coerce value to list") from None
-        if self.type == "dict":
-            if not isinstance(value, Mapping):
-                raise ValueError("cannot coerce value to dict")
-            value_type = self.values or "str"
-            coerced: dict[str, object] = {}
-            for key, item in value.items():
-                if not isinstance(key, str):
-                    raise ValueError("dict input keys must be strings")
-                try:
-                    coerced[key] = _coerce_scalar_element(item, value_type)
-                except ValueError:
-                    raise ValueError("cannot coerce value to dict") from None
-            return coerced
-        return _coerce_scalar(value, self.type)
-
-
-def _coerce_scalar_element(value: object, input_type: ScalarInputType) -> object:
-    if isinstance(value, Mapping) or (
-        isinstance(value, Sequence) and not isinstance(value, str | bytes)
-    ):
-        raise ValueError(f"cannot coerce value to {input_type}")
-    return _coerce_scalar(value, input_type)
-
-
-def _coerce_int(value: object) -> int:
-    """Coerce a scalar input to int, raising ValueError when impossible.
-
-    Single-exception clauses (not an exception tuple): the tuple form is
-    valid 3.12 syntax but ``ruff format`` under the 3.14 target rewrites it
-    to the bare ``except A, B`` form, which only parses on 3.14+.
-    """
-    try:
-        if isinstance(value, int) and not isinstance(value, bool):
-            return value
-        if isinstance(value, float):
-            return int(value)
-        return int(str(value))
-    except TypeError:
-        raise ValueError("cannot coerce value to int") from None
-    except ValueError:
-        raise ValueError("cannot coerce value to int") from None
-    except OverflowError:
-        raise ValueError("cannot coerce value to int") from None
-
-
-def _coerce_float(value: object) -> float:
-    """Coerce a scalar input to float, raising ValueError when impossible.
-
-    Single-exception clauses for the same 3.12/format-stability reason as
-    :func:`_coerce_int`.
-    """
-    try:
-        if isinstance(value, int | float) and not isinstance(value, bool):
-            return float(value)
-        return float(str(value))
-    except TypeError:
-        raise ValueError("cannot coerce value to float") from None
-    except ValueError:
-        raise ValueError("cannot coerce value to float") from None
-    except OverflowError:
-        raise ValueError("cannot coerce value to float") from None
-
-
-def _coerce_scalar(value: object, input_type: ScalarInputType) -> object:
-    if input_type == "str":
-        return str(value)
-    if input_type == "int":
-        return _coerce_int(value)
-    if input_type == "float":
-        return _coerce_float(value)
-    if isinstance(value, bool):
-        return value
-    normalized = str(value).strip().lower()
-    if normalized in {"1", "true", "yes", "on"}:
-        return True
-    if normalized in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError("cannot coerce value to bool")
 
 
 class BaseStep(BaseModel):
@@ -328,13 +233,14 @@ class RecipeFile(BaseModel):
     ## Inputs
 
     Each input takes `type` (`str`, `int`, `bool`, `float`, `list`, `dict`),
-    `default`, `required`, `description`, `sensitive`, `scope` (`global` or
+    `default`, `required`, `description`, `secret`, `scope` (`global` or
     `target`) and `from` (templates that derive a value per target). A `list`
     input may set `items`, and a `dict` input `values`, to the scalar type
     (`str`, `int`, `bool`, `float`; default `str`) its elements are coerced to;
     neither is valid on another type. A `default` must coerce to the input's
     `type` (`validate` reports it) and can't be combined with `required: true`.
-    How `apply` fills them: `untaped docs recipe guides inputs`.
+    How `apply` fills them: `untaped docs values guides vars` and
+    `untaped docs recipe guides inputs`.
 
     ## Steps
 
@@ -372,7 +278,7 @@ class RecipeFile(BaseModel):
     Template bodies render `{{ name }}` tokens from inputs and fail on an
     unknown token unless `unknown_tokens: keep` is set. Path fields
     (`template`, `dest`, `source`, `file`, `files`, `globs`, `exclude`) also
-    render tokens, always strictly. Sensitive and structured inputs are
+    render tokens, always strictly. Secret and structured inputs are
     forbidden in paths; derive a scalar input with `from` instead.
 
     Every recipe-local and target-relative path must be relative and safe:

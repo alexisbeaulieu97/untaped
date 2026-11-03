@@ -13,7 +13,7 @@ from untaped_awx.application import BatchMutationEngine, prepare_apply_file
 from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
-    RawHttpResourceClient,
+    NestedResourceClient,
     StrategyResolver,
 )
 from untaped_awx.domain import Metadata, Resource, ResourceSpec
@@ -32,7 +32,7 @@ def _file(client: _Client, docs: list[Resource], *, parallel: int = 1) -> Any:
     catalog = cast(Catalog, _Catalog(SPEC))
     fk = cast(FkResolver, _Fk({}))
     engine = BatchMutationEngine(
-        cast(RawHttpResourceClient, client), catalog, fk, cast(StrategyResolver, _Strategies())
+        cast(NestedResourceClient, client), catalog, fk, cast(StrategyResolver, _Strategies())
     )
 
     def run(path: Path, *, write: bool = False, fail_fast: bool = False) -> Any:
@@ -131,7 +131,6 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     spec_a = AwxResourceSpec(
         kind="A",
         cli_name="a",
-        api_path="a",
         identity_keys=("name",),
         canonical_fields=(),
         fk_refs=(FkRef(field="b", kind="B"),),
@@ -139,7 +138,6 @@ def test_apply_file_topo_sort_detects_cycles(tmp_path: Path) -> None:
     spec_b = AwxResourceSpec(
         kind="B",
         cli_name="b",
-        api_path="b",
         identity_keys=("name",),
         canonical_fields=(),
         fk_refs=(FkRef(field="a", kind="A"),),
@@ -173,7 +171,6 @@ def test_workflow_node_references_order_the_kinds_they_run() -> None:
         kind: AwxResourceSpec(
             kind=kind,
             cli_name=kind.lower(),
-            api_path=kind.lower(),
             identity_keys=("name",),
             canonical_fields=(),
             node_field="nodes" if kind == "WorkflowJobTemplate" else None,

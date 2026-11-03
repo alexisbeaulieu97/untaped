@@ -283,6 +283,45 @@ def test_run_fails_when_required_var_missing(fake_aap: FakeAap, tmp_path: Path) 
     assert "env" in (result.stderr or result.output)
 
 
+def test_a_missing_vars_file_fails_when_the_flag_is_parsed(tmp_path: Path) -> None:
+    test_file = _write(tmp_path / "s.yml", "kind: AwxTestSuite\njobTemplate: J\ncases: {c: {}}\n")
+    missing = tmp_path / "nope.yml"
+
+    result = run(["test", "list", str(test_file), "--vars-file", str(missing)])
+
+    assert result.exit_code == 2
+    assert str(missing) in result.stderr
+
+
+def test_a_var_no_suite_declares_is_a_usage_error(tmp_path: Path) -> None:
+    test_file = _write(
+        tmp_path / "s.yml",
+        "---\nvariables:\n  env: {default: dev}\n---\n"
+        "kind: AwxTestSuite\njobTemplate: J\ncases: {c: {}}\n",
+    )
+
+    result = run(["test", "list", str(test_file), "--var", "frooks=x"])
+
+    assert result.exit_code == 2
+    assert "unknown input: frooks; declared: env" in result.stderr
+
+
+def test_non_interactive_at_a_terminal_names_the_missing_variable_without_asking(
+    tmp_path: Path,
+) -> None:
+    test_file = _write(
+        tmp_path / "s.yml",
+        "---\nvariables:\n  env: {}\n---\nkind: AwxTestSuite\njobTemplate: J\ncases: {c: {}}\n",
+    )
+
+    result = run(
+        ["test", "list", str(test_file), "--non-interactive"], interactive=True, terminal=True
+    )
+
+    assert result.exit_code == 2
+    assert "required 1 variable not provided: env" in result.stderr
+
+
 def test_run_uses_var_flag(fake_aap: FakeAap, tmp_path: Path) -> None:
     _seed_jt(fake_aap)
     test_file = _write(

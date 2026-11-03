@@ -35,7 +35,7 @@ from untaped_awx.application.suites.workflow import (
 )
 from untaped_awx.domain import Job
 from untaped_awx.domain.jobs.job import (
-    JOB_ROUTES,
+    JOB_KINDS,
 )
 from untaped_awx.domain.suites.case_failure import (
     CaseFailure,
@@ -222,7 +222,7 @@ def _check_node(
     """
     node = next((node for node in nodes if node.identifier == node_id), None)
     found: CaseFailure | None
-    if node is None or node.job_id is None or node.kind not in JOB_ROUTES:
+    if node is None or node.job_id is None or node.kind not in JOB_KINDS:
         checks = [expect.check_status(node.status if node is not None else NEVER_RAN)]
         found = status_only_failure(node, expect, checks[0])
     else:
@@ -280,7 +280,7 @@ def _culprit(
     if node.kind == APPROVAL:
         denial = approval_failure(node.template, node.job_id, denied=run.denied(node.job_id))
         return in_node(denial, node.label)
-    if node.kind not in JOB_ROUTES:
+    if node.kind not in JOB_KINDS:
         message = f"{node.kind} {node.job_id} ended {node.status}"
         return in_node(make_failure(CONTROLLER, ErrorCategory.UNAVAILABLE, message), node.label)
     try:
@@ -318,7 +318,7 @@ def _workflow_tasks(
     tasks: list[FailedTask] = []
     try:
         for _, node, execution in run.node_jobs(workflow):
-            if not node.failed or execution.kind not in JOB_ROUTES:
+            if not node.failed or execution.kind not in JOB_KINDS:
                 continue
             if execution.kind == WORKFLOW_JOB:
                 continue  # its own nodes follow

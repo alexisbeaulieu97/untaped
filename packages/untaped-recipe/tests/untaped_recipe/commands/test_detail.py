@@ -29,7 +29,7 @@ def _write_detail_pack(root: Path) -> None:
         "    description: Owner name\n"
         "  token:\n"
         "    type: str\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "steps:\n"
         "  - type: template\n"
         "    template: templates/config.yml\n"
@@ -96,7 +96,7 @@ def test_recipe_detail_lists_inputs_steps_and_hooks(tmp_path: Path) -> None:
             "required": True,
             "default": None,
             "description": "Owner name",
-            "sensitive": False,
+            "secret": False,
         },
         {
             "name": "token",
@@ -104,7 +104,7 @@ def test_recipe_detail_lists_inputs_steps_and_hooks(tmp_path: Path) -> None:
             "required": False,
             "default": None,
             "description": "",
-            "sensitive": True,
+            "secret": True,
         },
     ]
     assert detail["steps"] == [

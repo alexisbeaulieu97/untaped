@@ -1,70 +1,22 @@
-"""The ``helpers`` object every hook receives, plus the recipe template renderer.
+"""The ``helpers`` object every hook receives.
 
 One implementation serves both runtimes: built-in hooks get it in-process and
 external hooks get it inside the uv worker. The worker loads this file by path
 in a pack's environment, where ``untaped`` is not installed, so it must stay
 stdlib-only at import time; ``ruamel.yaml`` is imported only when a YAML helper
-runs (a pack that uses them declares the dependency itself).
+runs (a pack that uses them declares the dependency itself). The template
+renderer is the values plugin's file, which each runtime loads and hands to
+:class:`HookHelpers`.
 """
 
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from io import StringIO
 from typing import TYPE_CHECKING, Any
 
-_TOKEN_RE = re.compile(r"{{.*?}}")
-_BARE_TOKEN_RE = re.compile(r"{{\s*([A-Za-z_][A-Za-z0-9_]*)\s*}}")
-_UNKNOWN_TOKEN_MODES = {"error", "keep"}
-
-
-def render_template(
-    template: str,
-    inputs: Mapping[str, object],
-    *,
-    unknown_tokens: str = "error",
-) -> str:
-    """Render ``{{ name }}`` placeholders from resolved recipe inputs."""
-    if unknown_tokens not in _UNKNOWN_TOKEN_MODES:
-        raise ValueError("unknown_tokens must be 'error' or 'keep'")
-
-    def _replace(match: re.Match[str]) -> str:
-        token = match.group(0)
-        name = bare_token_name(token)
-        if name is not None:
-            if name in inputs:
-                value = inputs[name]
-                if isinstance(value, Mapping | list | tuple):
-                    raise ValueError(structured_render_error(name))
-                return str(value)
-            if unknown_tokens == "keep":
-                return token
-            raise ValueError(f"template input {name!r} is not defined")
-        if unknown_tokens == "keep":
-            return token
-        raise ValueError(
-            f"template token {token!r} is not a bare input name; "
-            "set unknown_tokens: keep to pass it through"
-        )
-
-    return _TOKEN_RE.sub(_replace, template)
-
-
-def template_tokens(text: str) -> list[str]:
-    """Return every ``{{ ... }}`` token in ``text``, in order."""
-    return _TOKEN_RE.findall(text)
-
-
-def bare_token_name(token: str) -> str | None:
-    """Return the input name of a bare ``{{ name }}`` token, else ``None``."""
-    match = _BARE_TOKEN_RE.fullmatch(token)
-    return None if match is None else match.group(1)
-
-
-def structured_render_error(name: str) -> str:
-    """Error text for rendering a list/dict input into a string."""
-    return f"structured input {name!r} cannot be rendered; hooks receive it natively"
+#: The values plugin's ``render_template(template, inputs, *, unknown_tokens)``, as loaded.
+type RenderTemplate = Callable[..., str]
 
 
 def load_yaml(content: str) -> object:
@@ -95,8 +47,9 @@ class HookHelpers:
     values cross the worker's JSON protocol unchanged.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, render_template: RenderTemplate) -> None:
         self._warnings: list[str] = []
+        self._render_template = render_template
 
     def pass_(self, message: str = "") -> dict[str, str]:
         """Return a passing validation verdict."""
@@ -127,7 +80,7 @@ class HookHelpers:
         unknown_tokens: str = "error",
     ) -> str:
         """Render simple ``{{ input }}`` placeholders."""
-        return render_template(template, inputs, unknown_tokens=unknown_tokens)
+        return self._render_template(template, inputs, unknown_tokens=unknown_tokens)
 
     def load_yaml(self, content: str) -> object:
         """Round-trip-load YAML content."""
@@ -141,7 +94,7 @@ class HookHelpers:
 if TYPE_CHECKING:
     from untaped_recipe.hook_api import HookHelpers as HookHelpersContract
 
-    _helpers_satisfy_public_contract: HookHelpersContract = HookHelpers()
+    _helpers_satisfy_public_contract: type[HookHelpersContract] = HookHelpers
 
 
 _TOP_LEVEL_OPTIONS = frozenset(

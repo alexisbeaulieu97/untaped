@@ -29,7 +29,6 @@ from untaped_awx.domain import ResourceSpec
 from untaped_awx.domain.lint.resources import Resources
 from untaped_awx.infrastructure.lint.documents import documents_of, file_texts
 from untaped_awx.infrastructure.resources.catalog import AwxResourceCatalog
-from untaped_awx.infrastructure.resources.spec import awx_api_path
 from untaped_awx.settings import RESOURCES, TOKEN
 from untaped_lint.api import Findings, Report, lint_config, lint_report
 
@@ -151,19 +150,15 @@ def _snapshot(ctx: AwxContext, *, refresh: bool | None) -> Resources:
 
 def _fill(ctx: AwxContext, _key: str, progress: ProgressHandle) -> Filled[Resources]:
     resources = load_controller(
-        client=ctx.repo,
+        client=ctx.api,
         fk=ctx.fk,
         catalog=ctx.catalog,
-        nodes=ctx.workflow_nodes,
-        playbooks=ctx.repo,
-        path_of=_path_of,
+        nodes=ctx.api,
+        playbooks=ctx.api,
+        path_of=ctx.api.location,
         progress=progress,
     )
     return Filled(value=resources, summary=plural(len(resources.items), "resource"))
-
-
-def _path_of(spec: ResourceSpec, id_: int) -> str:
-    return f"{awx_api_path(spec)}/{id_}"
 
 
 def _warn_unlisted(ctx: AwxContext, catalog: Catalog, resources: Resources) -> None:
@@ -196,7 +191,9 @@ def _matching(
             continue
         if query.search is not None:
             params["search"] = query.search
-        paths.update(_path_of(each, int(row["id"])) for row in ctx.repo.list(each, params=params))
+        paths.update(
+            ctx.api.location(each, int(row["id"])) for row in ctx.api.list(each, params=params)
+        )
     held = {getattr(item.location, "id", None) for item in resources.items}
     return sorted(paths & held)
 

@@ -159,7 +159,7 @@ def test_apply_preview_diff_preserves_patch_headers(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("preview", ["table", "diff"])
-@pytest.mark.parametrize("case", ["change", "sensitive", "error"])
+@pytest.mark.parametrize("case", ["change", "secret", "error"])
 def test_apply_preview_renders_each_row_kind_with_absolute_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -170,15 +170,15 @@ def test_apply_preview_renders_each_row_kind_with_absolute_target(
     monkeypatch.chdir(tmp_path)
     recipes = {
         "change": _OUT_RECIPE,
-        "sensitive": _OUT_RECIPE.replace(
-            "steps:", "inputs:\n  token: {type: str, sensitive: true, required: true}\nsteps:"
+        "secret": _OUT_RECIPE.replace(
+            "steps:", "inputs:\n  token: {type: str, secret: true, required: true}\nsteps:"
         ),
         "error": "version: 1\nsteps:\n  - type: validate\n    hook: noop\n",
     }
     Path("recipe.yml").write_text(recipes[case])
-    Path("template.txt").write_text("token={{ token }}\n" if case == "sensitive" else "hello\n")
+    Path("template.txt").write_text("token={{ token }}\n" if case == "secret" else "hello\n")
     Path("target").mkdir()
-    extra = ["--var", "token=secret"] if case == "sensitive" else []
+    extra = ["--var", "token=secret"] if case == "secret" else []
 
     result = run(
         [
@@ -206,8 +206,8 @@ def test_apply_preview_renders_each_row_kind_with_absolute_target(
         assert f"# {target}" in result.said
         assert "# target" not in result.said
         assert "--- /dev/null\n+++ b/out.txt\n" in result.said
-    elif case == "sensitive":
-        # Sensitive targets collapse to a files_changed row in every preview mode.
+    elif case == "secret":
+        # Secret targets collapse to a files_changed row in every preview mode.
         assert "files_changed" in result.said
         assert "out.txt" not in result.said
         assert "secret" not in result.said
@@ -742,17 +742,17 @@ _COLS = "cols: {type: list, items: str, required: true}"
         pytest.param(
             _COLS,
             ["--var", "cols=enabled"],
-            "input 'cols' expects YAML list: parsed value is not a list",
-            id="yaml-scalar-for-list",
+            {"cols": ["enabled"]},
+            id="comma-separated-list",
         ),
         pytest.param(
             _COLS, ["--vars-file", "{vars_file}"], {"cols": ["a", "b"]}, id="vars-file-native"
         ),
         pytest.param(
-            "tokens: {type: list, sensitive: true, required: true}",
+            "tokens: {type: list, secret: true, required: true}",
             ["--var", "tokens=[alpha, beta]"],
             {"tokens": "***"},
-            id="sensitive-structured-redacted-whole",
+            id="secret-structured-redacted-whole",
         ),
     ],
 )
@@ -844,7 +844,7 @@ _PROMPTED_RECIPE = (
     "version: 1\n"
     "inputs:\n"
     "  owner: {type: str, scope: global, required: true, description: Owning team.}\n"
-    "  token: {type: str, scope: global, required: true, sensitive: true}\n"
+    "  token: {type: str, scope: global, required: true, secret: true}\n"
     "  service: {type: str, scope: target, required: true}\n"
     "  region: {type: str, default: eu}\n"
     "  note: {type: str}\n"
@@ -906,7 +906,7 @@ def test_apply_never_prompts_without_a_terminal_or_with_non_interactive(
     assert terminal.asked == []
     assert missing_global.exit_code == 1, missing_global.output
     assert (
-        "error: missing required input: owner; pass --var owner=VALUE or --vars-file FILE"
+        "error: missing required inputs: owner, token; pass --var NAME=VALUE or --vars-file FILE"
         in missing_global.stderr
     )
     assert missing_target.exit_code == 1, missing_target.output
@@ -952,7 +952,7 @@ def test_apply_derives_target_inputs_and_redacts_outcome_rows(tmp_path: Path) ->
         "  token:\n"
         "    type: str\n"
         "    scope: global\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "    required: true\n"
         "steps:\n"
         "  - type: template\n"
@@ -983,7 +983,7 @@ def test_apply_derives_target_inputs_and_redacts_outcome_rows(tmp_path: Path) ->
     assert "secret" not in result.stdout
 
 
-def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
+def test_apply_secret_target_input_coercion_error_does_not_leak_secret(
     tmp_path: Path,
 ) -> None:
     secret = "TOP-SECRET-9000"
@@ -993,7 +993,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
         "inputs:\n"
         "  token:\n"
         "    type: int\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "    required: true\n"
         "    from: '{{ record.token }}'\n"
         "steps: []\n"
@@ -1022,7 +1022,7 @@ def test_apply_sensitive_target_input_coercion_error_does_not_leak_secret(
     assert rows[0]["inputs"] == {}
 
 
-def test_apply_sensitive_global_input_coercion_error_does_not_leak_secret(
+def test_apply_secret_global_input_coercion_error_does_not_leak_secret(
     tmp_path: Path,
 ) -> None:
     secret = "TOP-SECRET-9000"
@@ -1033,7 +1033,7 @@ def test_apply_sensitive_global_input_coercion_error_does_not_leak_secret(
         "  token:\n"
         "    type: int\n"
         "    scope: global\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "    required: true\n"
         "steps: []\n"
     )
@@ -1050,7 +1050,7 @@ def test_apply_sensitive_global_input_coercion_error_does_not_leak_secret(
     assert "cannot coerce value to int" in result.output
 
 
-def test_apply_sensitive_inputs_redact_warnings_and_suppress_diffs(
+def test_apply_secret_inputs_redact_warnings_and_suppress_diffs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1064,7 +1064,7 @@ def test_apply_sensitive_inputs_redact_warnings_and_suppress_diffs(
         "  token:\n"
         "    type: str\n"
         "    scope: global\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "    required: true\n"
         "steps:\n"
         "  - type: validate\n"
@@ -1104,12 +1104,12 @@ def test_apply_sensitive_inputs_redact_warnings_and_suppress_diffs(
     assert result.exit_code == 0, result.output
     assert secret not in result.stdout
     assert secret not in result.stderr
-    assert "diff suppressed for target with sensitive inputs" not in result.stderr
+    assert "diff suppressed for target with secret inputs" not in result.stderr
     assert str(target) in result.stderr
     assert "files_changed" in result.stderr
     assert "out.txt" not in result.stderr
     rows = json.loads(result.stdout)
-    assert rows[0]["warnings"] == ["diagnostic suppressed for target with sensitive inputs"]
+    assert rows[0]["warnings"] == ["diagnostic suppressed for target with secret inputs"]
     assert rows[0]["inputs"] == {"token": "***"}
 
 
@@ -1233,7 +1233,7 @@ def test_apply_transform_warn_reaches_outcome(tmp_path: Path) -> None:
     assert "and another" in warnings
 
 
-def test_apply_sensitive_inputs_redact_hook_failures(
+def test_apply_secret_inputs_redact_hook_failures(
     tmp_path: Path,
 ) -> None:
     secret = 'TOP-SECRET-9000"\\tail'
@@ -1245,7 +1245,7 @@ def test_apply_sensitive_inputs_redact_hook_failures(
         "  token:\n"
         "    type: str\n"
         "    scope: global\n"
-        "    sensitive: true\n"
+        "    secret: true\n"
         "    required: true\n"
         "steps:\n"
         "  - type: transform\n"
@@ -1284,7 +1284,7 @@ def test_apply_sensitive_inputs_redact_hook_failures(
     rows = json.loads(result.stdout)
     assert rows[0]["action"] == "failed"
     assert rows[0]["detail"] == (
-        "target planning failed; diagnostic suppressed for target with sensitive inputs"
+        "target planning failed; diagnostic suppressed for target with secret inputs"
     )
     # The structured error says the same, and a raising hook is a failed run.
     assert rows[0]["error"]["message"] == rows[0]["detail"]
@@ -1643,7 +1643,7 @@ def test_apply_backup_metadata_records_redacted_per_target_inputs(tmp_path: Path
         "version: 1\n"
         "inputs:\n"
         "  service: {type: str, required: true, from: '{{ target.name }}'}\n"
-        "  token: {type: str, scope: global, sensitive: true, required: true}\n"
+        "  token: {type: str, scope: global, secret: true, required: true}\n"
         "steps:\n"
         "  - type: template\n"
         "    template: template.txt\n"

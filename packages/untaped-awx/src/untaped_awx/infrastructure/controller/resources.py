@@ -1,43 +1,30 @@
-"""The :class:`ResourceClient` implementation backed by :class:`AwxClient`.
+"""Where controller API v2 keeps each kind's records, and the spec-driven reads and writes.
 
-The repository never branches on kind — it follows the spec verbatim
-to derive paths and parameters. Per-kind variation is handled in
-strategies + apply hooks.
+:data:`COLLECTIONS` maps a kind to its collection (a constructed ``Inventory``
+is written through its own, :data:`VARIANT_COLLECTIONS`); a record's
+relations, actions and sub-documents hang off ``<collection>/<id>/``, and a
+parent's children off ``<parent collection>/<parent id>/<child collection>/``.
 
-``scoped_names`` lists the names in a scope for "did you mean" hints.
-
-Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap
-raw httpx JSON in :class:`ServerRecord` so callers can use typed
-attribute access. The bulk ``list`` skips the wrap — its callers
-iterate-and-format or iterate-and-extract, where the per-record
-Pydantic round trip is pure overhead. Writes unwrap
-:class:`WritePayload` / :class:`ActionPayload` via ``.model_dump()``
-before handing the dict to httpx.
+Single-record reads (``get`` / ``find`` / ``find_by_identity``) wrap the
+answer in :class:`ServerRecord`; the bulk ``list`` yields plain dicts, since
+its callers format or extract them. ``scoped_names`` lists the names in a
+scope for "did you mean" hints.
 
 Fields a spec lists in ``sub_document_fields`` (a template's
 ``survey_spec``) live behind ``<id>/<field>/`` rather than on the record:
 ``get`` fills them in (``sub_documents`` reads them alone, for a caller
 holding a list row), and ``create``/``update`` route them to that endpoint
-after the record write.
-
-``playbooks`` reads ``projects/<id>/playbooks/``, which answers a bare list
-rather than a record or a page.
-
-The application :class:`ResourceClient` Protocol takes domain
-:class:`ResourceSpec` arguments. This adapter narrows to
-:class:`AwxResourceSpec` via :func:`awx_api_path` so the
-contravariant parameter type holds while the runtime read of
-``api_path`` stays type-safe.
+after the record write. ``playbooks`` reads ``projects/<id>/playbooks/``,
+which answers a bare list rather than a record or a page.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from untaped.sdk import ConfigError, HttpError, attribution
+from untaped.sdk import ConfigError, attribution
 from untaped.sdk.network import ApiMismatch
 from untaped_awx.domain import ActionPayload, ResourceSpec, ServerRecord, WritePayload
 from untaped_awx.domain.outcomes import DeleteReceipt
@@ -46,12 +33,63 @@ from untaped_awx.errors import (
     AwxApiError,
     BadRequestError,
     PartialWriteError,
-    ResourceNotFoundError,
 )
-from untaped_awx.infrastructure.awx_client import AwxClient
+from untaped_awx.infrastructure.controller._part import ControllerPart
 from untaped_awx.infrastructure.errors import map_awx_errors
-from untaped_awx.infrastructure.pagination import paginate
-from untaped_awx.infrastructure.resources.spec import awx_api_path, awx_relationship_path
+
+#: Each kind's collection, by kind.
+COLLECTIONS: dict[str, str] = {
+    "Credential": "credentials",
+    "CredentialType": "credential_types",
+    "ExecutionEnvironment": "execution_environments",
+    "Group": "groups",
+    "Host": "hosts",
+    "InstanceGroup": "instance_groups",
+    "Inventory": "inventories",
+    "InventorySource": "inventory_sources",
+    "JobTemplate": "job_templates",
+    "Label": "labels",
+    "Organization": "organizations",
+    "Project": "projects",
+    "Schedule": "schedules",
+    "SystemJobTemplate": "system_job_templates",
+    "WorkflowJobTemplate": "workflow_job_templates",
+}
+#: Where a kind's variant is written, by kind and variant; its relations stay on the kind's own.
+VARIANT_COLLECTIONS: dict[tuple[str, str], str] = {
+    ("Inventory", "constructed"): "constructed_inventories",
+}
+
+
+def _collection(kind: str) -> str:
+    collection = COLLECTIONS.get(kind)
+    if collection is None:
+        raise BadRequestError(f"no collection for kind {kind!r}")
+    return collection
+
+
+def _records(spec: ResourceSpec) -> str:
+    """Where ``spec``'s records are read and written: its variant's collection, else its kind's."""
+    if spec.variant is None:
+        return _collection(spec.kind)
+    collection = VARIANT_COLLECTIONS.get((spec.kind, spec.variant))
+    if collection is None:
+        raise BadRequestError(f"no collection for {spec.kind} variant {spec.variant!r}")
+    return collection
+
+
+def _always_served(spec: ResourceSpec) -> bool:
+    """Whether every served version has ``spec``'s collection, so its 404 is a mismatch.
+
+    A variant's collection can be younger than the adapter (constructed
+    inventories came in AWX 22), so its 404 stays AWX's own answer.
+    """
+    return spec.variant is None
+
+
+def _under(spec: ResourceSpec, parent_kind: str, parent_id: int) -> str:
+    """``spec``'s collection under a parent record."""
+    return f"{_collection(parent_kind)}/{parent_id}/{_collection(spec.kind)}/"
 
 
 def scope_params(scope: dict[str, str] | None) -> dict[str, str]:
@@ -87,20 +125,8 @@ def _partial_write(step: str, record_id: int) -> Iterator[None]:
         ) from exc
 
 
-class ResourceRepository(ABC):
-    """Spec-driven reads and writes over an :class:`AwxClient`.
-
-    :class:`~untaped_awx.infrastructure.controller.ControllerV2` implements it:
-    it supplies the client its version's prefix calls for, and the page size.
-    """
-
-    #: Results requested per list page (``awx.page_size``).
-    _page_size: int
-
-    @property
-    @abstractmethod
-    def _client(self) -> AwxClient:
-        """The controller client every request goes through."""
+class ResourceRepository(ControllerPart):
+    """Spec-driven reads and writes: :class:`ResourceClient` and :class:`ProjectPlaybooks`."""
 
     def list(
         self,
@@ -109,32 +135,19 @@ class ResourceRepository(ABC):
         params: dict[str, str] | None = None,
         limit: int | None = None,
     ) -> Iterator[dict[str, Any]]:
-        with map_awx_errors():
-            yield from paginate(
-                self._client,
-                f"{awx_api_path(spec)}/",
-                params=params,
-                page_size=self._page_size,
-                limit=limit,
-            )
+        return self._paginate(
+            f"{_records(spec)}/", params=params, limit=limit, collection=_always_served(spec)
+        )
 
     def get(self, spec: ResourceSpec, id_: int) -> ServerRecord:
         """The ``spec`` record with ``id_``; :class:`ResourceNotFoundError` when AWX has none."""
+        raw = self._record(f"{_records(spec)}/{id_}/", kind=spec.kind, id_=id_)
         with map_awx_errors():
-            try:
-                raw = self._client.get_json(f"{awx_api_path(spec)}/{id_}/")
-            except HttpError as exc:
-                if exc.status_code == 404:
-                    raise ResourceNotFoundError(spec.kind, {"id": id_}, url=exc.url) from exc
-                raise
             # The base Inventory serializer omits constructed source settings.
             # A detail read still refers to this exact ID when hydrating the proxy.
-            if (
-                spec.kind == "Inventory"
-                and awx_api_path(spec) == "inventories"
-                and raw.get("kind") == "constructed"
-            ):
-                proxy = self._client.get_json(f"constructed_inventories/{id_}/")
+            variant = VARIANT_COLLECTIONS.get((spec.kind, str(raw.get("kind"))))
+            if spec.variant is None and variant is not None:
+                proxy = self._client.get_json(f"{variant}/{id_}/")
                 if proxy.get("id") != id_:
                     raise BadRequestError("constructed inventory hydration changed requested ID")
                 raw = {**raw, **proxy}
@@ -143,11 +156,10 @@ class ResourceRepository(ABC):
 
     def sub_documents(self, spec: ResourceSpec, id_: int) -> dict[str, Any]:
         """Each ``spec.sub_document_fields`` value from ``<id>/<field>/``, never the record."""
-        with map_awx_errors():
-            return {
-                field: self._client.get_json(f"{awx_relationship_path(spec)}/{id_}/{field}/")
-                for field in spec.sub_document_fields
-            }
+        return {
+            field: self._request("GET", f"{_collection(spec.kind)}/{id_}/{field}/")
+            for field in spec.sub_document_fields
+        }
 
     def playbooks(self, project_id: int) -> tuple[str, ...]:
         """``projects/<id>/playbooks/``: the playbooks AWX found in the project's last sync."""
@@ -168,10 +180,12 @@ class ResourceRepository(ABC):
         the server happened to order first. Raises
         :class:`AmbiguousIdentityError` in that case.
         """
-        with map_awx_errors():
-            page = self._client.get_json(
-                f"{awx_api_path(spec)}/", params={**params, "page_size": "2"}
-            )
+        page = self._request(
+            "GET",
+            f"{_records(spec)}/",
+            params={**params, "page_size": "2"},
+            collection=_always_served(spec),
+        )
         results = page.get("results") or []
         if len(results) >= 2:
             raise AmbiguousIdentityError(spec.kind, dict(params), match_count=page.get("count"))
@@ -209,16 +223,16 @@ class ResourceRepository(ABC):
 
     def create(self, spec: ResourceSpec, payload: WritePayload) -> ServerRecord:
         body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
-        with map_awx_errors():
-            raw = self._client.post_json(f"{awx_api_path(spec)}/", json=body)
-            raw.update(self._write_sub_documents(spec, int(raw["id"]), documents))
+        raw = self._request(
+            "POST", f"{_records(spec)}/", json=body, collection=_always_served(spec)
+        )
+        raw.update(self._write_sub_documents(spec, int(raw["id"]), documents))
         return ServerRecord(**raw)
 
     def update(self, spec: ResourceSpec, id_: int, payload: WritePayload) -> ServerRecord:
         body, documents = _split_sub_documents(spec, payload.model_dump(exclude_none=False))
-        with map_awx_errors():
-            raw = self._client.request_json("PATCH", f"{awx_api_path(spec)}/{id_}/", json=body)
-            raw.update(self._write_sub_documents(spec, id_, documents))
+        raw = self._request("PATCH", f"{_records(spec)}/{id_}/", json=body)
+        raw.update(self._write_sub_documents(spec, id_, documents))
         return ServerRecord(**raw)
 
     def _write_sub_documents(
@@ -233,7 +247,7 @@ class ResourceRepository(ABC):
         """
         observed: dict[str, Any] = {}
         for field, value in documents.items():
-            path = f"{awx_relationship_path(spec)}/{id_}/{field}/"
+            path = f"{_collection(spec.kind)}/{id_}/{field}/"
             written = f"{spec.kind} #{id_} was written but"
             with _partial_write(f"{written} its {field} write", id_):
                 if value:
@@ -246,7 +260,7 @@ class ResourceRepository(ABC):
 
     def delete(self, spec: ResourceSpec, id_: int) -> DeleteReceipt:
         with map_awx_errors():
-            status = self._client.delete(f"{awx_api_path(spec)}/{id_}/")
+            status = self._client.delete(f"{_records(spec)}/{id_}/")
         return DeleteReceipt(
             action="deletion_requested" if status == 202 or spec.async_delete else "deleted"
         )
@@ -259,52 +273,33 @@ class ResourceRepository(ABC):
         payload: ActionPayload | None = None,
     ) -> dict[str, Any]:
         body = payload.model_dump(exclude_none=False) if payload is not None else {}
-        with map_awx_errors():
-            return self._client.post_json(  # type: ignore[no-any-return]
-                f"{awx_api_path(spec)}/{id_}/{action}/",
-                json=body,
-            )
+        return self._request("POST", f"{_records(spec)}/{id_}/{action}/", json=body)
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Escape hatch: ad-hoc URL under the controller API prefix (no spec required)."""
-        with map_awx_errors():
-            return self._client.request_json(  # type: ignore[no-any-return]
-                method, path, params=params, json=json
-            )
+    def location(self, spec: ResourceSpec, id_: int) -> str:
+        return f"{_collection(spec.kind)}/{id_}"
 
-    def paginate_path(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        page = self._request(
+            "GET", _under(spec, parent_kind, parent_id), params={"name": name, "page_size": "2"}
+        )
+        count = page.get("count")
+        return list(page.get("results") or []), count if isinstance(count, int) else None
+
+    def list_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int
     ) -> Iterator[dict[str, Any]]:
-        with map_awx_errors():
-            yield from paginate(
-                self._client,
-                path,
-                params=params,
-                page_size=self._page_size,
-                limit=limit,
-            )
+        return self._paginate(_under(spec, parent_kind, parent_id))
 
-    def request_text(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-    ) -> str:
-        """Ad-hoc URL returning a text body (e.g. job stdout)."""
-        with map_awx_errors():
-            return self._client.request_text(method, path, params=params)
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        return self._request("POST", _under(spec, parent_kind, parent_id), json=body)
+
+    def inventory_kind(self, inventory_id: int) -> str:
+        record = self._request("GET", f"{_collection('Inventory')}/{inventory_id}/")
+        return str(record.get("kind") or "")
 
     def sub_endpoint_request(
         self,
@@ -316,11 +311,8 @@ class ResourceRepository(ABC):
         params: dict[str, str] | None = None,
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        path = f"{awx_relationship_path(spec)}/{record_id}/{sub_endpoint}/"
-        with map_awx_errors():
-            return self._client.request_json(  # type: ignore[no-any-return]
-                method, path, params=params, json=json
-            )
+        path = f"{_collection(spec.kind)}/{record_id}/{sub_endpoint}/"
+        return self._request(method, path, params=params, json=json)
 
     def paginate_sub_endpoint(
         self,
@@ -330,11 +322,6 @@ class ResourceRepository(ABC):
         *,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        path = f"{awx_relationship_path(spec)}/{record_id}/{sub_endpoint}/"
-        with map_awx_errors():
-            yield from paginate(
-                self._client,
-                path,
-                params=params,
-                page_size=self._page_size,
-            )
+        return self._paginate(
+            f"{_collection(spec.kind)}/{record_id}/{sub_endpoint}/", params=params
+        )

@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel
 
 from untaped.sdk import Column, PreviewItem, plural, unified_diff_text
-from untaped_recipe.application.inputs import has_sensitive_inputs
+from untaped_recipe.application.inputs import has_secret_inputs
 from untaped_recipe.domain.plan import FileChange, TargetPlan, is_binary_content
 from untaped_recipe.domain.recipe import RecipeFile
 
@@ -38,7 +38,7 @@ class TargetRow(BaseModel):
 
 
 class HiddenRow(BaseModel):
-    """A target whose changes are not shown, because its inputs are sensitive."""
+    """A target whose changes are not shown, because its inputs are secret."""
 
     target: Annotated[str, Column]
     files_changed: Annotated[int, Column]
@@ -172,7 +172,7 @@ def _preview_groups(
             continue
         if not plan.changes:
             continue
-        if has_sensitive_inputs(recipe.inputs, plan.display_inputs):
+        if has_secret_inputs(recipe.inputs, plan.display_inputs):
             hidden_rows.append(
                 HiddenRow(target=str(_display_target(plan)), files_changed=plan.files_changed)
             )

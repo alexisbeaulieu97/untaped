@@ -8,7 +8,7 @@ misses.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, cast
 
 from untaped_awx.application import GetUnifiedTemplate
@@ -24,11 +24,11 @@ class _FakeUjtRepo:
     ) -> None:
         self._records = records or []
         self._by_id = records_by_id or {}
-        self.get_by_ids_calls: list[list[str]] = []
+        self.unified_templates_by_ids_calls: list[list[str]] = []
 
-    def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         materialised = list(ids)
-        self.get_by_ids_calls.append(materialised)
+        self.unified_templates_by_ids_calls.append(materialised)
         return iter(self._by_id[i] for i in materialised if i in self._by_id)
 
 
@@ -45,7 +45,7 @@ def test_get_returns_records_and_no_missing_when_all_found() -> None:
     records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=["1", "2"])
     assert [r["id"] for r in records] == [1, 2]
     assert missing == []
-    assert repo.get_by_ids_calls[0] == ["1", "2"]
+    assert repo.unified_templates_by_ids_calls[0] == ["1", "2"]
 
 
 def test_get_reports_missing_ids() -> None:
@@ -63,7 +63,7 @@ def test_get_empty_ids_returns_empty_pair() -> None:
     records, missing = GetUnifiedTemplate(cast(UnifiedTemplateRepository, repo))(ids=[])
     assert records == []
     assert missing == []
-    assert repo.get_by_ids_calls == []
+    assert repo.unified_templates_by_ids_calls == []
 
 
 def test_get_accepts_iterable() -> None:

@@ -111,15 +111,15 @@ def temporary_sets(ctx: AwxContext) -> TemporarySets:
             ctx.diag.warning(message)
 
     engine = BatchMutationEngine(
-        client=ctx.repo,
+        client=ctx.api,
         catalog=ctx.catalog,
         fk=ctx.fk,
         strategies=ctx.strategies,
         warn=warn,
         allow_unverified=True,
-        nodes=ctx.workflow_nodes,
+        nodes=ctx.api,
     )
-    return TemporarySets(engine=engine, client=ctx.repo, catalog=ctx.catalog, fk=ctx.fk)
+    return TemporarySets(engine=engine, client=ctx.api, catalog=ctx.catalog, fk=ctx.fk)
 
 
 @contextmanager

@@ -5555,6 +5555,8 @@ record recipe.CopyStep.type choice=copy
 record recipe.CopyStep.type string
 record recipe.InputSpec
 record recipe.InputSpec()
+record recipe.InputSpec.choices any[]
+record recipe.InputSpec.choices default=[]
 record recipe.InputSpec.default any?
 record recipe.InputSpec.default default=None
 record recipe.InputSpec.description default=""
@@ -5573,8 +5575,8 @@ record recipe.InputSpec.scope choice=global
 record recipe.InputSpec.scope choice=target
 record recipe.InputSpec.scope default=global
 record recipe.InputSpec.scope string
-record recipe.InputSpec.sensitive boolean
-record recipe.InputSpec.sensitive default=false
+record recipe.InputSpec.secret boolean
+record recipe.InputSpec.secret default=false
 record recipe.InputSpec.type choice=bool
 record recipe.InputSpec.type choice=dict
 record recipe.InputSpec.type choice=float
@@ -5602,7 +5604,7 @@ record recipe.RecipeInput.default any
 record recipe.RecipeInput.description string
 record recipe.RecipeInput.name string
 record recipe.RecipeInput.required boolean
-record recipe.RecipeInput.sensitive boolean
+record recipe.RecipeInput.secret boolean
 record recipe.RecipeInput.type string
 record recipe.RecipeStep
 record recipe.RecipeStep.exclude string[]
@@ -8492,6 +8494,56 @@ sdk untaped_lint.testing.run(subjects@1=) default=[]  [experimental]
 sdk untaped_lint.testing.run_rule(rule, record) callback(rule, *)  [experimental]
 sdk untaped_lint.testing.tree(files)  [experimental]
 sdk untaped_lint.testing.tree(root=) default=None  [experimental]
+sdk untaped_values.api.Ask  [experimental]
+sdk untaped_values.api.Input extra=forbid  [experimental]
+sdk untaped_values.api.Input()  [experimental]
+sdk untaped_values.api.Input(choices=) default=[]  [experimental]
+sdk untaped_values.api.Input(default=) default=None  [experimental]
+sdk untaped_values.api.Input(description=) default=""  [experimental]
+sdk untaped_values.api.Input(items=) default=None  [experimental]
+sdk untaped_values.api.Input(secret=) default=false  [experimental]
+sdk untaped_values.api.Input(type=) default=str  [experimental]
+sdk untaped_values.api.Input(values=) default=None  [experimental]
+sdk untaped_values.api.Input.choices  [experimental]
+sdk untaped_values.api.Input.default  [experimental]
+sdk untaped_values.api.Input.description  [experimental]
+sdk untaped_values.api.Input.items  [experimental]
+sdk untaped_values.api.Input.secret  [experimental]
+sdk untaped_values.api.Input.type  [experimental]
+sdk untaped_values.api.Input.values  [experimental]
+sdk untaped_values.api.InputError base=untaped.sdk.UntapedError  [experimental]
+sdk untaped_values.api.InputError()  [experimental]
+sdk untaped_values.api.InputError(*args)  [experimental]
+sdk untaped_values.api.InputError(category=) default=None  [experimental]
+sdk untaped_values.api.InputError(details=) default=None  [experimental]
+sdk untaped_values.api.InputError(hint=) default=None  [experimental]
+sdk untaped_values.api.InputError(system=) default=None  [experimental]
+sdk untaped_values.api.InputError.category class  [experimental]
+sdk untaped_values.api.InputError.system class  [experimental]
+sdk untaped_values.api.Resolved(asked@3=) default=[]  [experimental]
+sdk untaped_values.api.Resolved(missing@2=) default=[]  [experimental]
+sdk untaped_values.api.Resolved(values)  [experimental]
+sdk untaped_values.api.Resolved.asked  [experimental]
+sdk untaped_values.api.Resolved.missing  [experimental]
+sdk untaped_values.api.Resolved.values  [experimental]
+sdk untaped_values.api.Vars()  [experimental]
+sdk untaped_values.api.Vars(non_interactive=) default=false  [experimental]
+sdk untaped_values.api.Vars(var=) default=[]  [experimental]
+sdk untaped_values.api.Vars(vars_file=) default=[]  [experimental]
+sdk untaped_values.api.Vars.non_interactive  [experimental]
+sdk untaped_values.api.Vars.values()  [experimental]
+sdk untaped_values.api.Vars.var  [experimental]
+sdk untaped_values.api.Vars.vars_file  [experimental]
+sdk untaped_values.api.coerce(name=) default=None  [experimental]
+sdk untaped_values.api.coerce(spec, value)  [experimental]
+sdk untaped_values.api.redact(specs, values)  [experimental]
+sdk untaped_values.api.render(text, values, specs, *, field)  [experimental]
+sdk untaped_values.api.renderer_file()  [experimental]
+sdk untaped_values.api.resolve(ask=) default=None callback(2)  [experimental]
+sdk untaped_values.api.resolve(known=) default=[]  [experimental]
+sdk untaped_values.api.resolve(label=) default=""  [experimental]
+sdk untaped_values.api.resolve(specs, given)  [experimental]
+sdk untaped_values.api.terminal_ask(terminal, vars)  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.sdk.Issued  [experimental]
 sdk untaped_workspace.api.Repo base=untaped.sdk.Record  [experimental]
 sdk untaped_workspace.api.Repo extra=forbid  [experimental]

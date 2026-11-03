@@ -12,8 +12,6 @@ INVENTORY_SPEC = AwxResourceSpec(
     kind="Inventory",
     record=Inventory,
     cli_name="inventories",
-    api_path="inventories",
-    relationship_api_path="inventories",
     identity_keys=("name", "organization"),
     canonical_fields=(
         "description",

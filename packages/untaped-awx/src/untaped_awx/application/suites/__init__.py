@@ -11,9 +11,7 @@ from untaped_awx.application.suites.ports import (
     Filesystem,
     Launcher,
     Parser,
-    Prompt,
-    VarsResolver,
     Watcher,
 )
 
-__all__ = ["Filesystem", "Launcher", "Parser", "Prompt", "VarsResolver", "Watcher"]
+__all__ = ["Filesystem", "Launcher", "Parser", "Watcher"]

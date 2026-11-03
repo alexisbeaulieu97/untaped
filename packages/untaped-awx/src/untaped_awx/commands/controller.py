@@ -28,7 +28,7 @@ class Ping(AwxCommand):
 
     def run(self) -> PingStatus:
         with self.awx(refresh=self.refresh.directive) as awx:
-            return PingUseCase(awx.repo)()
+            return PingUseCase(awx.api)()
 
 
 def probe() -> str:

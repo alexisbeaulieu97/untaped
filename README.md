@@ -1,7 +1,7 @@
 # untaped
 
 **untaped** is a batteries-included CLI for DevOps workflows. `untaped[all]`
-gives you nine plugins that share one config file, the same profiles, and
+gives you ten plugins that share one config file, the same profiles, and
 the same output and piping rules:
 
 - **`workspace`**: task workspaces: one directory of git worktrees across
@@ -18,6 +18,8 @@ the same output and piping rules:
   keep repositories in.
 - **`lint`**: rules over plugins and records, one id and ignore spelling for
   all; checks a plugin against the house conventions (experimental).
+- **`values`**: the inputs language plugins share: `--var`, `--vars-file`,
+  prompts and secret inputs (no commands of its own).
 
 Root commands manage the tool itself: `setup`, `config`, `profile`, `auth`,
 `skills`, `doctor`, `plugin` and `docs`, and the experimental `project`.
@@ -92,7 +94,7 @@ Each plugin's guide: [workspace](./packages/untaped-workspace/README.md),
 [awx](./packages/untaped-awx/README.md), [ansible](./packages/untaped-ansible/README.md),
 [recipe](./packages/untaped-recipe/README.md),
 [dotfiles](./packages/untaped-dotfiles/README.md),
-[git](./packages/untaped-git/README.md) and
+[git](./packages/untaped-git/README.md), [values](./packages/untaped-values/README.md) and
 [lint](./packages/untaped-lint/README.md).
 
 ## Versioning

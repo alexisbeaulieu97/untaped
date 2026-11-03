@@ -97,7 +97,7 @@ class _Membership(ResourceCommand):
                 require_explicit=True,
                 fixed_scope=_member_scope(awx, selected_parent.record, ref),
             )
-            manager = ManageMembership(awx.repo)
+            manager = ManageMembership(awx.api)
             plan = manager.prepare(
                 spec,
                 parent_id=selected_parent.id,

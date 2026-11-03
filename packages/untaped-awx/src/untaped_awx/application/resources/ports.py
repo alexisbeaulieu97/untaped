@@ -1,13 +1,13 @@
 """Ports of the resource use cases (the "ports" of hexagonal architecture).
 
 Use cases depend on these — never on concrete infrastructure types — so
-they can be tested with simple stubs. Concrete adapters live in
-``infrastructure/resources/`` and are wired together by the commands.
+they can be tested with simple stubs. The controller's adapter
+(``infrastructure/controller/``) serves them, wired together by the commands.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -28,11 +28,9 @@ class Catalog(Protocol):
 
     Returns :class:`ResourceSpec` (the domain view). Concrete catalogs
     in infrastructure may return :class:`AwxResourceSpec` instances —
-    that's a covariant subtype, so it satisfies this Protocol while
-    keeping transport detail (``api_path``, ``cli_name``) accessible
-    to callers in infrastructure (strategies, the resource repository).
-    Application code reads only domain fields and stays decoupled from
-    AWX-specific transport.
+    a covariant subtype, so it satisfies this Protocol while keeping the
+    CLI wiring (``cli_name``, ``commands``) accessible to the commands.
+    Application code reads only domain fields.
     """
 
     def get(self, kind: str) -> ResourceSpec: ...
@@ -49,11 +47,8 @@ class ResourceClient(Protocol):
     or iterate-and-extract, where the per-record Pydantic round trip
     is pure overhead. Writes accept :class:`WritePayload` (create /
     update) or :class:`ActionPayload` (custom actions). The client
-    never branches on kind — it follows the spec verbatim.
-
-    Methods take :class:`ResourceSpec` (the domain view); concrete
-    adapters narrow to :class:`AwxResourceSpec` internally to read
-    transport fields like ``api_path``.
+    never branches on kind — it follows the spec verbatim, and knows
+    where each kind's records live.
     """
 
     def list(
@@ -72,6 +67,10 @@ class ResourceClient(Protocol):
         The record itself is not read: a caller holding a list row adds these
         to it instead of reading the record again.
         """
+        ...
+
+    def location(self, spec: ResourceSpec, id_: int) -> str:
+        """Where the controller keeps record ``id_``, as ``job_templates/7``."""
         ...
 
     def find(self, spec: ResourceSpec, *, params: dict[str, str]) -> ServerRecord | None:
@@ -132,11 +131,8 @@ class ResourceClient(Protocol):
     ) -> dict[str, Any]:
         """Hit a many-to-many sub-endpoint of a resource.
 
-        Constructed URL: ``<api_path>/<record_id>/<sub_endpoint>/``.
-        Hides the ``api_path`` join from application code so the layering
-        rule (``application/`` mustn't read AwxResourceSpec-only fields)
-        stays intact while still letting use cases reconcile membership
-        generically across kinds.
+        ``sub_endpoint`` names the relation (``credentials``) or the record's
+        endpoint (``launch``, ``copy``); where it lives is the adapter's.
         """
         ...
 
@@ -148,70 +144,43 @@ class ResourceClient(Protocol):
         *,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Walk every page of ``<api_path>/<record_id>/<sub_endpoint>/``.
+        """Walk every page of a record's ``sub_endpoint`` relation.
 
-        Same path-join contract as :meth:`sub_endpoint_request`; use
+        Named as :meth:`sub_endpoint_request` names it; use
         this for membership reads where one page (typically 200 rows)
         wouldn't fit (e.g. a Group with many hosts).
         """
         ...
 
 
-class RawHttpResourceClient(ResourceClient, Protocol):
-    """A :class:`ResourceClient` that also exposes raw URL access.
+class NestedResourceClient(ResourceClient, Protocol):
+    """A :class:`ResourceClient` that also reads and writes records under a parent.
 
-    Use cases that need to construct AWX URLs directly take this wider
-    port instead of :class:`ResourceClient`. Today's callers:
-
-    - :class:`BatchMutationEngine`: forwards its ``client`` to
-      :class:`ApplyStrategy` implementations
-      (``find_existing`` / ``create`` / ``update``), some of which
-      build nested-endpoint URLs (e.g. ``ScheduleApplyStrategy``,
-      ``InventoryChildApplyStrategy``).
-    - :class:`WatchJob` and :class:`PollingJobMonitor`: poll job
-      execution endpoints (``/jobs/<id>/``, ``/jobs/<id>/stdout/``,
-      ``/jobs/<id>/job_events/``) directly.
-
-    New use cases should default to the narrower :class:`ResourceClient`
-    and only widen to this Protocol when ad-hoc URL access is
-    unavoidable.
+    :class:`ApplyStrategy` implementations take it: a schedule is created
+    under its template, a host, group or source under its inventory.
+    ``parent_kind`` and ``parent_id`` name the parent record.
     """
 
-    def request(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        json: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Escape hatch for strategies that need ad-hoc URLs (e.g. Schedule)."""
+    def named_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, *, name: str
+    ) -> tuple[Sequence[dict[str, Any]], int | None]:
+        """At most two ``spec`` records named ``name`` under the parent, and how many there are."""
         ...
 
-    def paginate_path(
-        self,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-        limit: int | None = None,
+    def list_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int
     ) -> Iterator[dict[str, Any]]:
-        """Walk every page of a list endpoint at ``path``.
-
-        ``path`` is relative to the controller API prefix. Use this instead of a
-        single ``request("GET", path, params=…)`` whenever the result
-        could exceed one page — AWX silently truncates at ``page_size``
-        otherwise.
-        """
+        """Every ``spec`` record under the parent."""
         ...
 
-    def request_text(
-        self,
-        method: str,
-        path: str,
-        *,
-        params: dict[str, str] | None = None,
-    ) -> str:
-        """For non-JSON endpoints (e.g. ``jobs/<id>/stdout/?format=txt_download``)."""
+    def create_under(
+        self, spec: ResourceSpec, parent_kind: str, parent_id: int, body: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Create a ``spec`` record under the parent, which it then belongs to."""
+        ...
+
+    def inventory_kind(self, inventory_id: int) -> str:
+        """Inventory ``inventory_id``'s kind: ``""`` (plain), ``smart`` or ``constructed``."""
         ...
 
 
@@ -274,7 +243,7 @@ class ProjectPlaybooks(Protocol):
     """The playbooks AWX found in a project's last sync."""
 
     def playbooks(self, project_id: int) -> tuple[str, ...]:
-        """``projects/<id>/playbooks/``: playbook paths relative to the project root."""
+        """The project's playbook paths, relative to its root."""
         ...
 
 
@@ -288,14 +257,12 @@ class ApplyStrategy(Protocol):
     and unwrap on the way out (``record.model_dump()``).
 
     Some strategies (e.g. ``ScheduleApplyStrategy``,
-    ``InventoryChildApplyStrategy``) write to nested endpoints whose
-    URLs aren't derivable from the spec alone, so the ``client``
-    parameter is :class:`RawHttpResourceClient` (which extends
-    :class:`ResourceClient` with raw URL access).
+    ``InventoryChildApplyStrategy``) write records under a parent, so the
+    ``client`` parameter is :class:`NestedResourceClient`.
     """
 
     def snapshot_existing(
-        self, spec: ResourceSpec, existing: dict[str, Any], *, client: RawHttpResourceClient
+        self, spec: ResourceSpec, existing: dict[str, Any], *, client: NestedResourceClient
     ) -> dict[str, Any]:
         """Hydrate apply/patch baselines; editors supply an already complete snapshot."""
         ...
@@ -308,7 +275,7 @@ class ApplyStrategy(Protocol):
         *,
         parent: tuple[str, PlannedId] | None = None,
         parent_resource: Resource | None = None,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
     ) -> tuple[ResourceSpec, dict[str, Any] | None]:
         """Freeze routing and validate state without refreshing the existing baseline."""
         ...
@@ -328,7 +295,7 @@ class ApplyStrategy(Protocol):
         spec: ResourceSpec,
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any] | None: ...
 
@@ -338,7 +305,7 @@ class ApplyStrategy(Protocol):
         payload: dict[str, Any],
         identity: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
@@ -348,7 +315,7 @@ class ApplyStrategy(Protocol):
         existing: dict[str, Any],
         payload: dict[str, Any],
         *,
-        client: RawHttpResourceClient,
+        client: NestedResourceClient,
         fk: FkResolver,
     ) -> dict[str, Any]: ...
 
@@ -358,7 +325,7 @@ class StrategyResolver(Protocol):
 
 
 class UnifiedTemplateRepository(Protocol):
-    """Read access to AWX's polymorphic ``/unified_job_templates/`` view.
+    """Read access to every launchable template, whatever its kind.
 
     Aggregates ``JobTemplate``, ``WorkflowJobTemplate``, ``Project``, and
     ``InventorySource`` rows behind a single ``type`` discriminator. No
@@ -366,20 +333,35 @@ class UnifiedTemplateRepository(Protocol):
     handle write paths.
     """
 
-    def get_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
-        """Bulk-fetch via ``?id__in=…``; one round trip, paginated when
-        the number of ids exceeds the page size."""
+    def unified_templates(
+        self,
+        *,
+        params: dict[str, str] | None = None,
+        limit: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Every template ``params`` select, by name unless ``params`` order them."""
         ...
+
+    def unified_template(self, id_: int) -> dict[str, Any]:
+        """The template with ``id_``, its ``type`` naming its kind."""
+        ...
+
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
+        """The templates with ``ids``, by id: one listing, paged when there are many."""
+        ...
+
+
+class ResourceLookups(ResourceClient, UnifiedTemplateRepository, Protocol):
+    """What resolving foreign keys reads: records of any kind, and unified templates."""
 
 
 class WorkflowNodeRepository(Protocol):
     """Access to workflow-job-template nodes.
 
-    Wraps the node collection from both directions: per-workflow via
-    ``workflow_job_templates/<id>/workflow_nodes/`` and
-    collection-wide via ``workflow_job_template_nodes/`` — the
-    DAG of unified-job-template references that AWX executes when the
-    workflow runs. Returned dicts carry the full AWX shape (including
+    Reads the nodes from both directions, a workflow's own and every node
+    across workflows that references a template: the DAG of
+    unified-job-template references that AWX executes when the workflow
+    runs. Returned dicts carry the full AWX shape (including
     ``summary_fields``) so the use case can flatten the referenced
     template's name and type without a second round trip.
     """
@@ -411,7 +393,10 @@ class WorkflowNodeRepository(Protocol):
         ...
 
     def list_node_members(self, *, node_id: int, relation: str) -> Iterator[dict[str, Any]]:
-        """Walk a node relation: ``success_nodes``, ``credentials``, ``labels``, …"""
+        """Walk a node relation: ``success_nodes``, ``credentials``, ``labels``, …
+
+        A prompt relation the controller is too old to have has no members.
+        """
         ...
 
     def create_node(self, *, workflow_id: int, body: dict[str, Any]) -> dict[str, Any]:
@@ -460,10 +445,11 @@ __all__ = [
     "ApplyStrategy",
     "Catalog",
     "FkResolver",
+    "NestedResourceClient",
     "ProjectPlaybooks",
-    "RawHttpResourceClient",
     "ResourceClient",
     "ResourceDocumentReader",
+    "ResourceLookups",
     "StrategyResolver",
     "UnifiedTemplateRepository",
     "WorkflowNodeRepository",
