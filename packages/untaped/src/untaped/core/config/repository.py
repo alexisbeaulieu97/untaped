@@ -8,6 +8,7 @@ of the project's ``.untaped/config.yml``.
 
 from __future__ import annotations
 
+import copy
 import os
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -50,7 +51,7 @@ from untaped.runtime.settings import (
 from untaped.runtime.settings_env import env_var_name, env_var_setting
 from untaped.runtime.settings_layout import ResolvedConfig, folder_refusal, profile_refusal
 from untaped.runtime.stability_marks import setting_mark
-from untaped.runtime.yaml_roundtrip import KeyRename
+from untaped.runtime.yaml_roundtrip import KeyRename, same_data
 from untaped.sdk._keys import map_value_type, model_in
 from untaped.sdk._schema import EntryNameError, FieldDescriptor, find_descriptor, walk_settings
 from untaped.sdk.errors import ConfigError, first_validation_error
@@ -305,6 +306,7 @@ class SettingsFileRepository:
         profile: str | None = None,
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
+        on_unchanged: Callable[[str], None] | None = None,
     ) -> str:
         """Read-modify-write ``key`` in the target profile under one config lock.
 
@@ -324,14 +326,19 @@ class SettingsFileRepository:
         own; writing or removing the key removes every old spelling in the
         target profile, each reported to ``on_spelling_removed``. For an entry
         of a map, those are the map's. Removing a key or entry that isn't set
-        (no run reads it from the target, not even as null) changes
-        nothing, and leaves its retired spellings for ``config migrate``.
+        (no run reads it from the target, not even as null) leaves what runs
+        read alone and removes only its retired spellings, so ``config
+        migrate`` can't bring the value back.
+        A write that changes nothing in the file, such as a value it already
+        holds, is reported to ``on_unchanged``; when no key changes, the file
+        is left exactly as it was.
         """
         return self.update_values(
             {key: update},
             profile=profile,
             dry_run=dry_run,
             on_spelling_removed=on_spelling_removed,
+            on_unchanged=on_unchanged,
         )
 
     def update_values(
@@ -352,8 +359,9 @@ class SettingsFileRepository:
         one raising ``update`` writes nothing. ``home_only_to_base`` writes a
         key no profile may set to the base instead of refusing it: a plugin's
         own write names no place, so such a key lands where every run reads
-        it. Each key whose ``None`` removed nothing, as it wasn't set, is
-        reported to ``on_unchanged``. Returns the profile the other keys land in.
+        it. Each key whose write changed nothing in the file is reported to
+        ``on_unchanged``; a removal of nothing is not validated either. Returns
+        the profile the other keys land in.
         """
         descriptors = {key: self.descriptor(key) for key in updates}
         based = {
@@ -368,9 +376,11 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal resolved
+            initial = copy.deepcopy(data)
             target_data, written = self._write_target(data, profile)
             resolved = written
             untouched: set[str] = set()
+            removed_nothing: set[str] = set()
             targets = {
                 key: (data, DEFAULT_PROFILE) if key in based else (target_data, written)
                 for key in updates
@@ -380,15 +390,16 @@ class SettingsFileRepository:
                 where, name = targets[key]
                 raw_value = update(name, self._own(where, descriptor))
                 value = None if raw_value is None else _stored(key, descriptor, raw_value)
-                changed = self._write(
-                    where, descriptor, value, on_spelling_removed, remove=raw_value is None
-                )
-                if not changed:
+                before = copy.deepcopy(data)
+                self._write(where, descriptor, value, on_spelling_removed, remove=raw_value is None)
+                if same_data(data, before):
                     untouched.add(key)
+                    if raw_value is None:
+                        removed_nothing.add(key)
                     if on_unchanged is not None:
                         on_unchanged(key)
             for key, descriptor in descriptors.items():
-                if key in untouched:
+                if key in removed_nothing:
                     continue  # a removal that changed nothing has nothing to validate or blame
                 # A key sent to the base is read under the profile the others land in too.
                 for reader in dict.fromkeys((targets[key][1], written)):
@@ -403,6 +414,7 @@ class SettingsFileRepository:
                             f"invalid value for {blamed!r}{read}: {_issue(blamed, exc)}",
                             category="invalid",
                         ) from exc
+            _keep_empty_profile(data, initial, written)
 
         self._mutate(_apply, dry_run=dry_run)
         # ``_mutate`` always runs ``_apply``, which sets ``resolved`` from
@@ -439,25 +451,28 @@ class SettingsFileRepository:
         report: SpellingRemoved | None,
         *,
         remove: bool,
-    ) -> bool:
+    ) -> None:
         """Set ``descriptor`` to ``value`` in one profile's ``data``, or remove it.
 
         Then every old spelling no run reads any more goes, each reported to
         ``report``: the key's own, or for an entry of a map (or a setting
         inside one) the map's, as the map's name now wins over all of them.
-        Removing what a run doesn't read (:meth:`_is_set`) changes nothing,
-        retired spellings included. ``True`` when anything was written or
-        removed.
+        Removing what a run doesn't read (:meth:`_is_set`) leaves what runs
+        read alone and removes only the retired spellings, which ``config
+        migrate`` would otherwise bring back.
         """
+        declared = self._declared(descriptor)
         if remove and not self._is_set(data, descriptor):
-            return False
+            read = self._read_paths(declared)
+            retired = [old for old in self._old_paths(declared) if old not in read]
+            _remove_spellings(data, retired, report)
+            return
         self._carry_old_map(data, descriptor, report)
         if remove:
             unset_at_path(data, descriptor.path, keep=descriptor.entry_depth)
         else:
             set_at_path(data, descriptor.path, value)
-        _remove_spellings(data, self._old_paths(self._declared(descriptor)), report)
-        return True
+        _remove_spellings(data, self._old_paths(declared), report)
 
     def _carry_old_map(
         self, data: dict[str, Any], descriptor: FieldDescriptor, report: SpellingRemoved | None
@@ -530,14 +545,15 @@ class SettingsFileRepository:
         dry_run: bool = False,
         on_spelling_removed: SpellingRemoved | None = None,
     ) -> tuple[bool, str]:
-        """Remove ``key``, and every old spelling of it, from the resolved write scope, when set.
+        """Remove ``key`` and its old spellings (only the retired ones, when it isn't set).
 
         Returns ``(removed, target)``; under ``dry_run`` ``removed`` says
         whether it would be removed and nothing is written. An explicit
-        ``profile`` the layout cannot satisfy raises ``ConfigError``. Removing a key that
-        simply isn't set in the resolved scope is a no-op
-        (``removed=False``). Each old spelling removed is reported to
-        ``on_spelling_removed``; for an entry of a map, those are the map's.
+        ``profile`` the layout cannot satisfy raises ``ConfigError``.
+        Removing a key that isn't set in the resolved scope removes only its
+        retired spellings; with none, it is a no-op (``removed=False``). Each
+        old spelling removed is reported to ``on_spelling_removed``; for an
+        entry of a map, those are the map's.
         """
         descriptor = self.descriptor(key)
         removed = False
@@ -545,8 +561,12 @@ class SettingsFileRepository:
 
         def _apply(data: dict[str, Any]) -> None:
             nonlocal removed, resolved
+            initial = copy.deepcopy(data)
             target_data, resolved = self._write_target(data, profile)
-            if not self._write(target_data, descriptor, None, on_spelling_removed, remove=True):
+            before = copy.deepcopy(data)
+            self._write(target_data, descriptor, None, on_spelling_removed, remove=True)
+            if same_data(data, before):
+                _keep_empty_profile(data, initial, resolved)
                 return
             removed = True
             # Symmetric with ``update_value``: re-validate the key's section so a
@@ -739,6 +759,19 @@ def _has(data: Any, path: tuple[str, ...]) -> bool:
             return False
         data = data[segment]
     return True
+
+
+def _keep_empty_profile(data: dict[str, Any], initial: dict[str, Any], name: str) -> None:
+    """Leave an empty ``name:`` profile (YAML null) as it was when no write landed in it.
+
+    Choosing where a write lands makes it a mapping to write into; a write
+    that left it empty changed nothing there, so the file shouldn't either.
+    """
+    before, after = initial.get("profiles"), data.get("profiles")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return
+    if name in before and before[name] is None and after.get(name) == {}:
+        after[name] = None
 
 
 def _remove_spellings(

@@ -643,3 +643,12 @@ def test_a_ranking_as_asked_is_still_validated_before_a_new_profile_is_made() ->
     with pytest.raises(ConfigError, match=r"invalid value for 'shelf\.extensions'"):
         write_ranking(target, '["shop"]', profile="prod", owners={"shelf"})
     assert "profiles" not in read_config_dict(config_path())
+
+
+def test_plugin_rank_removing_nothing_leaves_an_empty_profile_alone() -> None:
+    write_config("format_version: 2\nprofiles:\n  prod:\n")
+    before = config_path().read_text()
+    argv = ["--profile", "prod", "plugin", "rank", "shelf.book_source", "books", "-f", "json"]
+    result = _run(argv, *_all())
+    assert json.loads(result.stdout)["action"] == "unchanged", result.stderr
+    assert config_path().read_text() == before

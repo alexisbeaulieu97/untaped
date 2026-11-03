@@ -1,7 +1,8 @@
 """The config write use cases: what they write, and the lines they return instead of printing."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import pytest
 from pydantic import BaseModel, Field
@@ -20,6 +21,8 @@ from untaped.sdk.errors import ConfigError, UsageError
 
 class DemoSettings(BaseModel):
     page_size: int = Field(50, gt=0)
+    extra: dict[str, Any] = {}
+    ratio: float = 1.0
 
 
 class SpelledSettings(BaseModel):
@@ -243,27 +246,46 @@ def test_a_null_spelling_a_run_reads_hides_the_others(_config: Path, spelled: st
     assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
 
 
-def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
-    text = (
-        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n"
+def test_removing_an_entry_that_isnt_set_leaves_the_map_runs_read(_config: Path) -> None:
+    """Only the map's retired spelling goes, so ``config migrate`` can't bring it back."""
+    _config.write_text(
+        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n",
+        encoding="utf-8",
     )
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
+    assert change.outcome.action == "deleted"
+    assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
+
+
+def test_removing_an_entry_with_no_spelling_to_drop_changes_nothing(_config: Path) -> None:
+    text = "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n"
     _config.write_text(text, encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
     assert change.outcome.action == "unchanged"
     assert _config.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize("key", ["spelled.groups", "spelled.size"])
-def test_removing_a_key_that_isnt_set_changes_nothing(_config: Path, key: str) -> None:
-    """A retired spelling is no one's value: removing the key leaves it, and says unchanged."""
+@pytest.mark.parametrize(
+    ("key", "old"), [("spelled.groups", "a_groups"), ("spelled.size", "a_size")]
+)
+def test_removing_a_key_that_isnt_set_drops_its_retired_spelling(
+    _config: Path, key: str, old: str
+) -> None:
+    """A retired spelling no run reads still goes, and is named, so migrate can't restore it."""
     text = "format_version: 2\nspelled:\n  a_groups: {ops: {lead: ana}}\n  a_size: 9\n"
     _config.write_text(text, encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({key: None})
-    assert (change.outcome.action, change.notes) == ("unchanged", ())
+    assert change.outcome.action == "deleted"
+    assert change.notes == (("success", f"unset {key} in profile default; removed spelled.{old}"),)
+    assert old not in read_config_dict(_config)["spelled"]
+
+    _config.write_text(text, encoding="utf-8")
     unset = UnsetSetting(SettingsFileRepository())(key)
-    assert unset.outcome.action == "unchanged"
-    assert unset.notes == (("info", f"{key} was not set in profile default"),)
-    assert _config.read_text(encoding="utf-8") == text
+    assert unset.outcome.action == "deleted"
+    assert unset.notes == (("success", f"unset {key} in profile default; removed spelled.{old}"),)
+    again = UnsetSetting(SettingsFileRepository())(key)
+    assert again.outcome.action == "unchanged"
+    assert again.notes == (("info", f"{key} was not set in profile default"),)
 
 
 def test_removing_a_null_a_run_reads_is_a_change(_config: Path) -> None:
@@ -282,3 +304,64 @@ def test_removing_a_key_under_a_null_section_changes_nothing(_config: Path) -> N
     _config.write_text("format_version: 2\nspelled: null\n", encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({"spelled.size": None})
     assert change.outcome.action == "unchanged"
+
+
+def test_setting_a_value_the_key_holds_is_unchanged(_config: Path) -> None:
+    """The outcome follows the file: a value already there writes nothing, dry run or not."""
+    text = "format_version: 2\ndemo: {page_size: 10}\n"
+    _config.write_text(text, encoding="utf-8")
+    repo = SettingsFileRepository()
+    for dry_run in (True, False):
+        change = SetSetting(repo)("demo.page_size", "10", dry_run=dry_run)
+        assert change.outcome.action == "unchanged"
+        assert change.notes == (
+            ("info", "demo.page_size already holds that value in profile default"),
+        )
+    (many,) = SetSettings(repo)({"demo.page_size": "10"})
+    assert (many.outcome.action, many.notes) == ("unchanged", ())
+    assert _config.read_text(encoding="utf-8") == text
+
+
+def test_setting_a_value_still_drops_its_old_spelling(_config: Path) -> None:
+    """The value is the same, but removing the old spelling changes the file."""
+    _config.write_text("format_version: 2\nspelled: {size: 4, a_size: 9}\n", encoding="utf-8")
+    change = SetSetting(SettingsFileRepository())("spelled.size", "4")
+    assert change.outcome.action == "updated"
+    assert read_config_dict(_config)["spelled"] == {"size": 4}
+
+
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda: UnsetSetting(SettingsFileRepository())("demo.page_size", profile="prod"),
+        lambda: SetSettings(SettingsFileRepository())({"demo.page_size": None}, profile="prod")[0],
+    ],
+    ids=["unset", "set-settings"],
+)
+def test_a_write_that_changes_nothing_leaves_an_empty_profile_alone(
+    _config: Path, write: Callable[[], object]
+) -> None:
+    """An empty ``prod:`` stays as written, not rewritten as ``prod: {}``."""
+    _config.write_text("format_version: 2\nprofiles:\n  prod:\n", encoding="utf-8")
+    before = _config.read_text(encoding="utf-8")
+    change = write()
+    assert change.outcome.action == "unchanged"  # type: ignore[attr-defined]
+    assert _config.read_text(encoding="utf-8") == before
+
+
+def test_a_value_of_another_kind_is_a_change(_config: Path) -> None:
+    """``1`` and ``true`` compare equal in Python, but the file holds one of them."""
+    _config.write_text("format_version: 2\ndemo:\n  extra: {x: 1}\n", encoding="utf-8")
+    change = SetSetting(SettingsFileRepository())("demo.extra", '{"x": true}')
+    assert change.outcome.action == "updated"
+    assert read_config_dict(_config)["demo"]["extra"]["x"] is True
+
+
+def test_a_nan_in_the_file_is_the_same_nan(_config: Path) -> None:
+    """A file holding ``.nan`` is not rewritten (or stripped of comments) by a no-op write."""
+    text = "format_version: 2\n# keep me\ndemo:\n  ratio: .nan\n  page_size: 5\n"
+    _config.write_text(text, encoding="utf-8")
+    assert SetSetting(SettingsFileRepository())("demo.page_size", "5").outcome.action == "unchanged"
+    assert _config.read_text(encoding="utf-8") == text
+    SetSetting(SettingsFileRepository())("demo.page_size", "6")
+    assert "# keep me" in _config.read_text(encoding="utf-8")

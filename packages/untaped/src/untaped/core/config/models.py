@@ -113,9 +113,9 @@ class SettingEntry(BaseModel):
 class SettingOutcome(OutcomeRecord):
     """The result of ``config set``/``unset``.
 
-    ``action`` is ``updated`` (set), ``deleted`` or ``unchanged`` (unset), or
-    ``planned`` under ``--dry-run``. The value is never echoed: it may be a
-    secret.
+    ``action`` is ``updated`` (set) or ``deleted`` (unset), ``planned`` for
+    either under ``--dry-run``, or ``unchanged`` when the write changes
+    nothing in the file. The value is never echoed: it may be a secret.
     """
 
     key: str

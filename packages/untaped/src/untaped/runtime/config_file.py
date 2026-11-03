@@ -29,7 +29,7 @@ from untaped.runtime.config_read import (
     load_state_yaml,
 )
 from untaped.runtime.settings import get_settings, resolve_config_path
-from untaped.runtime.yaml_roundtrip import KeyRename, plain_dump, render_preserving
+from untaped.runtime.yaml_roundtrip import KeyRename, plain_dump, render_preserving, same_data
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.storage._fs import atomic_write, locked_write
 
@@ -139,7 +139,7 @@ def mutate_config(
         data = load(target)
         before = copy.deepcopy(data)
         fn(data)
-        if data != before:
+        if not same_data(data, before):
             write_config_dict(data, target, renames=renames, load=load)
             get_settings.cache_clear()
 
