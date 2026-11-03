@@ -1614,8 +1614,51 @@ def test_apply_rejects_input_from_conflicts_and_global_scope(
             "--dry-run",
         ],
     )
-    assert global_source.exit_code != 0
+    assert global_source.exit_code == 2  # a usage error
     assert "scope global" in global_source.output
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        pytest.param(
+            "servcie={{ target.name }}",
+            "unknown input: servcie; declared: service",
+            id="undeclared-name",
+        ),
+        pytest.param(
+            "service={{ target.name",
+            "invalid --input-from expression for service",
+            id="invalid-expression",
+        ),
+    ],
+)
+def test_apply_input_from_faults_are_usage_errors(
+    tmp_path: Path, source: str, expected: str
+) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text("version: 1\ninputs:\n  service: {type: str, scope: target}\nsteps: []\n")
+    target = tmp_path / "api"
+    target.mkdir()
+
+    result = run(["apply", str(recipe), str(target), "--input-from", source, "--dry-run"])
+
+    assert result.exit_code == 2, result.output
+    assert expected in result.output
+
+
+def test_apply_invalid_recipe_from_expression_stays_a_recipe_error(tmp_path: Path) -> None:
+    recipe = tmp_path / "recipe.yml"
+    recipe.write_text(
+        "version: 1\ninputs:\n  service: {type: str, from: '{{ target.name'}\nsteps: []\n"
+    )
+    target = tmp_path / "api"
+    target.mkdir()
+
+    result = run(["apply", str(recipe), str(target), "--dry-run"])
+
+    assert result.exit_code == 1, result.output
+    assert "invalid input source expression for service" in result.output
 
 
 def test_apply_stdin_targets_never_prompt_for_missing_inputs(

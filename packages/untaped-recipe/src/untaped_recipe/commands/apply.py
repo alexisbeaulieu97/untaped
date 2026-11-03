@@ -72,7 +72,9 @@ class Inputs(BaseModel):
     `--input-from NAME='<expression>'` derives one input per target. It must
     resolve for every target, where a recipe's `from` candidates fall through
     silently to the next. It can't be combined with `--var` for the same input,
-    and an input with `scope: global` rejects it.
+    and an input with `scope: global` rejects it. Like an unknown `--var`, an
+    `--input-from` naming an input the recipe doesn't declare or a global one,
+    or whose expression doesn't compile, is a usage error (exit 2).
 
     Expressions (a recipe's `from` and `--input-from`) allow literal text,
     constants and field access on `target.path`, `target.name`,

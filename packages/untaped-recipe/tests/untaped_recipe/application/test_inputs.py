@@ -248,12 +248,22 @@ def test_input_resolution_rejects_cli_value_and_source_conflicts() -> None:
 
 
 def test_input_resolution_rejects_input_from_for_explicit_global_scope() -> None:
-    with pytest.raises(RecipeError, match="scope global"):
+    with pytest.raises(UsageError, match="scope global"):
         _config(
             _recipe(),
             fixed_values={"token": "secret"},
             input_from={"token": "{{ target.name }}"},
         )
+
+
+def test_input_from_naming_undeclared_inputs_is_a_usage_error_like_var() -> None:
+    with pytest.raises(UsageError, match=r"^unknown inputs: bogus, typo; declared: "):
+        _config(_recipe(), input_from={"typo": "{{ target.name }}", "bogus": "x"})
+
+
+def test_invalid_input_from_expression_is_a_usage_error() -> None:
+    with pytest.raises(UsageError, match="invalid --input-from expression for service"):
+        _config(_recipe(), input_from={"service": "{{ target.name"})
 
 
 def test_interactive_prompts_for_global_and_target_inputs() -> None:
