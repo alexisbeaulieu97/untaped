@@ -35,6 +35,23 @@ def renderer_file() -> Path:
 
 
 @experimental
+def placeholders(text: str, *, field: str) -> tuple[str, ...]:
+    """The input names ``text``'s ``{{ name }}`` placeholders use, in order, each once.
+
+    For checking a file when it loads, before any value is known. Raises
+    :class:`InputError` naming ``field`` for a token that isn't a bare name.
+    """
+    names: list[str] = []
+    for token in renderer.template_tokens(text):
+        name = renderer.bare_token_name(token)
+        if name is None:
+            raise InputError(f"token {token!r} in field {field!r} is not a bare input name")
+        if name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+@experimental
 def render[S: Input](
     text: str, values: Mapping[str, object], specs: Mapping[str, S], *, field: str
 ) -> str:
@@ -44,10 +61,7 @@ def render[S: Input](
     name, a name with no value, or a secret, ``list`` or ``dict`` input: a
     secret never reaches a path, a target or a command line through here.
     """
-    for token in renderer.template_tokens(text):
-        name = renderer.bare_token_name(token)
-        if name is None:
-            raise InputError(f"token {token!r} in field {field!r} is not a bare input name")
+    for name in placeholders(text, field=field):
         spec = specs.get(name)
         if spec is not None and spec.secret:
             raise InputError(f"secret input {name!r} cannot be used in field {field!r}")

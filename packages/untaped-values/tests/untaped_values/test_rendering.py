@@ -8,7 +8,7 @@ import textwrap
 
 import pytest
 
-from untaped_values.api import Input, InputError, redact, render, renderer_file
+from untaped_values.api import Input, InputError, placeholders, redact, render, renderer_file
 
 _SPECS = {
     "name": Input(),
@@ -74,3 +74,13 @@ def test_the_renderer_file_renders_with_only_the_standard_library() -> None:
         "template input 'nope' is not defined",
         "[]",
     ]
+
+
+def test_placeholders_name_each_input_a_field_uses_once_in_order() -> None:
+    assert placeholders("{{ b }}/{{a}}/{{ b }}", field="target") == ("b", "a")
+    assert placeholders("no tokens", field="target") == ()
+
+
+def test_placeholders_refuse_a_token_that_is_not_a_bare_name() -> None:
+    with pytest.raises(InputError, match=r"token '\{\{ a\.b \}\}' in field 'target' is not a bare"):
+        placeholders("~/{{ a.b }}", field="target")

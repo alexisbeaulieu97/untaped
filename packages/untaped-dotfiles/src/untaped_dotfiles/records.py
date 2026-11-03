@@ -1,4 +1,4 @@
-"""The records the dotfiles commands print; each kind is its class name (``dotfiles.path_status``).
+"""The records the dotfiles commands print; each kind is its class name (``dotfiles.entry_status``).
 
 It holds models only, so importing it never imports a command.
 """
@@ -7,61 +7,168 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from untaped.sdk import AbsolutePath, Column, OutcomeRecord, Record, TargetRecord, UtcTimestamp
-from untaped_dotfiles.models import Mode
+from untaped.sdk import (
+    AbsolutePath,
+    Column,
+    Failure,
+    OutcomeRecord,
+    Record,
+    TargetRecord,
+    UtcTimestamp,
+)
+from untaped_dotfiles.package import Mode
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
 
-
-class Repo(TargetRecord):
-    """One subscribed repo and its fetch state."""
-
-    name: Annotated[str, Column]
-    url: str
-    ref: Annotated[str, Column]
-    managed: Annotated[bool, Column]
-    head: str | None = None
-    behind: Annotated[int | None, Column] = Field(
-        default=None,
-        description="Commits the checkout is behind `origin/<ref>` as last fetched; "
-        "null when unknown.",
-    )
-    items: Annotated[int, Column] = 0
+EntryKind = Literal["file", "step", "repo"]
 
 
-class Item(Record):
-    """One manifest item and the machine's choice about it."""
+class Package(Record):
+    """One package a source offers, and whether this machine turned it on."""
 
-    repo: Annotated[str, Column]
-    name: Annotated[str, Column]
-    suggested: Annotated[Policy, Column]
-    policy: Annotated[Policy | None, Column] = Field(
-        default=None, description="The machine's policy; null while the item is not enabled."
-    )
-    enabled: bool = False
-    files: Annotated[int, Column]
-    skip: tuple[str, ...] = ()
-    excluded: Annotated[str | None, Column] = Field(
-        default=None, description="Why the item does not apply on this machine, or null."
-    )
-    description: Annotated[str, Column] = ""
-
-
-class PathStatus(TargetRecord):
-    """The state of one placed path."""
-
-    repo: str
-    item: Annotated[str, Column]
-    file: str
     source: Annotated[str, Column]
-    mode: Annotated[Mode, Column]
+    name: Annotated[str, Column]
+    on: Annotated[bool, Column]
+    policy: Annotated[Policy | None, Column] = Field(
+        default=None,
+        description="The policy its entries follow here: this machine's choice, else the "
+        "author's; null while the package is off.",
+    )
+    suggested: Annotated[Policy | None, Column] = Field(
+        default=None, description="The author's policy; null when the file doesn't load."
+    )
+    chosen: bool = Field(False, description="Whether `policy` is this machine's choice.")
+    items: Annotated[int, Column] = 0
+    description: Annotated[str, Column] = ""
+    excluded: str | None = Field(
+        default=None, description="Why the package doesn't apply on this machine, or null."
+    )
+    error: Failure | None = Field(
+        default=None, description="Why the package file doesn't load, or null."
+    )
+
+
+class _Detail(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+
+class InputDetail(_Detail):
+    """One input a package declares, and the value this machine gives it."""
+
+    name: str
+    secret: bool = False
+    default: JsonValue | None = None
+    value: JsonValue | None = Field(
+        default=None, description="The value used here; null for a secret or no value."
+    )
+    origin: Literal["config", "default"] | None = Field(
+        default=None,
+        description="Where `value` comes from: `config` (this machine's answer), `default` "
+        "(the package's), or null while it has none.",
+    )
+
+
+class FileDetail(_Detail):
+    """One file entry: where it goes and how, and its state."""
+
+    path: str
+    target: str = Field(description="As the package writes it.")
+    mode: Mode
+    excluded: str | None = None
+    state: FileState | None = Field(
+        default=None, description="Its state here; null while the item is off."
+    )
+
+
+class CheckDetail(_Detail):
+    """A step's check."""
+
+    command: tuple[str, ...] | None = None
+    prints: str | None = None
+    path: str | None = None
+    program: str | None = None
+
+
+class StepDetail(_Detail):
+    """One step: what it checks and runs, as the package writes it (nothing is run to show it)."""
+
+    name: str
+    description: str = ""
+    policy: Policy = Field(
+        description="The policy the step follows: this machine's choice, else `manual`."
+    )
+    chosen: bool = False
+    check: CheckDetail | None = None
+    run: tuple[str, ...] | None = None
+    script: str | None = None
+    args: tuple[str, ...] = ()
+    stdin: str | None = None
+    fix: str | None = None
+    kind: str | None = None
+    excluded: str | None = None
+
+
+class RepoDetail(_Detail):
+    """One working copy an item clones."""
+
+    url: str
+    target: str
+    branch: str | None = None
+    excluded: str | None = None
+
+
+class ItemDetail(_Detail):
+    """One item of a package, with its entries."""
+
+    name: str
+    description: str = ""
+    enabled: bool
+    policy: Policy | None = None
+    excluded: str | None = None
+    files: tuple[FileDetail, ...] = ()
+    steps: tuple[StepDetail, ...] = ()
+    repos: tuple[RepoDetail, ...] = ()
+
+
+class PackageDetail(Record):
+    """A package in full: its inputs, items and entries, and what this machine chose."""
+
+    source: Annotated[str, Column]
+    name: Annotated[str, Column]
+    on: Annotated[bool, Column]
+    policy: Annotated[Policy | None, Column] = None
+    suggested: Annotated[Policy | None, Column] = None
+    chosen: bool = False
+    description: Annotated[str, Column] = ""
+    excluded: str | None = None
+    inputs: tuple[InputDetail, ...] = ()
+    items: tuple[ItemDetail, ...] = ()
+    error: Failure | None = Field(
+        default=None, description="Why the package file doesn't load, or null."
+    )
+
+
+class EntryStatus(Record):
+    """The state of one entry of a package that is on: a file, for now."""
+
+    source: str
+    package: Annotated[str, Column]
+    item: Annotated[str, Column]
+    kind: EntryKind = "file"
+    entry: Annotated[str, Column] = Field(
+        description="A file's target as the user reads it (`~/...`)."
+    )
+    mode: Annotated[Mode | None, Column] = None
     policy: Annotated[Policy, Column]
+    chosen: bool = False
     state: Annotated[FileState, Column, FILE_STATE_ROLES] = Field(
-        description="The path's state; the policy guide explains each one."
+        description="The entry's state; the policy guide explains each one."
     )
     detail: Annotated[str, Column] = ""
+    target_path: AbsolutePath | None = None
+    error: Failure | None = None
 
 
 class StatusSummary(Record):
@@ -70,8 +177,8 @@ class StatusSummary(Record):
     checked_at: UtcTimestamp
     total: int
     attention: int = Field(
-        description="Rows that need the user, `error` rows included. They make "
-        "`status --check` and `sync` exit 3, or 1 when one is an `error` row."
+        description="Rows that need a person, `error` rows included. They make "
+        "`status --check` exit 3, or 1 when one is an `error` row."
     )
     pending: int = 0
     foreign: int = 0
@@ -82,72 +189,27 @@ class StatusSummary(Record):
     missing: int = 0
     orphan: int = 0
     error: int = 0
-    repos_behind: int = 0
 
 
-PlaceAction = Literal[
+ApplyAction = Literal[
     "planned", "created", "updated", "unchanged", "skipped", "deleted", "conflict", "failed"
 ]
 
 
-class PlaceOutcome(OutcomeRecord, TargetRecord):
-    """What was done for one placed path; no command prints it, so each prints its own subclass.
+class ApplyOutcome(OutcomeRecord, TargetRecord):
+    """What ``apply``, ``remove`` or ``unsubscribe`` did, or would do, for one entry."""
 
-    The applier builds these for ``apply``, ``sync`` and ``remove`` alike;
-    each command emits them as its own subclass (:class:`ApplyOutcome`,
-    :class:`SyncOutcome`, :class:`RemoveOutcome`).
-    """
-
-    repo: str
+    source: str
+    package: Annotated[str, Column]
     item: Annotated[str, Column]
-    source: Annotated[str, Column]
-    mode: Mode
-    action: Annotated[PlaceAction, Column]
-    state: Annotated[Annotated[FileState, FILE_STATE_ROLES] | None, Column] = Field(
+    kind: EntryKind = "file"
+    entry: Annotated[str, Column]
+    mode: Annotated[Mode | None, Column] = None
+    action: Annotated[ApplyAction, Column]
+    state: Annotated[FileState, FILE_STATE_ROLES] | None = Field(
         default=None,
-        description="The path's state before the action, so a `skipped` row that was "
-        "`behind` under `manual` differs from one that was `applied`; the policy guide "
-        "explains each state and what apply, sync and remove do in it.",
+        description="The entry's state before the action, so a `skipped` row that was "
+        "`behind` differs from one that was `applied`; the policy guide explains each state.",
     )
     detail: Annotated[str, Column] = ""
-    target_path: Annotated[AbsolutePath, Column]
-
-
-class ApplyOutcome(PlaceOutcome):
-    """What ``apply`` did, or would do, for one placed path."""
-
-
-class SyncOutcome(PlaceOutcome):
-    """What ``sync`` did, or would do, for one placed path."""
-
-
-class RemoveOutcome(PlaceOutcome):
-    """What ``remove`` did, or would do, for one placed path."""
-
-
-ItemAction = Literal["created", "updated", "deleted", "planned"]
-
-
-class ItemOutcome(OutcomeRecord):
-    """What ``enable`` or ``disable`` recorded for one item."""
-
-    repo: Annotated[str, Column]
-    name: Annotated[str, Column]
-    action: Annotated[ItemAction, Column]
-    policy: Annotated[Policy | None, Column] = None
-    detail: Annotated[str, Column] = ""
-
-
-RepoAction = Literal["planned", "updated", "deleted", "unchanged", "failed", "skipped"]
-
-
-class RepoOutcome(OutcomeRecord):
-    """What ``unsubscribe`` did for a repo.
-
-    ``apply`` and ``sync`` build the same rows for the fetches and fast-forwards
-    they run, and report them on stderr rather than emitting them.
-    """
-
-    name: Annotated[str, Column]
-    action: Annotated[RepoAction, Column]
-    detail: Annotated[str, Column] = ""
+    target_path: AbsolutePath

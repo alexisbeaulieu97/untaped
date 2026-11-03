@@ -27,10 +27,17 @@ def test_dotfiles_keeps_its_surface() -> None:
 def test_the_root_mounts_the_plugin() -> None:
     listed = invoke_root(["plugin", "list", "--format", "json"])
     assert ("dotfiles", "ready") in [(r["name"], r["status"]) for r in json.loads(listed.stdout)]
-    assert invoke_root(["dotfiles", "repos"]).exit_code == 0
+    assert invoke_root(["dotfiles", "status"]).exit_code == 0
 
 
 def test_the_folders_follow_the_home_when_unset(install: Installer, home: Home) -> None:
     with install(Dotfiles).running():
         folders = [Dotfiles.clones.path, Dotfiles.kept.path, Dotfiles.prompt.path]
     assert folders == [home.plugin(Dotfiles) / name for name in ("clones", "kept", "prompt")]
+
+
+def test_the_package_file_page_is_the_format_guide() -> None:
+    page = invoke_root(["docs", "dotfiles", "inputs", "package_file"])
+    assert page.exit_code == 0, page.stdout
+    assert "Rules, checked when the package loads" in page.stdout
+    assert "untaped dotfiles subscribe" in page.stdout

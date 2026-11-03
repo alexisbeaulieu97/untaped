@@ -341,9 +341,9 @@ reads, the same way. A model may not name a field `untaped`: that key is the
 stamp's.
 
 An operation that must not run twice at once declares a lock on the plugin
-class, `sync = Lock(wait=timedelta(minutes=10))`: `with
-DotfilesPlugin.sync.locked():` waits that long for another process
-(`dotfiles.sync is busy (another untaped process)` after it),
+class, `changing = Lock(wait=timedelta(minutes=10))`: `with
+Dotfiles.changing.locked():` waits that long for another process
+(`dotfiles.changing is busy (another untaped process)` after it),
 `try_locked()` yields whether it got it, and taking it again in one thread
 only counts.
 

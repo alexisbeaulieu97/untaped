@@ -34,9 +34,6 @@ SUBCOMMANDS = {
 VALUED = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"})
 #: Modules allowed to run network git themselves, relative to ``packages/``, each with why.
 EXCEPTIONS = {
-    # Dotfiles' managed clones, until the dotfiles redesign moves them onto the store and
-    # untaped_git.api.clone.
-    "untaped-dotfiles/src/untaped_dotfiles/git_repos.py",
     # The remote of the user's own checkout, asked with that checkout's own git config.
     "untaped-awx/src/untaped_awx/infrastructure/git_head.py",
     "untaped-awx/src/untaped_awx/infrastructure/git_source.py",

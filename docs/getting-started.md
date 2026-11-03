@@ -204,9 +204,9 @@ untaped ansible deps acme/base-role
 # recipe: see installed recipes
 untaped recipe list
 
-# dotfiles: subscribe to a repo, then see the items it offers
+# dotfiles: subscribe to a repo, then see the packages it offers
 untaped dotfiles subscribe https://github.com/acme/dotfiles
-untaped dotfiles items
+untaped dotfiles show
 ```
 
 ## Output and piping

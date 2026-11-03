@@ -1,4 +1,4 @@
-"""Real-git fixtures: a throwaway dotfiles repo with a manifest, and isolated dotfiles dirs."""
+"""Real-git fixtures: a source served at an ``https://`` URL, and isolated dotfiles folders."""
 
 from __future__ import annotations
 
@@ -8,14 +8,30 @@ from pathlib import Path
 
 import pytest
 
-from dotfiles_test_support import FILES, MANIFEST, commit_all, git, push, write_files
+from dotfiles_test_support import (
+    FILES,
+    PACKAGES,
+    forget_installed,
+    package_files,
+    publish,
+    write_files,
+)
+from untaped_git.testing import GitRemote, git_remote
+
+
+@pytest.fixture(autouse=True)
+def _one_install() -> Iterator[None]:
+    forget_installed()
+    yield
+    forget_installed()
 
 
 @pytest.fixture
-def make_upstream(tmp_path: Path) -> Callable[..., tuple[Path, Path]]:
-    """Create a bare upstream with a manifest and files; return ``(bare, author checkout)``.
+def make_remote(tmp_path: Path) -> Callable[..., GitRemote]:
+    """A git source with packages and files, served at ``https://git.example/<name>.git``.
 
-    The author checkout is where a test commits new versions and pushes them.
+    Its authoring clone (``remote.work``) is where a test commits new versions
+    (``publish``).
     """
     if shutil.which("git") is None:
         pytest.skip("git not on PATH")
@@ -23,34 +39,46 @@ def make_upstream(tmp_path: Path) -> Callable[..., tuple[Path, Path]]:
     def make(
         name: str = "dotfiles",
         *,
-        manifest: str = MANIFEST,
+        packages: dict[str, str] | None = None,
         files: dict[str, str] | None = None,
-    ) -> tuple[Path, Path]:
-        bare = tmp_path / "remotes" / f"{name}.git"
-        bare.parent.mkdir(parents=True, exist_ok=True)
-        git(tmp_path, "init", "-q", "--bare", "--initial-branch=main", str(bare))
-        author = tmp_path / "author" / name
-        author.parent.mkdir(parents=True, exist_ok=True)
-        git(tmp_path, "clone", "-q", str(bare), str(author))
-        write_files(author, {"dotfiles.yml": manifest, **(FILES if files is None else files)})
-        commit_all(author, "init")
-        push(author)
-        return bare, author
+    ) -> GitRemote:
+        remote = git_remote(tmp_path / "remotes", name)
+        chosen = PACKAGES if packages is None else packages
+        publish(remote, {**package_files(chosen), **(FILES if files is None else files)}, "init")
+        return remote
 
     return make
 
 
 @pytest.fixture
-def user_home(tmp_path: Path) -> Path:
+def make_folder(tmp_path: Path) -> Callable[..., Path]:
+    """A local folder source with packages and files."""
+
+    def make(
+        name: str = "local",
+        *,
+        packages: dict[str, str] | None = None,
+        files: dict[str, str] | None = None,
+    ) -> Path:
+        folder = tmp_path / "folders" / name
+        chosen = PACKAGES if packages is None else packages
+        write_files(folder, {**package_files(chosen), **(FILES if files is None else files)})
+        return folder
+
+    return make
+
+
+@pytest.fixture
+def user_home() -> Path:
     """The hermetic ``HOME`` of this test."""
     return Path.home()
 
 
 @pytest.fixture
 def dotfiles_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
-    """Point the dotfiles dirs at tmp, fix the OS to linux; return the state dir."""
+    """Point the dotfiles folders at tmp, fix the OS to linux; return the state folder."""
     state_dir = tmp_path / "state"
-    monkeypatch.setenv("UNTAPED_DOTFILES__REPOS_DIR", str(tmp_path / "repos"))
+    monkeypatch.setenv("UNTAPED_DOTFILES__CLONES_DIR", str(tmp_path / "clones"))
     monkeypatch.setenv("UNTAPED_DOTFILES__KEPT_DIR", str(tmp_path / "kept"))
     monkeypatch.setenv("UNTAPED_DOTFILES__STATE_DIR", str(state_dir))
     monkeypatch.setenv("UNTAPED_DOTFILES__OS", "linux")

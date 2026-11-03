@@ -1,4 +1,4 @@
-"""The policy an enabled item follows, whose docstring is the guide to path states and policies."""
+"""The update policy of a package or item, whose docstring is the guide to entry states."""
 
 from __future__ import annotations
 
@@ -6,72 +6,57 @@ from enum import StrEnum
 
 
 class Policy(StrEnum):
-    """How eagerly an enabled item follows its repo: what each policy does in each path state.
+    """How eagerly a package or item follows its source, and the state of each placed file.
 
-    ## States of a placed path
+    A package suggests a policy (`policy:` in its file; `manual` when unset);
+    this machine chooses its own with `untaped dotfiles add SELECTOR --policy`,
+    for a whole package or one item. The row's `policy` is the machine's
+    choice when it made one (`chosen: true`), else the author's.
 
-    - `pending`: enabled, never applied, target absent.
-    - `foreign`: enabled, never applied, a local file is in the way. Applying
-      keeps it aside under `dotfiles.kept_dir`.
-    - `applied`: the target is what the tool wrote and the source has not changed.
-    - `behind`: the source changed since the last apply; the target is untouched.
-    - `modified`: the target differs from what the tool wrote (a local edit, or a
-      link replaced by a file); the source is unchanged.
+    ## States of a file entry
+
+    - `pending`: on, never placed here, target absent.
+    - `foreign`: on, never placed here, a file untaped didn't write is in the
+      way. Placing it keeps that file aside under `dotfiles.kept_dir`.
+    - `applied`: the target is what untaped wrote and the source is unchanged.
+    - `behind`: the source changed since untaped placed it; the target is
+      untouched. A `link` file is `behind` when the fetched commit changed its
+      source and the clone hasn't moved yet; in a local folder it never is.
+    - `modified`: the target differs from what untaped wrote (a local edit, or
+      a link replaced by a file); the source is unchanged.
     - `conflict`: both `behind` and `modified`.
-    - `missing`: applied before, the target is now gone.
-    - `orphan`: applied before, the manifest no longer places it (a file left a
-      directory source, or the entry was dropped).
-    - `excluded`: filtered out by `os`, `only`/`unless` or a machine `--skip`.
+    - `missing`: placed before, the target is gone.
+    - `orphan`: placed before, the package no longer places it: a file left a
+      folder entry, the entry was dropped, an input moved its target, or the
+      package file left the source.
+    - `excluded`: left out by `os`, `only` or `unless` on this machine. A
+      file placed before it was left out stays as it is.
     - `error`: could not be read (a git or filesystem failure); the row's
-      `error` says why.
+      `error` says why. A package file that doesn't load, a source that can't
+      be opened, or a target two packages place, is reported on stderr and
+      counts as an `error` in the status files; a disputed target keeps what
+      was placed there until one package lets it go.
 
-    A `link` file is `behind` when the fetched ref changed its source and the
-    clone has not been pulled yet; in a registered checkout it is never
-    `behind`.
-
-    ## What `sync` does
-
-    `sync` fetches every repo, fast-forwards the managed clones it may, then
-    acts on every enabled path by its item's policy:
-
-    - `sync`: applies `pending`, `foreign` and `behind` paths, re-applies
-      `missing` ones and removes `orphan` ones (an edited copy is kept aside);
-      it reports `modified` and `conflict` paths.
-    - `once`: applies `pending` and `foreign` paths and skips `behind`,
-      `modified` and `conflict` ones; it reports `missing` and `orphan` paths.
-    - `manual`: reports every path.
-
-    `sync` only writes a target that is absent, foreign (kept aside first) or
-    still exactly what the tool wrote, so it never loses a local edit and never
-    prompts. It exits 3 when a path needs the user: one left `behind`,
-    `modified`, `conflict`, `missing` or `orphan` (under `once`, only `missing`
-    and `orphan`). A `manual` `pending` or `foreign` path is reported but does
-    not count. It exits 1 when an apply or a git operation failed, or a path
-    could not be read (a row carrying an `error`). `status --check` exits the
-    same way.
-
-    ## When a clone is pulled
-
-    - `sync` fast-forwards a managed clone only when every enabled `link` file
-      reading from it has policy `sync` and the working tree is clean. One
-      `manual` link file holds the whole clone back; `sync` then reports
-      those link files as `behind` and names them on stderr.
-    - `apply ITEMS` fetches every repo the item reads from, then fast-forwards
-      the clone when the item has a `link` file in it. Every other link file
-      on that clone moves too, `manual` ones included; the plan lists them as
-      `moves with the clone` before the confirmation.
-    - A dirty working tree refuses the fast-forward; the repo row fails with a
-      hint to commit or discard the changes.
-    - A registered checkout (`subscribe PATH`) is fetched, never pulled.
+    An entry whose target names an input with no value is `pending`, and
+    what it placed before stays as it is.
 
     ## What `apply` does
 
-    `apply` fetches the repos of the selected items first, so a managed
-    clone's manifest, `copy` and `merge` files are read as its remote holds them
-    now; a registered checkout is still read from its working tree. It places
-    every selected path whatever its policy: `pending`, `foreign`, `behind` and
-    `missing` paths are applied, `orphan` ones are removed, and `modified` or
-    `conflict` ones are refused unless `--force`.
+    `apply` fetches every git source and moves each clone to the fetched
+    commit (a clone with local changes stays where it is, and its source's
+    changes fail with a hint), then places every selected entry whatever its policy: `pending`,
+    `foreign`, `behind` and `missing` entries are placed, `orphan` ones taken
+    back, `excluded` ones left as they are, and `modified` or `conflict` ones
+    refused unless `--force` (the local version is kept aside). A local
+    folder is read as it stands, never fetched or moved.
+
+    ## What needs a person
+
+    `status --check` exits 3 when an entry needs a person: `behind`,
+    `modified`, `conflict`, `missing` or `orphan` (under `once`, only
+    `missing` and `orphan`, since `once` means "apply, then leave alone"). It
+    exits 1 when an entry could not be read (a row carrying an `error`), or a
+    package or source could not be.
     """
 
     SYNC = "sync"

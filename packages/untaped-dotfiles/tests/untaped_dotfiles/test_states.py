@@ -1,32 +1,24 @@
-"""The state of a placed path, and the policy table (one case per cell)."""
+"""The state of a placed path, and which states need a person."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
-from untaped_dotfiles.models import AppliedRecord, Policy
-from untaped_dotfiles.states import (
-    FileState,
-    SourceInfo,
-    TargetInfo,
-    file_state,
-    needs_attention,
-    sync_action,
-)
+from untaped_dotfiles.models import PlacedRecord
+from untaped_dotfiles.states import SourceInfo, TargetInfo, file_state, needs_attention
 
 T0 = datetime(2026, 10, 2, tzinfo=UTC)
 
 
-def _record(mode: str, source_hash: str = "s1", target_hash: str = "t1") -> AppliedRecord:
-    return AppliedRecord(
+def _record(mode: str, source_hash: str = "s1", target_hash: str = "t1") -> PlacedRecord:
+    return PlacedRecord(
         target="/home/x/a",
-        repo="r",
+        source="s",
+        package="p",
         item="i",
-        file="a",
-        source="a",
-        mode=mode,  # type: ignore[arg-type]
+        path="a",
+        entry="a",
+        placed_as=mode,  # type: ignore[arg-type]
         source_hash=source_hash,
         target_hash=target_hash,
         applied_at=T0,
@@ -68,16 +60,16 @@ def test_merge_into_an_existing_file_is_pending() -> None:
     assert state == "pending"
 
 
-def test_a_source_absent_from_the_repo_is_orphan() -> None:
+def test_a_path_absent_from_the_source_is_orphan() -> None:
     assert file_state("copy", None, SourceInfo(False), TargetInfo("missing")) == (
         "orphan",
-        "the source is not in the repo",
+        "the source doesn't have it",
     )
     assert file_state(
         "copy", _record("copy"), SourceInfo(False), TargetInfo("file", hash="t1")
     ) == (
         "orphan",
-        "the source is gone from the repo",
+        "the source no longer has it",
     )
 
 
@@ -129,42 +121,10 @@ def test_merge_modified_means_the_managed_keys_changed() -> None:
     )
 
 
-# -- the policy table ---------------------------------------------------------------
-
-TABLE: dict[tuple[Policy, FileState], str] = {
-    ("sync", "pending"): "apply",
-    ("sync", "foreign"): "apply",
-    ("sync", "applied"): "skip",
-    ("sync", "behind"): "apply",
-    ("sync", "modified"): "report",
-    ("sync", "conflict"): "report",
-    ("sync", "missing"): "apply",
-    ("sync", "orphan"): "remove",
-    ("once", "pending"): "apply",
-    ("once", "foreign"): "apply",
-    ("once", "applied"): "skip",
-    ("once", "behind"): "skip",
-    ("once", "modified"): "skip",
-    ("once", "conflict"): "skip",
-    ("once", "missing"): "report",
-    ("once", "orphan"): "report",
-    ("manual", "pending"): "report",
-    ("manual", "foreign"): "report",
-    ("manual", "applied"): "skip",
-    ("manual", "behind"): "report",
-    ("manual", "modified"): "report",
-    ("manual", "conflict"): "report",
-    ("manual", "missing"): "report",
-    ("manual", "orphan"): "report",
-}
+# -- attention ------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(("policy", "state"), sorted(TABLE), ids=lambda v: str(v))
-def test_sync_action_table(policy: Policy, state: FileState) -> None:
-    assert sync_action(policy, state) == TABLE[(policy, state)]
-
-
-def test_attention_counts_what_needs_the_user() -> None:
+def test_attention_counts_what_needs_a_person() -> None:
     assert needs_attention("manual", "behind")
     assert needs_attention("sync", "modified")
     assert needs_attention("sync", "conflict")

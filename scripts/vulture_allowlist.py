@@ -31,10 +31,9 @@ ActionOutcome.target_kind  # awx.launch_outcome / awx.sync_outcome
 ActionOutcome.target_name
 ActionOutcome.job_failed  # dumped as `failed`
 ApplyOutcomeRow.fields_changed  # awx.apply_outcome
-RepoRecord.subscribed_at  # dotfiles state.yml
-AppliedRecord.source_commit
-AppliedRecord.applied_at
-ItemRow.suggested  # dotfiles rows
+CloneRecord.subscribed_at  # dotfiles state
+PlacedRecord.source_commit
+PlacedRecord.applied_at
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
 User.email_address  # jira rows
@@ -154,6 +153,7 @@ System.HTTP
 Core.config_permissions
 Core.unknown_keys
 Core.token_store
+Dotfiles.cloned
 Dotfiles.clones
 Git.repo_store
 WorkspacePlugin.workspaces
@@ -163,6 +163,7 @@ RecipePlugin.uv
 LintPlugin.ignore_ids
 
 # Enum members read by value from manifests and the state file.
+Policy.SYNC  # dotfiles: `policy: sync`
 Policy.ONCE  # dotfiles: `policy: once`
 
 # The contract answers' views: SDK API, read by the shelf example and third-party owners.
