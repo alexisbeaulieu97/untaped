@@ -68,6 +68,8 @@ class PackageSource(BaseModel):
             raise ValueError("needs url or path")
         if self.path is not None and self.ref is not None:
             raise ValueError("ref applies to a url only")
+        if self.path is not None and not self.path.expanduser().is_absolute():
+            raise ValueError("path must be absolute or start with ~")
         return self
 
 

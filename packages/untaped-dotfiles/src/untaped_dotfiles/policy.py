@@ -26,27 +26,36 @@ class Policy(StrEnum):
       a link replaced by a file); the source is unchanged.
     - `conflict`: both `behind` and `modified`.
     - `missing`: placed before, the target is gone.
-    - `orphan`: placed before, the package no longer places it (a file left a
-      folder entry, or the entry was dropped).
-    - `excluded`: left out by `os`, `only` or `unless` on this machine.
-    - `error`: could not be read (a git or filesystem failure, or an input
-      with no value); the row's `error` says why.
+    - `orphan`: placed before, the package no longer places it: a file left a
+      folder entry, the entry was dropped, an input moved its target, or the
+      package file left the source.
+    - `excluded`: left out by `os`, `only` or `unless` on this machine. A
+      file placed before it was left out stays as it is.
+    - `error`: could not be read (a git or filesystem failure); the row's
+      `error` says why. A package file that doesn't load, a source that can't
+      be opened, or a target two packages place, is reported on stderr and
+      counts as an `error` in the status files.
+
+    An entry whose target names an input with no value is `pending`, and
+    what it placed before stays as it is.
 
     ## What `apply` does
 
-    `apply` fetches the git sources of the selected packages and moves each
-    clone to the fetched commit, then places every selected entry whatever its
-    policy: `pending`, `foreign`, `behind` and `missing` entries are placed,
-    `orphan` ones taken back, and `modified` or `conflict` ones refused unless
-    `--force` (the local version is kept aside). A local folder is read as it
-    stands, never fetched or moved.
+    `apply` fetches every git source and moves each clone to the fetched
+    commit (a clone with local changes stays where it is, and its source
+    fails), then places every selected entry whatever its policy: `pending`,
+    `foreign`, `behind` and `missing` entries are placed, `orphan` ones taken
+    back, `excluded` ones left as they are, and `modified` or `conflict` ones
+    refused unless `--force` (the local version is kept aside). A local
+    folder is read as it stands, never fetched or moved.
 
     ## What needs a person
 
     `status --check` exits 3 when an entry needs a person: `behind`,
     `modified`, `conflict`, `missing` or `orphan` (under `once`, only
     `missing` and `orphan`, since `once` means "apply, then leave alone"). It
-    exits 1 when an entry could not be read (a row carrying an `error`).
+    exits 1 when an entry could not be read (a row carrying an `error`), or a
+    package or source could not be.
     """
 
     SYNC = "sync"

@@ -7,7 +7,9 @@ and rewrites status.json and attention after it changed something.
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from contextlib import ExitStack
 from dataclasses import replace
+from pathlib import Path
 
 from pydantic import Field
 
@@ -17,7 +19,7 @@ from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services
 from untaped_dotfiles.inventory import Placement
 from untaped_dotfiles.models import CloneRecord
 from untaped_dotfiles.records import ApplyOutcome
-from untaped_dotfiles.sources import current
+from untaped_dotfiles.sources import current, resolve_url
 
 
 class Apply(DotfilesCommand):
@@ -27,8 +29,12 @@ class Apply(DotfilesCommand):
     or ref changed in `config.yml`), fetched, and its clone moved to the
     fetched commit, so packages, links, copies and merges are what the source
     holds now; a failed fetch is reported and exits 1 (a --dry-run preview
-    only warns, and clones nothing). A local folder is read as it stands. A
-    file in the way of a new path is kept aside, and the row says where.
+    only warns, and reads a source with no clone from the fetch, cloning
+    nothing). A clone with local changes (an edit through a link) is never
+    moved: its source fails (exit 1), and the other sources apply. A local
+    folder is read as it stands; a source that became a folder lets its old
+    clone go once its links point at the folder. A file in the way of a new
+    path is kept aside, and the row says where.
     Refuses paths edited on this machine (row action `conflict`, exit 1,
     under --dry-run too) unless --force. An entry whose target names an input
     with no value waits, naming the `config set` that answers it. The policy
@@ -49,8 +55,10 @@ class Apply(DotfilesCommand):
 
     def run(self) -> Iterator[ApplyOutcome]:
         svc = self.services()
-        with svc.store.locked():
-            if not self.confirm.dry_run:
+        with svc.store.locked(), ExitStack() as peeks:
+            if self.confirm.dry_run:
+                self._peek_missing(svc, peeks)
+            else:
                 self._clone_missing(svc)
             fetched = self._fetch(svc)
             svc.catalog.forget()
@@ -72,8 +80,9 @@ class Apply(DotfilesCommand):
             ):
                 return iter(planned)
             if moving:
-                steps = _move(svc, moving, steps, force=self.force)
+                steps = self._move(svc, moving, steps)
             rows = svc.applier.execute(steps)
+            self._release_folders(svc)
             svc.refresh_status()
         self.output.empty("Nothing to apply.")
         self.report_rows(rows)
@@ -91,6 +100,40 @@ class Apply(DotfilesCommand):
                 self.ctx.diag.failure(exc, item=name)
                 continue
             self.ctx.diag.info(f"cloned {q(name)} at {record.ref}")
+
+    def _peek_missing(self, svc: Services, peeks: ExitStack) -> None:
+        """Read each git source with no current clone from a fetch, for the preview only."""
+        for name in svc.sources.names:
+            spec = svc.sources.spec(name)
+            if spec.url is None or current(svc.store.get_clone(name), spec):
+                continue
+            try:
+                tree, branch, done = svc.clones.peek(resolve_url(spec.url), spec.ref)
+            except UntapedError as exc:
+                self.ctx.diag.warning(f"{name}: {exc}", hint=getattr(exc, "hint", None))
+                continue
+            peeks.callback(done)
+            svc.sources.peek(name, tree)
+            self.ctx.diag.info(f"{q(name)} has no clone yet: read at {branch}; apply clones it")
+
+    def _release_folders(self, svc: Services) -> None:
+        """Let go of the clone of each source that is a local folder now, once no link points
+        into it."""
+        placed = svc.store.placed()
+        for record in svc.store.clones():
+            spec = svc.sources.specs.get(record.source)
+            if spec is None or spec.path is None:
+                continue
+            folder = Path(record.folder)
+            if any(r.placed_as == "link" and folder in Path(r.target_hash).parents for r in placed):
+                continue
+            try:
+                svc.clones.release(record)
+            except UntapedError as exc:
+                self.ctx.diag.failure(exc, item=record.source)
+                continue
+            svc.store.remove_clone(record.source)
+            self.ctx.diag.info(f"{q(record.source)} is a local folder now: let its clone go")
 
     def _fetch(self, svc: Services) -> list[CloneRecord]:
         """Fetch the clone of every git source; the ones fetched, to move once confirmed."""
@@ -122,17 +165,23 @@ class Apply(DotfilesCommand):
                 )
         return [p for p in placements if p.target is not None]
 
+    def _move(self, svc: Services, moving: Sequence[CloneRecord], steps: list[Step]) -> list[Step]:
+        """Move each clone to its fetched commit, then plan again.
 
-def _move(
-    svc: Services, moving: Sequence[CloneRecord], steps: list[Step], *, force: bool
-) -> list[Step]:
-    """Move each clone to its fetched commit, then plan again.
+        A clone that can't move (local changes) fails its source, and its
+        entries are planned from the clone as it stands. A link the move
+        already changed stays an ``apply`` step, so its record carries the new
+        commit and its row says it changed.
+        """
+        for record in moving:
+            try:
+                svc.clones.move(record)
+            except UntapedError as exc:
+                self.ctx.diag.failure(exc, item=record.source)
+        return _replanned(svc, steps, force=self.force)
 
-    A link the move already changed stays an ``apply`` step, so its record
-    carries the new commit and its row says it changed.
-    """
-    for record in moving:
-        svc.clones.move(record)
+
+def _replanned(svc: Services, steps: list[Step], *, force: bool) -> list[Step]:
     svc.evaluator.reset()
     applying = {s.placement.key for s in steps if s.action == "apply"}
     fresh = svc.applier.plan_apply([s.placement for s in steps], force=force)

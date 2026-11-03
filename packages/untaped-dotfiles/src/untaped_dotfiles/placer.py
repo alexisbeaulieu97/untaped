@@ -129,14 +129,6 @@ class FilesystemPlacer:
         if target.is_symlink() or target.is_file():
             target.unlink()
 
-    def render(self, target: Path) -> str | None:
-        if target.is_symlink() or not target.is_file():
-            return None
-        try:
-            return target.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            return "<binary>\n"
-
 
 def _umask() -> int:
     """The process umask (only readable by setting it; dotfiles runs single-threaded)."""

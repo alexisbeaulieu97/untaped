@@ -214,8 +214,50 @@ def test_a_changed_url_reclones_on_apply(make_remote: MakeRemote, tmp_path: Path
     result = installed().cli(["config", "set", "dotfiles.sources.dotfiles.url", second.url])
     assert int(result.exit) == 0, result.stderr
     stale = run(["status"])
-    assert stale.exit_code == 1 and "changed since it was cloned" in stale.output
+    assert stale.exit_code == 1 and "changed in config.yml since it was cloned" in stale.output
     as_json(["apply", "--yes"])
     clone = tmp_path / "clones" / "dotfiles"
     assert git(clone, "rev-parse", "HEAD") == second.oid("main")
     assert (Path.home() / ".config/starship.toml").read_text() == "second\n"
+
+
+def test_subscribing_dot_names_the_source_after_the_folder(
+    make_folder: MakeFolder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(make_folder("mydots"))
+    result = run(["subscribe", ".", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert {r["source"] for r in json_rows(result)} == {"mydots"}
+
+
+def test_a_relative_source_path_in_config_is_refused() -> None:
+    ran = installed().cli(["config", "set", "dotfiles.sources.dots.path", "dots"])
+    assert int(ran.exit) != 0
+    assert "path must be absolute" in "\n".join(str(each) for each in ran.stderr)
+
+
+def test_two_sources_on_one_url_keep_their_own_clones(
+    make_remote: MakeRemote, user_home: Path, tmp_path: Path
+) -> None:
+    remote = make_remote()
+    subscribe(remote.url, "--name", "a", "--add", "starship")
+    subscribe(remote.url, "--name", "b", "--add", "fish")
+    as_json(["apply", "--yes"])
+    as_json(["unsubscribe", "a", "--yes"])
+    assert not (tmp_path / "clones" / "a").exists()
+    assert (tmp_path / "clones" / "b" / "fish" / "config.fish").is_file()
+    assert (user_home / ".config/fish/config.fish").read_text() == FILES["fish/config.fish"]
+
+
+def test_unsubscribe_keep_files_turns_links_into_copies(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    subscribe(make_remote().url, "--add", "fish")
+    as_json(["apply", "--yes"])
+    preview = as_json(["unsubscribe", "dotfiles", "--keep-files", "--dry-run"])
+    assert {r["detail"] for r in preview} == {
+        "forgets it; the link becomes a copy, since the clone goes"
+    }
+    as_json(["unsubscribe", "dotfiles", "--keep-files", "--yes"])
+    target = user_home / ".config/fish/config.fish"
+    assert not target.is_symlink() and target.read_text() == FILES["fish/config.fish"]

@@ -24,7 +24,7 @@ from untaped_dotfiles.errors import DotfilesError, GitError
 from untaped_dotfiles.models import CloneRecord
 from untaped_dotfiles.package import NAME
 from untaped_dotfiles.trees import StoreTree, WorkingTree
-from untaped_git.api import RepoFinder, RepoStore, default_branch, run_git
+from untaped_git.api import RepoFinder, RepoStore, default_branch, looks_like_url, run_git
 
 if TYPE_CHECKING:
     from untaped_dotfiles.ports import DotfilesStore, SourceTree
@@ -36,21 +36,19 @@ SourceKind = Literal["folder", "url", "name"]
 _TIMEOUT = 60.0
 
 _DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
-_SCP = re.compile(r"^[^/\s@]+@[^/\s:]+:")
 
 
 def classify(arg: str) -> SourceKind:
     """What ``arg`` names: a local folder, a git URL, or a repo name, by how it starts.
 
-    A folder starts with ``/``, ``~``, ``.`` or a drive (``C:\\``); a URL has
-    ``://`` or is scp-like (``git@host:path``); anything else is a repo name,
-    even when a folder of that name exists here (spell it ``./owner/repo``).
+    A folder starts with ``/``, ``~``, ``.`` or a drive (``C:\\``); a URL is
+    what the git plugin reads as one (``://``, scp-like ``git@host:path``, or
+    ending in ``.git``); anything else is a repo name, even when a folder of
+    that name exists here (spell it ``./owner/repo``).
     """
     if arg.startswith(("/", "~", ".")) or _DRIVE.match(arg):
         return "folder"
-    if "://" in arg or _SCP.match(arg):
-        return "url"
-    return "name"
+    return "url" if looks_like_url(arg) else "name"
 
 
 def name_from(arg: str) -> str:
@@ -70,19 +68,25 @@ def check_name(name: str) -> str:
 
 
 def resolve_url(arg: str) -> str:
-    """The clone URL ``arg`` names: itself when it is a URL, else what a repo source lists."""
-    finder = RepoFinder()
-    return finder.resolve(arg).url
+    """The clone URL ``arg`` names, through the git plugin: a typed URL as it is (refusing what
+    git refuses), a name as a repo source lists it."""
+    return RepoFinder().resolve(arg).url
 
 
 def current(record: CloneRecord | None, spec: PackageSource) -> bool:
     """Whether ``record`` is the clone ``spec`` asks for: same URL setting and ref, still there."""
-    return (
-        record is not None
-        and record.given == spec.url
-        and (spec.ref or record.ref) == record.ref
-        and Path(record.folder).is_dir()
-    )
+    return stale(record, spec) is None
+
+
+def stale(record: CloneRecord | None, spec: PackageSource) -> str | None:
+    """Why ``record`` is not the clone ``spec`` asks for, or ``None`` when it is."""
+    if record is None:
+        return "has no clone yet"
+    if record.given != spec.url or (spec.ref or record.ref) != record.ref:
+        return "changed in config.yml since it was cloned"
+    if not Path(record.folder).is_dir():
+        return f"lost its clone at {record.folder}"
+    return None
 
 
 @dataclass(frozen=True)
@@ -217,12 +221,26 @@ class Clones:
         """Whether the fetched commit is not the one the clone has checked out."""
         return self.checked_out(record) != self.head(record)
 
-    def move(self, record: CloneRecord) -> bool:
-        """Check the fetched commit out in the clone; whether it moved."""
-        before = self.checked_out(record)
+    def move(self, record: CloneRecord) -> None:
+        """Check the fetched commit out in the clone; refused while the clone has local changes.
+
+        An edit to a linked file lands in the clone; it is never overwritten.
+        """
+        folder = Path(record.folder)
+        changes = run_git(
+            ["status", "--porcelain"], cwd=folder, capture=True, timeout=_TIMEOUT
+        ).text.strip()
+        if changes:
+            from untaped_dotfiles.commands.sources import Subscribe  # noqa: PLC0415 - a cycle
+
+            raise GitError(
+                f"the clone of {q(record.source)} has local changes, so it stays where it is",
+                category="conflict",
+                hint=f"edit in your own checkout ({run_hint(Subscribe.spelled('PATH'))}), or "
+                f"discard them: git -C {folder} checkout -- .",
+            )
         repo = self.repo(record.url)
-        repo.checkout(Path(record.folder), repo.ref(f"heads/{record.ref}"))
-        return self.checked_out(record) != before
+        repo.checkout(folder, repo.ref(f"heads/{record.ref}"))
 
     def ensure(self, name: str, spec: PackageSource) -> tuple[CloneRecord, bool]:
         """Source ``name``'s clone, made again when it is missing or its URL or ref changed.
@@ -237,15 +255,23 @@ class Clones:
         if record is not None:
             self.release(record)
             self._store.remove_clone(name)
-        url = spec.url if classify(spec.url) == "url" else resolve_url(spec.url)
-        record = self.make(name, spec.url, url, ref=spec.ref)
+        record = self.make(name, spec.url, resolve_url(spec.url), ref=spec.ref)
         self._store.put_clone(record)
         return record, True
 
     def release(self, record: CloneRecord) -> None:
-        """Let go of the store repo (its worktree included) and the clone's folder."""
+        """Let go of the clone's worktree and folder, and of the store repo when no other source
+        clones the same URL."""
+        repo = self.repo(record.url)
+        shared = any(
+            other.url == record.url and other.source != record.source
+            for other in self._store.clones()
+        )
         try:
-            self.repo(record.url).release()
+            if shared:
+                repo.run(["worktree", "remove", "--force", "--force", record.folder], check=False)
+            else:
+                repo.release()
         finally:
             shutil.rmtree(record.folder, ignore_errors=True)
 
@@ -260,10 +286,15 @@ class Sources:
         self._store = store
         self._clones = clones
         self._open: dict[str, Source] = {}
+        self._peeked: dict[str, Source] = {}
 
     @property
     def names(self) -> list[str]:
         return sorted(self._specs)
+
+    @property
+    def specs(self) -> dict[str, PackageSource]:
+        return dict(self._specs)
 
     def spec(self, name: str) -> PackageSource:
         return self._specs[name]
@@ -275,10 +306,18 @@ class Sources:
         return self._open[name]
 
     def forget(self) -> None:
-        """Drop the opened sources (after a fetch or a move)."""
+        """Drop the opened sources (after a fetch or a move); a peeked one stays."""
         self._open.clear()
 
+    def peek(self, name: str, tree: SourceTree) -> None:
+        """Read git source ``name`` from ``tree`` this run, as if cloned: a preview's view of
+        a source with no clone yet (its links would point into ``clones_dir/<name>``)."""
+        spec = self._specs[name]
+        self._peeked[name] = Source(name=name, spec=spec, root=self._clones.folder(name), tree=tree)
+
     def _opened(self, name: str, spec: PackageSource) -> Source:
+        if name in self._peeked:
+            return self._peeked[name]
         if spec.path is not None:
             root = Path(spec.path).expanduser()
             if not root.is_dir():
@@ -287,10 +326,10 @@ class Sources:
                 )
             return Source(name=name, spec=spec, root=root.resolve(), tree=WorkingTree(root))
         record = self._store.get_clone(name)
-        if not current(record, spec):
+        why = stale(record, spec)
+        if why is not None:
             from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
 
-            why = "has no clone yet" if record is None else "changed since it was cloned"
             raise DotfilesError(
                 f"source {q(name)} {why}",
                 category="not_found",

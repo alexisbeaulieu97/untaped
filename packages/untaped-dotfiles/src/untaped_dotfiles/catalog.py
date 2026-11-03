@@ -32,10 +32,12 @@ class Offer:
     source: Source
     name: str
     package: PackageFile | None
-    """``None`` when the file doesn't load (``error`` says why)."""
+    """``None`` when the file doesn't load (``error`` says why), or is gone (``gone``)."""
     error: UntapedError | None = None
     choice: PackageChoice | None = None
     """``None`` while the package is off on this machine."""
+    gone: bool = False
+    """The package is on here but its file left the source: what it placed is ``orphan``."""
 
     @property
     def on(self) -> bool:
@@ -51,6 +53,8 @@ class Offer:
         """``(policy, chosen)``: this machine's choice when it made one, else the author's."""
         if self.choice is not None and self.choice.policy is not None:
             return self.choice.policy, True
+        if self.gone:
+            return Policy.MANUAL, False
         return (self.package.policy if self.package is not None else None), False
 
     def item_choice(self, item: str) -> ItemChoice:
@@ -130,10 +134,6 @@ class Catalog:
         self._offers: dict[str, list[Offer]] = {}
         self._problems: dict[str, UntapedError] = {}
 
-    @property
-    def sources(self) -> Sources:
-        return self._sources
-
     def offers(self, source: str | None = None) -> list[Offer]:
         """Every package of ``source`` (every source when ``None``), sorted by source and name.
 
@@ -164,10 +164,17 @@ class Catalog:
             self._problems[name] = exc
             self._offers[name] = []
             return []
-        self._offers[name] = [
-            Offer(source, pkg, package, error, spec.packages.get(pkg))
-            for pkg, package, error in sorted(loaded, key=lambda each: each[0])
+        names = {pkg for pkg, _, _ in loaded}
+        gone = [
+            Offer(source, pkg, None, choice=choice, gone=True)
+            for pkg, choice in spec.packages.items()
+            if pkg not in names
         ]
+        offers = [
+            Offer(source, pkg, package, error, spec.packages.get(pkg))
+            for pkg, package, error in loaded
+        ]
+        self._offers[name] = sorted([*offers, *gone], key=lambda offer: offer.name)
         return self._offers[name]
 
     def select(self, selector: str) -> Selection:
@@ -186,10 +193,16 @@ class Catalog:
         as_item = self._items(first, second)
         if as_package is not None and as_item:
             items = ", ".join(each.spelled for each in as_item)
+            alone = [offer for offer in self.offers() if offer.name == second]
+            package_hint = (
+                f", or the package by its name alone ({q(second)})"
+                if len(alone) == 1
+                else f"; package {as_package.spelled} has no other spelling while source "
+                f"{q(first)} is named so"
+            )
             raise UsageError(
                 f"{q(selector)} names package {as_package.spelled} and item {items}",
-                hint=f"name the item in full ({items}), or the package by its name alone "
-                f"({q(second)})",
+                hint=f"name the item in full ({items}){package_hint}",
             )
         if as_package is not None:
             return Selection(as_package)
@@ -231,12 +244,15 @@ class Catalog:
         ]
 
     def selected(self, selectors: list[str]) -> list[Selection]:
-        """Each selector's selection, in order, each once."""
+        """Each selector's selection, in order, each once; a package covers its items."""
         seen: dict[str, Selection] = {}
         for selector in selectors:
             found = self.select(selector)
             seen.setdefault(found.spelled, found)
-        return list(seen.values())
+        whole = {each.offer.spelled for each in seen.values() if each.item is None}
+        return [
+            each for each in seen.values() if each.item is None or each.offer.spelled not in whole
+        ]
 
 
 def _ambiguous(what: str, spellings: list[str]) -> UsageError:

@@ -133,3 +133,17 @@ def test_a_target_at_or_above_home_is_refused_once_rendered(make_folder: MakeFol
     result = run(["status", "--format", "json"])
     assert result.exit_code == 1
     assert "is the home folder or above it" in result.stderr
+
+
+def test_a_package_that_stops_loading_counts_in_attention(
+    make_remote: MakeRemote, dotfiles_env: Path
+) -> None:
+    remote = make_remote()
+    subscribe(remote.url, "--add", "starship")
+    as_json(["apply", "--yes"])
+    publish(remote, {".untaped/dotfiles/starship.yml": "version: 1\nitems: {}\n"})
+    run(["apply", "--yes"])
+    assert run(["status"]).exit_code == 1
+    summary = json.loads((dotfiles_env / "status.json").read_text())
+    assert (summary["error"], summary["attention"]) == (1, 1)
+    assert (dotfiles_env / "attention").read_text() == "1\n"

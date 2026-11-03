@@ -349,7 +349,7 @@ class PackageFile(Where):
     ```
     """
 
-    version: int = Field(description="The package file's format: 1.")
+    version: int = Field(strict=True, description="The package file's format: 1.")
     description: str = ""
     policy: Policy = Field(Policy.MANUAL, description="The author's suggestion.")
     inputs: dict[str, PackageInput] = Field(default_factory=dict, description="Asked once, kept.")
@@ -433,10 +433,6 @@ class PackageFile(Where):
                     f"{where}: secret input {name!r} cannot be used in {field}; "
                     "a secret reaches a step only as its stdin"
                 )
-
-    def entries(self) -> Iterator[tuple[str, Item]]:
-        """``(name, item)`` in file order."""
-        yield from self.items.items()
 
 
 def parse_package(text: str, *, where: str) -> PackageFile:

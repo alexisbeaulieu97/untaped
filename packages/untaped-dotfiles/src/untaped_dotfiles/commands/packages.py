@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Confirm, DryRun, Output, Positional, UsageError, key, plural, run_hint
+from untaped.sdk import Confirm, DryRun, Output, Positional, UsageError, key, plural, q, run_hint
 from untaped_dotfiles.catalog import Offer, Selection
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.inventory import input_values
@@ -157,20 +157,27 @@ class Remove(DotfilesCommand):
                 ),
                 key=lambda r: r.target,
             )
-            changes: dict[Any, BaseModel | None] = {}
+            updated: dict[tuple[str, str], PackageChoice | None] = {}
             for selection in chosen:
                 offer = selection.offer
                 if not offer.on:
                     continue
+                at = (offer.source.name, offer.name)
                 if selection.item is None:
-                    changes[_package_key(offer)] = None
+                    updated[at] = None
                     continue
-                assert offer.choice is not None
-                items = dict(offer.choice.items)
+                current = updated.get(at, offer.choice)
+                if current is None:
+                    continue
+                items = dict(current.items)
                 items[selection.item] = items.get(selection.item, ItemChoice()).model_copy(
                     update={"enabled": False}
                 )
-                changes[_package_key(offer)] = offer.choice.model_copy(update={"items": items})
+                updated[at] = current.model_copy(update={"items": items})
+            changes: dict[Any, BaseModel | None] = {
+                key(DotfilesSettings).sources[source].packages[package]: choice
+                for (source, package), choice in updated.items()
+            }
             if not changes and not records:
                 self.ctx.diag.info(f"already off: {', '.join(s.spelled for s in chosen)}")
                 return iter([])
@@ -195,7 +202,7 @@ class Remove(DotfilesCommand):
                 return iter(rows)
             if plan is not None:
                 plan.write()
-            svc.refresh_status()
+            self.services(_with_choices(self.settings, updated)).refresh_status()
         self.ctx.diag.success(f"turned off {spelled}")
         return iter(rows)
 
@@ -233,9 +240,29 @@ def _usable(svc: Services, selection: Selection) -> None:
     offer = selection.offer
     if offer.error is not None:
         raise offer.error
+    if offer.gone:
+        raise UsageError(
+            f"source {q(offer.source.name)} no longer has package {q(offer.name)}",
+            hint=f"{run_hint(Remove.spelled(offer.spelled))} takes back what it placed",
+        )
     excluded = offer.exclusion(svc.inventory.machine, selection.item)
     if excluded is not None:
         raise UsageError(f"{selection.spelled} doesn't apply on this machine: {excluded}")
+
+
+def _with_choices(
+    settings: DotfilesSettings, updated: dict[tuple[str, str], PackageChoice | None]
+) -> DotfilesSettings:
+    """``settings`` with ``updated`` written: each package's new choice, or off (``None``)."""
+    sources = dict(settings.sources)
+    for (source, package), choice in updated.items():
+        packages = dict(sources[source].packages)
+        if choice is None:
+            packages.pop(package, None)
+        else:
+            packages[package] = choice
+        sources[source] = sources[source].model_copy(update={"packages": packages})
+    return settings.model_copy(update={"sources": sources})
 
 
 def _package_key(offer: Offer) -> Any:
@@ -295,16 +322,16 @@ def _detail(svc: Services, selection: Selection) -> PackageDetail:
     return head.model_copy(update={"inputs": inputs, "items": items})
 
 
-def _states(svc: Services, selection: Selection) -> dict[tuple[str, str], FileState]:
-    """``(item, entry path) → state`` for the selection's items that are on."""
+def _states(svc: Services, selection: Selection) -> dict[tuple[str, str, str], FileState]:
+    """``(item, entry path, entry target) → state`` for the selection's items that are on."""
     resolved = svc.inventory.placements([selection], include_excluded=True)
     svc.evaluator.prime_changes(resolved.placements)
-    states: dict[tuple[str, str], FileState] = {}
+    states: dict[tuple[str, str, str], FileState] = {}
     for placement in resolved.placements:
         if placement.orphan:
             continue
         state = svc.evaluator.evaluate(placement).state
-        at = (placement.item, placement.entry)
+        at = (placement.item, placement.entry, placement.declared)
         known = states.get(at)
         if known is None or _WORST.index(state) < _WORST.index(known):
             states[at] = state
@@ -312,7 +339,11 @@ def _states(svc: Services, selection: Selection) -> dict[tuple[str, str], FileSt
 
 
 def _item_detail(
-    svc: Services, offer: Offer, name: str, item: Item, states: dict[tuple[str, str], FileState]
+    svc: Services,
+    offer: Offer,
+    name: str,
+    item: Item,
+    states: dict[tuple[str, str, str], FileState],
 ) -> ItemDetail:
     machine = svc.inventory.machine
     on = offer.item_on(name)
@@ -330,7 +361,7 @@ def _item_detail(
                 target=file.target,
                 mode=file.mode,
                 excluded=file.exclusion(machine.os, machine.tags),
-                state=states.get((name, file.path)) if on else None,
+                state=states.get((name, file.path, file.target)) if on else None,
             )
             for file in item.files
         ),

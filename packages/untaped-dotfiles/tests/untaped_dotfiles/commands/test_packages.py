@@ -176,3 +176,31 @@ def test_an_unknown_name_exits_2(make_remote: MakeRemote) -> None:
     assert run(["show", "nope"]).exit_code == 2
     assert "has no item 'nope'" in run(["show", "fish/nope"]).output
     assert run(["show", "dotfiles/fish/nope"]).exit_code == 2
+
+
+def test_remove_rewrites_the_status_files_without_what_it_turned_off(
+    make_remote: MakeRemote, dotfiles_env: Path
+) -> None:
+    subscribe(make_remote().url, "--add", "starship", "--add", "fish")
+    as_json(["apply", "--yes"])
+    as_json(["remove", "starship", "--yes"])
+    summary = json.loads((dotfiles_env / "status.json").read_text())
+    assert summary["total"] == len(as_json(["status"])) == 3
+
+
+def test_show_gives_each_file_its_own_state_when_one_path_has_two_targets(
+    make_folder: MakeFolder, user_home: Path
+) -> None:
+    two = (
+        "version: 1\nitems:\n  agents:\n    files:\n"
+        "      - {path: a.txt, target: ~/one.txt, mode: copy}\n"
+        "      - {path: a.txt, target: ~/two.txt, mode: copy}\n"
+    )
+    subscribe(
+        str(make_folder("dots", packages={"two": two}, files={"a.txt": "a\n"})), "--add", "two"
+    )
+    as_json(["apply", "--yes"])
+    (user_home / "two.txt").write_text("edited\n")
+    [row] = as_json(["show", "two"])
+    [item] = row["items"]  # type: ignore[misc]
+    assert [f["state"] for f in item["files"]] == ["applied", "modified"]

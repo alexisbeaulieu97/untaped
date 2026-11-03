@@ -60,8 +60,10 @@ class Services:
         """Rewrite status.json and attention after a change, so a prompt segment is current."""
         self.catalog.forget()
         self.evaluator.reset()
-        rows = self.reader.rows(self.inventory.placements(self.inventory.on()).placements)
-        self.store.write_status(self.reader.summary(rows))
+        resolved = self.inventory.placements(self.inventory.on())
+        rows = self.reader.rows(resolved.placements)
+        problems = len(resolved.problems) + len(self.catalog.problems)
+        self.store.write_status(self.reader.summary(rows, problems=problems))
 
 
 class DotfilesCommand(Command[DotfilesSettings]):

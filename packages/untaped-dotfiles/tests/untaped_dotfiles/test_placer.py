@@ -97,16 +97,6 @@ def test_copy_honours_the_umask(placer: FilesystemPlacer, tmp_path: Path) -> Non
         os.umask(before)
 
 
-def test_render_reads_text_and_marks_binary(placer: FilesystemPlacer, tmp_path: Path) -> None:
-    target = tmp_path / "home" / "t"
-    target.parent.mkdir()
-    assert placer.render(target) is None
-    target.write_text("hi\n")
-    assert placer.render(target) == "hi\n"
-    target.write_bytes(b"\xff\xfe\x00")
-    assert placer.render(target) == "<binary>\n"
-
-
 def test_relinking_a_name_near_the_length_limit(placer: FilesystemPlacer, tmp_path: Path) -> None:
     source = tmp_path / "a"
     source.write_text("content")

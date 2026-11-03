@@ -40,7 +40,8 @@ class Status(DotfilesCommand):
         resolved = svc.inventory.placements(selections, include_excluded=self.excluded)
         self.report(resolved.problems)
         rows = svc.reader.rows(resolved.placements)
-        summary = svc.reader.summary(rows)
+        problems = len(resolved.problems) + len(svc.catalog.problems)
+        summary = svc.reader.summary(rows, problems=problems)
         if not self.selectors:
             svc.store.write_status(summary)
         for row in rows:

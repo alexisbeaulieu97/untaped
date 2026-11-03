@@ -9,6 +9,7 @@ unedited copy, takes merged keys back out, and keeps an edited file aside.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import Failure, UntapedError
 from untaped_dotfiles.errors import DotfilesError
-from untaped_dotfiles.models import PlacedRecord
+from untaped_dotfiles.models import CloneRecord, PlacedRecord
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome
 from untaped_dotfiles.states import Action, target_modified
 
@@ -76,6 +77,8 @@ class Applier:
             return "apply", found.detail
         if state == "applied":
             return "skip", "already applied"
+        if state == "excluded":
+            return "skip", f"{found.detail}; left as it is"
         if state == "orphan":
             return "remove", found.detail
         if force:
@@ -229,24 +232,55 @@ class Applier:
         self._store.remove_placed(record.target)
         return kept
 
-    def removal(self, records: Sequence[PlacedRecord], *, keep_files: bool) -> list[ApplyOutcome]:
-        """The preview of taking ``records`` back (or forgetting them, with ``keep_files``)."""
+    def removal(
+        self,
+        records: Sequence[PlacedRecord],
+        *,
+        keep_files: bool,
+        clone: CloneRecord | None = None,
+    ) -> list[ApplyOutcome]:
+        """The preview of taking ``records`` back (or forgetting them, with ``keep_files``).
+
+        ``clone``: the clone that goes with them, so a kept link into it becomes a copy.
+        """
         return [
             self._removal_row(
-                record,
-                "planned",
-                "forgets it; the file stays" if keep_files else self._what(record),
+                record, "planned", self._kept(record, clone) or "forgets it; the file stays"
             )
+            if keep_files
+            else self._removal_row(record, "planned", self._what(record))
             for record in records
         ]
 
-    def take_back(self, records: Sequence[PlacedRecord], *, keep_files: bool) -> list[ApplyOutcome]:
+    def take_back(
+        self,
+        records: Sequence[PlacedRecord],
+        *,
+        keep_files: bool,
+        clone: CloneRecord | None = None,
+    ) -> list[ApplyOutcome]:
         """Take every one of ``records`` back (or only forget it, with ``keep_files``)."""
         rows: list[ApplyOutcome] = []
         for record in records:
             if keep_files:
+                try:
+                    copied = self._unlink(record, clone)
+                except OSError as exc:
+                    broken = DotfilesError(str(exc))
+                    rows.append(
+                        self._removal_row(
+                            record,
+                            "failed",
+                            str(broken),
+                            error=Failure.from_exception(broken, message=str(broken)),
+                        )
+                    )
+                    continue
                 self._store.remove_placed(record.target)
-                rows.append(self._removal_row(record, "deleted", "forgotten; the file stays"))
+                detail = (
+                    "forgotten; the link became a copy" if copied else "forgotten; the file stays"
+                )
+                rows.append(self._removal_row(record, "deleted", detail))
                 continue
             try:
                 kept = self._take_back(record)
@@ -269,6 +303,33 @@ class Applier:
             )
         self._evaluator.reset()
         return rows
+
+    def _kept(self, record: PlacedRecord, clone: CloneRecord | None) -> str | None:
+        """What ``--keep-files`` says of a link into ``clone``, which goes: it becomes a copy."""
+        if self._into(record, clone) is None:
+            return None
+        return "forgets it; the link becomes a copy, since the clone goes"
+
+    def _into(self, record: PlacedRecord, clone: CloneRecord | None) -> Path | None:
+        """Where ``record``'s link points, when it still points into ``clone``; else ``None``."""
+        if clone is None or record.placed_as != "link":
+            return None
+        target = Path(record.target)
+        destination = Path(record.target_hash)
+        if not target.is_symlink() or os.readlink(target) != record.target_hash:
+            return None
+        if Path(clone.folder) not in destination.parents or not destination.is_file():
+            return None
+        return destination
+
+    def _unlink(self, record: PlacedRecord, clone: CloneRecord | None) -> bool:
+        """Turn a link into ``clone`` into a copy of what it shows; whether it did."""
+        destination = self._into(record, clone)
+        if destination is None:
+            return False
+        executable = os.access(destination, os.X_OK)
+        self._placer.copy(destination.read_bytes(), Path(record.target), executable=executable)
+        return True
 
     def _what(self, record: PlacedRecord) -> str:
         """What taking ``record`` back does to its target, as things stand."""

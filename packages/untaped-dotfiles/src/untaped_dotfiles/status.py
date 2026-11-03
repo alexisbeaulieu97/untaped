@@ -181,9 +181,12 @@ class StatusReader:
             )
         return rows
 
-    def summary(self, rows: Sequence[EntryStatus]) -> StatusSummary:
+    def summary(self, rows: Sequence[EntryStatus], *, problems: int = 0) -> StatusSummary:
+        """The counts over ``rows``; ``problems`` (packages or sources that could not be read)
+        count as entries in ``error``, so a prompt segment sees them."""
         counted = Counter(row.state for row in rows if row.state != "excluded")
-        attention = sum(
+        counted["error"] += problems
+        attention = problems + sum(
             1 for row in rows if needs_attention(row.policy, row.state) or row.error is not None
         )
         return StatusSummary(

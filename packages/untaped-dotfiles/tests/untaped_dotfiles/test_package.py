@@ -289,3 +289,9 @@ items:
 def test_the_worked_example_loads(name: str) -> None:
     package = parse_package(EXAMPLES[name], where=f"dots/{name}")
     assert isinstance(package, PackageFile) and package.items
+
+
+@pytest.mark.parametrize("version", ["true", "'1'", "1.0"])
+def test_version_is_the_integer_1(version: str) -> None:
+    with pytest.raises(PackageError, match="version"):
+        parse_package(_items().replace("version: 1", f"version: {version}"), where="dots/x")

@@ -59,15 +59,20 @@ untaped dotfiles apply
 `subscribe` records the source in `config.yml` (`dotfiles.sources`) and
 lists its packages. A git source gets a clone under `dotfiles.clones_dir`
 through the git plugin's repo store, so its credentials and proxy apply;
-a local folder is read as it stands, never fetched. `add` and `remove`
-turn packages or items on and off and place nothing. `apply` fetches each
+a local folder is read as it stands, never fetched. `add` turns packages
+or items on and places nothing; `remove` takes back what they placed and
+turns them off (`--keep-files` leaves the files). `apply` fetches each
 git source, moves its clone to the fetched commit, shows what it will do,
 asks, then places the files. A local file in the way is never destroyed:
 it moves to `dotfiles.kept_dir`, and the row says where. A file edited on
 this machine is refused unless `--force`.
 
 A selector is `PKG`, `PKG/ITEM`, `SOURCE/PKG` or `SOURCE/PKG/ITEM`; a
-bare name that two sources offer asks for its source.
+bare name that two sources offer exits 2, naming both spellings.
+
+Edit linked files in your own checkout, subscribed as a folder: an edit
+through a link lands in the managed clone, which `apply` then leaves where
+it is until the change is discarded.
 
 ## A new machine
 

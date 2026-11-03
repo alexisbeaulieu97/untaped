@@ -71,7 +71,9 @@ def file_state(
         return _unrecorded_state(mode, source, target)
     if target.kind == "missing":
         return "missing", "the target is gone"
-    behind = source.changed if mode == "link" else source.hash != record.source_hash
+    # a link is behind when the fetched commit changed its file, or it must point elsewhere now
+    # (the source's folder moved, or it switched between a clone and a folder)
+    behind = source.hash != record.source_hash or (mode == "link" and source.changed)
     modified = target_modified(mode, record, target)
     if behind and modified:
         return "conflict", "changed in the source and on this machine"

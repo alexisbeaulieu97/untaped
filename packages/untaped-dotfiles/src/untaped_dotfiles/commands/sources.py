@@ -67,16 +67,16 @@ class Subscribe(DotfilesCommand):
 
     def run(self) -> Iterator[Package]:
         kind = classify(self.source)
-        name = check_name(self.name or name_from(self.source))
+        folder = Path(self.source).expanduser().resolve() if kind == "folder" else None
+        name = check_name(self.name or name_from(str(folder or self.source)))
         if name in self.settings.sources:
             raise UsageError(
                 f"source {q(name)} is already subscribed",
                 hint=f"pass --name, or {run_hint(Unsubscribe.spelled(name))} first",
             )
-        if kind == "folder":
+        if folder is not None:
             if self.ref is not None:
                 raise UsageError("--ref applies to a git source")
-            folder = Path(self.source).expanduser().resolve()
             if not folder.is_dir():
                 raise UsageError(f"{folder} is not a folder")
             spec = PackageSource(path=folder)
@@ -97,7 +97,7 @@ class Subscribe(DotfilesCommand):
 
     def _clone_and_subscribe(self, svc: Services, name: str, spec: PackageSource) -> list[Package]:
         assert spec.url is not None
-        url = spec.url if classify(spec.url) == "url" else resolve_url(spec.url)
+        url = resolve_url(spec.url)
         if self.dry_run:
             tree, branch, done = svc.clones.peek(url, spec.ref)
             try:
@@ -163,7 +163,8 @@ class Unsubscribe(DotfilesCommand):
 
     Links and unedited copies are deleted, merged keys taken back out, and a
     file edited on this machine kept aside. `--keep-files` forgets them and
-    leaves the files. It works from untaped's own records too, so a source
+    leaves the files; a link into the clone becomes a copy of what it showed,
+    since the clone goes. It works from untaped's own records too, so a source
     deleted from `config.yml` by hand can still be taken back. A file that
     can't be taken back fails its row (exit 1) and the source stays.
     """
@@ -189,7 +190,9 @@ class Unsubscribe(DotfilesCommand):
                     if self.settings.sources
                     else None,
                 )
-            planned = svc.applier.removal(records, keep_files=self.keep_files)
+            planned = svc.applier.removal(
+                records, keep_files=self.keep_files, clone=clone if self.keep_files else None
+            )
             changes = {key(DotfilesSettings).sources[name]: None} if in_config else {}
             plan = self.ctx.plugin.plan_settings(changes) if changes else None
             taking = (
@@ -202,7 +205,9 @@ class Unsubscribe(DotfilesCommand):
                 preview=_preview(planned, plan.preview if plan is not None else None),
             ):
                 return iter(planned)
-            rows = svc.applier.take_back(records, keep_files=self.keep_files)
+            rows = svc.applier.take_back(
+                records, keep_files=self.keep_files, clone=clone if self.keep_files else None
+            )
             if any(row.failed for row in rows):
                 self.report_rows(rows)
                 self.ctx.diag.warning(f"{q(name)} stays subscribed until every file is taken back")

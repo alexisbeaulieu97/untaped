@@ -5,7 +5,15 @@ each file under the entry gets its own placement at the same relative path,
 and files other programs write there are never touched. A target renders
 ``{{ name }}`` from this machine's answer (``inputs`` in the package's
 choice), else the input's default; an input with neither leaves its
-entries pending, naming the ``config set`` key that answers it.
+entries pending, naming the ``config set`` key that answers it, and what
+the entry placed before stays as it is.
+
+A path untaped placed that its entry no longer places is an ``orphan``:
+the entry left the package, the file left the source's folder, the input
+moved the target, or the package file left the source. A path whose entry
+is now left out on this machine (``os``, ``only``, ``unless``) is
+``excluded`` and stays as it is. Two packages placing one target are an
+error for each, and neither is placed.
 """
 
 from __future__ import annotations
@@ -17,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from untaped.sdk import UntapedError, key, q, run_hint
 from untaped_dotfiles.errors import PackageError
+from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.settings import DotfilesSettings
 from untaped_values.api import InputError, placeholders, render
 
@@ -24,7 +33,6 @@ if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Catalog, Offer, Selection
     from untaped_dotfiles.models import Machine, PlacedRecord
     from untaped_dotfiles.package import File, MergeFormat, Mode
-    from untaped_dotfiles.policy import Policy
     from untaped_dotfiles.ports import DotfilesStore, SourceTree
     from untaped_dotfiles.sources import Source
 
@@ -43,6 +51,8 @@ class Placement:
     """``None`` while an input the target names has no value (``unanswered`` says which)."""
     shown: str
     """The target as the user reads it: ``~/...``, or the package's text while unrendered."""
+    declared: str
+    """The target as the package writes it (``{{ input }}`` unrendered)."""
     mode: Mode
     policy: Policy
     chosen: bool = False
@@ -64,6 +74,10 @@ class Placement:
     @property
     def key(self) -> str:
         return str(self.target)
+
+    @property
+    def owner(self) -> tuple[str, str, str]:
+        return (self.source.name, self.package, self.item)
 
 
 @dataclass(frozen=True)
@@ -128,56 +142,83 @@ class Inventory:
     def placements(
         self, selections: Sequence[Selection], *, include_excluded: bool = False
     ) -> Resolved:
-        """The placements of ``selections`` (items that are on only), plus orphaned records."""
+        """The placements of ``selections`` (items that are on only), plus what untaped placed
+        for them that they no longer place (``orphan``) or that is now left out (``excluded``)."""
         found: list[Placement] = []
         problems: list[tuple[str, UntapedError]] = []
-        resolved: set[tuple[str, str, str]] = set()
-        offers: dict[tuple[str, str], Offer] = {}
-        for selection in selections:
-            offer = selection.offer
+        resolved: dict[tuple[str, str, str], Offer] = {}
+        held: dict[tuple[str, str, str, str], Placement | None] = {}
+        """``(source, package, item, entry)`` whose records stay: excluded (its placement) or
+        waiting on an input (``None``)."""
+        for offer, item in _wanted(selections):
+            if offer.gone:
+                resolved.update({owner: offer for owner in self._owners_of(offer)})
+                continue
             if offer.package is None:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
-            offers[(offer.source.name, offer.name)] = offer
-            items = [selection.item] if selection.item else list(offer.package.items)
-            for item in items:
-                if not offer.item_on(item):
-                    continue
-                try:
-                    found.extend(self._item(offer, item, include_excluded=include_excluded))
-                except UntapedError as exc:
-                    problems.append((f"{offer.spelled}/{item}", exc))
-                    continue
-                resolved.add((offer.source.name, offer.name, item))
-        placed = {p.key for p in found}
+            try:
+                placed, waiting = self._item(offer, item)
+            except UntapedError as exc:
+                problems.append((f"{offer.spelled}/{item}", exc))
+                continue
+            resolved[(offer.source.name, offer.name, item)] = offer
+            for each in waiting:
+                held[(*each.owner, each.entry)] = each if each.excluded is not None else None
+            found.extend(placed)
+            if include_excluded:
+                found.extend(p for p in waiting if p.excluded is not None)
+        found, claimed = _claims(found)
+        problems.extend(claimed)
+        placed_keys = {p.key for p in found}
         for record in self._store.placed():
             owner = (record.source, record.package, record.item)
-            if owner in resolved and record.target not in placed:
-                found.append(self._orphan(record, offers[owner[:2]]))
+            owned = resolved.get(owner)
+            if owned is None or record.target in placed_keys:
+                continue
+            at = (*owner, record.entry)
+            if at not in held:
+                found.append(self._from_record(record, owned, orphan=True))
+                continue
+            excluded = held[at]
+            if excluded is not None:
+                found.append(self._from_record(record, owned, excluded=excluded.excluded))
+                if include_excluded:  # the record's own row stands for its entry
+                    found = [p for p in found if p is not excluded]
         return Resolved(found, problems)
 
-    def _item(self, offer: Offer, item: str, *, include_excluded: bool) -> list[Placement]:
+    def _owners_of(self, offer: Offer) -> set[tuple[str, str, str]]:
+        """Every item ``offer``'s package placed something for (a package gone from its source)."""
+        return {
+            (r.source, r.package, r.item)
+            for r in self._store.placed()
+            if (r.source, r.package) == (offer.source.name, offer.name)
+        }
+
+    def _item(self, offer: Offer, item: str) -> tuple[list[Placement], list[Placement]]:
+        """``(placements, waiting)``: what ``item`` places, and the entries it can't place here
+        now (left out on this machine, or waiting on an input), unexpanded."""
         package = offer.package
         assert package is not None
         tree = offer.source.tree
         policy, chosen = offer.item_policy(item)
         assert policy is not None  # a package that loads has a policy
-        out: list[Placement] = []
+        placed: list[Placement] = []
+        waiting: list[Placement] = []
         for file in package.items[item].files:
             reason = offer.exclusion(self._machine, item) or file.exclusion(
                 self._machine.os, self._machine.tags
             )
-            if reason is not None and not include_excluded:
-                continue
             base = self._placement(offer, item, file, policy=policy, chosen=chosen)
             if reason is not None:
-                out.append(replace(base, excluded=reason))
+                waiting.append(replace(base, excluded=reason))
             elif base.target is None:
-                out.append(base)
+                placed.append(base)
+                waiting.append(base)
             else:
-                out.extend(self._expand(base, tree))
-        return out
+                placed.extend(self._expand(base, tree))
+        return placed, waiting
 
     def _placement(
         self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
@@ -190,6 +231,7 @@ class Inventory:
             path=file.path,
             target=target,
             shown=self.shown(target) if target is not None else file.target,
+            declared=file.target,
             mode=file.mode,
             policy=policy,
             chosen=chosen,
@@ -229,9 +271,16 @@ class Inventory:
             for child in tree.files(base.entry)
         ]
 
-    def _orphan(self, record: PlacedRecord, offer: Offer) -> Placement:
+    def _from_record(
+        self,
+        record: PlacedRecord,
+        offer: Offer,
+        *,
+        orphan: bool = False,
+        excluded: str | None = None,
+    ) -> Placement:
+        """What untaped placed at ``record``'s target, as a placement of ``offer``."""
         policy, chosen = offer.item_policy(record.item)
-        assert policy is not None
         target = Path(record.target)
         return Placement(
             offer=offer,
@@ -240,12 +289,58 @@ class Inventory:
             path=record.path,
             target=target,
             shown=self.shown(target),
+            declared="",
             mode=record.placed_as,
-            policy=policy,
+            policy=policy or Policy.MANUAL,
             chosen=chosen,
             fmt=record.fmt,
-            orphan=True,
+            excluded=excluded,
+            orphan=orphan,
         )
+
+
+def _wanted(selections: Sequence[Selection]) -> list[tuple[Offer, str]]:
+    """``(offer, item)`` for each item the selections name that is on, each once; a package
+    gone from its source once, as ``(offer, "")``."""
+    wanted: dict[tuple[str, str, str], tuple[Offer, str]] = {}
+    for selection in selections:
+        offer = selection.offer
+        if offer.package is None:
+            wanted.setdefault((offer.source.name, offer.name, ""), (offer, ""))
+            continue
+        items = [selection.item] if selection.item else list(offer.package.items)
+        for item in items:
+            if offer.item_on(item):
+                wanted.setdefault((offer.source.name, offer.name, item), (offer, item))
+    return list(wanted.values())
+
+
+def _claims(
+    placements: list[Placement],
+) -> tuple[list[Placement], list[tuple[str, UntapedError]]]:
+    """``placements`` without the targets two packages claim, and an error for each claimant."""
+    claimants: dict[str, set[str]] = {}
+    for p in placements:
+        if p.target is not None and p.excluded is None:
+            claimants.setdefault(p.key, set()).add(p.offer.spelled)
+    fought = {target: names for target, names in claimants.items() if len(names) > 1}
+    if not fought:
+        return placements, []
+    problems: list[tuple[str, UntapedError]] = []
+    for target, names in sorted(fought.items()):
+        for name in sorted(names):
+            problems.append(
+                (
+                    name,
+                    PackageError(
+                        f"target {target} is placed by {' and '.join(sorted(names))}; "
+                        "neither places it",
+                        category="conflict",
+                    ),
+                )
+            )
+    kept = [p for p in placements if p.target is None or p.excluded or p.key not in fought]
+    return kept, problems
 
 
 def input_values(offer: Offer) -> dict[str, object]:
