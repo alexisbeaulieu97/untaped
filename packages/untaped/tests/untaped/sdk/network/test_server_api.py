@@ -152,6 +152,18 @@ def test_a_write_that_never_left_did_not_write_and_one_that_may_have_did() -> No
     assert (log.sent[0].outcome, log.wrote) == ("maybe", True)
 
 
+@respx.mock
+def test_a_put_sent_at_most_once_is_a_write_and_a_get_a_read() -> None:
+    respx.put(f"{URL}/x").mock(return_value=httpx.Response(200, json={}))
+    respx.get(f"{URL}/x").mock(return_value=httpx.Response(200, json={}))
+    client = HttpClient(URL, retry=None)
+    client._record = record
+    with logging_into(CallLog()) as log:
+        client.request("PUT", "/x")
+        client.get("/x")
+    assert [each.wrote for each in log.sent] == [True, False]
+
+
 def test_a_write_answered_with_the_404_a_mismatch_took_accepted_nothing() -> None:
     sent = _Sent("PUT", "/x", idempotent=False, outcome="answered", status=404)
     assert sent.wrote

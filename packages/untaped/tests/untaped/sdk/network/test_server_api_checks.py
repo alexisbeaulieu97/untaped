@@ -157,6 +157,27 @@ def test_a_version_whose_parse_does_not_read_back_its_text_is_refused() -> None:
     assert any("Unreadable.parse(str(v)) != v" in each for each in problems)
 
 
+@dataclass(frozen=True)
+class Unparsed(ServerVersion):
+    """A version that says its text but can't read one."""
+
+    release: Release
+
+    def __str__(self) -> str:
+        return f"Toy {self.release}"
+
+
+def test_a_version_type_without_parse_is_refused() -> None:
+    block = ServerApi[ToyApi, ToySettings, Unparsed](
+        server=key(ToySettings).server,
+        credential=TOKEN,
+        detect=detect,
+        adapters=(V2,),
+        override=key(ToySettings).server_version,
+    )
+    assert "its version type Unparsed must define both __str__() and parse()" in _problems(block)
+
+
 @dataclass
 class Unhashable(ServerVersion):
     """Not frozen: equal by value, so not hashable."""

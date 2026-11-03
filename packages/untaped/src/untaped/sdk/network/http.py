@@ -112,6 +112,8 @@ class _Inherit:
 
 _INHERIT = _Inherit()
 _DEFAULT_RETRY = RetryPolicy()
+#: The methods that only read, for a request sent at most once (``retry=None``).
+_READS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 @dataclass
@@ -121,8 +123,9 @@ class _Sent:
     The server API block records each request its adapters send, to tell
     whether a write went through before a mismatch (``ServerApi``'s rerun).
     ``idempotent`` is the policy the request was sent with (its ``retry=``,
-    else the client's, else the default): the rule that decides what may be
-    sent twice. ``outcome``: ``answered`` (a response, any status), ``unsent``
+    else the client's): the rule that decides what may be sent twice. A
+    request sent at most once (``retry=None``) reads only as GET, HEAD or
+    OPTIONS. ``outcome``: ``answered`` (a response, any status), ``unsent``
     (a transport failure before anything left), ``maybe`` (it may have been
     sent: a transport failure after connecting, or anything else that
     stopped it). ``accepted_nothing`` marks the 404 or 405 a mismatch turned
@@ -278,7 +281,7 @@ class HttpClient:
         import httpx  # noqa: PLC0415
 
         policy = self._retry if isinstance(retry, _Inherit) else retry
-        idempotent = (policy or _DEFAULT_RETRY).idempotent_methods
+        idempotent = _READS if policy is None else policy.idempotent_methods
         record = _Sent(method.upper(), "", idempotent=method.upper() in idempotent)
         if self._record is not None:
             self._record(record)

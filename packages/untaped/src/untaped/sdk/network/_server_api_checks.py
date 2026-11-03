@@ -58,7 +58,7 @@ def _type_problems(port: object, settings: object, version: object) -> Iterator[
         yield f"its version type {version!r} does not subclass ServerVersion"
         return
     if version.__str__ is ServerVersion.__str__ or "parse" not in _defined(version):
-        yield f"its version type {version.__name__} defines both __str__() and parse()"
+        yield f"its version type {version.__name__} must define both __str__() and parse()"
     if not _hashable(version):
         yield (
             f"its version type {version.__name__} is not hashable: declare it "

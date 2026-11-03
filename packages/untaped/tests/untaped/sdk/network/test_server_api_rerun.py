@@ -21,6 +21,7 @@ import respx
 from core_test_support.server_api import (
     SERVER_API,
     URL,
+    V1,
     Add,
     Collect,
     Get,
@@ -33,6 +34,9 @@ from core_test_support.server_api import (
 )
 from untaped.sdk.diagnostic import Failure
 from untaped.sdk.errors import UntapedError
+from untaped.sdk.network import ApiMismatch
+from untaped.sdk.network._server_api_calls import CallLog, logging_into, record
+from untaped.sdk.network.http import _Sent
 from untaped.sdk.testing import Install
 
 Installer = Callable[..., Install]
@@ -158,7 +162,49 @@ def test_a_change_after_an_item_was_handed_over_exits_5(toy: Install) -> None:
     ran = toy.run(Collect())
     assert ran.exit == 5
     assert ran.stdout == ""
+    assert ran.stderr[0] == (
+        f"error: {CHANGED} after the command read part of the answer; nothing took effect"
+    )
     assert v2.call_count == 0
+
+
+@respx.mock
+def test_a_write_earlier_in_the_command_makes_the_change_exit_1(toy: Install) -> None:
+    v2 = _change_on_page_two()
+    added = route("POST", "/v1/items", json={"name": "b"})
+    with toy.running(), pytest.raises(UntapedError) as caught:
+        port = SERVER_API.port(configured())
+        for item in port.items():
+            port.add(f"{item.name}-copy")
+    assert caught.value.exit_code == 1
+    assert (
+        str(caught.value) == f"{CHANGED}; an earlier request of this command may have taken effect"
+    )
+    assert (added.call_count, v2.call_count) == (1, 0)
+
+
+@respx.mock
+def test_a_mismatch_a_port_call_inside_another_passed_through_is_not_handled_again(
+    toy: Install, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _upgraded()
+    route("GET", "/v1/items/a", status=404)
+    route("POST", "/v1/search", status=404)
+    route("POST", "/v2/search", status=404)
+    outer_on_v2 = route("GET", "/v2/items/a", json={"name": "a"})
+    with toy.running():
+        port = SERVER_API.port(configured())
+        monkeypatch.setattr(V1, "item", lambda self, name: port.search(name)[0])
+        with pytest.raises(ApiMismatch, match=r"Toy 3\.1 answered POST /v2/search"):
+            port.item("a")
+    assert outer_on_v2.call_count == 0  # the outer call is not rerun on what the inner switched
+
+
+def test_a_port_call_inside_another_records_into_both() -> None:
+    outer, inner = CallLog(), CallLog()
+    with logging_into(outer), logging_into(inner):
+        record(_Sent("POST", "/x", idempotent=False, outcome="answered", status=201))
+    assert outer.wrote and inner.wrote
 
 
 @respx.mock
@@ -215,8 +261,7 @@ def test_eight_threads_meeting_the_change_detect_it_once_and_rerun(toy: Install)
     route("GET", "/v1/items/a", status=404)
     found = route("GET", "/v2/items/a", json={"name": "a"})
     with toy.running() as running:
-        port = SERVER_API.port(configured())
-        port.item("a")  # picks V1 from the cache, then switches to V2
+        port = SERVER_API.port(configured())  # each thread picks V1 from the cache, meets 3.1
         start = threading.Barrier(8)
 
         def call(_: int) -> str:
@@ -226,8 +271,8 @@ def test_eight_threads_meeting_the_change_detect_it_once_and_rerun(toy: Install)
         with ThreadPoolExecutor(8) as pool:
             futures = [pool.submit(contextvars.copy_context().run, call, n) for n in range(8)]
             assert {each.result() for each in futures} == {"a"}
-        assert len(running.diagnostics) == 1
-    assert (about.call_count, found.call_count) == (1, 9)
+        assert len(running.diagnostics) == 1  # one warning, whichever thread switched
+    assert (about.call_count, found.call_count) == (1, 8)
 
 
 @respx.mock

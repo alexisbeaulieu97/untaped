@@ -221,6 +221,8 @@ class ApiMismatch(UntapedError):
         super().__init__(message, **attributed)
         self.request = request
         self.answer = answer
+        #: Core passed it through after its own handling: a port call around it doesn't again.
+        self._passed = False
 
     @classmethod
     @contextmanager

@@ -10,6 +10,7 @@ refused with exit 4.
 from __future__ import annotations
 
 import contextvars
+import gc
 import threading
 import time
 from collections.abc import Callable
@@ -25,6 +26,7 @@ from core_test_support.server_api import (
     URL,
     Get,
     Toy,
+    ToySettings,
     configured,
     route,
     serve,
@@ -184,8 +186,10 @@ def test_a_url_that_does_not_answer_as_the_product_is_could_not_tell(install: In
         "error: could not tell which version the toy server at https://toy.example.com runs: "
         "GET /about answered HTTP 404 without its own error"
     )
-    assert "untaped config set toy.server_version" in ran.stderr[1]
-    assert "auth login toy" in ran.stderr[1]  # no token was set
+    assert ran.stderr[1] == (
+        "hint: run `untaped auth login toy`, check toy.server.url, or set toy.server_version, "
+        'for example `untaped config set toy.server_version "Toy 3.0"`'
+    )  # no token was set, so logging in comes first
 
 
 @respx.mock
@@ -299,6 +303,54 @@ def test_a_cached_version_nothing_serves_is_detected_again_first(install: Instal
     serve("3.1")
     assert toy.run(Get(name="a")).exit == 0
     assert about.call_count == 2
+
+
+@respx.mock
+def test_a_cached_version_nothing_serves_is_refused_under_cached_with_no_request(
+    install: Installer,
+) -> None:
+    about = serve("0.9")
+    toy = install(Toy, settings=configured())
+    assert toy.run(Get(name="a")).exit == 4  # detected and kept: Toy 0.9
+    ran = toy.run(Get(name="a", fresh=False))
+    assert ran.exit == 4
+    assert ran.stderr[0].endswith("runs Toy 0.9")
+    assert about.call_count == 1
+
+
+@respx.mock
+def test_refresh_detects_once_however_many_ports_ask(install: Installer) -> None:
+    about = serve("3.1")
+    _item("/v2")
+    with install(Toy, settings=configured()).running():
+        for _ in range(3):
+            assert SERVER_API.port(configured(), refresh=True).item("a").name == "a"
+    assert about.call_count == 1
+
+
+@respx.mock
+def test_each_port_talks_with_its_own_settings_on_a_shared_pick(install: Installer) -> None:
+    serve("3.1")
+    _item("/v2")
+    strict = configured()
+    lax = ToySettings.model_validate({"server": {"url": URL, "verify_tls": False}})
+    with install(Toy, settings=strict).running():
+        ports = [SERVER_API.port(strict), SERVER_API.port(lax)]
+        for port in ports:
+            port.item("a")
+        built = [list(port._adapters.values()) for port in ports]
+    assert [[each.settings for each in adapters] for adapters in built] == [[strict], [lax]]
+
+
+@respx.mock
+def test_a_finished_runs_picks_and_clients_are_let_go(install: Installer) -> None:
+    serve("3.1")
+    _item("/v2")
+    toy = install(Toy, settings=configured())
+    for _ in range(3):
+        assert toy.run(Get(name="a")).exit == 0
+    gc.collect()
+    assert [each for each in SERVER_API._picks.values() if each.composition() is not None] == []
 
 
 @respx.mock

@@ -3,10 +3,12 @@
 Core builds every client an adapter talks through (``ApiAdapter.connect``)
 and detection's own, and each records the requests it sends here
 (:class:`~untaped.sdk.network.http._Sent`), in the log of the port call
-running now. After a mismatch, the log says whether a write went through
-during the failed call, which decides whether core may run the call again;
-``ApiMismatch.watch`` reads its last request to name what the server was
-asked.
+running now and of every port call around it, and in the invocation's log.
+After a mismatch, the call's log says whether a write went through during
+the failed call, which decides whether core may run the call again; the
+invocation's log says whether anything took effect before it.
+``ApiMismatch.watch`` reads the innermost call's last request to name what
+the server was asked.
 """
 
 from __future__ import annotations
@@ -33,27 +35,33 @@ class CallLog:
         return any(each.wrote for each in self.sent)
 
 
-_CALL: ContextVar[CallLog | None] = ContextVar("untaped_server_api_call", default=None)
+#: The logs recording now, innermost last: a port call's, inside any port call around it.
+_CALL: ContextVar[tuple[CallLog, ...]] = ContextVar("untaped_server_api_call", default=())
 
 
 def record(sent: _Sent) -> None:
-    """Add ``sent`` to the port call running now; outside one, nothing keeps it."""
-    log = _CALL.get()
-    if log is not None:
+    """Add ``sent`` to every log recording now; outside a port call, nothing keeps it."""
+    for log in _CALL.get():
         log.sent.append(sent)
 
 
 def last_sent() -> _Sent | None:
-    """The last request the port call running now sent; ``None`` outside one, or before any."""
-    log = _CALL.get()
-    return log.sent[-1] if log is not None and log.sent else None
+    """The last request the innermost port call sent; ``None`` outside one, or before any."""
+    logs = _CALL.get()
+    return logs[-1].sent[-1] if logs and logs[-1].sent else None
 
 
 @contextmanager
-def logging_into(log: CallLog) -> Iterator[CallLog]:
-    """Record the requests sent inside the block (and the threads it starts) into ``log``."""
-    token = _CALL.set(log)
+def logging_into(*logs: CallLog) -> Iterator[CallLog]:
+    """Record the requests sent inside the block into ``logs`` and every log already recording.
+
+    A port call made inside another (an adapter calling another port, or a
+    loop over one port's items calling another) records into its own log and
+    into the enclosing call's, so no write goes unseen. Yields the last of ``logs``.
+    """
+    held = _CALL.get()
+    token = _CALL.set((*held, *(log for log in logs if all(log is not each for each in held))))
     try:
-        yield log
+        yield logs[-1]
     finally:
         _CALL.reset(token)

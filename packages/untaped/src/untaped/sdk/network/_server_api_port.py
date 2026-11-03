@@ -8,17 +8,20 @@ then forwards the call. Only the port's members are reachable.
 The pick is a memo on the block, keyed by the run's composition (one per
 invocation, which its child runs and threads share), the server URL and the
 override's text, under a lock: ``Parallel.map`` threads share one pick, and
-a child run on another server or override gets its own. No run state is
-added; a finished run's picks are dropped. Detection is the block's cache,
-keyed by the URL alone.
+a child run on another server or override gets its own. A pick holds the
+adapter class and the version, never a caller's settings or run: each port
+builds its own adapters from the settings it was given, and an adapter's
+client is built for the run connecting. A finished run's picks are dropped.
+Detection is the block's cache, keyed by the URL alone.
 
 After an :class:`~untaped.sdk.network.server_api.ApiMismatch` from a port
 call, core re-detects once per pick (never under the override): the same
 version passes the mismatch through (exit 1); another served version
 switches the pick, and the call runs again on the new adapter when no write
 went through during it and nothing was printed or handed to the command;
-otherwise it fails with exit 1 (a write went through) or 5 (output already
-printed). A version nothing serves is the exit-4 refusal.
+otherwise it fails with exit 1 (a write went through, in the call or earlier
+in the invocation) or 5 (nothing took effect, but output was printed or
+items handed). A version nothing serves is the exit-4 refusal.
 """
 
 from __future__ import annotations
@@ -66,7 +69,7 @@ type Source = Literal["detected", "cache", "setting"]
 
 @dataclass
 class Pick:
-    """One server's pick in this process: the adapter serving it, and what decided it."""
+    """One server's pick in this invocation: the adapter class serving it, and what decided it."""
 
     composition: weakref.ref[object]
     lock: threading.RLock = field(default_factory=threading.RLock)
@@ -77,6 +80,60 @@ class Pick:
     redetected: bool = False
     #: The version before the re-detection switched the pick, for the rerun's wording.
     was: ServerVersion | None = None
+    #: Whether a rerun said the server changed: one warning per switch, whichever thread reruns.
+    announced: bool = False
+
+    @property
+    def chosen(self) -> tuple[Any, ServerVersion | None]:
+        """The adapter class and version a call runs on (read under :attr:`lock`)."""
+        return self.adapter, self.version
+
+
+_INVOCATIONS: dict[int, CallLog] = {}
+_INVOCATIONS_LOCK = threading.Lock()
+
+
+def invocation_log(composition: object) -> CallLog:
+    """What every port call of this invocation sent: whether anything took effect before."""
+    with _INVOCATIONS_LOCK:
+        log = _INVOCATIONS.get(id(composition))
+        if log is None:
+            log = _INVOCATIONS[id(composition)] = CallLog()
+            weakref.finalize(composition, _INVOCATIONS.pop, id(composition), None)
+    return log
+
+
+def connect(
+    api: ServerApi[Any, Any, Any], settings: BaseModel, headers: Mapping[str, str] | None
+) -> HttpClient:
+    """A client for the server ``settings`` name, as ``ctx.http.client`` builds it, recording.
+
+    Built by the run connecting now, so a child run's credential and
+    trust are its own.
+    """
+    key: CredentialKey | None = value_in(api.server, settings)
+    url = None if key is None else key_origin(key)
+    if key is None or not url:
+        from untaped.sdk.network.http import _not_set_up  # noqa: PLC0415 - httpx's cost
+
+        raise _not_set_up(settings, section=api.plugin)
+    # Core reads the key's TLS field by its type, as ``ctx.http.client`` callers name it.
+    shape = key_shape(type(key))
+    verify = True if shape.tls is None else getattr(key, shape.tls)
+    client = current_run().http.client(
+        settings,
+        base_url=url.rstrip("/"),
+        bearer=api.credential.find(key),
+        verify=verify,
+        headers=headers,
+    )
+    client._record = record
+    return client
+
+
+def _close(clients: dict[Any, HttpClient]) -> None:
+    for client in clients.values():
+        client.close()
 
 
 class Port:
@@ -87,6 +144,8 @@ class Port:
         self._settings = settings
         self._refresh = refresh
         self._refresh_lock = threading.Lock()
+        self._adapters: dict[tuple[type, ServerVersion], Any] = {}
+        self._adapters_lock = threading.Lock()
 
     def __repr__(self) -> str:
         return f"<port of {self._api.where}>"
@@ -96,6 +155,18 @@ class Port:
             raise AttributeError(f"{name!r} is not a member of {self._api.qualified}'s port")
         return functools.partial(self._call, name)
 
+    def _adapter(self, chosen: tuple[Any, ServerVersion | None]) -> Any:
+        """The adapter ``chosen`` names, built once for this port's settings."""
+        adapter, version = chosen
+        assert version is not None  # a chosen adapter has its version
+        with self._adapters_lock:
+            built = self._adapters.get((adapter, version))
+            if built is None:
+                built = self._adapters[adapter, version] = adapter(self._settings, version)
+                built._connector = functools.partial(connect, self._api, self._settings)
+                weakref.finalize(built, _close, built._clients)
+        return built
+
     # ---- one call -----------------------------------------------------------
 
     def _call(self, name: str, /, *args: Any, **kwargs: Any) -> Any:
@@ -103,18 +174,67 @@ class Port:
         with self._refresh_lock:  # the directive governs the first call; the pick serves the rest
             refresh, self._refresh = self._refresh, None
         pick = server.pick(refresh)
-        adapter = pick.adapter
+        with pick.lock:
+            chosen = pick.chosen
+        call = _Call(server, pick, self._adapter, (name, args, kwargs))
+        return call.run(chosen, rerun=False)
+
+
+@dataclass
+class _Call:
+    """One port call: run on the chosen adapter, and once more after a switch when it may."""
+
+    server: _Server
+    pick: Pick
+    build: Callable[[tuple[Any, ServerVersion | None]], Any]
+    again: tuple[str, tuple[Any, ...], dict[str, Any]]
+
+    def run(self, chosen: tuple[Any, ServerVersion | None], *, rerun: bool) -> Any:
+        name, args, kwargs = self.again
         log = CallLog()
         try:
-            with logging_into(log):
-                result = getattr(adapter, name)(*args, **kwargs)
+            with logging_into(self.server.invocation, log):
+                result = getattr(self.build(chosen), name)(*args, **kwargs)
         except ApiMismatch as exc:
-            return server.after_mismatch(
-                pick, adapter, exc, log, handed=0, again=(name, args, kwargs)
-            )
+            if exc._passed:  # a port call inside this one already handled it
+                raise
+            if rerun:
+                raise self.server.mismatch(self.pick, exc, log=log, rerun=True) from exc
+            return self.server.after_mismatch(self, chosen, exc, log, handed=0)
         if isinstance(result, Iterator):
-            return server.iterate(pick, adapter, result, log, again=(name, args, kwargs))
+            return self.iterate(chosen, result, log, rerun=rerun)
         return result
+
+    def iterate(
+        self,
+        chosen: tuple[Any, ServerVersion | None],
+        items: Iterator[Any],
+        log: CallLog,
+        *,
+        rerun: bool,
+    ) -> Iterator[Any]:
+        """``items``, each fetched under the call's log; a mismatch meets the same test."""
+        handed = 0
+        try:
+            while True:
+                try:
+                    with logging_into(self.server.invocation, log):
+                        item = next(items)
+                except StopIteration:
+                    return
+                except ApiMismatch as exc:
+                    if exc._passed:
+                        raise
+                    if rerun:  # already the rerun: it passes through
+                        raise self.server.mismatch(self.pick, exc, log=log, rerun=True) from exc
+                    yield from self.server.after_mismatch(self, chosen, exc, log, handed=handed)
+                    return
+                handed += 1
+                yield item
+        finally:
+            close = getattr(items, "close", None)
+            if close is not None:
+                close()
 
 
 @dataclass(frozen=True)
@@ -162,6 +282,11 @@ class _Server:
         """The override's full key: ``jira.server_version``."""
         return setting_name(self.api.override)
 
+    @property
+    def invocation(self) -> CallLog:
+        """What every port call of this invocation sent."""
+        return invocation_log(self.run.composition)
+
     # ---- the pick -----------------------------------------------------------
 
     def pick(self, refresh: bool | None) -> Pick:
@@ -176,8 +301,9 @@ class _Server:
                 for each in gone:
                     del api._picks[each]  # a finished run's
                 pick = api._picks[memo] = Pick(composition=weakref.ref(composition))
-        with pick.lock:
-            if pick.adapter is None or (refresh is True and self.override is None):
+        with pick.lock:  # --refresh detects once per invocation, however many ports ask
+            again = refresh is True and self.override is None and pick.source != "detected"
+            if pick.adapter is None or again:
                 self._choose(pick, refresh)
         return pick
 
@@ -189,7 +315,7 @@ class _Server:
         else:
             version, source = self.detected(refresh)
         adapter = self.serving(version)
-        if adapter is None and source == "cache":
+        if adapter is None and source == "cache" and refresh is not False:
             version, source = self.detected(True)  # never refused on a day-old answer
             adapter = self.serving(version)
         if adapter is None:
@@ -202,27 +328,10 @@ class _Server:
 
     def _adopt(self, pick: Pick, adapter: type, version: ServerVersion, source: Source) -> None:
         """Make ``adapter`` the pick; warn of its removal when this run found the version."""
-        built = adapter(self.settings, version)
-        built._connector = self._connector
-        pick.adapter, pick.version, pick.source = built, version, source
+        pick.adapter, pick.version, pick.source = adapter, version, source
         mark = adapter.__dict__.get("stability")
         if isinstance(mark, Deprecated) and source != "cache":
             self._warn_deprecated(adapter, mark, version)
-
-    def _connector(self, headers: Mapping[str, str] | None) -> HttpClient:
-        """A client for the server, as ``ctx.http.client`` builds it, recording what it sends."""
-        # Core reads the key's TLS field by its type, as ``ctx.http.client`` callers name it.
-        shape = key_shape(type(self.key))
-        verify = True if shape.tls is None else getattr(self.key, shape.tls)
-        client = self.run.http.client(
-            self.settings,
-            base_url=self.url,
-            bearer=self.api.credential.find(self.key),
-            verify=verify,
-            headers=headers,
-        )
-        client._record = record
-        return client
 
     # ---- detection ----------------------------------------------------------
 
@@ -235,18 +344,21 @@ class _Server:
             return Filled(value=_Detected(version=str(self.detect())))
 
         served = self.api.cache.serve({self.url: self.named}, refresh=refresh, fill=fill)
+        kept = served.value[self.url].version
         try:
-            version = version_type.parse(served.value[self.url].version)
-        except ValueError:
-            if refresh is True or self.url in served.filled:
-                raise
+            version = version_type.parse(kept)
+        except ValueError as exc:
+            if self.url in served.filled:
+                raise  # the plugin's detect answered a version its own parse refuses
+            if refresh is False:
+                raise self.could_not_tell(f"the version kept for it ({kept!r}) {exc}") from exc
             return self.detected(True)  # kept by an older spelling: ask the server again
         return version, "detected" if self.url in served.filled else "cache"
 
     def detect(self) -> ServerVersion:
         """Ask the server which version it runs, through the plugin's ``detect``."""
         anonymous = self.api.credential.find(self.key) is None
-        client = self._connector(None)
+        client = connect(self.api, self.settings, None)
         try:
             with logging_into(CallLog()):
                 version: ServerVersion = self.api.detect(self.settings, client)
@@ -268,14 +380,18 @@ class _Server:
 
     # ---- errors -------------------------------------------------------------
 
-    def could_not_tell(self, why: str, *, anonymous: bool) -> ConfigError:
+    def could_not_tell(self, why: str, *, anonymous: bool = False) -> ConfigError:
         """``could not tell which version <server> runs``: the one error offering the override."""
-        example = f'untaped config set {self.setting} "<version>"'
-        login = f"`untaped {self.api.credential.login}`, or " if anonymous else ""
+        shape = key_shape(type(self.key))
+        url = shape.token_url or (shape.urls[0] if shape.urls else None)
+        where = setting_name(self.api.server) + ("" if url is None else f".{url}")
+        recorded = next((each.recorded[0] for each in self.api.adapters if each.recorded), None)
+        example = f'untaped config set {self.setting} "{recorded or "<version>"}"'
+        login = f"run `untaped {self.api.credential.login}`, " if anonymous else ""
         return ConfigError(
             f"could not tell which version {self.named} runs: {why}",
             system=self.plugin,
-            hint=f"check the server's URL; {login}say it with `{example}`",
+            hint=f"{login}check {where}, or set {self.setting}, for example `{example}`",
             details={"server": self.url},
         )
 
@@ -338,14 +454,14 @@ class _Server:
             plugin=self.plugin,
         )
 
-    def mismatch(self, pick: Pick, error: ApiMismatch, **details: object) -> ApiMismatch:
+    def mismatch(self, pick: Pick, error: ApiMismatch, *, log: CallLog, rerun: bool) -> ApiMismatch:
         """``error`` passed through: what answered, and how untaped did not expect it."""
         asked = "" if error.request is None else f" {error.request}"
         how = f" ({error.answer})" if error.answer is not None else f": {error!s}"
         hint = None
         if pick.source == "setting":
             hint = f"{self.setting} says the server runs {pick.version}; unset it to detect it"
-        return ApiMismatch(
+        passed = ApiMismatch(
             f"{pick.version} answered{asked} in a way {self.distribution} does not expect{how}",
             request=error.request,
             answer=error.answer,
@@ -353,109 +469,79 @@ class _Server:
             hint=hint,
             details={
                 "server": self.url,
-                "version": str(pick.version),
+                "was": str(pick.was or pick.version),
+                "now": str(pick.version),
                 "source": pick.source,
-                **details,
+                "written": log.wrote,
+                "rerun": rerun,
             },
         )
+        passed._passed = True
+        return passed
 
     # ---- after a mismatch ---------------------------------------------------
 
     def after_mismatch(
         self,
-        pick: Pick,
-        called: object,
+        call: _Call,
+        called: tuple[Any, ServerVersion | None],
         error: ApiMismatch,
         log: CallLog,
         *,
         handed: int,
-        again: tuple[str, tuple[Any, ...], dict[str, Any]],
     ) -> Any:
         """Re-detect once, switch when the server changed, and rerun when nothing happened."""
+        pick = call.pick
         with pick.lock:
-            if pick.adapter is called:
+            if pick.chosen == called:  # no other thread switched it since this call began
                 if pick.source == "setting" or pick.redetected:
-                    raise self.mismatch(pick, error) from error
+                    raise self.mismatch(pick, error, log=log, rerun=False) from error
                 pick.redetected = True
                 was = pick.version
-                assert was is not None  # a pick that served a call has its version
                 version, _ = self.detected(True)
                 if version == was:
-                    raise self.mismatch(pick, error) from error
+                    raise self.mismatch(pick, error, log=log, rerun=False) from error
                 adapter = self.serving(version)
                 if adapter is None:
                     raise self.refusal(version, "detected") from error
                 self._adopt(pick, adapter, version, "detected")
                 pick.was = was
-                warned = False
-            else:
-                warned = True  # another thread switched the pick and said so
-        written = log.wrote
-        printed = self.run.notes.printed or handed > 0
-        if written or printed:
-            raise self._changed(pick, written=written) from error
-        if not warned:
+            chosen = pick.chosen
+        printed = self.run.notes.printed
+        if log.wrote or printed or handed > 0:
+            raise self._changed(pick, written=log.wrote, printed=printed) from error
+        with pick.lock:
+            announce, pick.announced = not pick.announced, True
+        if announce:
             self.run.diag.warning(
                 f"{self.named} changed from {pick.was} to {pick.version}; switched to its adapter"
             )
-        name, args, kwargs = again
-        log = CallLog()
-        try:
-            with logging_into(log):
-                result = getattr(pick.adapter, name)(*args, **kwargs)
-        except ApiMismatch as exc:
-            raise self.mismatch(pick, exc, rerun=True) from exc
-        if isinstance(result, Iterator):
-            return self.iterate(pick, pick.adapter, result, log, again=None)
-        return result
+        return call.run(chosen, rerun=True)
 
-    def iterate(
-        self,
-        pick: Pick,
-        adapter: object,
-        items: Iterator[Any],
-        log: CallLog,
-        *,
-        again: tuple[str, tuple[Any, ...], dict[str, Any]] | None,
-    ) -> Iterator[Any]:
-        """``items``, each fetched under the call's record; a mismatch meets the same test."""
-        handed = 0
-        while True:
-            try:
-                with logging_into(log):
-                    item = next(items)
-            except StopIteration:
-                return
-            except ApiMismatch as exc:
-                if again is None:  # already the rerun: it passes through
-                    raise self.mismatch(pick, exc, rerun=True) from exc
-                rerun = self.after_mismatch(pick, adapter, exc, log, handed=handed, again=again)
-                yield from rerun
-                return
-            handed += 1
-            yield item
-
-    def _changed(self, pick: Pick, *, written: bool) -> UntapedError:
+    def _changed(self, pick: Pick, *, written: bool, printed: bool) -> UntapedError:
         """The server changed under the call and it can't run again unseen: exit 1 or 5."""
         changed = f"{self.named} changed from {pick.was} to {pick.version}"
+        earlier = not written and self.invocation.wrote
         details = {
             "server": self.url,
             "was": str(pick.was),
             "now": str(pick.version),
             "source": "detected",
-            "written": written,
+            "written": written or earlier,
             "rerun": False,
         }
-        if written:
+        if written or earlier:
+            what = "the request" if written else "an earlier request of this command"
             return UntapedError(
-                f"{changed}; the request may have taken effect",
+                f"{changed}; {what} may have taken effect",
                 category=ErrorCategory.FAILED,
                 system=self.plugin,
                 hint="check what the command changed before running it again",
                 details=details,
             )
+        after = "output was printed" if printed else "the command read part of the answer"
         return UntapedError(
-            f"{changed} after output was printed; nothing took effect",
+            f"{changed} after {after}; nothing took effect",
             category=ErrorCategory.UNAVAILABLE,
             system=self.plugin,
             hint="run the command again",
