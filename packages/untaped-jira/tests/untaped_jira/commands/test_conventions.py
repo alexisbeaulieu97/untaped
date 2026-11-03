@@ -185,7 +185,7 @@ def test_writes_send_only_once_confirmed(
 
 
 @pytest.mark.parametrize("verb", sorted(WRITES))
-def test_dry_run_prints_the_request_and_wins_over_yes(verb: str, jira: Invoke) -> None:
+def test_dry_run_prints_the_change_and_wins_over_yes(verb: str, jira: Invoke) -> None:
     args, change = WRITES[verb]
     with respx.mock(base_url=BASE, assert_all_called=False) as mock:
         route = _mock_writes(mock)
@@ -376,3 +376,16 @@ def test_fields_updated_but_forbidden_assignment_keeps_its_category(jira: Invoke
     assert result.stderr.endswith(
         "error: fields updated, but assigning failed: permission denied (HTTP 403)\n"
     )
+
+
+def test_fields_updated_but_an_assignment_the_api_lacks_says_so(jira: Invoke) -> None:
+    """The assignee path answers a 404 without Jira's error: a mismatch, after the edit landed."""
+    with respx.mock(base_url=BASE) as mock:
+        mock.put("/rest/api/2/issue/ABC-1").mock(return_value=httpx.Response(204))
+        mock.put("/rest/api/2/issue/ABC-1/assignee").mock(
+            return_value=httpx.Response(404, text="<html/>")
+        )
+        result = jira(["issues", "patch", "ABC-1", "--summary", "x", "--assignee", "bob", "--yes"])
+
+    assert result.exit_code == 1, result.output
+    assert "error: fields updated, but assigning failed: " in result.stderr

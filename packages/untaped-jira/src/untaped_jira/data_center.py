@@ -65,7 +65,7 @@ def _talking(*, noun: str | None = None, name: str | None = None) -> Iterator[No
 
 
 class DataCenter(JiraApi, ApiAdapter[JiraSettings, JiraVersion]):
-    """Jira Data Center and Server 8 and later.
+    """Jira Data Center 8 and later.
 
     REST API 2 and Agile 1.0, with a personal access token.
     """

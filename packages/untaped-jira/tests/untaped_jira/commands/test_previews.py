@@ -1,7 +1,7 @@
 """CLI tests for which writes ask first and the readable write previews.
 
 A write that replaces or removes asks first; one that only adds never does.
-The preview shows each request as ``field: old → new`` lines, reading the
+The preview shows each change as ``field: old → new`` lines, reading the
 issue's current values only when a preview is shown.
 """
 
