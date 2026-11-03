@@ -307,11 +307,12 @@ def test_a_spelling_runs_read_ranks_ahead_of_a_closer_retired_one() -> None:
 
 def test_with_only_retired_spellings_the_closest_is_kept() -> None:
     class Retiring(BaseModel):
-        retired_keys: ClassVar[dict[str, str]] = {"r": "cur", "z": "r2", "r2": "cur"}
+        # ``z`` is one hop away and ``a`` two: the hops decide, not the names
+        retired_keys: ClassVar[dict[str, str]] = {"z": "cur", "a": "r2", "r2": "cur"}
 
         cur: int = 0
 
-    assert migration_moves(Retiring, {"r": 1, "z": 3}) == [
-        KeyMove("r", "cur", "renamed"),
-        KeyMove("z", "r", "dropped"),
+    assert migration_moves(Retiring, {"z": 1, "a": 3}) == [
+        KeyMove("z", "cur", "renamed"),
+        KeyMove("a", "z", "dropped"),
     ]
