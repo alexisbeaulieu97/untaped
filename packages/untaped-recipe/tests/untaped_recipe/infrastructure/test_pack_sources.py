@@ -283,3 +283,51 @@ def test_a_pack_that_cannot_be_written_is_a_fetch_error(remote: GitRemote, tmp_p
         fetch_pack_source(remote.url, rev=None, dest=tmp_path / "file" / "pack", plugin="recipe")
 
     assert raised.value.category is ErrorCategory.FAILED
+
+
+def test_an_annotated_tag_object_id_resolves_to_its_commit(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    tagged = remote.tag("v1", message="release")
+    tag_object = subprocess.run(
+        ["git", f"--git-dir={remote.path}", "rev-parse", "refs/tags/v1"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+    commit = fetch_pack_source(remote.url, rev=tag_object, dest=tmp_path / "pack", plugin="recipe")
+
+    assert tag_object != tagged
+    assert commit == tagged
+
+
+def test_a_short_id_naming_several_commits_asks_for_a_longer_one(
+    remote: GitRemote, tmp_path: Path
+) -> None:
+    author = ["-c", "user.name=Test", "-c", "user.email=test@example.invalid"]
+    parent = remote.oid("main")
+    tree = f"{parent}^{{tree}}"
+    seen: dict[str, str] = {}
+    while True:
+        commit = subprocess.run(
+            ["git", *author, f"--git-dir={remote.path}", "commit-tree", tree, "-p", parent],
+            input=f"commit {len(seen)}\n",
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        if commit[:4] in seen:
+            break
+        seen[commit[:4]] = commit
+        parent = commit
+    subprocess.run(
+        ["git", f"--git-dir={remote.path}", "update-ref", "refs/heads/main", commit], check=True
+    )
+
+    with pytest.raises(PackFetchError, match="pass a longer id") as raised:
+        fetch_pack_source(remote.url, rev=commit[:4], dest=tmp_path / "a", plugin="recipe")
+    resolved = fetch_pack_source(remote.url, rev=commit, dest=tmp_path / "b", plugin="recipe")
+
+    assert raised.value.category is ErrorCategory.CONFLICT
+    assert resolved == commit

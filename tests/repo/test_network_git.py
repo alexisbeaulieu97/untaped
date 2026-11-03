@@ -69,13 +69,13 @@ def _reaches_remote(words: list[ast.expr]) -> bool:
     """Whether ``words``, read as a git argv, run a command that reaches a remote."""
     index = _command(words, 0, executable=True)
     verb = _word(words, index)
+    if verb == "remote" and _word(words, _command(words, index + 1)) == "add":
+        return any(word in ("-f", "--fetch") for word in _texts(words, index))
     if verb in SUBCOMMANDS:
         return _word(words, _command(words, index + 1)) in SUBCOMMANDS[verb]
     if verb == "archive":
         return any(
-            word == "--remote" or word.startswith("--remote=")
-            for position in range(index + 1, len(words))
-            if (word := _word(words, position)) is not None
+            word == "--remote" or word.startswith("--remote=") for word in _texts(words, index)
         )
     return verb in VERBS
 
@@ -92,6 +92,17 @@ def _command(words: list[ast.expr], index: int, *, executable: bool = False) -> 
             break
         executable = executable and word is None
     return index
+
+
+def _texts(words: list[ast.expr], index: int) -> list[str]:
+    """The literal text after ``index``: each string, and each f-string's leading part."""
+    texts = []
+    for element in words[index + 1 :]:
+        if isinstance(element, ast.JoinedStr) and element.values:
+            element = element.values[0]
+        if isinstance(element, ast.Constant) and isinstance(element.value, str):
+            texts.append(element.value)
+    return texts
 
 
 def _word(words: list[ast.expr], index: int) -> str | None:
@@ -156,6 +167,8 @@ def test_every_exception_still_runs_network_git() -> None:
         ('self._git(cwd, env, "pull")', True),
         ('run_git(["remote", "-v", "prune", "origin"])', True),
         ('run_git(["archive", "--remote=origin", "HEAD"])', True),
+        ('run_git(["archive", f"--remote={url}", "HEAD"])', True),
+        ('run_git(["remote", "add", "-f", "origin", url])', True),
         ('run_git(["archive", "HEAD"])', False),
         ('run_git(["remote", "add", "origin", url])', False),
         ('self._in(wt, ["submodule", "status", "--recursive"])', False),

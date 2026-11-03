@@ -156,9 +156,10 @@ class Add(RecipeCommand):
     requested --rev (a branch, a tag, or a commit one of them reaches; the
     default branch without it) and the commit it resolved to. A git source is
     fetched through the repo store (`untaped git store`), with the credentials
-    a host's plugin supplies. A rev the remote lacks exits 3; a git fetch that
-    times out exits 5. Installing a pack installs code that
-    runs as you: `untaped docs recipe guides hooks`.
+    a host's plugin supplies. A rev the remote lacks, or a short commit id
+    that names several commits, exits 1; a git fetch that times out exits 5.
+    Installing a pack installs code that runs as you: `untaped docs recipe
+    guides hooks`.
 
     Examples
     --------

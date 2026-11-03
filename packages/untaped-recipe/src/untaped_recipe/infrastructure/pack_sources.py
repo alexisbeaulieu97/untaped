@@ -194,15 +194,16 @@ def _read_blobs(store: RepoStore, commit: str, oids: list[str]) -> dict[str, byt
     for oid in unique:
         end = out.find(b"\n", offset)
         header = out[offset:end].decode("ascii", errors="replace").split(" ") if end >= 0 else []
-        if len(header) != 3 or header[:2] != [oid, "blob"] or not header[2].isdigit():
+        size = int(header[2]) if len(header) == 3 and header[2].isdigit() else -1
+        start = end + 1
+        if header[:2] != [oid, "blob"] or size < 0 or out[start + size : start + size + 1] != b"\n":
             raise PackFetchError(
                 f"the repo store could not read {oid} of {commit}; run the command again",
                 category=ErrorCategory.FAILED,
                 system=System.GIT,
             )
-        start = end + 1
-        contents[oid] = out[start : start + int(header[2])]
-        offset = start + int(header[2]) + 1
+        contents[oid] = out[start : start + size]
+        offset = start + size + 1
     return contents
 
 
