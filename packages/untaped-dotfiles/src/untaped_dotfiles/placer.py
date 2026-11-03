@@ -82,7 +82,7 @@ class FilesystemPlacer:
 
     def link(self, destination: Path, target: Path) -> str:
         target.parent.mkdir(parents=True, exist_ok=True)
-        if target.is_symlink():
+        if target.is_symlink() or target.is_file():  # a copy of ours becoming a link
             replace_symlink(destination, target)
         else:
             os.symlink(destination, target)
@@ -108,6 +108,18 @@ class FilesystemPlacer:
         existing = load_document(text, fmt=fmt, where=str(target))
         merge_into(existing, incoming)
         return text, existing, incoming
+
+    def read(self, target: Path) -> bytes | None:
+        """What a program reading ``target`` gets (through a link); ``None`` when no file."""
+        try:
+            return target.read_bytes() if target.is_file() else None
+        except OSError as exc:
+            raise DotfilesError(f"could not read {target}: {exc.strerror or exc}") from exc
+
+    def merged_text(self, source: bytes, target: Path, *, fmt: MergeFormat) -> str:
+        """The text :meth:`merge` would write to ``target``, writing nothing."""
+        text, existing, _ = self._merged(source, target, fmt=fmt)
+        return dump_document(existing, fmt=fmt, like=text)
 
     def merge(
         self, source: bytes, target: Path, *, fmt: MergeFormat

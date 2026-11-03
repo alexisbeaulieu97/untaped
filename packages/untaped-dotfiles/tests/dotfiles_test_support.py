@@ -20,7 +20,7 @@ type MakeFolder = Callable[..., Path]
 FISH = """\
 version: 1
 description: fish shell config
-policy: manual
+policy: sync
 items:
   config:
     files:

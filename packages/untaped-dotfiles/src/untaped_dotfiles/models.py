@@ -31,6 +31,16 @@ class CloneRecord(BaseModel):
     subscribed_at: UtcTimestamp
 
 
+class ItemRecord(BaseModel):
+    """An item applied here at least once, so an entry its author adds later is ``new``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    item: Annotated[str, Key]
+    """``SOURCE/PKG/ITEM``."""
+    first_applied_at: UtcTimestamp
+
+
 class PlacedRecord(BaseModel):
     """One placed path: what untaped wrote there and from which entry of which package."""
 

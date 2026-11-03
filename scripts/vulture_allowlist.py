@@ -34,6 +34,7 @@ ApplyOutcomeRow.fields_changed  # awx.apply_outcome
 CloneRecord.subscribed_at  # dotfiles state
 PlacedRecord.source_commit
 PlacedRecord.applied_at
+ItemRecord.first_applied_at
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
 User.email_address  # jira rows

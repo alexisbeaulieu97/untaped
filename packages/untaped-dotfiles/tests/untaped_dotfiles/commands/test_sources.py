@@ -31,7 +31,7 @@ def test_subscribing_a_url_lists_its_packages_and_turns_on_the_added_ones(
     rows = json_rows(subscribe(remote.url, "--add", "fish", "--add", "starship"))
     assert [(r["name"], r["on"], r["policy"], r["suggested"]) for r in rows] == [
         ("claude", False, None, "sync"),
-        ("fish", True, "manual", "manual"),
+        ("fish", True, "sync", "sync"),
         ("git", False, None, "sync"),
         ("mac", False, None, "manual"),
         ("starship", True, "sync", "sync"),

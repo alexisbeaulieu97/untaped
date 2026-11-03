@@ -1,8 +1,10 @@
-"""The state of one placed path, and which states need a person.
+"""The state of one placed path, how it is placed, and what ``apply`` does with it.
 
 :func:`file_state` compares three things: what the source holds now
 (:class:`SourceInfo`), what is on the machine (:class:`TargetInfo`) and what
-untaped last wrote (:class:`PlacedRecord`).
+untaped last wrote (:class:`PlacedRecord`). :func:`placed_as` decides how a
+file is placed under a policy, and :func:`decide` is the policy table: what
+``apply`` does with a path in each state, which ``status`` counts too.
 """
 
 from __future__ import annotations
@@ -18,25 +20,78 @@ from untaped_dotfiles.policy import Policy
 FileState = Literal[
     "pending",
     "foreign",
+    "new",
     "applied",
     "behind",
     "modified",
     "conflict",
     "missing",
     "orphan",
+    "off",
     "excluded",
     "error",
 ]
 """``error``: the path could not be read (a git or filesystem failure); the row's error says why."""
 
 #: How a table draws a :data:`FileState`: waiting, or in trouble.
-FILE_STATE_ROLES = Status(warning=("pending",), error=("conflict", "error"))
+FILE_STATE_ROLES = Status(warning=("pending", "new"), error=("conflict", "error"))
 
 Action = Literal["apply", "skip", "report", "remove"]
 """What ``apply`` does for one path; ``report`` leaves it for a person."""
 
-ATTENTION: frozenset[str] = frozenset({"behind", "modified", "conflict", "missing", "orphan"})
-"""States ``status --check`` counts toward exit 3 (under ``once``: ``missing``, ``orphan``)."""
+#: What ``apply`` with no selector does per state, under ``sync``, ``once`` and ``manual``.
+_TABLE: dict[FileState, tuple[Action, Action, Action]] = {
+    "pending": ("apply", "apply", "apply"),
+    "foreign": ("apply", "apply", "apply"),
+    "new": ("apply", "apply", "report"),
+    "applied": ("skip", "skip", "skip"),
+    "behind": ("apply", "skip", "report"),
+    "modified": ("report", "skip", "report"),
+    "conflict": ("report", "skip", "report"),
+    "missing": ("apply", "report", "report"),
+    "orphan": ("remove", "report", "report"),
+    "off": ("report", "report", "report"),
+    "excluded": ("skip", "skip", "skip"),
+    "error": ("report", "report", "report"),
+}
+_COLUMN = {Policy.SYNC: 0, Policy.ONCE: 1, Policy.MANUAL: 2}
+
+
+def placed_as(policy: Policy, mode: Mode) -> Mode:
+    """How a file of ``mode`` is placed under ``policy``: a link only for ``sync``.
+
+    A link under ``once`` or ``manual`` would change the moment the clone
+    moves, so it is placed as a copy.
+    """
+    return "copy" if mode == "link" and policy != Policy.SYNC else mode
+
+
+def decide(policy: Policy, state: FileState, *, moved: bool = False) -> Action:
+    """What ``apply`` with no selector does with a path in ``state`` under ``policy``.
+
+    ``moved``: an ``orphan`` whose entry places elsewhere now (an input moved
+    its target); this machine asked for that, so it is taken back whatever
+    the policy.
+    """
+    if state == "orphan" and moved:
+        return "remove"
+    return _TABLE[state][_COLUMN[policy]]
+
+
+def decide_asked(state: FileState, *, force: bool) -> Action | None:
+    """What ``apply SELECTOR`` (or ``--all``) does, whatever the policy; ``None`` refuses.
+
+    ``modified`` and ``conflict`` are refused without ``--force``.
+    """
+    if state in ("pending", "foreign", "new", "behind", "missing"):
+        return "apply"
+    if state == "orphan":
+        return "remove"
+    if state in ("modified", "conflict"):
+        return "apply" if force else None
+    if state in ("off", "error"):
+        return "report"
+    return "skip"
 
 
 @dataclass(frozen=True)
@@ -111,12 +166,3 @@ def _modified_detail(mode: Mode, target: TargetInfo) -> str:
     if target.kind != "file":
         return f"the target is now a {target.kind}"
     return "edited on this machine" if mode == "copy" else "managed keys edited on this machine"
-
-
-def needs_attention(policy: Policy, state: FileState) -> bool:
-    """Whether a path in ``state`` under ``policy`` needs a person (``status --check`` exits 3)."""
-    if state not in ATTENTION:
-        return False
-    if policy == "once":
-        return state in ("missing", "orphan")
-    return True

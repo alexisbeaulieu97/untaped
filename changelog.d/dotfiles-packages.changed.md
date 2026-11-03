@@ -12,6 +12,5 @@ on. The commands are `subscribe`, `unsubscribe`, `show`, `add`, `remove`,
 and `diff` are gone. A git source's clone is a worktree of the git plugin's
 repo store under `dotfiles.clones_dir` (it was `dotfiles.repos_dir`), so the
 git plugin's credentials and proxy apply. `apply` fetches and moves each
-clone itself, and places every entry it selects whatever its policy. The
-records are `dotfiles.package`, `dotfiles.package_detail`,
+clone itself. The records are `dotfiles.package`, `dotfiles.package_detail`,
 `dotfiles.entry_status` and `dotfiles.apply_outcome`.

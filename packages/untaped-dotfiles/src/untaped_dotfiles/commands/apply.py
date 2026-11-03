@@ -10,51 +10,87 @@ from collections.abc import Iterator, Sequence
 from contextlib import ExitStack
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, cast
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
-from untaped.sdk import Confirm, Failure, Output, Positional, UntapedError, plural, q
+from untaped.sdk import (
+    Confirm,
+    Failure,
+    Matched,
+    Output,
+    Positional,
+    PreviewItem,
+    SettingsPlan,
+    UntapedError,
+    UsageError,
+    key,
+    plural,
+    q,
+)
 from untaped_dotfiles.applier import Step
+from untaped_dotfiles.catalog import Offer, Selection
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services
 from untaped_dotfiles.inventory import Placement
 from untaped_dotfiles.models import CloneRecord
+from untaped_dotfiles.package import PackageInput
 from untaped_dotfiles.records import ApplyOutcome
+from untaped_dotfiles.settings import DotfilesSettings
 from untaped_dotfiles.sources import current, resolve_url
+from untaped_values.api import Vars, resolve, terminal_ask
 
 
 class Apply(DotfilesCommand):
-    """Place the files of the packages that are on (the named ones, or all), whatever their policy.
+    """Place the files of the packages that are on: by each one's policy, or the named ones.
+
+    With no SELECTORS each entry follows its policy (the policy guide, linked
+    from the dotfiles README, has the table): `sync` places what is new or
+    changed and takes back what the source dropped, `once` places only what
+    was never placed, `manual` places only what was just turned on, and the
+    rest waits for a person. Naming packages or items, or `--all`, places
+    them whatever their policy; a path edited here is refused (row action
+    `conflict`, exit 1) unless --force, which keeps the local version aside.
+    A `link` is placed as a link only under `sync`, else as a copy; a link
+    whose item stops following `sync` becomes a copy of what it shows before
+    the clone moves.
 
     A git source is cloned when it has no clone yet (a new machine, or a URL
     or ref changed in `config.yml`), fetched, and its clone moved to the
-    fetched commit, so packages, links, copies and merges are what the source
-    holds now; a failed fetch is reported and exits 1 (a --dry-run preview
-    only warns, and reads a source with no clone from the fetch, cloning
-    nothing). A clone with local changes (an edit through a link) is never
-    moved: its source's changes fail (exit 1) with a hint, and the other
-    sources apply. A local
-    folder is read as it stands; a source that became a folder lets its old
-    clone go once its links point at the folder. A file in the way of a new
-    path is kept aside, and the row says where.
-    Refuses paths edited on this machine (row action `conflict`, exit 1,
-    under --dry-run too) unless --force. An entry whose target names an input
-    with no value waits, naming the `config set` that answers it. The policy
-    guide (linked from the dotfiles README) explains each state.
+    fetched commit; a failed fetch is reported and exits 1 (a --dry-run
+    preview only warns, and reads a source with no clone from the fetch,
+    cloning nothing). A clone with local changes (an edit through a link) is
+    never moved: its source's changes fail (exit 1) with a hint, and the
+    other sources apply. A local folder is read as it stands; a source that
+    became a folder lets its old clone go once its links point at the folder.
+
+    The preview lists every entry with its destination, then a diff wherever
+    existing content changes; a new file says `new, N lines` (its whole
+    content is in the row's `diff` with `-f json`). An input a target needs
+    and nothing answers is asked at a terminal before the preview, and kept
+    in `config.yml` once confirmed; with no terminal, its entries wait (exit
+    3) with the `add --var` that answers them. Exit 3 means done, with
+    something left for a person: an entry the policy only reports, or one
+    waiting on an input.
     """
 
     selectors: Positional[list[str]] = Field(
         default_factory=list,
-        description="Packages or items (PKG, PKG/ITEM, SOURCE/PKG, SOURCE/PKG/ITEM). "
-        "Default: every package that is on.",
+        description="Packages or items (PKG, PKG/ITEM, SOURCE/PKG, SOURCE/PKG/ITEM), placed "
+        "whatever their policy. Default: every package that is on, by its policy.",
     )
+    all_: bool = Field(False, description="Place every package that is on, whatever its policy.")
     force: bool = Field(
         False,
         description="Replace paths edited on this machine too (the local version is kept aside).",
     )
+    vars: Vars = Field(default_factory=Vars)
     confirm: Confirm
     output: Output[ApplyOutcome]
 
     def run(self) -> Iterator[ApplyOutcome]:
+        if self.all_ and self.selectors:
+            raise UsageError("--all places every package that is on: name no SELECTORS with it")
+        follow = not (self.selectors or self.all_)
         svc = self.services()
         with svc.store.locked(), ExitStack() as peeks:
             if self.confirm.dry_run:
@@ -63,33 +99,87 @@ class Apply(DotfilesCommand):
                 self._clone_missing(svc)
             fetched = self._fetch(svc)
             svc.catalog.forget()
-            selections = (
-                svc.catalog.selected(self.selectors) if self.selectors else svc.inventory.on()
-            )
-            self.report_sources(svc.catalog)
+            selections = svc.catalog.selected(self.selectors) if self.selectors else None
+            kept = self._inputs(svc, selections or svc.inventory.on())
             resolved = svc.inventory.placements(selections)
+            self.report_sources(svc.catalog)
             self.report(resolved.problems)
-            placements = self._answered(resolved.placements)
+            placements, waiting = self._answered(resolved.placements)
             stuck = self._stuck(svc, fetched)
-            steps = _failing(svc.applier.plan_apply(placements, force=self.force), stuck)
+            steps = _failing(
+                svc.applier.plan_apply(placements, force=self.force, follow=follow), stuck
+            )
             self._report_stuck(steps, stuck)
             planned = svc.applier.planned(steps)
-            todo = [s for s in steps if s.action in ("apply", "remove")]
+            todo = [s for s in steps if s.action in ("apply", "remove") or s.converts]
             moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
             if not self.confirm(
-                f"Apply {plural(len(todo), 'path')}?",
-                preview=lambda: [planned],
-                needed=bool(todo or moving),
+                f"Apply {plural(len(todo), 'entry', 'entries')}?",
+                preview=lambda: _preview(planned, kept),
+                needed=bool(todo or moving or kept is not None),
             ):
-                return iter(planned)
-            if moving:
-                steps = self._move(svc, moving, steps, stuck)
-            rows = svc.applier.execute(steps)
-            self._release_folders(svc)
-            svc.refresh_status()
+                rows = planned
+                waiting += svc.applier.waiting(steps)
+            else:
+                converted = svc.applier.convert(steps)
+                if moving:
+                    steps = self._move(svc, moving, steps, stuck, follow=follow)
+                rows = svc.applier.execute(steps, converted)
+                waiting += svc.applier.waiting(steps)
+                if kept is not None:
+                    kept.write()
+                self._release_folders(svc)
+                svc.refresh_status()
+                self._said(rows, waiting)
         self.output.empty("Nothing to apply.")
         self.report_rows(rows)
-        return iter(rows)
+        yield from rows
+        if waiting:
+            raise Matched
+
+    def _inputs(self, svc: Services, selections: Sequence[Selection]) -> SettingsPlan | None:
+        """Answer the plain top-level inputs of the packages in this run, by one scope rule.
+
+        A ``--var`` or ``--vars-file`` value goes to every package in the run
+        that declares the name, and a name none declares exits 2. Each package
+        uses ``--var``, then the files, then this machine's answer, then the
+        default, then an answer at a terminal; what the flags or a prompt
+        gave is kept in ``config.yml`` once confirmed (the returned plan).
+        """
+        offers = _offers(selections)
+        given = self.vars.values()
+        declared = {name for offer in offers for name in _declared(offer)}
+        if given and not offers:
+            raise UsageError(f"no package in this run declares {', '.join(sorted(given))}")
+        ask = terminal_ask(self.ctx.terminal, self.vars)
+        changes: dict[Any, JsonValue] = {}
+        for offer in offers:
+            specs = _plain(offer)
+            mine = {name: value for name, value in given.items() if name in specs}
+            answers = offer.choice.inputs if offer.choice is not None else {}
+            config = {name: value for name, value in answers.items() if name in specs}
+            found = resolve(specs, [mine, config], known=declared, ask=ask, label=offer.spelled)
+            svc.inventory.answer(offer, found.values)
+            for name in (*mine, *found.asked):
+                value = cast("JsonValue", found.values[name])
+                if config.get(name) != value:
+                    setting = key(DotfilesSettings).sources[offer.source.name]
+                    changes[setting.packages[offer.name].inputs[name]] = value
+        unknown = sorted(set(given) - declared)
+        if unknown:
+            raise UsageError(
+                f"no package in this run declares {', '.join(unknown)}; "
+                f"declared: {', '.join(sorted(declared)) or '(none)'}"
+            )
+        return self.ctx.plugin.plan_settings(changes) if changes else None
+
+    def _said(self, rows: Sequence[ApplyOutcome], waiting: int) -> None:
+        """One line: how many entries changed, and how many need a person."""
+        done = sum(1 for row in rows if row.action in ("created", "updated", "deleted"))
+        if not done and not waiting:
+            return
+        needs = f"; {waiting} {'needs' if waiting == 1 else 'need'} you" if waiting else ""
+        self.ctx.diag.success(f"applied {plural(done, 'entry', 'entries')}{needs}")
 
     def _clone_missing(self, svc: Services) -> None:
         """Clone each git source that has no current clone; a failure is reported, not a stop."""
@@ -188,15 +278,16 @@ class Apply(DotfilesCommand):
             else:
                 self.ctx.diag.failure(exc, item=name)
 
-    def _answered(self, placements: Sequence[Placement]) -> list[Placement]:
-        """The placements whose target is known; each one waiting on an input is said once."""
+    def _answered(self, placements: Sequence[Placement]) -> tuple[list[Placement], int]:
+        """The placements whose target is known, and how many wait on an input (each said)."""
+        waiting = 0
         for placement in placements:
             if placement.target is None and placement.excluded is None:
+                waiting += 1
                 self.ctx.diag.warning(
-                    f"{placement.offer.spelled}/{placement.item} {placement.shown}: "
-                    f"{placement.unanswered}"
+                    f"{placement.spelled} {placement.shown}: {placement.unanswered}"
                 )
-        return [p for p in placements if p.target is not None]
+        return [p for p in placements if p.target is not None], waiting
 
     def _move(
         self,
@@ -204,6 +295,8 @@ class Apply(DotfilesCommand):
         moving: Sequence[CloneRecord],
         steps: list[Step],
         stuck: dict[str, UntapedError],
+        *,
+        follow: bool,
     ) -> list[Step]:
         """Move each clone to its fetched commit, then plan again.
 
@@ -218,7 +311,7 @@ class Apply(DotfilesCommand):
             except UntapedError as exc:
                 failed[record.source] = exc
         stuck.update(failed)
-        fresh = _failing(_replanned(svc, steps, force=self.force), stuck)
+        fresh = _failing(_replanned(svc, steps, force=self.force, follow=follow), stuck)
         self._report_stuck(fresh, failed)
         return fresh
 
@@ -237,13 +330,46 @@ def _failing(steps: list[Step], stuck: dict[str, UntapedError]) -> list[Step]:
     return out
 
 
-def _replanned(svc: Services, steps: list[Step], *, force: bool) -> list[Step]:
+def _replanned(svc: Services, steps: list[Step], *, force: bool, follow: bool) -> list[Step]:
     svc.evaluator.reset()
     applying = {s.placement.key for s in steps if s.action == "apply"}
-    fresh = svc.applier.plan_apply([s.placement for s in steps], force=force)
+    fresh = svc.applier.plan_apply([s.placement for s in steps], force=force, follow=follow)
     return [
         replace(s, action="apply", detail="moved with the clone")
         if s.action == "skip" and s.placement.key in applying
         else s
         for s in fresh
     ]
+
+
+def _offers(selections: Sequence[Selection]) -> list[Offer]:
+    """The packages a run's selections name, each once, that load."""
+    seen: dict[str, Offer] = {}
+    for selection in selections:
+        offer = selection.offer
+        if offer.package is not None:
+            seen.setdefault(offer.spelled, offer)
+    return list(seen.values())
+
+
+def _declared(offer: Offer) -> list[str]:
+    assert offer.package is not None
+    return list(offer.package.inputs)
+
+
+def _plain(offer: Offer) -> dict[str, PackageInput]:
+    """``offer``'s plain top-level inputs: a secret reaches only a step (and waits for one)."""
+    assert offer.package is not None
+    return {name: spec for name, spec in offer.package.inputs.items() if not spec.secret}
+
+
+def _preview(rows: list[ApplyOutcome], kept: SettingsPlan | None) -> list[PreviewItem]:
+    """The rows, then a diff wherever existing content changes, then the answers kept."""
+    items: list[PreviewItem] = [rows]
+    for row in rows:
+        if row.action == "planned" and row.diff and not row.diff.startswith("--- /dev/null"):
+            items.append(f"# {row.entry}")
+            items.append(row.diff.removesuffix("\n"))
+    if kept is not None:
+        items.extend(kept.preview())
+    return items

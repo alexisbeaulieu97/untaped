@@ -220,6 +220,7 @@ class Unsubscribe(DotfilesCommand):
                 except UntapedError as exc:
                     self.ctx.diag.failure(exc, item=name)
                 svc.store.remove_clone(name)
+            svc.store.forget_applied((name,))
             remaining = {k: v for k, v in self.settings.sources.items() if k != name}
             self.services(self.settings.model_copy(update={"sources": remaining})).refresh_status()
         self.ctx.diag.success(f"unsubscribed {q(name)}")

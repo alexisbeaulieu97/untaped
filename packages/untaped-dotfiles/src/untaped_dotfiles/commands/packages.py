@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import Any
+from collections.abc import Iterator, Mapping
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 
-from untaped.sdk import Confirm, DryRun, Output, Positional, UsageError, key, plural, run_hint
+from untaped.sdk import (
+    Confirm,
+    DryRun,
+    Output,
+    Positional,
+    UsageError,
+    key,
+    plural,
+    q,
+    run_hint,
+)
 from untaped_dotfiles.catalog import Offer, Selection, gone_error
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.inventory import input_values
@@ -24,8 +34,9 @@ from untaped_dotfiles.records import (
     RepoDetail,
     StepDetail,
 )
-from untaped_dotfiles.settings import DotfilesSettings, ItemChoice, PackageChoice
-from untaped_dotfiles.states import FileState
+from untaped_dotfiles.settings import DotfilesSettings, InputValue, ItemChoice, PackageChoice
+from untaped_dotfiles.states import FileState, placed_as
+from untaped_values.api import Vars, coerce
 
 SELECTORS = "Packages or items: PKG, PKG/ITEM, SOURCE/PKG or SOURCE/PKG/ITEM."
 
@@ -36,6 +47,8 @@ _WORST: tuple[FileState, ...] = (
     "modified",
     "missing",
     "behind",
+    "off",
+    "new",
     "foreign",
     "pending",
     "orphan",
@@ -51,13 +64,20 @@ class Add(DotfilesCommand):
     its package on with every other item off when the package was off (said
     in one line). `--policy` makes the policy this machine's choice for the
     package or item. A package this machine can't use (its `os`, `only` or
-    `unless`) exits 2, naming why.
+    `unless`) exits 2, naming why. Turning something on counts as asking: the
+    next `apply` places it whatever the policy.
+
+    `--var` and `--vars-file` answer plain top-level inputs ahead, kept in
+    `config.yml`: a value goes to every package named that declares the name,
+    and a name none of them declares exits 2, as on `apply`. A secret input
+    is refused there (it is never kept in `config.yml`).
     """
 
     selectors: Positional[list[str]] = Field(min_length=1, description=SELECTORS)
     policy: Policy | None = Field(
         None, description="This machine's policy for them. Default: the author's suggestion."
     )
+    vars: Vars = Field(default_factory=Vars)
     dry_run: DryRun
     output: Output[Package]
 
@@ -74,6 +94,8 @@ class Add(DotfilesCommand):
                 at = (offer.source.name, offer.name)
                 current = choices[at][1] if at in choices else offer.choice
                 choices[at] = (offer, self._turned_on(selection, current, notes))
+            answered = self._answered(choices)
+            turned = [s for s in chosen if not _was_on(s)]
             changes = {
                 _package_key(offer): choice
                 for offer, choice in choices.values()
@@ -90,14 +112,58 @@ class Add(DotfilesCommand):
             if not self.dry_run.go_ahead(preview=plan.preview):
                 return iter(rows)
             plan.write()
+            for selection in turned:  # turned on again: its entries are asked for, not new
+                svc.store.forget_applied(_owner(selection))
+            updated = {at: choice for at, (_, choice) in choices.items()}
+            self.services(_with_choices(self.settings, updated)).refresh_status()
         policy = f" ({self.policy})" if self.policy is not None else ""
-        self.ctx.diag.success(f"turned on {', '.join(s.spelled for s in chosen)}{policy}")
+        if turned or self.policy is not None:
+            self.ctx.diag.success(f"turned on {', '.join(s.spelled for s in chosen)}{policy}")
+        for spelled, names in answered.items():
+            self.ctx.diag.success(f"set {spelled} {plural(len(names), 'input')} {', '.join(names)}")
         for note in notes:
             self.ctx.diag.info(note)
         from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
 
         self.ctx.diag.hint(run_hint(Apply.spelled()))
         return iter(rows)
+
+    def _answered(
+        self, choices: dict[tuple[str, str], tuple[Offer, PackageChoice]]
+    ) -> dict[str, list[str]]:
+        """Write the ``--var``/``--vars-file`` answers into ``choices``; the names set, by package.
+
+        A value goes to every package named that declares it; a name none
+        declares, or a secret input, exits 2.
+        """
+        given = self.vars.values()
+        if not given:
+            return {}
+        declared: set[str] = set()
+        answered: dict[str, list[str]] = {}
+        for at, (offer, choice) in choices.items():
+            assert offer.package is not None  # _usable refused a file that doesn't load
+            inputs = dict(choice.inputs)
+            for name, value in given.items():
+                spec = offer.package.inputs.get(name)
+                if spec is None:
+                    continue
+                declared.add(name)
+                if spec.secret:
+                    raise UsageError(
+                        f"input {q(name)} of {offer.spelled} is a secret: it is never kept in "
+                        "config.yml"
+                    )
+                inputs[name] = cast("InputValue", coerce(spec, value, name=name))
+                answered.setdefault(offer.spelled, []).append(name)
+            choices[at] = (offer, choice.model_copy(update={"inputs": inputs}))
+        unknown = sorted(set(given) - declared)
+        if unknown:
+            raise UsageError(
+                f"no package named declares {', '.join(unknown)}",
+                hint="name the package that declares it",
+            )
+        return answered
 
     def _turned_on(
         self, selection: Selection, current: PackageChoice | None, notes: list[str]
@@ -202,6 +268,8 @@ class Remove(DotfilesCommand):
                 return iter(rows)
             if plan is not None:
                 plan.write()
+            for selection in chosen:
+                svc.store.forget_applied(_owner(selection))
             self.services(_with_choices(self.settings, updated)).refresh_status()
         self.ctx.diag.success(f"turned off {spelled}")
         return iter(rows)
@@ -249,7 +317,7 @@ def _usable(svc: Services, selection: Selection) -> None:
 
 
 def _with_choices(
-    settings: DotfilesSettings, updated: dict[tuple[str, str], PackageChoice | None]
+    settings: DotfilesSettings, updated: Mapping[tuple[str, str], PackageChoice | None]
 ) -> DotfilesSettings:
     """``settings`` with ``updated`` written: each package's new choice, or off (``None``)."""
     sources = dict(settings.sources)
@@ -271,6 +339,17 @@ def _with(offer: Offer, choice: PackageChoice) -> Offer:
     from dataclasses import replace  # noqa: PLC0415 - kept beside its only use
 
     return replace(offer, choice=choice)
+
+
+def _was_on(selection: Selection) -> bool:
+    """Whether the selection was on before this run."""
+    offer = selection.offer
+    return offer.item_on(selection.item) if selection.item else offer.on
+
+
+def _owner(selection: Selection) -> tuple[str, ...]:
+    offer = selection.offer
+    return (offer.source.name, offer.name, *([selection.item] if selection.item else []))
 
 
 def _owns(selection: Selection, source: str, package: str, item: str) -> bool:
@@ -358,6 +437,7 @@ def _item_detail(
                 path=file.path,
                 target=file.target,
                 mode=file.mode,
+                placed_as=placed_as(policy, file.mode) if on and policy is not None else None,
                 excluded=file.exclusion(machine.os, machine.tags),
                 state=states.get((name, file.path, file.target)) if on else None,
             )

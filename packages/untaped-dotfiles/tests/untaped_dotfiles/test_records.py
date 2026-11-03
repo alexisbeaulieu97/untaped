@@ -66,6 +66,7 @@ _PLACE_KEYS = [
     "action",
     "state",
     "detail",
+    "diff",
     "target_path",
 ]
 
@@ -113,15 +114,18 @@ _ROW_KEYS: dict[type[BaseModel], list[str]] = {
     StatusSummary: [
         "checked_at",
         "total",
+        "apply",
         "attention",
         "pending",
         "foreign",
+        "new",
         "applied",
         "behind",
         "modified",
         "conflict",
         "missing",
         "orphan",
+        "off",
         "error",
     ],
     ApplyOutcome: _PLACE_KEYS,
