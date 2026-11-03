@@ -244,27 +244,46 @@ def test_a_null_spelling_a_run_reads_hides_the_others(_config: Path, spelled: st
     assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
 
 
-def test_removing_an_entry_that_isnt_set_changes_nothing(_config: Path) -> None:
-    text = (
-        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n"
+def test_removing_an_entry_that_isnt_set_leaves_the_map_runs_read(_config: Path) -> None:
+    """Only the map's retired spelling goes, so ``config migrate`` can't bring it back."""
+    _config.write_text(
+        "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n  a_groups: {ops: {lead: ana}}\n",
+        encoding="utf-8",
     )
+    (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
+    assert change.outcome.action == "deleted"
+    assert read_config_dict(_config)["spelled"] == {"groups": {"qa": {"lead": "cy"}}}
+
+
+def test_removing_an_entry_with_no_spelling_to_drop_changes_nothing(_config: Path) -> None:
+    text = "format_version: 2\nspelled:\n  groups: {qa: {lead: cy}}\n"
     _config.write_text(text, encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({"spelled.groups.dev": None})
     assert change.outcome.action == "unchanged"
     assert _config.read_text(encoding="utf-8") == text
 
 
-@pytest.mark.parametrize("key", ["spelled.groups", "spelled.size"])
-def test_removing_a_key_that_isnt_set_changes_nothing(_config: Path, key: str) -> None:
-    """A retired spelling is no one's value: removing the key leaves it, and says unchanged."""
+@pytest.mark.parametrize(
+    ("key", "old"), [("spelled.groups", "a_groups"), ("spelled.size", "a_size")]
+)
+def test_removing_a_key_that_isnt_set_drops_its_retired_spelling(
+    _config: Path, key: str, old: str
+) -> None:
+    """A retired spelling no run reads still goes, and is named, so migrate can't restore it."""
     text = "format_version: 2\nspelled:\n  a_groups: {ops: {lead: ana}}\n  a_size: 9\n"
     _config.write_text(text, encoding="utf-8")
     (change,) = SetSettings(SettingsFileRepository())({key: None})
-    assert (change.outcome.action, change.notes) == ("unchanged", ())
+    assert change.outcome.action == "deleted"
+    assert change.notes == (("success", f"unset {key} in profile default; removed spelled.{old}"),)
+    assert old not in read_config_dict(_config)["spelled"]
+
+    _config.write_text(text, encoding="utf-8")
     unset = UnsetSetting(SettingsFileRepository())(key)
-    assert unset.outcome.action == "unchanged"
-    assert unset.notes == (("info", f"{key} was not set in profile default"),)
-    assert _config.read_text(encoding="utf-8") == text
+    assert unset.outcome.action == "deleted"
+    assert unset.notes == (("success", f"unset {key} in profile default; removed spelled.{old}"),)
+    again = UnsetSetting(SettingsFileRepository())(key)
+    assert again.outcome.action == "unchanged"
+    assert again.notes == (("info", f"{key} was not set in profile default"),)
 
 
 def test_removing_a_null_a_run_reads_is_a_change(_config: Path) -> None:

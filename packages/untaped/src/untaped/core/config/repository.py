@@ -326,8 +326,9 @@ class SettingsFileRepository:
         own; writing or removing the key removes every old spelling in the
         target profile, each reported to ``on_spelling_removed``. For an entry
         of a map, those are the map's. Removing a key or entry that isn't set
-        (no run reads it from the target, not even as null) changes
-        nothing, and leaves its retired spellings for ``config migrate``.
+        (no run reads it from the target, not even as null) leaves what runs
+        read alone and removes only its retired spellings, so ``config
+        migrate`` can't bring the value back.
         A write that changes nothing in the file, such as a value it already
         holds, is reported to ``on_unchanged``; when no key changes, the file
         is left exactly as it was.
@@ -457,17 +458,22 @@ class SettingsFileRepository:
         Then every old spelling no run reads any more goes, each reported to
         ``report``: the key's own, or for an entry of a map (or a setting
         inside one) the map's, as the map's name now wins over all of them.
-        Removing what a run doesn't read (:meth:`_is_set`) changes nothing,
-        retired spellings included.
+        Removing what a run doesn't read (:meth:`_is_set`) leaves what runs
+        read alone and removes only the retired spellings, which ``config
+        migrate`` would otherwise bring back.
         """
+        declared = self._declared(descriptor)
         if remove and not self._is_set(data, descriptor):
+            read = self._read_paths(declared)
+            retired = [old for old in self._old_paths(declared) if old not in read]
+            _remove_spellings(data, retired, report)
             return
         self._carry_old_map(data, descriptor, report)
         if remove:
             unset_at_path(data, descriptor.path, keep=descriptor.entry_depth)
         else:
             set_at_path(data, descriptor.path, value)
-        _remove_spellings(data, self._old_paths(self._declared(descriptor)), report)
+        _remove_spellings(data, self._old_paths(declared), report)
 
     def _carry_old_map(
         self, data: dict[str, Any], descriptor: FieldDescriptor, report: SpellingRemoved | None
