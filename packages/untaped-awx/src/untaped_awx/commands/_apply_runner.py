@@ -30,13 +30,13 @@ def build_mutation_engine(
 ) -> BatchMutationEngine:
     """Wire the authoritative application engine for all configuration commands."""
     return BatchMutationEngine(
-        client=ctx.repo,
+        client=ctx.api,
         catalog=ctx.catalog,
         fk=ctx.fk,
         strategies=ctx.strategies,
         warn=ctx.diag.warning,
         allow_unverified=allow_unverified,
-        nodes=ctx.repo,
+        nodes=ctx.api,
     )
 
 

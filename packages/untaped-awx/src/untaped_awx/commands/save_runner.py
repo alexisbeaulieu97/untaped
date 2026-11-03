@@ -54,7 +54,7 @@ def save_selection(
     With ``out`` (not ``-``) the documents are written there and no row is
     returned; otherwise each document is a row.
     """
-    saver = SaveResource(ctx.repo, ctx.fk, nodes=ctx.repo, warn=ctx.diag.warning)
+    saver = SaveResource(ctx.api, ctx.fk, nodes=ctx.api, warn=ctx.diag.warning)
     resources = [saver.from_record(spec, item.record) for item in selected]
     fidelity_comment = spec.fidelity_note if spec.fidelity != "full" else None
     if fidelity_comment:
@@ -80,7 +80,7 @@ def save_batch(
     comment: str | None = None,
 ) -> Iterator[Document]:
     """Bulk-save resources to disk, one file each, yielding each written document."""
-    outcomes = SaveResources(ctx.repo, ctx.fk, ctx.catalog, nodes=ctx.repo, warn=ctx.diag.warning)(
+    outcomes = SaveResources(ctx.api, ctx.fk, ctx.catalog, nodes=ctx.api, warn=ctx.diag.warning)(
         all_kinds=all_kinds,
         kind=kind,
         filters=filters,

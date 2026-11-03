@@ -8,7 +8,7 @@ and orders by ``id``, so the page is stable across runs.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from untaped_awx.infrastructure.controller._part import ControllerPart
@@ -27,12 +27,11 @@ class UnifiedTemplates(ControllerPart):
     ) -> Iterator[dict[str, Any]]:
         return self._paginate(_PATH, params={"order_by": "name", **(params or {})}, limit=limit)
 
-    def unified_templates_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         # An empty ``id__in=`` filter matches every record, so no ids asks nothing.
-        wanted = list(ids)
-        if not wanted:
+        if not ids:
             return iter(())
-        return self._paginate(_PATH, params={"id__in": ",".join(wanted), "order_by": "id"})
+        return self._paginate(_PATH, params={"id__in": ",".join(ids), "order_by": "id"})
 
 
 __all__ = ["UnifiedTemplates"]

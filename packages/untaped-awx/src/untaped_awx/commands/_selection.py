@@ -121,7 +121,7 @@ def select_resources(
         and (scope or {}).get("organization") is None
         and selected_scope.get("organization") is not None,
     )
-    selected = SelectionResolver(ctx.repo, ctx.catalog).resolve(spec, request)
+    selected = SelectionResolver(ctx.api, ctx.catalog).resolve(spec, request)
     # Selected records already name their organization; later ancestry and
     # FK lookups reuse that instead of reading it again.
     ctx.fk.remember_summaries(item.record for item in selected)

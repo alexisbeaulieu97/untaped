@@ -111,7 +111,7 @@ class PollingJobMonitor:
         until it has enough lines, at most :data:`_TAIL_MAX_PAGES` pages.
         Usually one request, however long the log.
         """
-        _with_events(job)
+        _require_events(job)
         first = min(max(2 * lines, 1), _EVENT_PAGE_SIZE)
         pages = 0
 
@@ -214,7 +214,8 @@ class PollingJobMonitor:
         query = {**(params or {}), "counter__gt": str(counter), "order_by": "counter"}
         # AWX caps a page; a busy job writes thousands of events between polls,
         # so one read walks every page.
-        for record in self._client.job_events(_with_events(job), query):
+        _require_events(job)
+        for record in self._client.job_events(job, query):
             yield JobEvent.model_validate(record)
 
     def _read_into(
@@ -269,8 +270,7 @@ def _kind(job: Job) -> JobKind:
     return kind
 
 
-def _with_events(job: Job) -> Job:
-    """``job``, when its kind has events to read."""
+def _require_events(job: Job) -> None:
+    """Refuse a ``job`` whose kind has no events to read."""
     if not _kind(job).events:
         raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
-    return job

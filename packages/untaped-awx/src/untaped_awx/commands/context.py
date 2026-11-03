@@ -39,10 +39,10 @@ class AwxContext:
         self.settings = settings
         #: The controller, served by the adapter for its version; ``refresh`` is a
         #: ``Refresh(SERVER_API.cache)`` field's directive.
-        self.repo = SERVER_API.port(settings, refresh=refresh)
+        self.api = SERVER_API.port(settings, refresh=refresh)
         self.catalog = AwxResourceCatalog()
         self.fk = HttpFkResolver(
-            self.repo,
+            self.api,
             self.catalog,
             warn=self._warn,
         )
@@ -57,7 +57,7 @@ class AwxContext:
 
     def _monitor(self, *, timeout: float | None) -> PollingJobMonitor:
         return PollingJobMonitor(
-            self.repo,
+            self.api,
             sleep=self.pause,
             timeout=timeout,
             warn=self._warn,

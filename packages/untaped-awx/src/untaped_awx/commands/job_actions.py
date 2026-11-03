@@ -146,7 +146,7 @@ def _read_targets(
 
     def read(ident: str) -> dict[str, Any]:
         job_kind = kinds.get(ident, kind)
-        record = ctx.repo.job(kind=job_kind, job_id=as_job_id(ident))
+        record = ctx.api.job(kind=job_kind, job_id=as_job_id(ident))
         targets.append((job_kind, record))
         return record
 
@@ -181,7 +181,7 @@ def _cancel_plan(kind: str, record: dict[str, Any]) -> JobCancelOutcome:
 
 def _cancel_one(ctx: AwxContext, row: JobCancelOutcome) -> JobCancelOutcome:
     try:
-        ctx.repo.cancel_job(kind=row.kind, job_id=row.id)
+        ctx.api.cancel_job(kind=row.kind, job_id=row.id)
     except UntapedError as exc:
         ctx.diag.failure(exc, item=_label(row.kind, row.id, row.name))
         return row.model_copy(update=_failure(exc))
@@ -209,7 +209,7 @@ def _check_relaunchable(kind: str, *, failed_hosts: bool) -> None:
 
 def _relaunch_one(ctx: AwxContext, row: JobRelaunchOutcome) -> JobRelaunchOutcome:
     try:
-        created = ctx.repo.relaunch_job(
+        created = ctx.api.relaunch_job(
             kind=row.kind,
             job_id=row.target_id,
             hosts="failed" if row.hosts == "failed" else None,

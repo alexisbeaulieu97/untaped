@@ -8,7 +8,7 @@ misses.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from typing import Any, cast
 
 from untaped_awx.application import GetUnifiedTemplate
@@ -26,7 +26,7 @@ class _FakeUjtRepo:
         self._by_id = records_by_id or {}
         self.unified_templates_by_ids_calls: list[list[str]] = []
 
-    def unified_templates_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         materialised = list(ids)
         self.unified_templates_by_ids_calls.append(materialised)
         return iter(self._by_id[i] for i in materialised if i in self._by_id)

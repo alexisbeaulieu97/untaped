@@ -137,7 +137,7 @@ class Patch(_ConfigWrite):
             selected = select(
                 awx, spec, self.names, self.selection, self.stdin, scope_values(self.scope)
             )
-            saver = SaveResource(awx.repo, awx.fk)
+            saver = SaveResource(awx.api, awx.fk)
             resources = [
                 Resource(
                     kind=spec.kind,
@@ -230,7 +230,7 @@ class Delete(_Write):
             selected = select(
                 awx, spec, self.names, self.selection, self.stdin, scope_values(self.scope)
             )
-            deleter = DeleteResource(awx.repo)
+            deleter = DeleteResource(awx.api)
             deleter.validate_selection(spec, selected)
             rows: list[dict[str, Any]] = [
                 {

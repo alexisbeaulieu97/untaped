@@ -89,6 +89,8 @@ TRANSPORT = frozenset(
         "untaped_awx.infrastructure.pagination",
     }
 )
+#: A module that exports the transport, which an import of the module itself reaches.
+TRANSPORT_EXPORTERS = frozenset({"untaped_awx.infrastructure"})
 #: The modules that are the transport, or export it.
 TRANSPORT_MODULES = frozenset(
     {"infrastructure/__init__.py", "infrastructure/awx_client.py", "infrastructure/pagination.py"}
@@ -105,6 +107,17 @@ def test_only_the_adapter_reaches_the_controller() -> None:
         and not name.startswith("infrastructure/controller/")
         for node in ast.walk(ast.parse(py_file.read_text(encoding="utf-8")))
         for module in _imported(node)
-        if module in TRANSPORT
+        if module in TRANSPORT or (module in TRANSPORT_EXPORTERS and _binds_module(node))
     )
     assert not reaching, reaching
+
+
+def _binds_module(node: ast.AST) -> bool:
+    """Whether ``node`` binds a module itself, whose attributes then reach what it exports.
+
+    ``import untaped_awx.infrastructure`` and ``from untaped_awx import infrastructure``
+    do; ``from untaped_awx.infrastructure import errors`` names what it takes.
+    """
+    if isinstance(node, ast.Import):
+        return True
+    return isinstance(node, ast.ImportFrom) and node.module == "untaped_awx"

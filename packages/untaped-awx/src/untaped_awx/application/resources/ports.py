@@ -7,7 +7,7 @@ they can be tested with simple stubs. Concrete adapters live in
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -236,7 +236,7 @@ class ProjectPlaybooks(Protocol):
     """The playbooks AWX found in a project's last sync."""
 
     def playbooks(self, project_id: int) -> tuple[str, ...]:
-        """``projects/<id>/playbooks/``: playbook paths relative to the project root."""
+        """The project's playbook paths, relative to its root."""
         ...
 
 
@@ -320,7 +320,7 @@ class StrategyResolver(Protocol):
 
 
 class UnifiedTemplateRepository(Protocol):
-    """Read access to AWX's polymorphic ``/unified_job_templates/`` view.
+    """Read access to every launchable template, whatever its kind.
 
     Aggregates ``JobTemplate``, ``WorkflowJobTemplate``, ``Project``, and
     ``InventorySource`` rows behind a single ``type`` discriminator. No
@@ -337,7 +337,7 @@ class UnifiedTemplateRepository(Protocol):
         """Every template ``params`` select, by name unless ``params`` order them."""
         ...
 
-    def unified_templates_by_ids(self, *, ids: Iterable[str]) -> Iterator[dict[str, Any]]:
+    def unified_templates_by_ids(self, *, ids: Sequence[str]) -> Iterator[dict[str, Any]]:
         """The templates with ``ids``, by id: one listing, paged when there are many."""
         ...
 
@@ -345,11 +345,10 @@ class UnifiedTemplateRepository(Protocol):
 class WorkflowNodeRepository(Protocol):
     """Access to workflow-job-template nodes.
 
-    Wraps the node collection from both directions: per-workflow via
-    ``workflow_job_templates/<id>/workflow_nodes/`` and
-    collection-wide via ``workflow_job_template_nodes/`` — the
-    DAG of unified-job-template references that AWX executes when the
-    workflow runs. Returned dicts carry the full AWX shape (including
+    Reads the nodes from both directions, a workflow's own and every node
+    across workflows that references a template: the DAG of
+    unified-job-template references that AWX executes when the workflow
+    runs. Returned dicts carry the full AWX shape (including
     ``summary_fields``) so the use case can flatten the referenced
     template's name and type without a second round trip.
     """

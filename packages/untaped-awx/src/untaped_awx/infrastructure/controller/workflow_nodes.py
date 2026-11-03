@@ -32,9 +32,7 @@ class WorkflowNodes(ControllerPart):
         workflow_id: int,
         params: dict[str, str] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        return self._paginate(
-            f"workflow_job_templates/{workflow_id}/workflow_nodes/", params=params
-        )
+        return self._paginate(_workflow_nodes(workflow_id), params=params)
 
     def list_references(
         self,

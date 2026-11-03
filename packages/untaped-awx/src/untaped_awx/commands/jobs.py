@@ -94,7 +94,7 @@ class List(AwxCommand):
             filters[field if self.template.isdigit() else f"{field}__name"] = self.template
         self.output.empty("No jobs found. Try a different --status or --filter.")
         with self.awx() as awx, awx.diag.progress("Loading jobs"):
-            records = list(awx.repo.jobs(kind=self.kind, params=filters, limit=self.limit.value))
+            records = list(awx.api.jobs(kind=self.kind, params=filters, limit=self.limit.value))
         yield from (JobRecord.model_validate(record) for record in records)
 
 
@@ -109,7 +109,7 @@ class Get(JobsCommand):
             ids, kinds = self.targets()
             for ident in ids:
                 try:
-                    record = awx.repo.job(kind=kinds.get(ident, self.kind), job_id=as_job_id(ident))
+                    record = awx.api.job(kind=kinds.get(ident, self.kind), job_id=as_job_id(ident))
                 except UntapedError as exc:
                     awx.diag.failure(exc, item=ident)
                     continue
@@ -120,7 +120,7 @@ class Get(JobsCommand):
 def _job(awx: AwxContext, ident: str, kind: str) -> tuple[int, Job]:
     """The execution ``ident`` names, read as the ``kind`` it is."""
     job_id = as_job_id(ident)
-    record = awx.repo.job(kind=kind, job_id=job_id)
+    record = awx.api.job(kind=kind, job_id=job_id)
     return job_id, Job.model_validate({**record, "kind": kind})
 
 
@@ -240,7 +240,7 @@ class Wait(JobsCommand):
             for ident in ids:
                 try:
                     job_id, job = _job(awx, ident, kinds.get(ident, self.kind))
-                    final = WatchJob(awx.repo, sleep=awx.pause)(job, timeout=self.timeout)
+                    final = WatchJob(awx.api, sleep=awx.pause)(job, timeout=self.timeout)
                 except UntapedError as exc:
                     awx.diag.failure(exc, item=ident)
                     continue

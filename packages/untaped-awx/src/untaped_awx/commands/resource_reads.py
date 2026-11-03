@@ -56,7 +56,7 @@ class _Read(ResourceCommand):
         self.output.empty(none_found(spec))
         if self.with_scm:
             records = add_scm_fields(
-                records, client=awx.repo, catalog=awx.catalog, warn=awx.diag.warning
+                records, client=awx.api, catalog=awx.catalog, warn=awx.diag.warning
             )
         defaults = (*spec.list_columns, *_SCM_COLUMNS) if self.with_scm else spec.list_columns
         self.output.columns.show(*defaults)

@@ -303,7 +303,7 @@ class Run(_SuiteCommand):
             if baseline == "HEAD":
                 baseline = git_head.pushed_branch()
             default_scope = _jt_scope(ctx, _jt_spec(ctx))
-            preflight = PreflightLaunch(ctx.repo, ctx.catalog)
+            preflight = PreflightLaunch(ctx.api, ctx.catalog)
             load = _loader(self.suites, self.ctx)
             provisioning: AbstractContextManager[dict[str, TemplateBinding]] = nullcontext({})
             if source_ref is None:
@@ -326,13 +326,13 @@ class Run(_SuiteCommand):
                     warn=diag.warning,
                     default_organization=ctx.default_organization,
                 ),
-                launcher=RunAction(ctx.repo),
-                watcher=WatchJob(ctx.repo, sleep=ctx.pause),
+                launcher=RunAction(ctx.api),
+                watcher=WatchJob(ctx.api, sleep=ctx.pause),
                 specs=ctx.catalog.get,
                 fk_prefetcher=ctx.fk,
-                approver=ctx.repo.decide_approval,
+                approver=ctx.api.decide_approval,
                 preflight=preflight,
-                canceller=ctx.repo.cancel_job if self.cancel else None,
+                canceller=ctx.api.cancel_job if self.cancel else None,
                 jt_scope=default_scope,
                 stop=ctx.stop,
             )
@@ -341,9 +341,9 @@ class Run(_SuiteCommand):
                 log_reader=ctx.monitor.fetch_stdout,
                 event_reader=ctx.monitor.stream_events,
                 tail_reader=lambda job, lines: ctx.monitor.tail_stdout(job, lines)[0],
-                host_reader=ctx.repo.job_host_summaries,
-                node_reader=ctx.repo.workflow_job_nodes,
-                job_url=ctx.repo.job_url,
+                host_reader=ctx.api.job_host_summaries,
+                node_reader=ctx.api.workflow_job_nodes,
+                job_url=ctx.api.job_url,
             )
             options = SuiteOptions(
                 report=lambda item, failure: diag.failure(failure, item=item),
@@ -560,7 +560,7 @@ class Validate(_SuiteCommand):
                 scm_branch = git_head.pushed_branch()
             load = _loader(self.suites, self.ctx)
             default_scope = _jt_scope(ctx, _jt_spec(ctx))
-            preflight = PreflightLaunch(ctx.repo, ctx.catalog)
+            preflight = PreflightLaunch(ctx.api, ctx.catalog)
             temp: TemporarySet | None = None
             refused: set[str] = set()
             any_errors = False
@@ -759,7 +759,7 @@ class Init(AwxCommand):
             scope = _jt_scope(ctx, spec)
             if self.scope.organization is not None:
                 scope = {**(scope or {}), "organization": self.scope.organization}
-            text = StarterSuite(PreflightLaunch(ctx.repo, ctx.catalog))(
+            text = StarterSuite(PreflightLaunch(ctx.api, ctx.catalog))(
                 spec, name=self.template, scope=scope
             )
             write_new_text(path, text)

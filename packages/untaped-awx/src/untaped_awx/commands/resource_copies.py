@@ -48,7 +48,7 @@ class Copy(ResourceCommand):
             (selected,) = select_resources(
                 awx, spec, [self.source], by_id=self.by_id, scope=scope_values(self.scope)
             )
-            copier = CopyResource(awx.repo)
+            copier = CopyResource(awx.api)
             plan = copier.plan(spec, selected, self.name)
             preview = (
                 f"Copy {spec.kind}/{selected.name} id={selected.id} "
@@ -98,7 +98,7 @@ class Rename(ResourceCommand):
             (selected,) = select_resources(
                 awx, spec, [self.source], by_id=self.by_id, scope=scope_values(self.scope)
             )
-            renamer = RenameResource(awx.repo)
+            renamer = RenameResource(awx.api)
             plan = renamer.plan(spec, selected, self.new)
             preview = (
                 f"Rename {spec.kind} id={selected.id} scope={format_scope(selected.scope)}: "

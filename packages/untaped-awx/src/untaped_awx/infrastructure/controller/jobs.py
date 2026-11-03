@@ -40,18 +40,22 @@ JOB_PATHS: dict[str, JobPaths] = {
 """Each execution kind's paths, by the ``kind`` a :class:`Job` carries."""
 
 
-def _collection(kind: str) -> str:
+def _paths(kind: str) -> JobPaths:
     paths = JOB_PATHS.get(kind)
     if paths is None:
         raise AwxApiError(f"unsupported execution kind: {kind}")
-    return paths.collection
+    return paths
+
+
+def _collection(kind: str) -> str:
+    return _paths(kind).collection
 
 
 def _events(job: Job) -> str:
-    events = JOB_PATHS[job.kind].events if job.kind in JOB_PATHS else None
-    if events is None:
-        raise AwxApiError(f"{job.kind} does not expose events; use jobs get/wait for status")
-    return f"{_collection(job.kind)}/{job.id}/{events}/"
+    paths = _paths(job.kind)
+    if paths.events is None:
+        raise AwxApiError(f"no events path for {job.kind}")
+    return f"{paths.collection}/{job.id}/{paths.events}/"
 
 
 class Jobs(ControllerPart):

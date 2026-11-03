@@ -107,5 +107,5 @@ def test_events_live_under_each_kinds_own_listing() -> None:
 
 
 def test_a_workflow_job_has_no_events() -> None:
-    with pytest.raises(AwxApiError, match="workflow_job does not expose events"):
+    with pytest.raises(AwxApiError, match="no events path for workflow_job"):
         RecordingController().job_events_page(Job(id=7, kind="workflow_job", status="running"), {})
