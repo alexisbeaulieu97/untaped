@@ -59,7 +59,7 @@ _DELETED = {
     "source_refresh_backend": (
         "deleted in 12.0; each repo's host probes its refs, else git ls-remote does"
     ),
-    "probe_parallel": "deleted in 12.0; use git.probe_parallel",
+    "probe_parallel": "deleted in 12.0; use git.probe_parallel (live graph reads run 8 at once)",
     "source_refresh_rate_limit_floor": (
         "deleted in 12.0; the plugin that probes a host sets that host's budget floor"
     ),

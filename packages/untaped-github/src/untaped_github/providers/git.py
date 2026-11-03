@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 from pydantic import SecretStr
 
-from untaped.sdk import Failure, UntapedError
+from untaped.sdk import ErrorCategory, Failure, UntapedError
 from untaped.sdk.contracts import Provider
 from untaped_git.api import Credential, GitHost, ProbedRepo, RefProbe, repo_url_parts
 from untaped_github.domain.hosts import github_web_host
@@ -99,7 +99,13 @@ def _failed(url: str, message: str, category: str) -> ProbedRepo:
 
 
 def _chunk_failed(url: str, failure: BatchRepoRefsFailure) -> ProbedRepo:
-    return _failed(url, f"ref probe failed: {failure.reason}", failure.category)
+    """A repo whose request failed: never ``not_found``, which only GitHub's own answer says.
+
+    A 404 on the GraphQL endpoint (a proxy, say) says nothing of the repo, so
+    git still reads it with ``ls-remote``.
+    """
+    category = ErrorCategory.FAILED if failure.category == ErrorCategory.NOT_FOUND else None
+    return _failed(url, f"batch request failed: {failure.reason}", category or failure.category)
 
 
 def _on_host(url: str, host: str | None) -> bool:

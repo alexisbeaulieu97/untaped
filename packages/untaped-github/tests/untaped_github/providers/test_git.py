@@ -231,6 +231,12 @@ def test_probe_refs_reads_every_repo_in_one_batch(monkeypatch: pytest.MonkeyPatc
             BatchRepoRefsFailure(
                 full_name="acme/busy", reason="502 from GitHub", kind="server_error"
             ),
+            BatchRepoRefsFailure(
+                full_name="acme/proxied",
+                reason="404 from the endpoint",
+                kind="request",
+                category=ErrorCategory.NOT_FOUND,
+            ),
         ),
         rate_limit_remaining=4000,
         rate_limit_reset_at=datetime(2026, 11, 3, 23, tzinfo=UTC),
@@ -239,11 +245,13 @@ def test_probe_refs_reads_every_repo_in_one_batch(monkeypatch: pytest.MonkeyPatc
         "https://github.com/Acme/API.git",
         "git@github.com:acme/gone.git",
         "https://github.com/acme/busy.git",
+        "https://github.com/acme/proxied.git",
     ]
 
     answer, api = probe(monkeypatch, result, urls)
 
-    assert api.asked == [("all", ("acme/api", "acme/gone", "acme/busy"), ("heads", "tags"), 4)]
+    names = ("acme/api", "acme/gone", "acme/busy", "acme/proxied")
+    assert api.asked == [("all", names, ("heads", "tags"), 4)]
     rows = {row.url: row for row in answer.repos}
     assert rows[urls[0]].refs == {"refs/heads/main": "1", "refs/tags/v1": "2"}
     assert rows[urls[0]].default_branch == "main"
@@ -251,8 +259,12 @@ def test_probe_refs_reads_every_repo_in_one_batch(monkeypatch: pytest.MonkeyPatc
     assert gone is not None
     assert (gone.category, gone.system) == (ErrorCategory.NOT_FOUND, "github")
     assert busy is not None
-    assert busy.message == "ref probe failed: 502 from GitHub"
+    assert busy.message == "batch request failed: 502 from GitHub"
     assert busy.category == ErrorCategory.UNAVAILABLE
+    # A failed request says nothing of the repo: never not_found, so git reads it itself.
+    proxied = rows[urls[3]].failure
+    assert proxied is not None
+    assert proxied.category == ErrorCategory.FAILED
     assert (answer.remaining, answer.exhausted) == (4000, False)
     assert answer.reset_at == datetime(2026, 11, 3, 23, tzinfo=UTC)
 

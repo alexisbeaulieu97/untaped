@@ -90,8 +90,20 @@ class HostAuth:
 def resolve_host(url: str) -> HostAuth | None:
     """Choose the ``GitHost`` provider for ``url``; see the module docstring."""
     host = url_host(url)
-    if host is None:
+    chosen = host_plugin(host) if host is not None else None
+    if chosen is None:
         return None
+    https = url.startswith("https://")
+    credentials = _ask(GitHost.credential, url, among=[chosen]) if https else None
+    return HostAuth(chosen, _answer(credentials, chosen))
+
+
+def host_plugin(host: str) -> str | None:
+    """The plugin whose ``GitHost`` serves ``host``, chosen as for :func:`resolve_host`.
+
+    Asks no one for credentials: :func:`~untaped_git.probe.probe_refs` picks
+    each host's prober with it.
+    """
     homes = _ask(GitHost.home)
     if homes is None:
         return None
@@ -102,10 +114,7 @@ def resolve_host(url: str) -> HostAuth | None:
     ]
     if not candidates:
         return None
-    chosen = _choose(host, candidates)
-    https = url.startswith("https://")
-    credentials = _ask(GitHost.credential, url, among=[chosen]) if https else None
-    return HostAuth(chosen, _answer(credentials, chosen))
+    return _choose(host, candidates)
 
 
 def _ask(method: Any, *args: str, among: list[str] | None = None) -> Answers[Any] | None:

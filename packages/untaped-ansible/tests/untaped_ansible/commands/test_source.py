@@ -587,7 +587,7 @@ def test_source_refresh_failures_report_their_own_and_the_run_s_category(
             ("acme/a", "acme/b"),
             {"return_value": httpx.Response(502, text="Bad Gateway")},
             "warning: 2 repos fell back to git ls-remote, one network call per repo: "
-            "github could not probe it (ref probe failed: ",
+            "github could not probe it (batch request failed: ",
         ),
         (
             ("acme/a", "acme/b"),

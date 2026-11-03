@@ -1,11 +1,11 @@
 """Ref probes: each URL's branches and tags, from its host's batch probe or from ``ls-remote``.
 
 A forge plugin may fill :meth:`GitHost.probe_refs <untaped_git.hosts.GitHost.probe_refs>`
-to read many repositories' refs in a few requests (GitHub's GraphQL batch,
-say). :func:`probe_refs` asks the provider chosen for each URL's host
-(:func:`~untaped_git.hosts.resolve_host`) for all of that host's URLs at
-once, and reads with ``git ls-remote``, one URL at a time and ``parallel`` at
-once, every URL whose host has no probe, whose host's probe failed as
+to read many repositories' refs in a few requests. :func:`probe_refs` asks
+the provider chosen for each URL's host (:func:`~untaped_git.hosts.host_plugin`,
+which asks no one for credentials) for all of that host's URLs at once. It
+reads with ``git ls-remote``, one URL at a time and ``parallel`` at once,
+every URL whose host has no probe, whose host's probe failed as
 ``unavailable``, or that the probe could not read for any reason but
 ``not_found``. A probe's other failure is raised. Each host's budget after
 its probe is kept, so a caller can stop before spending the rest.
@@ -109,8 +109,9 @@ def probe_refs(
     it, so ``ls-remote`` needn't ask. ``parallel`` defaults to
     ``git.probe_parallel``. ``on_progress(done, total)`` counts URLs.
     """
-    from untaped_git.hosts import resolve_host  # noqa: PLC0415 - a cycle: hosts imports this
+    from untaped_git.hosts import host_plugin  # noqa: PLC0415 - a cycle: hosts imports this
     from untaped_git.settings import git_settings  # noqa: PLC0415 - the owner's own section
+    from untaped_git.url import url_host  # noqa: PLC0415 - kept beside its uses
 
     parallel = parallel or git_settings().probe_parallel
 
@@ -118,9 +119,13 @@ def probe_refs(
     asking = list(dict.fromkeys(urls))
     by_plugin: dict[str, list[str]] = defaultdict(list)
     plain: list[str] = []
+    plugins: dict[str, str | None] = {}  # host → its prober, chosen once per host
     for url in asking:
-        auth = resolve_host(url)
-        (by_plugin[auth.plugin] if auth is not None else plain).append(url)
+        host = url_host(url)
+        if host is not None and host not in plugins:
+            plugins[host] = host_plugin(host)
+        plugin = plugins.get(host) if host is not None else None
+        (by_plugin[plugin] if plugin is not None else plain).append(url)
     progress = _Progress(len(asking), on_progress)
     repos: dict[str, ProbedRepo] = {}
     fallbacks: dict[str, str] = {}

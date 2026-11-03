@@ -68,8 +68,8 @@ class RefProbeSettings(BaseModel):
         default=500,
         ge=0,
         description=(
-            "Stop probing refs once GitHub's GraphQL budget drops below this; "
-            "a source refresh pauses there and resumes where it stopped."
+            "Say the ref probe budget is spent once GitHub's GraphQL budget drops "
+            "below this, so the caller asks GitHub nothing more until it resets."
         ),
     )
 

@@ -26,11 +26,13 @@ class Hub(GitHost, Provider):
     rows: ClassVar[dict[str, ProbedRepo]] = {}
     error: ClassVar[UntapedError | None] = None
     asked: ClassVar[list[tuple[list[str], list[str], bool, int]]] = []
+    credentials: ClassVar[list[str]] = []
 
     def home(self) -> str | None:
         return "hub.example"
 
     def credential(self, url: str) -> Credential | None:
+        type(self).credentials.append(url)
         return None
 
     def probe_refs(
@@ -83,7 +85,7 @@ def remote(monkeypatch: pytest.MonkeyPatch) -> Remote:
 
 @pytest.fixture(autouse=True)
 def _fresh() -> Iterator[None]:
-    Hub.rows, Hub.error, Hub.asked = {}, None, []
+    Hub.rows, Hub.error, Hub.asked, Hub.credentials = {}, None, [], []
     with install(Git, providers={"hub": (Hub,), "plain": (Plain,)}).running():
         yield
 
@@ -110,6 +112,7 @@ def test_a_host_s_probe_reads_all_its_urls_in_one_ask(remote: Remote) -> None:
     assert result.repos[_HUB.format("b")].refs == {"refs/heads/main": "2"}
     assert result.fallbacks == {}
     assert remote.listed == []
+    assert Hub.credentials == []  # choosing the prober asks for no credential
     [budget] = result.budgets
     assert (budget.plugin, budget.host, budget.remaining, budget.reset_at, budget.exhausted) == (
         "hub",
@@ -142,6 +145,17 @@ def test_a_known_default_branch_is_not_asked_again(remote: Remote) -> None:
     assert remote.symrefs == []
     assert remote.listed == [(_PLAIN, ("HEAD", "refs/heads/trunk"))]
     assert result.repos[_PLAIN].refs == {"refs/heads/trunk": "1"}
+
+
+def test_a_default_branch_probe_with_no_default_branch_reads_no_ref(remote: Remote) -> None:
+    """``HEAD`` names no branch here, so no branch is made up for it."""
+    remote.refs[_PLAIN] = {"HEAD": "1", "refs/heads/main": "1"}
+
+    result = probe_refs([_PLAIN], default_branch_only=True)
+
+    row = result.repos[_PLAIN]
+    assert (row.refs, row.default_branch, row.failure) == ({}, None, None)
+    assert remote.listed == [(_PLAIN, ("HEAD",))]
 
 
 def test_a_url_the_probe_could_not_read_falls_back_unless_it_is_not_found(

@@ -120,7 +120,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `github.sweep.parallel` | integer | `12` | `UNTAPED_GITHUB__SWEEP__PARALLEL` | Default `sweep --parallel` and `cache sync --parallel` Git workers. 1 or more. |
 | `github.inventory.orgs` | list | empty | `UNTAPED_GITHUB__INVENTORY__ORGS` | Orgs whose repositories github lists as repos you can name in commands. With no orgs or teams, `github.default_org`. |
 | `github.inventory.teams` | list | empty | `UNTAPED_GITHUB__INVENTORY__TEAMS` | Teams (`ORG/SLUG`, or `SLUG` in the one inventory org, else in `github.default_org`) whose repositories github lists as repos you can name. |
-| `github.ref_probe.rate_limit_floor` | integer | `500` | `UNTAPED_GITHUB__REF_PROBE__RATE_LIMIT_FLOOR` | Stop probing refs once GitHub's GraphQL budget drops below this; a source refresh pauses there and resumes where it stopped. 0 or more. |
+| `github.ref_probe.rate_limit_floor` | integer | `500` | `UNTAPED_GITHUB__REF_PROBE__RATE_LIMIT_FLOOR` | Say the ref probe budget is spent once GitHub's GraphQL budget drops below this, so the caller asks GitHub nothing more until it resets. 0 or more. |
 | `github.caches.sweep.max_age_seconds` | integer | `3600` | `UNTAPED_GITHUB__CACHES__SWEEP__MAX_AGE_SECONDS` | Seconds repo data is served before untaped checks upstream; 0 checks every time. 0 or more. |
 | `github.caches.server_api.max_age_seconds` | integer | `86400` | `UNTAPED_GITHUB__CACHES__SERVER_API__MAX_AGE_SECONDS` | Seconds server version is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
@@ -169,7 +169,7 @@ A renamed key is still read with a warning; a retired one is no longer read; a d
 | Old key | Old environment variable | New key | Status |
 |---|---|---|---|
 | `ansible.index_path` | `UNTAPED_ANSIBLE__INDEX_PATH` | none | deleted in 12.0; ansible.index_dir names the folder that holds the index |
-| `ansible.probe_parallel` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | none | deleted in 12.0; use git.probe_parallel |
+| `ansible.probe_parallel` | `UNTAPED_ANSIBLE__PROBE_PARALLEL` | none | deleted in 12.0; use git.probe_parallel (live graph reads run 8 at once) |
 | `ansible.source_refresh_backend` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_BACKEND` | none | deleted in 12.0; each repo's host probes its refs, else git ls-remote does |
 | `ansible.source_refresh_rate_limit_floor` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_RATE_LIMIT_FLOOR` | none | deleted in 12.0; the plugin that probes a host sets that host's budget floor |
 | `ansible.stale_after_seconds` | `UNTAPED_ANSIBLE__STALE_AFTER_SECONDS` | none | deleted in 12.0; use ansible.caches.source_data.max_age_seconds |
