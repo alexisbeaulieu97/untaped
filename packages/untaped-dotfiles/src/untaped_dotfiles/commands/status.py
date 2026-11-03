@@ -12,7 +12,7 @@ from untaped_dotfiles.records import EntryStatus
 
 
 class Status(DotfilesCommand):
-    """Show the state of every file and step of the packages that are on, offline.
+    """Show the state of every file, step and working copy of the packages that are on, offline.
 
     It fetches nothing, so `behind` is as of the last fetch. It also lists
     what untaped placed for a package or item that is off now (`off`): in

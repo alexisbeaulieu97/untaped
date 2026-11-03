@@ -83,12 +83,16 @@ class StateDotfilesStore:
 
     def forget_applied(self, prefix: tuple[str, ...]) -> None:
         """Forget every item under ``prefix`` (a source, a package or one item), and its
-        steps and working copies: turned off, or on again."""
+        steps: turned off, or on again. Its working copies stay known: ``forget_repos``."""
         start = "/".join(prefix)
         for row in ITEMS.all():
             if row.item == start or row.item.startswith(start + "/"):
                 ITEMS.delete(row.item)
         self.forget_steps(prefix)
+
+    def forget_repos(self, prefix: tuple[str, ...]) -> None:
+        """Forget the working copies cloned for ``prefix``: turned off. The folders stay."""
+        start = "/".join(prefix)
         for repo in REPOS.all():
             if repo.item == start or repo.item.startswith(start + "/"):
                 REPOS.delete(repo.target)

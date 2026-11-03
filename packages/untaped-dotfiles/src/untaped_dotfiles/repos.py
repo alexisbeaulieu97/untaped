@@ -3,14 +3,16 @@
 Policy doesn't apply. ``apply`` clones a working copy whose target is absent,
 through the git plugin (its credentials and proxy, no helper left behind);
 after that untaped never moves it. A checkout of the entry's URL already
-there counts as applied, and anything else there is ``foreign`` and never
-touched. ``remove`` and ``unsubscribe`` forget the rows and leave the copies.
+there counts as applied (a repo name: a checkout whose ``origin`` ends in that
+name, so ``status`` asks no repo source), and anything else there is
+``foreign`` and never touched. ``remove`` and ``unsubscribe`` forget the rows
+and leave the copies.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -20,7 +22,15 @@ from untaped_dotfiles.errors import DotfilesError
 from untaped_dotfiles.models import RepoRecord
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome, EntryStatus
 from untaped_dotfiles.states import Action, RepoState, decide_repo
-from untaped_git.api import RepoFinder, clone, git_toplevel, looks_like_url, run_git, store_key
+from untaped_git.api import (
+    RepoFinder,
+    clone,
+    git_toplevel,
+    looks_like_url,
+    repo_url_parts,
+    run_git,
+    store_key,
+)
 
 if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Offer, Selection
@@ -50,6 +60,12 @@ class RepoEntry:
     excluded: str | None = None
     off: bool = False
     orphan: bool = False
+    moved_to: str = ""
+    """For an ``orphan``: where the entry clones now, when an input moved its target."""
+    overlaps: str = ""
+    """Another working copy's target at, above or under this one: neither is cloned."""
+    files: tuple[str, ...] = ()
+    """File targets at or under this target: it can't be cloned there."""
 
     @property
     def owner(self) -> tuple[str, str, str]:
@@ -69,6 +85,8 @@ class RepoPlan:
     found: RepoFound
     action: Action
     detail: str
+    url: str = ""
+    """The URL a planned clone fetches (a repo name resolved)."""
 
 
 class Repos:
@@ -80,21 +98,21 @@ class Repos:
         store: DotfilesStore,
         *,
         now: Callable[[], datetime],
-        resolve: Callable[[str], str] | None = None,
-        cloner: Callable[[str, Path, str | None], None] | None = None,
     ) -> None:
         self._inventory = inventory
         self._store = store
         self._now = now
-        self._resolve = resolve or (lambda name: RepoFinder().resolve(name).url)
-        self._clone = cloner or (lambda url, dest, branch: clone(url, dest, branch=branch))
+        self._finder: RepoFinder | None = None
 
     # -- entries -------------------------------------------------------------
 
-    def entries(self, selections: Sequence[Selection] | None = None) -> list[RepoEntry]:
+    def entries(
+        self, selections: Sequence[Selection] | None = None, *, files: Iterable[Path] = ()
+    ) -> list[RepoEntry]:
         """The ``repos:`` entries of the items that are on in ``selections`` (every package
         that is on when ``None``), plus the rows of copies untaped cloned for an entry the
-        package dropped (``orphan``) or whose package or item is off now (``off``)."""
+        package dropped (``orphan``) or whose package or item is off now (``off``).
+        ``files``: the targets files are placed at, which no copy may hold."""
         records = {r.target: r for r in self._store.repos()}
         found: list[RepoEntry] = []
         machine = self._inventory.machine
@@ -113,32 +131,63 @@ class Repos:
                 found.append(
                     RepoEntry(offer, item, repo, target, waits or "", record, excluded=excluded)
                 )
+        found = self._overlapping(found, files)
         listed = {str(e.target) for e in found if e.target is not None}
+        moved = {("/".join(e.owner), e.repo.url): self._shown(e) for e in found}
         wanted = {(o.source.name, o.name, i): o for o, i in self._inventory.wanted(selections)}
         off = self._inventory.off_scope(selections)
         for record in records.values():
             if record.target not in listed:
-                found.extend(self._unlisted(record, wanted, off))
+                entry = self._unlisted(record, wanted, off)
+                if entry is not None and entry.orphan:
+                    entry = replace(entry, moved_to=moved.get((record.item, record.given), ""))
+                found.extend([entry] if entry is not None else [])
         return found
+
+    def _shown(self, entry: RepoEntry) -> str:
+        return entry.repo.target if entry.target is None else self._inventory.shown(entry.target)
+
+    def _overlapping(self, entries: list[RepoEntry], files: Iterable[Path]) -> list[RepoEntry]:
+        """``entries`` with the copies whose targets nest in another copy's target, or hold a
+        file's target, marked: none of them is cloned."""
+        active = [e for e in entries if e.excluded is None and e.target is not None]
+        placed = [Path(f) for f in files]
+        marked: list[RepoEntry] = []
+        for entry in entries:
+            if not any(entry is a for a in active):
+                marked.append(entry)
+                continue
+            assert entry.target is not None
+            others = [
+                o
+                for o in active
+                if o is not entry and o.target is not None and _nested(entry.target, o.target)
+            ]
+            overlaps = ", ".join(f"{self._shown(o)} ({'/'.join(o.owner)})" for o in others)
+            inside = tuple(
+                self._inventory.shown(f) for f in placed if _nested(entry.target, f, under=True)
+            )
+            marked.append(replace(entry, overlaps=overlaps, files=inside))
+        return marked
 
     def _unlisted(
         self,
         record: RepoRecord,
         wanted: Mapping[tuple[str, str, str], Offer],
         off: Mapping[tuple[str, str, str], Offer],
-    ) -> list[RepoEntry]:
+    ) -> RepoEntry | None:
         source, package, item = record.item.split("/", 2)
         owned = wanted.get((source, package, item))
         if owned is not None:
             if owned.package is not None and self._inventory.broken(owned) is None:
-                return [self._from_record(record, owned, item, orphan=True)]
-            return []
+                return self._from_record(record, owned, item, orphan=True)
+            return None
         scope = off.get((source, package, item)) or off.get((source, package, ""))
         if scope is None:
-            return []
+            return None
         if not scope.item_on(item):
-            return [self._from_record(record, scope, item, off=True)]
-        return [self._from_record(record, scope, item, orphan=True)]
+            return self._from_record(record, scope, item, off=True)
+        return self._from_record(record, scope, item, orphan=True)
 
     def _from_record(
         self,
@@ -165,24 +214,46 @@ class Repos:
         if entry.off:
             return RepoFound("off", _off_detail(entry))
         if entry.orphan:
+            if entry.moved_to:
+                return RepoFound("orphan", f"its target moved to {entry.moved_to}")
             return RepoFound("orphan", "the package no longer has it")
+        if entry.overlaps:
+            return _conflict(
+                f"{entry.repo.target} overlaps the working copy at {entry.overlaps}; "
+                "neither is cloned"
+            )
         if entry.target is None:
             return RepoFound("pending", entry.waits)
         target = entry.target
+        found = self._found(entry, target)
+        if entry.files and found.state != "applied" and found.error is None:
+            return _conflict(
+                f"files are placed in {entry.repo.target} ({', '.join(entry.files)}), "
+                "so it can't be cloned there"
+            )
+        return found
+
+    def _found(self, entry: RepoEntry, target: Path) -> RepoFound:
         if not target.exists() and not target.is_symlink():
             return RepoFound("pending")
         try:
             origin = self._origin(target)
-            if origin is None:
-                return RepoFound("foreign", f"{target} is there and isn't a git checkout")
-            url = self.url(entry)
         except UntapedError as exc:
-            return RepoFound("error", str(exc), Failure.from_exception(exc, message=str(exc)))
-        if store_key(origin) == store_key(url):
+            return RepoFound("error", str(exc), _failure(exc))
+        if origin is None:
+            return RepoFound("foreign", f"{target} is there and isn't a git checkout")
+        given = entry.repo.url
+        if looks_like_url(given):
+            same = _same_repo(origin, given)
+        elif entry.record is not None and entry.record.given == given:
+            same = _same_repo(origin, entry.record.url)
+        else:  # a repo name, matched offline: status asks no repo source
+            same = _named(origin, given)
+        if same:
             return RepoFound("applied")
-        return RepoFound("foreign", f"{target} is a checkout of {origin}, not {url}")
+        return RepoFound("foreign", f"{target} is a checkout of {origin}, not {given}")
 
-    def url(self, entry: RepoEntry) -> str:
+    def _url(self, entry: RepoEntry) -> str:
         """The URL the entry clones: as written, or a repo name as a repo source lists it (the
         one cloned before, for a copy untaped cloned)."""
         given = entry.repo.url
@@ -190,7 +261,9 @@ class Repos:
             return given
         if entry.record is not None and entry.record.given == given:
             return entry.record.url
-        return self._resolve(given)
+        if self._finder is None:
+            self._finder = RepoFinder()
+        return self._finder.resolve(given).url
 
     @staticmethod
     def _origin(target: Path) -> str | None:
@@ -203,6 +276,7 @@ class Repos:
             timeout=_GIT_TIMEOUT,
             capture=True,
             check=False,
+            batch_ssh=False,
         )
         url = ran.text.strip() if ran.returncode == 0 else ""
         return url or None
@@ -232,12 +306,24 @@ class Repos:
         return rows, actions
 
     def plan(self, entries: Sequence[RepoEntry]) -> list[RepoPlan]:
-        """What ``apply`` does with each working copy: the same whatever the policy."""
+        """What ``apply`` does with each working copy: the same whatever the policy. A repo
+        name to clone is resolved here, so the preview names the URL."""
         plans: list[RepoPlan] = []
         for entry in entries:
             found = self.evaluate(entry)
             action = _action(entry, found)
-            plans.append(RepoPlan(entry, found, action, _planned_detail(entry, found, action)))
+            if action != "apply":
+                plans.append(RepoPlan(entry, found, action, _planned_detail(entry, found)))
+                continue
+            try:
+                url = self._url(entry)
+            except UntapedError as exc:
+                found = RepoFound("error", str(exc), _failure(exc))
+                plans.append(RepoPlan(entry, found, "report", str(exc)))
+                continue
+            branch = f" ({entry.repo.branch})" if entry.repo.branch else ""
+            detail = f"clones {url}{branch} into {self._shown(entry)}"
+            plans.append(RepoPlan(entry, found, action, detail, url))
         return plans
 
     @staticmethod
@@ -288,7 +374,7 @@ class Repos:
             elif plan.action == "remove":
                 if plan.entry.record is not None:
                     self._store.forget_repo(plan.entry.record.target)
-                rows.append(_row(plan, "deleted", KEPT))
+                rows.append(_row(plan, "unchanged", f"{plan.found.detail}; {KEPT}"))
             elif plan.action == "apply":
                 rows.append(self._cloned(plan))
             else:
@@ -300,10 +386,10 @@ class Repos:
         entry = plan.entry
         target = entry.target
         assert target is not None  # a target waiting on an input is reported, never cloned
+        url = plan.url
         try:
-            url = self.url(entry)
             target.parent.mkdir(parents=True, exist_ok=True)
-            self._clone(url, target, entry.repo.branch)
+            clone(url, target, branch=entry.repo.branch)
         except OSError as exc:
             failure = DotfilesError(f"could not make {target.parent}: {exc.strerror or exc}")
             return _row(plan, "failed", str(failure), error=_failure(failure))
@@ -338,13 +424,42 @@ def _off_detail(entry: RepoEntry) -> str:
     return f"cloned earlier; the {which} is off now; to forget it (the copy stays), {forget}"
 
 
-def _planned_detail(entry: RepoEntry, found: RepoFound, action: Action) -> str:
-    if action == "apply":
-        branch = f" ({entry.repo.branch})" if entry.repo.branch else ""
-        return f"clones {entry.repo.url}{branch}"
-    if action == "remove":
+def _planned_detail(entry: RepoEntry, found: RepoFound) -> str:
+    if entry.orphan:
         return f"{found.detail}; {KEEPS}"
     return found.detail
+
+
+def _nested(target: Path, other: Path, *, under: bool = False) -> bool:
+    """Whether ``other`` is ``target``, under it, or (unless ``under``) above it."""
+    return other == target or target in other.parents or (not under and other in target.parents)
+
+
+def _same_repo(url: str, other: str) -> bool:
+    """Whether two URLs name one repo: by host and path, or by path for local ones."""
+    host, path = repo_url_parts(url)
+    other_host, other_path = repo_url_parts(other)
+    if host is None and other_host is None and path and other_path:
+        return _folded(path) == _folded(other_path)
+    return store_key(url) == store_key(other)
+
+
+def _named(origin: str, name: str) -> bool:
+    """Whether ``origin``'s path ends in the repo ``name`` (``owner/name`` or a bare name)."""
+    _, path = repo_url_parts(origin)
+    parts = [part for part in name.split("/") if part]
+    return (
+        bool(parts) and len(path) >= len(parts) and _folded(path[-len(parts) :]) == _folded(parts)
+    )
+
+
+def _folded(parts: Sequence[str]) -> list[str]:
+    return [part.casefold() for part in parts]
+
+
+def _conflict(message: str) -> RepoFound:
+    error = DotfilesError(message, category="conflict")
+    return RepoFound("error", str(error), _failure(error))
 
 
 def _planned_action(plan: RepoPlan) -> ApplyAction:

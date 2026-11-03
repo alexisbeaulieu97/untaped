@@ -155,18 +155,21 @@ class PackageDetail(Record):
 
 
 class EntryStatus(Record):
-    """The state of one entry, a file or a step, of a package that is on or was applied before."""
+    """The state of one entry (a file, a step or a working copy) of a package that is on or
+    was applied before."""
 
     source: str
     package: Annotated[str, Column]
     item: Annotated[str, Column]
     kind: Annotated[EntryKind, Column] = "file"
     entry: Annotated[str, Column] = Field(
-        description="A file's target as the user reads it (`~/...`), or a step's name."
+        description="A file's or working copy's target as the user reads it (`~/...`), or a "
+        "step's name."
     )
     mode: Annotated[Mode | None, Column] = Field(
         default=None,
-        description="How the file is placed here (a `link` only under `sync`); null for a step.",
+        description="How the file is placed here (a `link` only under `sync`); null for a step "
+        "or a working copy.",
     )
     policy: Annotated[Policy | None, Column] = Field(
         description="The policy the entry follows: for a file, this machine's choice else the "
@@ -179,7 +182,8 @@ class EntryStatus(Record):
     )
     detail: Annotated[str, Column] = ""
     target_path: AbsolutePath | None = Field(
-        default=None, description="A file's absolute target; null for a step."
+        default=None,
+        description="A file's or working copy's absolute target; null for a step.",
     )
     error: Failure | None = None
 
@@ -239,5 +243,6 @@ class ApplyOutcome(OutcomeRecord):
         "action changes it (a new file's whole content included); null otherwise.",
     )
     target_path: AbsolutePath | None = Field(
-        default=None, description="A file's absolute target; null for a step."
+        default=None,
+        description="A file's or working copy's absolute target; null for a step.",
     )

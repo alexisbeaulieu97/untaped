@@ -131,8 +131,11 @@ class Policy(StrEnum):
     moved: `pending` (the target is absent: `apply` clones it), `applied` (a
     checkout whose `origin` is the entry's URL), `foreign` (something else is
     there: reported, never touched), `orphan` (cloned for an entry the
-    package dropped: forgotten), `off`, `excluded` or `error`. `remove` and
-    `unsubscribe` forget a copy untaped cloned and leave it in place.
+    package dropped, or whose target an input moved: forgotten), `off`,
+    `excluded` or `error` (also when its target holds, or sits in, another
+    copy's target, or holds a file's target: nothing is cloned there).
+    `remove` and `unsubscribe` forget a copy untaped cloned and leave it in
+    place; turning an item on again keeps knowing it.
 
     ## What needs a person
 

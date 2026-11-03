@@ -206,7 +206,8 @@ class Remove(DotfilesCommand):
     file edited on this machine kept aside. `remove PKG` turns the package off;
     `remove PKG/ITEM` turns only the item off. `--keep-files` turns off and
     forgets without touching files. A file that can't be taken back fails its
-    row (exit 1), and nothing is turned off.
+    row (exit 1), and nothing is turned off. Steps and working copies are
+    forgotten: nothing a step did is undone, and a working copy stays.
     """
 
     selectors: Positional[list[str]] = Field(min_length=1, description=SELECTORS)
@@ -277,6 +278,7 @@ class Remove(DotfilesCommand):
             rows += svc.repos.forgetting(owners, done=True)
             for owner in owners:
                 svc.store.forget_applied(owner)
+                svc.store.forget_repos(owner)
             self.services(_with_choices(self.settings, updated)).refresh_status()
         self.ctx.diag.success(f"turned off {spelled}")
         return iter(rows)

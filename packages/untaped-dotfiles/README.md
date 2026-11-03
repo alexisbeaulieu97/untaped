@@ -73,7 +73,11 @@ when its target is absent:
 
 After that untaped never moves it: it is yours. A checkout of the URL
 already there counts as applied; anything else there is `foreign` and left
-alone. Policy doesn't apply, and `remove` forgets the copy and leaves it.
+alone. `url` can be a repo name (`acme/app`) that a plugin listing repos
+resolves when `apply` clones it; `status` asks no one, and counts a
+checkout whose `origin` ends in that name. A copy's target can't
+hold another copy's or a file's target. Policy doesn't apply, and `remove`
+forgets the copy and leaves it.
 
 On Windows, `link` needs symlink permission (Developer Mode or elevation);
 `copy` and `merge` work. Nothing is tested there yet.

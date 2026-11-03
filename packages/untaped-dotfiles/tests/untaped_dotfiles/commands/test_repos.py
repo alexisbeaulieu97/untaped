@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -47,7 +48,7 @@ def test_an_absent_target_is_cloned_once(make_remote: MakeRemote, user_home: Pat
     _subscribed(make_remote, app.url)
     assert states()["~/Projects/app"] == "pending"
     code, rows = _repo_rows(["apply", "--dry-run"])
-    assert code == 0 and rows[0]["detail"] == f"clones {app.url}"
+    assert code == 0 and rows[0]["detail"] == f"clones {app.url} into ~/Projects/app"
     assert not (user_home / "Projects/app").exists()  # a dry run clones nothing
     code, rows = _repo_rows(["apply", "--yes"])
     assert code == 0 and rows[0]["action"] == "created"
@@ -86,6 +87,7 @@ def test_another_folder_is_foreign_and_untouched(make_remote: MakeRemote, user_h
     assert rows["~/Projects/app"]["state"] == "foreign"
     assert "isn't a git checkout" in str(rows["~/Projects/app"]["detail"])
     assert rows["~/Projects/app"]["policy"] is None
+    assert run(["status", "--check"]).exit_code == 3
     code, repo_rows = _repo_rows(["apply", "--yes"])
     assert code == 3 and repo_rows[0]["action"] == "skipped"
     assert [p.name for p in folder.iterdir()] == ["notes.txt"]
@@ -164,6 +166,110 @@ def test_a_copy_the_package_drops_is_forgotten(make_remote: MakeRemote, user_hom
     )
     publish(source, {".untaped/dotfiles/code.yml": dropped})
     code, rows = _repo_rows(["apply", "--yes"])
-    assert code == 0 and [r["action"] for r in rows] == ["deleted"]
+    assert code == 0 and [r["action"] for r in rows] == ["unchanged"]
+    assert rows[0]["detail"] == (
+        "the package no longer has it; forgotten; the working copy stays, it is yours"
+    )
     assert (user_home / "Projects/app/README").exists()
     assert "~/Projects/app" not in states()
+
+
+def test_a_moved_target_clones_anew_and_says_so(make_remote: MakeRemote, user_home: Path) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    _subscribed(
+        make_remote,
+        app.url,
+        target="~/{{ dir }}/app",
+        extra="inputs:\n  dir: {description: Where projects go}\n",
+    )
+    assert _repo_rows(["apply", "--yes", "--var", "dir=one"])[0] == 0
+    code, rows = _repo_rows(["apply", "--yes", "--var", "dir=two"])
+    assert code == 0
+    assert {r["entry"]: r["action"] for r in rows} == {
+        "~/{{ dir }}/app": "created",
+        "~/one/app": "unchanged",
+    }
+    moved = next(r for r in rows if r["entry"] == "~/one/app")
+    assert str(moved["detail"]).startswith("its target moved to ~/two/app")
+    assert (user_home / "one/app/README").exists() and (user_home / "two/app/README").exists()
+
+
+def test_a_repo_name_is_matched_offline_in_status(make_remote: MakeRemote, user_home: Path) -> None:
+    folder = user_home / "Projects/app"
+    folder.mkdir(parents=True)
+    git(folder, "init", "-q")
+    git(folder, "remote", "add", "origin", "https://github.com/acme/App.git")
+    _subscribed(make_remote, "acme/app")
+    status = run(["status", "--format", "json"])  # no repo source is installed: none is asked
+    assert status.exit_code == 0, status.output
+    assert {r["entry"]: r["state"] for r in json_rows(status)}["~/Projects/app"] == "applied"
+    git(folder, "remote", "set-url", "origin", "https://github.com/acme/api.git")
+    row = {r["entry"]: r for r in as_json(["status"])}["~/Projects/app"]
+    assert row["state"] == "foreign" and "not acme/app" in str(row["detail"])
+
+
+def test_a_repo_name_is_resolved_once_to_clone(
+    make_remote: MakeRemote, user_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    asked: list[str] = []
+
+    def resolve(name: str) -> SimpleNamespace:
+        asked.append(name)
+        return SimpleNamespace(url=app.url)
+
+    monkeypatch.setattr(
+        "untaped_dotfiles.repos.RepoFinder", lambda: SimpleNamespace(resolve=resolve)
+    )
+    _subscribed(make_remote, "app")
+    assert states()["~/Projects/app"] == "pending" and asked == []
+    code, rows = _repo_rows(["apply", "--yes"])
+    assert code == 0 and rows[0]["action"] == "created"
+    assert rows[0]["detail"] == f"cloned {app.url}"
+    assert states()["~/Projects/app"] == "applied"
+    assert asked == ["app"]  # the plan's one lookup; status reads the record
+
+
+def test_a_branch_is_cloned(make_remote: MakeRemote, user_home: Path) -> None:
+    app = make_remote("app", packages={}, files={"README": "main\n"})
+    app.branch("dev")
+    app.commit("README", "dev\n", branch="dev")
+    package = _package(app.url).replace(
+        'target: "~/Projects/app"', 'target: "~/Projects/app", branch: dev'
+    )
+    source = make_remote(packages={"code": package}, files={})
+    subscribe(source.url, "--add", "code")
+    _, rows = _repo_rows(["apply", "--dry-run"])
+    assert rows[0]["detail"] == f"clones {app.url} (dev) into ~/Projects/app"
+    assert _repo_rows(["apply", "--yes"])[0] == 0
+    assert (user_home / "Projects/app/README").read_text() == "dev\n"
+
+
+def test_files_placed_in_a_copy_s_target_keep_it_from_cloning(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    package = _package(app.url) + (
+        "    files:\n      - {path: envrc, target: ~/Projects/app/.envrc, mode: copy}\n"
+    )
+    source = make_remote(packages={"code": package}, files={"envrc": "use nix\n"})
+    subscribe(source.url, "--add", "code")
+    code, rows = _repo_rows(["apply", "--yes"])
+    assert code == 1 and rows[0]["action"] == "failed"
+    assert "files are placed in ~/Projects/app (~/Projects/app/.envrc)" in str(rows[0]["detail"])
+    assert not (user_home / "Projects/app/.git").exists()
+    code, rows = _repo_rows(["status"])
+    assert code == 1 and rows[0]["state"] == "error"
+
+
+def test_copies_whose_targets_overlap_are_not_cloned(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    app = make_remote("app", packages={}, files={"README": "app\n"})
+    package = _package(app.url) + (f'      - {{url: "{app.url}", target: "~/Projects/app/sub"}}\n')
+    source = make_remote(packages={"code": package}, files={})
+    subscribe(source.url, "--add", "code")
+    code, rows = _repo_rows(["apply", "--yes"])
+    assert code == 1 and [r["action"] for r in rows] == ["failed", "failed"]
+    assert "overlaps the working copy at ~/Projects/app/sub" in str(rows[0]["detail"])
+    assert not (user_home / "Projects/app").exists()

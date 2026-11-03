@@ -174,7 +174,9 @@ class Unsubscribe(DotfilesCommand):
     leaves the files; a link into the clone becomes a copy of what it showed,
     since the clone goes. It works from untaped's own records too, so a source
     deleted from `config.yml` by hand can still be taken back. A file that
-    can't be taken back fails its row (exit 1) and the source stays.
+    can't be taken back fails its row (exit 1) and the source stays. Steps and
+    working copies are forgotten: nothing a step did is undone, and a working
+    copy stays.
     """
 
     source: Positional[str] = Field(description="The subscribed source's name.")
@@ -235,6 +237,7 @@ class Unsubscribe(DotfilesCommand):
             rows += svc.steps.forgetting([(name,)], done=True)
             rows += svc.repos.forgetting([(name,)], done=True)
             svc.store.forget_applied((name,))
+            svc.store.forget_repos((name,))
             remaining = {k: v for k, v in self.settings.sources.items() if k != name}
             self.services(self.settings.model_copy(update={"sources": remaining})).refresh_status()
         self.ctx.diag.success(f"unsubscribed {q(name)}")
