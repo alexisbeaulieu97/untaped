@@ -39,6 +39,11 @@ class InputSpec(Input):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
+        # Recipe's list elements and dict values are text unless the recipe types them.
+        if data.get("type") == "list" and data.get("items") is None:
+            data["items"] = "str"
+        if data.get("type") == "dict" and data.get("values") is None:
+            data["values"] = "str"
         raw_from = data.get("from", ())
         if raw_from is None:
             from_values: tuple[str, ...] = ()

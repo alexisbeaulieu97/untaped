@@ -8,7 +8,8 @@ gives), :func:`redact` hides secrets for display, :func:`render` puts values
 into a text field strictly, and :func:`renderer_file` is the renderer for a
 process where untaped isn't installed. :class:`Vars` is the option block a
 command declares for ``--var``, ``--vars-file`` and ``--non-interactive``.
-Every name is experimental until a second plugin uses it.
+Every name is experimental until a second stable plugin uses it (recipe is the
+first; awx test and dotfiles are experimental themselves).
 The closed :data:`__all__` keeps the boundary explicit.
 """
 

@@ -1,7 +1,7 @@
 """Concrete adapters for ``untaped awx test``.
 
-Frontmatter parsing, the ``!ref`` YAML tag, the Jinja2 environment, the
-interactive prompt, and the variable-resolution adapter all live here.
+Frontmatter parsing, the ``!ref`` YAML tag and the Jinja2 environment live
+here; the values plugin resolves and asks for suite variables.
 The application layer depends on these via :mod:`untaped_awx.application.suites.ports`.
 """
 
@@ -15,16 +15,12 @@ from untaped_awx.infrastructure.suites.parser import (
     load_yaml_with_refs,
     split_frontmatter,
 )
-from untaped_awx.infrastructure.suites.prompt import UiPrompt
-from untaped_awx.infrastructure.suites.vars_resolver import resolve_variables
 
 __all__ = [
     "DefaultParser",
     "LocalFilesystem",
     "RefSentinel",
-    "UiPrompt",
     "build_jinja_env",
     "load_yaml_with_refs",
-    "resolve_variables",
     "split_frontmatter",
 ]

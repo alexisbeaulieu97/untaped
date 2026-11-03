@@ -11,8 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from untaped.sdk import experimental
-from untaped_values.errors import InputError
+from untaped.sdk import UsageError, experimental
 from untaped_values.inputs import Input, coerce
 from untaped_values.ports import Ask
 
@@ -21,7 +20,7 @@ if TYPE_CHECKING:
     from untaped_values.options import Vars
 
 #: Types a person can't answer at a prompt: given by flag or file, or reported missing.
-_UNASKED = frozenset({"list", "dict"})
+_UNASKED = frozenset({"dict"})
 
 
 @experimental
@@ -50,13 +49,14 @@ def resolve[S: Input](
     ``given`` is in precedence order (flags, then files, then configuration,
     as the caller has them). A name in ``given`` that neither ``specs`` nor
     ``known`` (names other files in the same run declare) declares is
-    refused. Every input in ``specs`` must end with a value: a consumer whose
+    refused as a usage error (exit 2): the run named something nothing
+    reads. Every input in ``specs`` must end with a value: a consumer whose
     file can leave one unset leaves it out of ``specs``.
 
     When a required input has no value, ``ask`` answers it (``label`` says
     for what, such as a target). Nothing is asked when ``ask`` is ``None`` or
-    one of them can't be asked (a ``list`` or ``dict``): ``missing`` then
-    names every one at once, and the caller says how to give them.
+    one of them can't be asked (a ``dict``): ``missing`` then names every
+    one at once, and the caller says how to give them.
     """
     declared = {*specs, *known}
     for mapping in given:
@@ -65,7 +65,7 @@ def resolve[S: Input](
             names = ", ".join(unknown)
             listed = ", ".join(sorted(declared)) or "(none)"
             word = "input" if len(unknown) == 1 else "inputs"
-            raise InputError(f"unknown {word}: {names}; declared: {listed}")
+            raise UsageError(f"unknown {word}: {names}; declared: {listed}")
     values: dict[str, object] = {}
     pending: list[str] = []
     for name, spec in specs.items():
@@ -91,15 +91,18 @@ def terminal_ask(terminal: Terminal, vars: Vars) -> Ask | None:
 
     ``None`` when the run can't prompt (no terminal on stdin) or
     ``--non-interactive`` was given. The prompt reads ``NAME for LABEL
-    (description)``.
+    (description)``; a ``list`` is answered as comma-separated text.
     """
     if vars.non_interactive or not terminal.can_prompt:
         return None
 
     def ask(name: str, spec: Input, *, label: str) -> object:
         message = name if not label else f"{name} for {label}"
-        if spec.description:
-            message = f"{message} ({spec.description})"
+        notes = [spec.description] if spec.description else []
+        if spec.type == "list":
+            notes.append("comma-separated")
+        if notes:
+            message = f"{message} ({'; '.join(notes)})"
         if spec.secret:
             return terminal.secret(message)
         if spec.type == "choice":

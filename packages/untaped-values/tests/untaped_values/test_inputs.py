@@ -32,9 +32,14 @@ _INT_DICT = {"type": "dict", "values": "int"}
             {"on": True, "off": False},
         ),
         ({"type": "dict", "values": "bool"}, {}, {}),
-        # Structured shapes default to string elements.
-        ({"type": "list"}, [1, "api"], ["1", "api"]),
-        ({"type": "dict"}, {"replicas": 3}, {"replicas": "3"}),
+        # Without items or values, elements stay as given.
+        ({"type": "list"}, [1, "api"], [1, "api"]),
+        ({"type": "list"}, [{"host": "a"}], [{"host": "a"}]),
+        ({"type": "list"}, "[1, b]", [1, "b"]),
+        ({"type": "dict"}, {"replicas": 3}, {"replicas": 3}),
+        ({"type": "dict"}, "{a: [1]}", {"a": [1]}),
+        ({"type": "list", "items": "str"}, [1, "api"], ["1", "api"]),
+        ({"type": "dict", "values": "str"}, {"replicas": 3}, {"replicas": "3"}),
         # A list from text: YAML when it starts with "[", else comma-separated.
         ({"type": "list"}, "[a, b]", ["a", "b"]),
         ({"type": "list"}, "a, b,,c", ["a", "b", "c"]),
