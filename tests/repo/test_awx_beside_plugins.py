@@ -14,17 +14,19 @@ from ansible_index_support import mock_dependency_file
 from untaped.sdk.testing import Home, install
 from untaped_ansible.plugin import Ansible
 from untaped_awx.plugin import Awx
-from untaped_awx.settings import AwxServer, AwxSettings
+from untaped_awx.settings import AwxServer, AwxSettings, ControllerVersion
 from untaped_github.plugin import Github
 
 _AWX = "https://aap.example.com"
+#: Pinned, so the controller API is at ``/api/v2/`` with no detection request.
+_AWX_24 = ControllerVersion.parse("AWX 24.6.1")
 
 
 def test_awx_job_templates_pipe_into_ansible_find(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CONTROLLER_OAUTH_TOKEN", "secret")
     monkeypatch.setenv("GH_TOKEN", "token")
     both = install(
-        Awx, Ansible, settings=AwxSettings(server=AwxServer(url=_AWX), api_prefix="/api/v2/")
+        Awx, Ansible, settings=AwxSettings(server=AwxServer(url=_AWX), server_version=_AWX_24)
     )
     template = {"id": 7, "name": "deploy", "type": "job_template", "project": 3}
     project = {"id": 3, "name": "site", "scm_url": "https://github.com/acme/site", "scm_branch": ""}
@@ -61,7 +63,7 @@ def test_a_broken_sibling_section_does_not_break_awx(
     """Only awx's own section is read: a broken ``github`` section leaves ``awx ping`` working."""
     monkeypatch.setenv("CONTROLLER_OAUTH_TOKEN", "secret")
     both = install(
-        Awx, Github, settings=AwxSettings(server=AwxServer(url=_AWX), api_prefix="/api/v2/")
+        Awx, Github, settings=AwxSettings(server=AwxServer(url=_AWX), server_version=_AWX_24)
     )
     config: Path = home.path / "config.yml"
     written = yaml.safe_load(config.read_text(encoding="utf-8"))

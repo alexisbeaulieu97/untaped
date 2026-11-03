@@ -42,8 +42,11 @@ def _online_rows(candidates: tuple[PluginCandidate, ...], *args: str) -> dict[st
 
 
 def _mock_services(mock: respx.MockRouter, *, github_status: int = 200) -> None:
+    mock.get("https://aap.example.com/api/gateway/v1/ping/").mock(
+        return_value=httpx.Response(200, json={"version": "2.5", "status": "good"})
+    )
     mock.get("https://aap.example.com/api/controller/v2/ping/").mock(
-        return_value=httpx.Response(200, json={"version": "4.5.0", "active_node": "c1"})
+        return_value=httpx.Response(200, json={"version": "4.6.2", "active_node": "c1"})
     )
     mock.get("https://aap.example.com/api/controller/v2/me/").mock(
         return_value=httpx.Response(200, json={"results": [{"username": "admin"}]})
