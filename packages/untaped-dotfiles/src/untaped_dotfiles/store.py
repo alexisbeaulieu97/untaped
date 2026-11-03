@@ -11,6 +11,7 @@ one-line ``attention``).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -53,12 +54,21 @@ class StateDotfilesStore:
     def remove_clone(self, source: str) -> bool:
         return CLONED.delete(source) > 0
 
-    def first_applied(self, owner: tuple[str, str, str]) -> bool:
-        return ITEMS.get("/".join(owner)) is not None
+    def applied_item(self, owner: tuple[str, str, str]) -> ItemRecord | None:
+        return ITEMS.get("/".join(owner))
 
     def put_applied(self, owner: tuple[str, str, str], at: datetime) -> None:
         if ITEMS.get("/".join(owner)) is None:
             ITEMS.put(ItemRecord(item="/".join(owner), first_applied_at=at))
+
+    def note_waited(self, owner: tuple[str, str, str], entries: Iterable[tuple[str, str]]) -> None:
+        """Add ``entries`` to the waited ones of an item applied here (nothing otherwise)."""
+        row = ITEMS.get("/".join(owner))
+        if row is None:
+            return
+        waited = tuple(dict.fromkeys((*row.waited, *entries)))
+        if waited != row.waited:
+            ITEMS.put(row.model_copy(update={"waited": waited}))
 
     def forget_applied(self, prefix: tuple[str, ...]) -> None:
         """Forget every item under ``prefix`` (a source, a package or one item): turned off."""

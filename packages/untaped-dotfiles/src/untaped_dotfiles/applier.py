@@ -146,7 +146,11 @@ class Applier:
                 notes.append("yours is kept aside first")
         diff = _diff(before, after, p.shown)
         if before is not None and before != after and diff is None:
-            notes.append(f"binary, {plural(len(after), 'byte')}")
+            notes.append(
+                f"binary, {plural(len(after), 'byte')}"
+                if _binary(after)
+                else "replaces a binary file"
+            )
         if p.mode == "link" and p.placed_as == "copy" and record is None:
             notes.append(f"{p.policy} places a copy")
         return replace(step, detail="; ".join(notes), diff=diff)
@@ -519,6 +523,14 @@ def _size(data: bytes) -> str:
         return f"new, binary, {plural(len(data), 'byte')}"
     lines = text.count("\n") + (0 if not text or text.endswith("\n") else 1)
     return f"new, {plural(lines, 'line')}"
+
+
+def _binary(data: bytes) -> bool:
+    try:
+        data.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
 
 
 def _diff(before: bytes | None, after: bytes, shown: str) -> str | None:

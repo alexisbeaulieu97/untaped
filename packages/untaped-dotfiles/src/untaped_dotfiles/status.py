@@ -16,7 +16,7 @@ from untaped_dotfiles.states import Action, FileState, SourceInfo, decide, file_
 
 if TYPE_CHECKING:
     from untaped_dotfiles.inventory import Inventory, Placement
-    from untaped_dotfiles.models import PlacedRecord
+    from untaped_dotfiles.models import ItemRecord, PlacedRecord
     from untaped_dotfiles.package import Mode
     from untaped_dotfiles.ports import DotfilesStore, Placer
     from untaped_dotfiles.sources import Clones, Source
@@ -55,7 +55,7 @@ class Evaluator:
         self._change_errors: dict[str, UntapedError] = {}
         self._heads: dict[str, str | None] = {}
         self._records: dict[str, PlacedRecord] | None = None
-        self._applied: dict[tuple[str, str, str], bool] = {}
+        self._applied: dict[tuple[str, str, str], ItemRecord | None] = {}
 
     def reset(self) -> None:
         """Forget what was read (after a move or a placement)."""
@@ -78,11 +78,14 @@ class Evaluator:
             return record.placed_as
         return placement.placed_as
 
-    def _first_applied(self, placement: Placement) -> bool:
+    def _added(self, placement: Placement) -> bool:
+        """Whether an unrecorded entry was added since its item was applied here: the item was
+        applied, and the entry didn't wait on an input then."""
         owner = placement.owner
         if owner not in self._applied:
-            self._applied[owner] = self._store.first_applied(owner)
-        return self._applied[owner]
+            self._applied[owner] = self._store.applied_item(owner)
+        item = self._applied[owner]
+        return item is not None and (placement.entry, placement.declared) not in item.waited
 
     def prime_changes(self, placements: Sequence[Placement]) -> None:
         """Read, once per clone, which link sources the fetched commit changed."""
@@ -182,7 +185,7 @@ class Evaluator:
         if state == "orphan" and placement.moved:
             return state, "an input moved its target", False
         unrecorded = state in ("pending", "foreign") and not placement.asked
-        if unrecorded and self._first_applied(placement):
+        if unrecorded and self._added(placement):
             return "new", f"{ADDED}; {detail}" if detail else ADDED, False
         if mode == placement.placed_as or state not in ("applied", "behind"):
             return state, detail, False

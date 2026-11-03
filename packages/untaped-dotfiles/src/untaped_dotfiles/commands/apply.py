@@ -27,6 +27,7 @@ from untaped.sdk import (
     key,
     plural,
     q,
+    run_hint,
 )
 from untaped_dotfiles.applier import Step
 from untaped_dotfiles.catalog import Offer, Selection
@@ -104,20 +105,23 @@ class Apply(DotfilesCommand):
             resolved = svc.inventory.placements(selections)
             self.report_sources(svc.catalog)
             self.report(resolved.problems)
-            placements, waiting = self._answered(resolved.placements)
+            placements, unanswered = self._answered(resolved.placements)
+            waiting = len(unanswered)
             stuck = self._stuck(svc, fetched)
             steps = _failing(
                 svc.applier.plan_apply(placements, force=self.force, follow=follow), stuck
             )
+            steps = _failing(steps, self._edited(svc, steps, stuck), converting=True)
             self._report_stuck(steps, stuck)
             planned = svc.applier.planned(steps)
             todo = [s for s in steps if s.action in ("apply", "remove") or s.converts]
             moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
-            question = (
-                f"Apply {plural(len(todo), 'entry', 'entries')}?"
-                if todo or moving
-                else "Keep these answers in config.yml?"
-            )
+            if todo:
+                question = f"Apply {plural(len(todo), 'entry', 'entries')}?"
+            elif moving:
+                question = f"Move {plural(len(moving), 'clone')} to the fetched commit?"
+            else:
+                question = "Keep these answers in config.yml?"
             if not self.confirm(
                 question,
                 preview=lambda: _preview(planned, kept),
@@ -126,11 +130,18 @@ class Apply(DotfilesCommand):
                 rows = planned
                 waiting += svc.applier.waiting(steps)
             else:
+                waited = {  # items applied for the first time: their waiting entries were asked
+                    owner: entries
+                    for owner, entries in _by_item(unanswered).items()
+                    if svc.store.applied_item(owner) is None
+                }
                 converted = svc.applier.convert(steps)
                 if moving:
                     steps = self._move(svc, moving, steps, stuck, follow=follow)
                 rows = svc.applier.execute(steps, converted)
                 waiting += svc.applier.waiting(steps)
+                for owner, entries in waited.items():
+                    svc.store.note_waited(owner, entries)
                 if kept is not None:
                     kept.write()
                 self._release_folders(svc)
@@ -151,14 +162,11 @@ class Apply(DotfilesCommand):
         default, then an answer at a terminal; what the flags or a prompt
         gave is kept in ``config.yml`` once confirmed (the returned plan).
         """
-        offers = [offer for offer in _offers(selections) if offer.on]
+        named = _offers(selections)
+        offers = [offer for offer in named if offer.on]
         given = self.vars.values()
         declared = {name for offer in offers for name in _declared(offer)}
-        if given and not offers:
-            raise UsageError(
-                f"no package in this run declares {', '.join(sorted(given))}: none of them is on",
-                hint="turn a package on with `untaped dotfiles add` first",
-            )
+        _refuse_unknown(set(given) - declared, declared, named)
         ask = terminal_ask(self.ctx.terminal, self.vars)
         changes: dict[Any, JsonValue] = {}
         for offer in offers:
@@ -168,21 +176,15 @@ class Apply(DotfilesCommand):
             config = {name: value for name, value in answers.items() if name in specs}
             try:
                 found = resolve(specs, [mine, config], known=declared, ask=ask, label=offer.spelled)
-            except InputError as exc:  # this machine's answer no longer fits its input
+            except InputError as exc:  # an answer that doesn't fit its input fails its package
                 svc.inventory.fail(offer, exc)
                 continue
-            svc.inventory.answer(offer, found.values, asked=(*mine, *found.asked))
+            svc.inventory.answer(offer, found.values)
             for name in (*mine, *found.asked):
                 value = cast("JsonValue", found.values[name])
                 if config.get(name) != value:
                     setting = key(DotfilesSettings).sources[offer.source.name]
                     changes[setting.packages[offer.name].inputs[name]] = value
-        unknown = sorted(set(given) - declared)
-        if unknown:
-            raise UsageError(
-                f"no package in this run declares {', '.join(unknown)}; "
-                f"declared: {', '.join(sorted(declared)) or '(none)'}"
-            )
         return self.ctx.plugin.plan_settings(changes) if changes else None
 
     def _said(self, rows: Sequence[ApplyOutcome], waiting: int) -> None:
@@ -279,6 +281,26 @@ class Apply(DotfilesCommand):
                 stuck[record.source] = why
         return stuck
 
+    @staticmethod
+    def _edited(
+        svc: Services, steps: Sequence[Step], stuck: dict[str, UntapedError]
+    ) -> dict[str, UntapedError]:
+        """Each clone that isn't moving but has local changes, by source, where a link into it
+        would become a copy: what the link shows may be an edit, not the source."""
+        edited: dict[str, UntapedError] = {}
+        why: UntapedError | None
+        for name in sorted({s.placement.source.name for s in steps if s.converts} - set(stuck)):
+            record = svc.store.get_clone(name)
+            if record is None:
+                continue
+            try:
+                why = svc.clones.local_changes(record)
+            except UntapedError as exc:
+                why = exc
+            if why is not None:
+                edited[name] = why
+        return edited
+
     def _report_stuck(self, steps: Sequence[Step], stuck: dict[str, UntapedError]) -> None:
         """Say why a stuck source stays put when none of its rows says it."""
         said = {s.placement.source.name for s in steps if s.found.error is not None}
@@ -290,12 +312,12 @@ class Apply(DotfilesCommand):
             else:
                 self.ctx.diag.failure(exc, item=name)
 
-    def _answered(self, placements: Sequence[Placement]) -> tuple[list[Placement], int]:
-        """The placements whose target is known, and how many wait on an input (each said)."""
-        waiting = 0
+    def _answered(self, placements: Sequence[Placement]) -> tuple[list[Placement], list[Placement]]:
+        """The placements whose target is known, and those waiting on an input (each said)."""
+        waiting: list[Placement] = []
         for placement in placements:
             if placement.target is None and placement.excluded is None:
-                waiting += 1
+                waiting.append(placement)
                 self.ctx.diag.warning(
                     f"{placement.spelled} {placement.shown}: {placement.unanswered}"
                 )
@@ -328,14 +350,17 @@ class Apply(DotfilesCommand):
         return fresh
 
 
-def _failing(steps: list[Step], stuck: dict[str, UntapedError]) -> list[Step]:
-    """``steps`` with each change of a stuck source failed, carrying why (and its hint)."""
+def _failing(
+    steps: list[Step], stuck: dict[str, UntapedError], *, converting: bool = False
+) -> list[Step]:
+    """``steps`` with each change of a stuck source failed, carrying why (and its hint);
+    ``converting``: only its links to convert."""
     if not stuck:
         return steps
     out: list[Step] = []
     for step in steps:
         exc = stuck.get(step.placement.source.name)
-        changes = step.action in ("apply", "remove") or step.converts
+        changes = step.converts or (not converting and step.action in ("apply", "remove"))
         if exc is not None and changes and step.found.error is None:
             # a link to convert waits too: its clone doesn't move, and what it shows may be
             # an edit the clone holds
@@ -367,6 +392,37 @@ def _offers(selections: Sequence[Selection]) -> list[Offer]:
         if offer.package is not None:
             seen.setdefault(offer.spelled, offer)
     return list(seen.values())
+
+
+def _by_item(
+    waiting: Sequence[Placement],
+) -> dict[tuple[str, str, str], list[tuple[str, str]]]:
+    """``(entry, declared)`` of each entry waiting on an input, by item: kept in its item's
+    row, so the entry is ``pending`` once answered rather than ``new``."""
+    found: dict[tuple[str, str, str], list[tuple[str, str]]] = {}
+    for p in waiting:
+        found.setdefault(p.owner, []).append((p.entry, p.declared))
+    return found
+
+
+def _refuse_unknown(unknown: set[str], declared: set[str], named: Sequence[Offer]) -> None:
+    """Exit 2 for ``--var`` names no package of the run that is on declares, naming the
+    packages that are off and declare them."""
+    if not unknown:
+        return
+    names = ", ".join(sorted(unknown))
+    off = sorted(o.spelled for o in named if not o.on and not unknown.isdisjoint(_declared(o)))
+    if off:
+        from untaped_dotfiles.commands.packages import Add  # noqa: PLC0415 - a cycle
+
+        raise UsageError(
+            f"{names}: declared only by packages that are off here ({', '.join(off)})",
+            hint=f"turn them on first: {run_hint(Add.spelled(*off))}",
+        )
+    raise UsageError(
+        f"no package in this run declares {names}; "
+        f"declared: {', '.join(sorted(declared)) or '(none)'}"
+    )
 
 
 def _flagged(offer: Offer, given: dict[str, object]) -> dict[str, object]:

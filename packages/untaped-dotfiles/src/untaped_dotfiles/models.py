@@ -39,6 +39,9 @@ class ItemRecord(BaseModel):
     item: Annotated[str, Key]
     """``SOURCE/PKG/ITEM``."""
     first_applied_at: UtcTimestamp
+    waited: tuple[tuple[str, str], ...] = ()
+    """``(entry, declared target)`` of each entry that waited on an input when the item was
+    applied: asked for with the item, so ``pending`` once answered, not ``new``."""
 
 
 class PlacedRecord(BaseModel):

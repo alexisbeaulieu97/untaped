@@ -22,8 +22,8 @@ class Policy(StrEnum):
 
     ## States of a file entry
 
-    - `pending`: on, never placed here (or just asked for again: turned on,
-      or an input its target names answered), target absent.
+    - `pending`: on, never placed here (or just turned on again, or waiting
+      on an input when its item was applied), target absent.
     - `foreign`: the same, with a file untaped didn't write in the way.
       Placing it keeps that file aside under `dotfiles.kept_dir`.
     - `new`: the author added it after the item was first applied here.

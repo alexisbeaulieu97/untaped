@@ -120,7 +120,7 @@ def test_an_entry_that_waited_on_an_input_is_placed_once_answered(
     assert (user_home / "x/b.txt").read_text() == "b\n"
 
 
-def test_an_input_answered_on_apply_counts_as_asking(
+def test_an_entry_that_waited_is_placed_however_its_input_is_answered(
     make_remote: MakeRemote, user_home: Path
 ) -> None:
     remote = make_remote(packages={"duo": DUO}, files={"a.txt": "a\n", "b.txt": "b\n"})
@@ -128,6 +128,29 @@ def test_an_input_answered_on_apply_counts_as_asking(
     assert run(["apply", "--yes"]).exit_code == 3
     rows = {r["entry"]: r for r in as_json(["apply", "--yes", "--var", "where=y"])}
     assert rows["~/y/b.txt"]["action"] == "created"
+    ran = installed().cli(
+        ["config", "set", "dotfiles.sources.dotfiles.packages.duo.inputs.where", "z"]
+    )
+    assert int(ran.exit) == 0, ran.stderr  # by hand: the moved target is asked for too
+    as_json(["apply", "--yes"])
+    assert (user_home / "z/b.txt").is_file() and not (user_home / "y/b.txt").exists()
+
+
+def test_answering_an_input_again_does_not_ask_for_entries_the_author_added(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    remote = make_remote(packages={"duo": DUO}, files={"a.txt": "a\n", "b.txt": "b\n"})
+    subscribe(remote.url, "--add", "duo")
+    as_json(["apply", "--yes", "--var", "where=x"])
+    added = DUO + '      - {path: c.txt, target: "~/{{ where }}/c.txt", mode: copy}\n'
+    publish(remote, {".untaped/dotfiles/duo.yml": added, "c.txt": "c\n"})
+    assert run(["apply", "--yes", "--var", "where=x"]).exit_code == 3  # the same value
+    assert not (user_home / "x/c.txt").exists()
+    as_json(["add", "duo", "--var", "where=w"])
+    assert run(["apply", "--yes"]).exit_code == 3
+    assert (user_home / "w/b.txt").is_file()  # moved by the input: asked for
+    assert not (user_home / "w/c.txt").exists()
+    assert states()["~/w/c.txt"] == "new"
 
 
 def test_an_entry_waiting_on_an_input_counts_as_attention(
@@ -146,7 +169,8 @@ def test_a_var_for_a_package_that_is_off_exits_2_and_keeps_it_off(
 ) -> None:
     subscribe(make_remote().url, "--add", "starship")
     result = run(["apply", "git", "--yes", "--var", "git_profile=home"])
-    assert result.exit_code == 2 and "none of them is on" in result.output
+    assert result.exit_code == 2 and "declared only by packages that are off" in result.output
+    assert "add dotfiles/git" in result.output
     assert _package("dotfiles", "git") is None
     assert "~/.config/git/ignore" not in states()
 
@@ -188,6 +212,8 @@ def test_an_answer_that_no_longer_fits_fails_only_its_package(
     assert result.exit_code == 1 and "cannot coerce value to int" in result.stderr
     assert (user_home / ".config/starship.toml").read_text() == "changed\n"
     assert (user_home / ".config/git/home.inc").exists()  # left as it is
+    assert run(["status", "--check"]).exit_code == 1
+    assert run(["apply", "--yes", "--var", "git_profile=3"]).exit_code == 0  # answered again
 
 
 # -- a stuck clone ----------------------------------------------------------------
@@ -223,3 +249,35 @@ def test_a_link_that_moved_with_the_clone_keeps_its_diff(make_remote: MakeRemote
     rows = {r["entry"]: r for r in as_json(["apply", "--yes"])}
     diff = str(rows["~/.config/fish/config.fish"]["diff"])
     assert "+upstream" in diff
+
+
+def test_a_link_into_an_edited_clone_that_is_not_moving_waits_too(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    subscribe(make_remote().url, "--add", "fish")
+    as_json(["apply", "--yes"])
+    target = user_home / ".config/fish/config.fish"
+    target.write_text("edited through the link\n")
+    as_json(["add", "fish", "--policy", "manual"])
+    result = run(["apply", "--yes", "--format", "json"])
+    assert result.exit_code == 1, result.output
+    row = {r["entry"]: r for r in json_rows(result)}["~/.config/fish/config.fish"]
+    assert row["action"] == "failed" and "local changes" in str(row["detail"])
+    assert target.is_symlink()
+
+
+def test_a_binary_file_over_an_existing_one_says_so(
+    make_remote: MakeRemote, user_home: Path
+) -> None:
+    package = STARSHIP.replace(
+        "      - {path: starship.toml, target: ~/.config/starship.toml, mode: copy}\n",
+        "      - {path: starship.toml, target: ~/.config/starship.toml, mode: copy}\n"
+        "      - {path: img.bin, target: ~/img.bin, mode: copy}\n",
+    )
+    remote = make_remote(packages={"starship": package})
+    (remote.work / "img.bin").write_bytes(b"\x00\xffbinary")
+    publish(remote, {})
+    subscribe(remote.url, "--add", "starship")
+    (user_home / "img.bin").write_bytes(b"\x00\xfeother")
+    rows = {r["entry"]: r for r in as_json(["apply", "--dry-run"])}
+    assert "binary, 8 bytes" in str(rows["~/img.bin"]["detail"])

@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from contextlib import AbstractContextManager
     from datetime import datetime
     from pathlib import Path
 
-    from untaped_dotfiles.models import CloneRecord, KeyPath, PlacedRecord, TreeFile
+    from untaped_dotfiles.models import CloneRecord, ItemRecord, KeyPath, PlacedRecord, TreeFile
     from untaped_dotfiles.package import MergeFormat
     from untaped_dotfiles.records import StatusSummary
     from untaped_dotfiles.states import TargetInfo
@@ -77,11 +78,15 @@ class DotfilesStore(Protocol):
     def get_clone(self, source: str) -> CloneRecord | None: ...
     def put_clone(self, record: CloneRecord) -> None: ...
     def remove_clone(self, source: str) -> bool: ...
-    def first_applied(self, owner: tuple[str, str, str]) -> bool:
-        """Whether item ``(source, package, item)`` was applied here before."""
+    def applied_item(self, owner: tuple[str, str, str]) -> ItemRecord | None:
+        """Item ``(source, package, item)``'s row when it was applied here before."""
         ...
 
     def put_applied(self, owner: tuple[str, str, str], at: datetime) -> None: ...
+    def note_waited(self, owner: tuple[str, str, str], entries: Iterable[tuple[str, str]]) -> None:
+        """Add ``(entry, declared)`` pairs that waited on an input to an applied item's row."""
+        ...
+
     def forget_applied(self, prefix: tuple[str, ...]) -> None: ...
     def placed(self) -> list[PlacedRecord]: ...
     def put_placed(self, record: PlacedRecord) -> None: ...

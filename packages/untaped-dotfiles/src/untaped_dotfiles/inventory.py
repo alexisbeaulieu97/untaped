@@ -29,7 +29,7 @@ from untaped.sdk import UntapedError, q, run_hint
 from untaped_dotfiles.errors import PackageError
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.states import placed_as
-from untaped_values.api import InputError, placeholders, render
+from untaped_values.api import InputError, coerce, placeholders, render
 
 if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Catalog, Offer, Selection
@@ -67,8 +67,7 @@ class Placement:
     moved: bool = False
     """An ``orphan`` whose entry places elsewhere now: an input moved its target."""
     asked: bool = False
-    """Asked for this run, so ``pending`` rather than ``new``: the new place of a ``moved``
-    entry, or a target that names an input a flag or a prompt answered."""
+    """The new place of a ``moved`` entry: ``pending`` rather than ``new``."""
     off: bool = False
     """A placed record whose package or item is off now."""
 
@@ -119,17 +118,11 @@ class Inventory:
         self._home = home.resolve()
         self._machine = machine
         self._answers: dict[str, dict[str, object]] = {}
-        self._asked: dict[str, frozenset[str]] = {}
         self._failed: dict[str, UntapedError] = {}
 
-    def answer(self, offer: Offer, values: dict[str, object], *, asked: Iterable[str] = ()) -> None:
-        """Use ``values`` for ``offer``'s inputs this run, over this machine's answers.
-
-        ``asked``: the names a flag or a prompt answered this run; an entry
-        whose target names one was asked for (``pending``, not ``new``).
-        """
+    def answer(self, offer: Offer, values: dict[str, object]) -> None:
+        """Use ``values`` for ``offer``'s inputs this run, over this machine's answers."""
         self._answers[offer.spelled] = dict(values)
-        self._asked[offer.spelled] = frozenset(asked)
 
     def fail(self, offer: Offer, error: UntapedError) -> None:
         """Report ``offer`` as ``error`` this run (an answer that doesn't fit its input): its
@@ -205,7 +198,7 @@ class Inventory:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
-            failed = self._failed.get(offer.spelled)
+            failed = self._failed.get(offer.spelled) or self._stale(offer)
             if failed is not None:
                 if (offer.spelled, failed) not in problems:
                     problems.append((offer.spelled, failed))
@@ -298,6 +291,22 @@ class Inventory:
             ]
         return found
 
+    def _stale(self, offer: Offer) -> UntapedError | None:
+        """Why this machine's answers don't fit ``offer``'s inputs (an input's type changed),
+        unless this run answered them; ``None`` when they fit."""
+        package = offer.package
+        if package is None or offer.spelled in self._answers or offer.choice is None:
+            return None
+        for name, value in offer.choice.inputs.items():
+            spec = package.inputs.get(name)
+            if spec is None or spec.secret:
+                continue
+            try:
+                coerce(spec, value, name=name)
+            except InputError as exc:
+                return exc
+        return None
+
     def _off_scope(
         self, selections: Sequence[Selection], *, everything: bool
     ) -> dict[tuple[str, str, str], Offer]:
@@ -359,7 +368,6 @@ class Inventory:
         self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
     ) -> Placement:
         target, unanswered = self._render(offer, file.target)
-        names = placeholders(file.target, field="target")
         return Placement(
             offer=offer,
             item=item,
@@ -373,7 +381,6 @@ class Inventory:
             chosen=chosen,
             fmt=file.merge_format,
             unanswered=unanswered,
-            asked=not self._asked.get(offer.spelled, frozenset()).isdisjoint(names),
         )
 
     def _render(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
