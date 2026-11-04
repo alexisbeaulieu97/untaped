@@ -6,9 +6,16 @@ cheap. A model's fields, in order, are its rows' keys on the wire.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from untaped.sdk import (
     AbsolutePath,
@@ -100,6 +107,38 @@ class Repo(Record):
         if not name and isinstance(full_name, str):
             return full_name.rpartition("/")[2]
         return name
+
+
+#: An org name, and an ``ORG/SLUG`` team or ``OWNER/NAME`` repo: no blanks, one ``/``.
+_OWNER = r"^[^/\s]+$"
+_PAIR = r"^[^/\s]+/[^/\s]+$"
+
+
+class RepoSelector(Record):
+    """Which of GitHub's repos a saved source takes: whole orgs, teams and named repos.
+
+    ``github repos selector`` prints it. Piped where a ``git.repo_selector`` is
+    read, it is kept as github's own record, and github lists its repos when
+    asked (``RepoSource.select``), so the selection follows the orgs and teams.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    orgs: list[Annotated[str, StringConstraints(pattern=_OWNER)]] = Field(
+        default_factory=list, description="Every repository of these orgs."
+    )
+    teams: list[Annotated[str, StringConstraints(pattern=_PAIR)]] = Field(
+        default_factory=list, description="Every repository of these ORG/SLUG teams."
+    )
+    repos: list[Annotated[str, StringConstraints(pattern=_PAIR)]] = Field(
+        default_factory=list, description="These OWNER/NAME repositories."
+    )
+
+    @model_validator(mode="after")
+    def _names_something(self) -> Self:
+        if not (self.orgs or self.teams or self.repos):
+            raise ValueError("a selector names at least one org, team or repo")
+        return self
 
 
 #: The columns ``search repos`` shows by default.

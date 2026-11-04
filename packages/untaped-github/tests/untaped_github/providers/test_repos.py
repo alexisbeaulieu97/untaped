@@ -20,9 +20,10 @@ from untaped.sdk import ExitCode, UntapedError, UsageError, home
 from untaped.sdk.contracts import Errored, NoProviderReady, Ok, gather
 from untaped.sdk.testing import assert_fills, compose_with, piped_through
 from untaped_git.api import Repo as GitRepo
-from untaped_git.api import RepoSource
+from untaped_git.api import RepoSelector as GitRepoSelector
+from untaped_git.api import RepoSource, select_repos
 from untaped_github.providers.repos import GithubRepos, inventory_scope
-from untaped_github.records import CorpusRepo, Repo, SweepRepo
+from untaped_github.records import CorpusRepo, Repo, RepoSelector, SweepRepo
 from untaped_github.settings import GithubSettings
 
 API = "https://api.github.com"
@@ -52,7 +53,7 @@ ACME = [
 ]
 
 #: Rows as github commands emit them: a full listing, a search hit (no clone
-#: URLs) and a sparse row (only ``full_name``).
+#: URLs), a sparse row (only ``full_name``) and a selector.
 SAMPLES: list[object] = [
     Repo.model_validate(ACME[0]),
     Repo(
@@ -67,6 +68,7 @@ SAMPLES: list[object] = [
         updated_at="2026-09-01T08:00:00Z",
     ),
     {"full_name": "acme/sparse"},
+    RepoSelector(teams=["acme/platform"], repos=["solo/tool"]),
 ]
 
 
@@ -114,7 +116,7 @@ def test_github_repos_fills_repo_source() -> None:
 # --- ready -----------------------------------------------------------------------------------
 
 
-def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() -> None:
+def test_without_an_inventory_scope_github_does_not_list_and_names_the_setting() -> None:
     # S12: the finder says which setting to set instead of guessing a URL.
     configure()
 
@@ -124,6 +126,7 @@ def test_without_an_inventory_scope_github_is_not_ready_and_names_the_setting() 
     not_ready = caught.value.not_ready["github"]
     assert not_ready.spelled == "github.default_org"
     assert not_ready.reason == "no inventory scope"
+    assert not_ready.methods == ("repos",)
     assert caught.value.exit_code == ExitCode.ENVIRONMENT
 
 
@@ -136,6 +139,31 @@ def test_a_bare_team_with_several_orgs_names_the_teams_setting() -> None:
     not_ready = caught.value.not_ready["github"]
     assert not_ready.spelled == "github.inventory.teams"
     assert not_ready.reason == "github.inventory.teams needs ORG/SLUG entries"
+
+
+def test_without_a_token_github_neither_lists_nor_selects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure(default_org="acme")
+    monkeypatch.delenv("GH_TOKEN")
+
+    for ask in (gather(RepoSource.repos), lambda: gather(RepoSource.select)(issued(orgs=["a"]))):
+        with pytest.raises(NoProviderReady) as caught:
+            ask()
+        assert caught.value.not_ready["github"].reason == (
+            "no token; run `untaped auth login github`"
+        )
+
+
+def test_without_a_token_or_a_scope_piped_rows_still_convert(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The bridges make no API call, so they wait for neither.
+    configure()
+    monkeypatch.delenv("GH_TOKEN")
+
+    assert piped({"full_name": "acme/api"}).url == "https://github.com/acme/api.git"
+    assert issued(teams=["acme/platform"]).source is not None
 
 
 @pytest.mark.parametrize(
@@ -415,6 +443,85 @@ def test_github_enterprise_lists_from_its_own_api() -> None:
         [repo] = listed().value
 
     assert repo.url == "https://ghe.example.com/acme/api.git"
+
+
+# --- selectors -------------------------------------------------------------------------------
+
+
+def issued(**fields: list[str]) -> GitRepoSelector:
+    """A ``github.repo_selector`` piped where a ``git.repo_selector`` is read."""
+    return piped_through(RepoSource.to_selector, RepoSelector(**fields))
+
+
+def test_a_selector_is_issued_as_githubs_own_record() -> None:
+    selector = issued(teams=["acme/platform"])
+
+    assert selector.match == []
+    assert selector.source is not None
+    assert selector.source.model_dump() == {
+        "plugin": "github",
+        "kind": "github.repo_selector",
+        "record": {"orgs": [], "teams": ["acme/platform"], "repos": []},
+    }
+
+
+def test_select_lists_the_selectors_orgs_teams_and_repos_without_a_scope() -> None:
+    configure()  # no inventory scope: a selection doesn't need one
+    selector = issued(orgs=["acme"], teams=["infra/platform"], repos=["solo/tool"])
+
+    with respx.mock(base_url=API) as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME[:1]))
+        mock.get("/orgs/infra/teams/platform/repos").mock(
+            return_value=httpx.Response(200, json=[{"full_name": "infra/base"}])
+        )
+        mock.get("/repos/solo/tool").mock(
+            return_value=httpx.Response(200, json={"full_name": "solo/tool"})
+        )
+        selection = select_repos("github", selector, refresh=True)
+
+    assert [(repo.name, repo.url) for repo in selection.repos] == [
+        ("acme/api", "https://github.com/acme/api.git"),
+        ("infra/base", "https://github.com/infra/base.git"),
+        ("solo/tool", "https://github.com/solo/tool.git"),
+    ]
+    assert selection.note is None
+
+
+def test_select_follows_git_protocol() -> None:
+    configure(git_protocol="ssh")
+
+    with respx.mock(base_url=API) as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME[:1]))
+        [repo] = select_repos("github", issued(orgs=["acme"]), refresh=True).repos
+
+    assert repo.url == "git@github.com:acme/api.git"
+
+
+def test_a_match_only_selector_narrows_the_inventory() -> None:
+    configure(default_org="acme")
+
+    with respx.mock(base_url=API) as mock:
+        mock.get("/orgs/acme/repos").mock(return_value=httpx.Response(200, json=ACME))
+        selection = select_repos("github", GitRepoSelector(match=["*/web"]), refresh=True)
+
+    assert [repo.name for repo in selection.repos] == ["acme/web"]
+
+
+@pytest.mark.parametrize(
+    ("fields", "message"),
+    [
+        ({}, "names at least one org, team or repo"),
+        ({"teams": ["platform"]}, "should match pattern"),
+        ({"repos": ["acme"]}, "should match pattern"),
+        ({"orgs": ["acme/api"]}, "should match pattern"),
+    ],
+    ids=["empty", "bare-team", "bare-repo", "org-with-slash"],
+)
+def test_a_selector_names_orgs_teams_and_repos_in_full(
+    fields: dict[str, list[str]], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        RepoSelector(**fields)
 
 
 # --- inventory scope -------------------------------------------------------------------------

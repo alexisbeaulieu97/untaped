@@ -107,6 +107,17 @@ def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Pat
     assert ("live", "rack.item_source.items", "pass", waiting) in rows
 
 
+def test_a_provider_not_ready_for_some_methods_answers_the_others(
+    contract_plugins_site: Path,
+) -> None:
+    _bin().waiting = True
+    _bin().waiting_for = ("named",)
+    rows = _rows(_check())
+    waiting = "skipped: not ready: no bins yet (set bin.bins)"
+    assert ("conformance", "rack.item_source", "pass", waiting) in rows
+    assert ("live", "rack.item_source.items", "pass", "2 items") in rows
+
+
 def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> None:
     (contract_plugins_site / "untaped_bin" / "leak.py").write_text(
         "class Leak(Exception):\n    pass\n", encoding="utf-8"

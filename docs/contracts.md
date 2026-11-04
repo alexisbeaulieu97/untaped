@@ -110,7 +110,9 @@ class Library(Plugin):
   settings validate; override `ready()` only for what a schema can't
   say: return `NotReady(reason, key(S).field)`, the key being the setting
   that would make it ready, which core spells in full for doctor and the
-  `config set` hint (`NotReady.spelled`). The contract decides what is
+  `config set` hint (`NotReady.spelled`). A provider that can answer some
+  methods but not others names the ones it can't with `methods=`:
+  `gather`, a bridge and the plugin check ask it for the rest. The contract decides what is
   `@cached`; a provider never adds it. Build HTTP clients with
   `self.ctx.http.client(self.settings, ...)` (experimental), as a command does: they carry
   the profile's proxy, CA and timeout. Keep helper methods private

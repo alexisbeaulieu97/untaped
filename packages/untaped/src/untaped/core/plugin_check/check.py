@@ -35,6 +35,7 @@ from untaped.sdk.words import deprecated_message, not_found, plural
 if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.contracts.registry import BoundProvider
+    from untaped.sdk.contracts import NotReady
 
 
 def check_plugins(
@@ -253,13 +254,16 @@ def _provider(
     from untaped.runtime.contracts.registry import ready_of  # noqa: PLC0415
 
     ready = ready_of(provider)
-    waiting = None
-    if ready is not None:
-        waiting = f"skipped: not ready: {ready.reason}" + (
-            f" (set {ready.spelled})" if ready.spelled else ""
-        )
-    conformance = _conformance(provider, composed, candidates, waiting, row)
-    return [*conformance, *_live(provider, waiting, row)]
+    conformance = _conformance(provider, composed, candidates, _waiting(ready), row)
+    return [*conformance, *_live(provider, ready, row)]
+
+
+def _waiting(ready: NotReady | None, method: str | None = None) -> str | None:
+    """Why a row is skipped: the provider can't answer ``method`` (any method, when ``None``)."""
+    if ready is None or (method is not None and ready.methods and method not in ready.methods):
+        return None
+    setting = f" (set {ready.spelled})" if ready.spelled else ""
+    return f"skipped: not ready: {ready.reason}{setting}"
 
 
 def _conformance(
@@ -303,7 +307,7 @@ def _owner_conformance(
     return found if callable(found) else None
 
 
-def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[PluginCheck]:
+def _live(provider: BoundProvider, ready: NotReady | None, row: _Row) -> Iterator[PluginCheck]:
     from untaped.sdk.contracts._declare import fills  # noqa: PLC0415
 
     binding = provider.binding
@@ -312,6 +316,7 @@ def _live(provider: BoundProvider, waiting: str | None, row: _Row) -> Iterator[P
         if method.bridge or not fills(type(provider.instance), info, name):
             continue
         title = f"{binding.owner}.{info.name}.{name}"
+        waiting = _waiting(ready, name)
         parameters = list(inspect.signature(method.function).parameters.values())[1:]
         if any(parameter.default is parameter.empty for parameter in parameters):
             yield row("live", title, "pass", "skipped: it needs arguments")

@@ -36,7 +36,7 @@ from untaped.runtime.settings import (
 )
 from untaped.sdk import deprecated, experimental
 from untaped.sdk._home import config_path
-from untaped.sdk.contracts import Contract, Ok, Skipped, gather, select_one
+from untaped.sdk.contracts import Contract, NotReady, Ok, Skipped, gather, select_one
 from untaped.sdk.errors import ConfigError
 from untaped.sdk.records import Record
 from untaped.sdk.testing import CliInvoker, CliResult, plugin_candidate
@@ -605,6 +605,17 @@ def test_a_provider_whose_ready_raises_is_inactive_in_doctor() -> None:
     [row] = doctor_rows()
     assert (row.status, row.title) == ("pass", "not-configured")
     assert row.detail == "shelf.book_source: inactive: ready() raised RuntimeError: boom"
+
+
+def test_a_provider_not_ready_for_some_methods_names_them_in_doctor() -> None:
+    class Partly(Shop):
+        def ready(self) -> NotReady:
+            return NotReady("no stock list", methods=("books", "first"))
+
+    compose(shelf_plugin(), plugin("shop", fills=(Partly,)))
+    [row] = doctor_rows()
+    assert (row.status, row.title) == ("pass", "not-configured")
+    assert row.detail == "shelf.book_source: books, first inactive: no stock list"
 
 
 def test_rank_rows_wait_for_a_broken_owner_section() -> None:

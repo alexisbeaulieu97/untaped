@@ -91,11 +91,15 @@ class NotReady:
     would make it ready, as ``key(GithubSettings).default_org``. Core spells
     it in full for doctor and the ``config set`` hint (``spelled``,
     ``github.default_org``) when it reads ``ready()``; a provider never sets
-    ``spelled``.
+    ``spelled``. ``methods`` names the contract methods it can't answer;
+    empty means every one. A provider that can answer ``select`` but not
+    ``repos`` without an inventory scope returns
+    ``NotReady("no inventory scope", key(S).default_org, methods=("repos",))``.
     """
 
     reason: str
     setting: SettingKey | None = None
+    methods: tuple[str, ...] = ()
     spelled: str | None = field(default=None, init=False, compare=False)
 
     def __post_init__(self) -> None:

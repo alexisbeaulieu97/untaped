@@ -33,10 +33,12 @@ cfg dotfiles.sources object default={}  [experimental]
 cfg dotfiles.state_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.tags string[] default=[]  [experimental]
 cfg git.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600
+cfg git.caches.repo_source_select.max_age_seconds integer(minimum=0) default=21600
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.probe_refs string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.select string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_selector string[] default=[]  [experimental]
 cfg git.probe_parallel integer(maximum=32,minimum=1) default=8
@@ -2953,6 +2955,20 @@ cli untaped github repos list --org VALUE... default=unset
 cli untaped github repos list --regex switch default=unset
 cli untaped github repos list --team VALUE... default=unset
 cli untaped github repos list [PATTERN]@1 default=unset
+cli untaped github repos selector
+cli untaped github repos selector --columns VALUE... default=unset
+cli untaped github repos selector --columns alias=-c
+cli untaped github repos selector --format VALUE default=table
+cli untaped github repos selector --format alias=-f
+cli untaped github repos selector --format choice=json
+cli untaped github repos selector --format choice=pipe
+cli untaped github repos selector --format choice=raw
+cli untaped github repos selector --format choice=table
+cli untaped github repos selector --format choice=yaml
+cli untaped github repos selector --org VALUE... default=unset
+cli untaped github repos selector --repo VALUE... default=unset
+cli untaped github repos selector --repo alias=-r
+cli untaped github repos selector --team VALUE... default=unset
 cli untaped github search
 cli untaped github search code
 cli untaped github search code --columns VALUE... default=unset
@@ -4225,6 +4241,7 @@ contract git.git_host.home() -> string?  [experimental]
 contract git.git_host.probe_refs(urls: string[], *, kinds: string[], default_branch_only: boolean, parallel: integer) -> RefProbe  [experimental]
 contract git.repo_source abstract=repos  [experimental]
 contract git.repo_source.repos() -> Repo[]  [experimental]
+contract git.repo_source.select(selector: RepoSelector) -> Repo[]  [experimental]
 contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 contract git.repo_source.to_selector(item: any) -> RepoSelector  [experimental]
 contract lint.Failure(category, message, system)
@@ -5454,6 +5471,10 @@ record github.repo.stargazers_count default=None
 record github.repo.stargazers_count integer?
 record github.repo.updated_at default=None
 record github.repo.updated_at string?
+record github.repo_selector
+record github.repo_selector.orgs string(pattern=^[^/\s]+$)[]
+record github.repo_selector.repos string(pattern=^[^/\s]+/[^/\s]+$)[]
+record github.repo_selector.teams string(pattern=^[^/\s]+/[^/\s]+$)[]
 record github.sweep_file
 record github.sweep_file.hits integer
 record github.sweep_file.path string
@@ -7037,8 +7058,10 @@ sdk untaped.sdk.contracts.NotFound.exit_code
 sdk untaped.sdk.contracts.NotFound.hint class
 sdk untaped.sdk.contracts.NotFound.retryable
 sdk untaped.sdk.contracts.NotFound.system class
+sdk untaped.sdk.contracts.NotReady(methods@3=) default=[]
 sdk untaped.sdk.contracts.NotReady(reason)
 sdk untaped.sdk.contracts.NotReady(setting@2=) default=None
+sdk untaped.sdk.contracts.NotReady.methods
 sdk untaped.sdk.contracts.NotReady.reason
 sdk untaped.sdk.contracts.NotReady.setting
 sdk untaped.sdk.contracts.NotReady.spelled
@@ -8388,6 +8411,10 @@ sdk untaped_git.api.RepoStore.write_private()  [experimental]
 sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree)
+sdk untaped_git.api.Selection(note@2=) default=None  [experimental]
+sdk untaped_git.api.Selection(repos)  [experimental]
+sdk untaped_git.api.Selection.note  [experimental]
+sdk untaped_git.api.Selection.repos  [experimental]
 sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
 sdk untaped_git.api.TreeEntry extra=forbid
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
@@ -8428,6 +8455,8 @@ sdk untaped_git.api.run_git(locale_c=) default=true
 sdk untaped_git.api.run_git(retry_transient=) default=false
 sdk untaped_git.api.run_git(sleep=) default=<computed> callback(1)
 sdk untaped_git.api.run_git(stdin=) default=None
+sdk untaped_git.api.select_repos(plugin, selector)  [experimental]
+sdk untaped_git.api.select_repos(refresh=) default=None  [experimental]
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
 sdk untaped_git.api.typed_repo(url)  [experimental]
