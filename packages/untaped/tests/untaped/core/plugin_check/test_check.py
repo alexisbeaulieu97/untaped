@@ -14,6 +14,7 @@ from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.check import PluginCheck, check_plugins
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import Record
 from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 
@@ -252,3 +253,37 @@ def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
     result = bootstrap.compose_root(candidates=found)
     rows = _rows(check_plugins(result, found, "shelf"))
     assert ("live", "rack.item_source.items", "pass", "1 item") in rows
+
+
+def test_each_provider_of_one_plugin_is_checked_alone(contract_plugins_site: Path) -> None:
+    """A plugin fills a contract once per record: each live row is its own provider's answer."""
+    api = importlib.import_module("untaped_rack.api")
+
+    class Crate(Record):
+        label: str
+
+    class Tray(Record):
+        label: str
+
+    class Crates(api.ItemSource[Crate], Provider):  # type: ignore[misc,name-defined]
+        def to_item(self, item: Crate) -> object:
+            return api.Item(name=item.label)
+
+        def items(self) -> list[object]:
+            return [self.to_item(Crate(label="crate"))]
+
+    class Trays(api.ItemSource[Tray], Provider):  # type: ignore[misc,name-defined]
+        def to_item(self, item: Tray) -> object:
+            return api.Item(name=item.label)
+
+        def items(self) -> list[object]:
+            return [self.to_item(Tray(label=each)) for each in ("a", "b")]
+
+    stack = make_plugin("stack", fills=(Crates, Trays), records=(Crate, Tray))
+    found = [*candidates(), plugin_candidate(stack)]
+    result = bootstrap.compose_root(candidates=found)
+    live = [row for row in _rows(check_plugins(result, found, "stack")) if row[0] == "live"]
+    assert [(title, detail) for _, title, _, detail in live] == [
+        ("rack.item_source.items (stack.crate)", "1 item"),
+        ("rack.item_source.items (stack.tray)", "2 items"),
+    ]

@@ -479,7 +479,7 @@ class Steps:
         )
         try:
             runner.run(approved, stdin=stdin, secrets=secrets)
-            checked = self._checked[entry.key] = runner.check(approved)
+            checked = self._checked[entry.key] = runner.check(approved, secrets=secrets)
         except UntapedError as exc:
             return _failed(plan, exc), False
         if not checked.passed:

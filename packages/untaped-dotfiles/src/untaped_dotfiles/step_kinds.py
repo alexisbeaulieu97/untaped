@@ -62,7 +62,10 @@ class StepKind[W: Record = StepFields](Contract):
     calls them only for a step this machine approved, never caches them, and
     runs ``check`` again after ``run``. ``run`` gets the value of the step's
     ``stdin`` input as ``secret`` (leave the parameter out when the kind takes
-    none). Neither has a terminal: a step never prompts.
+    none). Neither has a terminal: a step never prompts. Dotfiles masks the
+    secret in what a step says back (a result's ``detail``, an
+    ``UntapedError``), but ``--verbose`` logs any other exception's traceback
+    as it is: never put the secret in one.
     """
 
     @abstractmethod

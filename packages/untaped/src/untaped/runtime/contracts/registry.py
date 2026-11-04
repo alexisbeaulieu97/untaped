@@ -587,7 +587,8 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     upgrade = upgrade_hint(entry.plugin)
     if isinstance(entry, Quarantined):
         name = "" if entry.contract is None else f".{_contract_name(entry.contract)}"
-        detail = f"{entry.owner}{name}: {entry.detail}; {entry.fix or upgrade}"
+        issues = f" ({entry.issues})" if entry.issues else ""
+        detail = f"{entry.owner}{name}{issues}: {entry.detail}; {entry.fix or upgrade}"
         return DoctorRow("contract-provider", entry.plugin, "warn", entry.reason, detail)
     info = entry.binding.contract
     issues = "" if entry.binding.owns_item else entry.binding.item_kind

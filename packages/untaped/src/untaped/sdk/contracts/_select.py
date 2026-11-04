@@ -73,9 +73,10 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
             for each in failed:
                 answers._take(each)  # the raise says it
             raise failed[0].error
+        best = _best(above, answers)  # a tie raises before any warning
         for each in failed:
             _warn(f"{each.plugin} failed ({each.error}); using a match ranked above it")
-        return _use(_best(above, answers), answers)
+        return _use(best, answers)
     if not found:
         unasked = [f"{skip.plugin} ({skip.reason})" for skip in skipped]
         tail = f"; not asked: {', '.join(unasked)}" if unasked else ""

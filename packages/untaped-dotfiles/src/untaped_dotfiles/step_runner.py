@@ -17,7 +17,8 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -140,12 +141,16 @@ class StepRunner:
     def with_relay(self, relay: Callable[[str], None]) -> StepRunner:
         return StepRunner(home=self._home, relay=relay, kinds=self.kinds)
 
-    def check(self, approved: ApprovedStep) -> Checked:
+    def check(self, approved: ApprovedStep, *, secrets: Sequence[str] = ()) -> Checked:
+        """Run the step's check (or its kind's); ``secrets`` are masked in what a kind says."""
         kind = approved.step.kind
         if kind is not None:
             provider = self.kinds.provider(kind)
-            result = self.kinds.check(provider, self._fields(approved, provider.record))
-            return Checked(result.passes, result.detail or f"its {kind} check fails")
+            with _masking(secrets):
+                result = self.kinds.check(provider, self._fields(approved, provider.record))
+            return Checked(
+                result.passes, _masked(result.detail, secrets) or f"its {kind} check fails"
+            )
         check = approved.step.check
         assert check is not None  # a step without a check has a kind
         if check.path is not None:
@@ -179,19 +184,8 @@ class StepRunner:
         if kind is not None:
             provider = self.kinds.provider(kind)
             secret = None if stdin is None else SecretStr(stdin.decode("utf-8"))
-            try:
+            with _masking(secrets):  # what it says is shown as a run's output is: masked
                 result = self.kinds.run(provider, self._fields(approved, provider.record), secret)
-            except UntapedError as exc:  # what it says is shown as a run's output is: masked
-                said = f"{exc} {exc.hint or ''}"
-                if not any(secret and secret in said for secret in secrets):
-                    raise
-                raise UntapedError(
-                    _masked(str(exc), secrets),
-                    category=exc.category,
-                    system=exc.system,
-                    hint=None if exc.hint is None else _masked(exc.hint, secrets),
-                    details=exc.details,
-                ) from None
             if not result.passes:
                 detail = _masked(result.detail, secrets) or "it says it didn't pass"
                 raise DotfilesError(f"the {kind} run failed: {detail}")
@@ -248,6 +242,38 @@ def _masked(text: str, secrets: Sequence[str]) -> str:
         if secret:
             text = text.replace(secret, "***")
     return text
+
+
+def _masked_value(value: object, secrets: Sequence[str]) -> object:
+    """``value`` (an error's ``details``) with every secret in its strings masked."""
+    if isinstance(value, str):
+        return _masked(value, secrets)
+    if isinstance(value, Mapping):
+        return {key: _masked_value(each, secrets) for key, each in value.items()}
+    if isinstance(value, list | tuple):
+        return [_masked_value(each, secrets) for each in value]
+    return value
+
+
+@contextmanager
+def _masking(secrets: Sequence[str]) -> Iterator[None]:
+    """An error a step kind's provider raises, re-raised with every secret value masked.
+
+    Its message, hint and details; the original is dropped (``from None``) so no
+    traceback carries it.
+    """
+    try:
+        yield
+    except UntapedError as exc:
+        message = _masked(str(exc), secrets)
+        hint = None if exc.hint is None else _masked(exc.hint, secrets)
+        details = _masked_value(dict(exc.details), secrets)
+        if (message, hint, details) == (str(exc), exc.hint, dict(exc.details)):
+            raise
+        assert isinstance(details, dict)
+        raise UntapedError(
+            message, category=exc.category, system=exc.system, hint=hint, details=details
+        ) from None
 
 
 def _shown(argv: Sequence[str]) -> str:

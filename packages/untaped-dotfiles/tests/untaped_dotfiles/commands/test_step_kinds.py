@@ -335,25 +335,34 @@ def test_a_kind_two_plugins_provide_is_asked_of_neither(make_remote: MakeRemote)
 
 
 class Echoes(StepKind[Token], Provider):
-    """Says the secret it got, in its detail or its error."""
+    """Says the secret it got back: in a run's detail, its error, or the check after it."""
 
-    raises: ClassVar[bool] = False
+    mode: ClassVar[str] = "detail"
+    kept: ClassVar[str] = ""
 
     def check(self, step: Token) -> StepResult:
-        return StepResult(passes=False)
+        return StepResult(passes=False, detail=f"the file holds {Echoes.kept or 'nothing'}")
 
     def run(self, step: Token, secret: SecretStr | None = None) -> StepResult:
-        said = f"login rejected for {secret.get_secret_value() if secret else '?'}"
-        if Echoes.raises:
-            raise UntapedError(said, category="config")
-        return StepResult(passes=False, detail=said)
+        Echoes.kept = secret.get_secret_value() if secret else "?"
+        said = f"login rejected for {Echoes.kept}"
+        if Echoes.mode == "raises":
+            raise UntapedError(said, category="config", hint=said, details={"sent": [Echoes.kept]})
+        return StepResult(passes=Echoes.mode == "check", detail=said)
 
 
-@pytest.mark.parametrize("raises", [False, True])
+@pytest.mark.parametrize(
+    ("mode", "code", "said"),
+    [
+        ("detail", 1, "login rejected for ***"),
+        ("raises", ExitCode.ENVIRONMENT, "login rejected for ***"),
+        ("check", 1, "the file holds ***"),
+    ],
+)
 def test_a_secret_a_provider_says_back_is_masked(
-    make_remote: MakeRemote, terminal: ScriptedTerminal, raises: bool
+    make_remote: MakeRemote, terminal: ScriptedTerminal, mode: str, code: int, said: str
 ) -> None:
-    Echoes.raises = raises
+    Echoes.mode, Echoes.kept = mode, ""
     installed({"tools": (Echoes,)})
     step = "{name: token, kind: tools.token, with: {name: gh}, stdin: token}"
     token = "  token: {description: A token, secret: true}\n"
@@ -363,6 +372,6 @@ def test_a_secret_a_provider_says_back_is_masked(
         done = run(["apply", "--format", "json"])
     finally:
         terminal.absent()
-    assert done.exit_code != 0
-    assert "login rejected for ***" in done.output
+    assert done.exit_code == code, done.output
+    assert said in done.output
     assert "sentinel-secret" not in done.output

@@ -1,6 +1,7 @@
 """The answer cache behind ``@cached``: providers' answers kept in the owner's :class:`Cache`.
 
-One entry per provider, method, settings and arguments, keyed ``<provider>:<hash>``
+One entry per provider, method, settings and arguments, keyed ``<plugin>:<hash>``,
+or ``<plugin>:<kind>:<hash>`` for a provider issuing its own record of that kind
 (``<hash>`` is the sha256 of the arguments' canonical JSON) in the partition of
 the provider's settings digest (:mod:`untaped.sdk.storage._digest`): the cache is the
 owner's and the entry one provider's, so whatever reports an entry (a stale
