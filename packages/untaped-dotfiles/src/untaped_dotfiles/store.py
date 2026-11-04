@@ -1,7 +1,8 @@
 """``StateDotfilesStore``: clones and placed paths, kept as the plugin's state rows.
 
 What untaped did, which no source can give back: the clone it made for each
-git source, every item it applied once, and every path it placed. The machine's choices live in
+git source, every item it applied once, every path it placed, every step it
+applied and every working copy it cloned. The machine's choices live in
 ``config.yml`` instead (``dotfiles.sources``). The rows and the operation lock
 are blocks the plugin class holds (:class:`~untaped_dotfiles.plugin.Dotfiles`);
 the lock keeps two runs that change files from interleaving. The store also
@@ -17,7 +18,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from untaped.sdk.storage import Lock, StateRows, atomic_write
-from untaped_dotfiles.models import CloneRecord, ItemRecord, PlacedRecord
+from untaped_dotfiles.models import (
+    CloneRecord,
+    ItemRecord,
+    PlacedRecord,
+    RepoRecord,
+    StepRecord,
+)
 from untaped_dotfiles.records import StatusSummary
 
 STATUS_FILE = "status.json"
@@ -29,6 +36,10 @@ CLONED = StateRows[CloneRecord]()
 ITEMS = StateRows[ItemRecord]()
 #: One row per placed path, by its absolute path.
 PLACED = StateRows[PlacedRecord]()
+#: One row per step applied here, by ``SOURCE/PKG/ITEM/STEP``.
+STEPS = StateRows[StepRecord]()
+#: One row per working copy untaped cloned, by its absolute path.
+REPOS = StateRows[RepoRecord]()
 #: Held by every command that changes files, clones or choices.
 CHANGING = Lock(wait=timedelta(minutes=10))
 
@@ -71,11 +82,20 @@ class StateDotfilesStore:
             ITEMS.put(row.model_copy(update={"waited": waited}))
 
     def forget_applied(self, prefix: tuple[str, ...]) -> None:
-        """Forget every item under ``prefix`` (a source, a package or one item): turned off."""
+        """Forget every item under ``prefix`` (a source, a package or one item), and its
+        steps: turned off, or on again. Its working copies stay known: ``forget_repos``."""
         start = "/".join(prefix)
         for row in ITEMS.all():
             if row.item == start or row.item.startswith(start + "/"):
                 ITEMS.delete(row.item)
+        self.forget_steps(prefix)
+
+    def forget_repos(self, prefix: tuple[str, ...]) -> None:
+        """Forget the working copies cloned for ``prefix``: turned off. The folders stay."""
+        start = "/".join(prefix)
+        for repo in REPOS.all():
+            if repo.item == start or repo.item.startswith(start + "/"):
+                REPOS.delete(repo.target)
 
     def placed(self) -> list[PlacedRecord]:
         return PLACED.all()
@@ -85,6 +105,30 @@ class StateDotfilesStore:
 
     def remove_placed(self, target: str) -> bool:
         return PLACED.delete(target) > 0
+
+    def steps(self) -> list[StepRecord]:
+        return STEPS.all()
+
+    def put_step(self, record: StepRecord) -> None:
+        STEPS.put(record)
+
+    def forget_steps(self, prefix: tuple[str, ...]) -> list[StepRecord]:
+        """Forget every step under ``prefix`` (a source, package, item or one step); the rows
+        forgotten."""
+        start = "/".join(prefix)
+        gone = [r for r in STEPS.all() if r.step == start or r.step.startswith(start + "/")]
+        for row in gone:
+            STEPS.delete(row.step)
+        return gone
+
+    def repos(self) -> list[RepoRecord]:
+        return REPOS.all()
+
+    def put_repo(self, record: RepoRecord) -> None:
+        REPOS.put(record)
+
+    def forget_repo(self, target: str) -> None:
+        REPOS.delete(target)
 
     def write_status(self, summary: StatusSummary) -> None:
         self._state_dir.mkdir(parents=True, exist_ok=True)

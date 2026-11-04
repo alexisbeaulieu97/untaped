@@ -231,6 +231,15 @@ class Reading:
     rows: list[EntryStatus]
     actions: list[Action]
 
+    def joined(self, rows: Sequence[EntryStatus], actions: Sequence[Action]) -> Reading:
+        """This reading with more rows (steps', working copies'), each package's rows kept
+        together."""
+        pairs = sorted(
+            zip([*self.rows, *rows], [*self.actions, *actions], strict=True),
+            key=lambda pair: (pair[0].source, pair[0].package, pair[0].item),
+        )
+        return Reading([row for row, _ in pairs], [action for _, action in pairs])
+
 
 class StatusReader:
     """One :class:`EntryStatus` per placement, and the summary over them."""
@@ -289,5 +298,7 @@ class StatusReader:
             missing=counted["missing"],
             orphan=counted["orphan"],
             off=counted["off"],
+            drifted=counted["drifted"],
+            unmet=counted["unmet"],
             error=counted["error"],
         )

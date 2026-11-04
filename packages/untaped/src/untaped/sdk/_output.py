@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING, Self, cast
 
@@ -10,7 +11,8 @@ from pydantic import BaseModel
 
 from untaped.sdk._block import FieldBlock, FieldOption, Invocation
 from untaped.sdk._keys import SettingKey
-from untaped.sdk._run import note_printed
+from untaped.sdk._run import fixed_rendering, note_printed
+from untaped.sdk._streams import stream_is_tty
 from untaped.sdk._table import (
     Columns,
     _column_names_of,
@@ -23,6 +25,7 @@ from untaped.sdk._table import (
 from untaped.sdk.errors import (
     UsageError,
 )
+from untaped.sdk.marks import experimental
 
 if TYPE_CHECKING:
     from rich.text import Text
@@ -124,6 +127,7 @@ class Output[R: BaseModel](FieldBlock):
         #: ``--columns`` applies on top.
         self.columns = Columns(self._declared)
         self._requested: list[str] | None = None
+        self._chosen = False
         self._empty: str | None = None
         self._model: type[BaseModel] | None = None
 
@@ -136,6 +140,28 @@ class Output[R: BaseModel](FieldBlock):
     def requested(self) -> list[str] | None:
         """The ``--columns`` this run asked for, as given; ``None`` without the flag."""
         return self._requested
+
+    @property
+    @experimental
+    def format_chosen(self) -> bool:
+        """Whether this run named its format, rather than taking the command's own default.
+
+        ``--format`` names it, and so do ``UNTAPED_FORMAT`` and
+        ``untaped.ui.format`` for a command they apply to. A command that shows
+        something other than rows by default (a screen) prints rows when a
+        format is named.
+        """
+        return self._chosen
+
+    @property
+    @experimental
+    def to_terminal(self) -> bool:
+        """Whether stdout is a terminal: rows land on a screen, not in a pipe or a file.
+
+        A command that would open a screen instead of printing rows asks it,
+        as a pager does, so ``untaped COMMAND | grep x`` still gets rows.
+        """
+        return stream_is_tty(sys.stdout)
 
     def empty(self, text: str) -> None:
         """The text a table shows when ``run`` printed no row."""
@@ -168,6 +194,14 @@ class Output[R: BaseModel](FieldBlock):
         requested = flags.get("--columns")
         filled = _copy(self)
         filled.format = str(flags.get("--format") or self.default_format)
+        # The parse fills a ``table`` default in too: the run's rendering says
+        # whether the line or the user's default named the format.
+        rendering = fixed_rendering()
+        filled._chosen = (
+            rendering.format is not None
+            if rendering is not None
+            else filled.format != self.default_format
+        )
         filled._requested = list(requested) if isinstance(requested, list) else None
         filled.columns = Columns(
             self._declared or (default_columns(model) if model else ()), model=model

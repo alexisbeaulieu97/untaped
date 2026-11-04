@@ -217,7 +217,8 @@ def test_an_input_with_no_value_leaves_its_entries_pending(
     assert "add dotfiles/git --var git_profile=VALUE" in str(waiting["detail"])
     result = run(["apply", "--yes", "--format", "json"])
     assert result.exit_code == 3, result.output
-    assert [r["entry"] for r in json_rows(result)] == ["~/.config/git/ignore"]
+    rows = json_rows(result)
+    assert [r["entry"] for r in rows if r["kind"] == "file"] == ["~/.config/git/ignore"]
     assert "git_profile" in result.stderr
     ran = installed().cli(
         ["config", "set", "dotfiles.sources.dotfiles.packages.git.inputs.git_profile", "work"]

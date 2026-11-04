@@ -394,6 +394,7 @@ class CliInvoker:
         interactive: bool = False,
         prompt_backend: PromptBackend | None = None,
         terminal: bool = False,
+        stdout_terminal: bool = False,
     ) -> CliResult:
         """Invoke a command with captured stdout/stderr."""
         return invoke_cli(
@@ -404,6 +405,7 @@ class CliInvoker:
             interactive=interactive,
             prompt_backend=prompt_backend,
             terminal=terminal,
+            stdout_terminal=stdout_terminal,
         )
 
 
@@ -416,6 +418,7 @@ def invoke_cli(
     interactive: bool = False,
     prompt_backend: PromptBackend | None = None,
     terminal: bool = False,
+    stdout_terminal: bool = False,
 ) -> CliResult:
     """Invoke a composed root (``build_root_app(...)``) or a launcher, capturing its streams.
 
@@ -436,10 +439,13 @@ def invoke_cli(
     (``ui.run``) needs neither with a :class:`ScriptedTerminal`, which
     never touches a terminal: ``prompt_backend=ScriptedTerminal().screens(...)``
     is enough (and ``interactive=True`` only if the command checks for a TTY itself).
+    ``stdout_terminal=True`` makes the captured stdout claim to be a terminal
+    (``Output.to_terminal``), as at a prompt rather than in a pipe; rows and
+    rendered pages then come in color as at a terminal, unless ``NO_COLOR`` is set.
     """
     from untaped.runtime.run import invocation  # noqa: PLC0415
 
-    stdout = io.StringIO()
+    stdout = TtyStringIO() if stdout_terminal else io.StringIO()
     stderr = io.StringIO()
     previous_stdin = sys.stdin
     sys.stdin = TtyStringIO(input or "") if interactive else io.StringIO(input or "")
@@ -687,7 +693,8 @@ class TtyStringIO(io.StringIO):
 
     Used as the harness stdin for interactive-path tests: TTY checks
     (``Terminal``) pass, while prompts are answered by a
-    :class:`ScriptedTerminal` rather than a real terminal read.
+    :class:`ScriptedTerminal` rather than a real terminal read. As the
+    harness stdout (``stdout_terminal=True``) it is a terminal rows land on.
     """
 
     def isatty(self) -> bool:

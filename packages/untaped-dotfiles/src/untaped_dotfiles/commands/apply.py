@@ -42,7 +42,7 @@ from untaped_values.api import InputError, Vars, coerce, resolve, terminal_ask
 
 
 class Apply(DotfilesCommand):
-    """Place the files of the packages that are on: by each one's policy, or the named ones.
+    """Place the files and run the steps of the packages that are on, by policy or as named.
 
     With no SELECTORS each entry follows its policy (the policy guide, linked
     from the dotfiles README, has the table): `sync` places what is new or
@@ -72,6 +72,14 @@ class Apply(DotfilesCommand):
     3) with the `add --var` that answers them. Exit 3 means done, with
     something left for a person: an entry the policy only reports, or one
     waiting on an input.
+
+    Steps run after the files, only once confirmed: each check, then the
+    step's program when it fails, then the check again (still failing:
+    exit 1). A step follows only a policy this machine chose, else
+    `manual`. Its own inputs are asked at a terminal each run (or given
+    with --var) and never kept; a secret one reaches only the program's
+    stdin. Then each working copy (`repos:`) whose target is absent is
+    cloned; one already there is never moved.
     """
 
     selectors: Positional[list[str]] = Field(
@@ -112,8 +120,24 @@ class Apply(DotfilesCommand):
                 svc.applier.plan_apply(placements, force=self.force, follow=follow), stuck
             )
             self._report_stuck(steps, stuck)
-            planned = svc.applier.planned(steps)
-            todo = [s for s in steps if s.action in ("apply", "remove") or s.converts]
+            listed = [e for e in svc.steps.entries(selections) if e.excluded is None]
+            step_plans = svc.steps.failing(svc.steps.plan(listed, follow=follow), stuck)
+            copies = [
+                e
+                for e in svc.repos.entries(selections, placements=placements)
+                if e.excluded is None
+            ]
+            repo_plans = svc.repos.plan(copies)
+            planned = [
+                *svc.applier.planned(steps),
+                *svc.steps.planned(step_plans),
+                *svc.repos.planned(repo_plans),
+            ]
+            todo = [
+                *(s for s in steps if s.action in ("apply", "remove") or s.converts),
+                *(p for p in step_plans if p.action in ("apply", "remove")),
+                *(p for p in repo_plans if p.action in ("apply", "remove")),
+            ]
             moving = [r for r in fetched if r.source not in stuck and svc.clones.behind(r)]
             if todo:
                 question = f"Apply {plural(len(todo), 'entry', 'entries')}?"
@@ -127,7 +151,8 @@ class Apply(DotfilesCommand):
                 needed=bool(todo or moving or kept is not None),
             ):
                 rows = planned
-                waiting += svc.applier.waiting(steps)
+                waiting += svc.applier.waiting(steps) + svc.steps.waiting(step_plans)
+                waiting += svc.repos.waiting(repo_plans)
             else:
                 waited = {  # items applied for the first time: their waiting entries were asked
                     owner: entries
@@ -137,8 +162,18 @@ class Apply(DotfilesCommand):
                 converted = svc.applier.convert(steps)
                 if moving:
                     steps = self._move(svc, moving, steps, stuck, follow=follow)
+                    step_plans = svc.steps.failing(step_plans, stuck)  # a clone that didn't move
                 rows = svc.applier.execute(steps, converted)
                 waiting += svc.applier.waiting(steps)
+                ran, waits = svc.steps.execute(
+                    step_plans,
+                    given=self.vars.values(),
+                    ask=terminal_ask(self.ctx.terminal, self.vars),
+                    relay=self.ctx.diag.info,
+                )
+                cloned, copies_waiting = svc.repos.execute(repo_plans)
+                rows = [*rows, *ran, *cloned]
+                waiting += waits + copies_waiting
                 for owner, entries in waited.items():
                     svc.store.note_waited(owner, entries)
                 if kept is not None:
@@ -399,28 +434,44 @@ def _refuse_unknown(unknown: set[str], declared: set[str], named: Sequence[Offer
 
 
 def _flagged(offer: Offer, given: dict[str, object]) -> dict[str, object]:
-    """The ``--var``/``--vars-file`` values ``offer`` declares, coerced; a secret, or a value
-    that doesn't fit its input, exits 2."""
+    """The ``--var``/``--vars-file`` values of ``offer``'s top-level inputs, coerced (a step's
+    own inputs are checked too, and used when it runs); a secret, or a value that doesn't fit
+    its input, exits 2."""
     assert offer.package is not None
+    steps = _step_inputs(offer)
     mine: dict[str, object] = {}
     for name, value in given.items():
-        spec = offer.package.inputs.get(name)
+        spec = offer.package.inputs.get(name) or steps.get(name)
         if spec is None:
             continue
         if spec.secret:
             raise UsageError(
-                f"input {q(name)} of {offer.spelled} is a secret: it is never kept in config.yml"
+                f"input {q(name)} of {offer.spelled} is a secret: it is asked at a terminal, "
+                "never given on the command line or kept in config.yml"
             )
         try:
-            mine[name] = coerce(spec, value, name=name)
+            value = coerce(spec, value, name=name)
         except InputError as exc:
             raise UsageError(f"{offer.spelled}: {exc}") from exc
+        if name in offer.package.inputs:
+            mine[name] = value
     return mine
+
+
+def _step_inputs(offer: Offer) -> dict[str, PackageInput]:
+    """The inputs ``offer``'s steps declare: asked each time the step runs, never kept."""
+    assert offer.package is not None
+    return {
+        name: spec
+        for item in offer.package.items.values()
+        for step in item.steps
+        for name, spec in step.inputs.items()
+    }
 
 
 def _declared(offer: Offer) -> list[str]:
     assert offer.package is not None
-    return list(offer.package.inputs)
+    return [*offer.package.inputs, *_step_inputs(offer)]
 
 
 def _plain(offer: Offer) -> dict[str, PackageInput]:

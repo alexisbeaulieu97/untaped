@@ -156,11 +156,20 @@ def test_one_path_may_go_to_several_targets() -> None:
 def test_a_step_input_renders_in_its_own_step_and_a_kind_needs_no_check() -> None:
     package = parse_package(
         "version: 1\nitems:\n  x:\n    steps:\n"
-        "      - {name: s, check: {path: '~/{{ dir }}'}, run: [x], inputs: {dir: {}}}\n"
+        "      - {name: s, check: {path: ~/x}, run: [x, '{{ dir }}'], inputs: {dir: {}}}\n"
         "      - {name: t, kind: brew, with: {formula: fish}}\n",
         where="dots/x",
     )
     assert [step.name for step in package.items["x"].steps] == ["s", "t"]
+
+
+def test_a_check_names_no_input_of_the_steps_own() -> None:
+    with pytest.raises(PackageError, match="the step's own input 'dir' cannot be used in check"):
+        parse_package(
+            "version: 1\nitems:\n  x:\n    steps:\n"
+            "      - {name: s, check: {path: '~/{{ dir }}'}, run: [x], inputs: {dir: {}}}\n",
+            where="dots/x",
+        )
 
 
 def test_merge_reads_the_format_from_the_target_or_format() -> None:

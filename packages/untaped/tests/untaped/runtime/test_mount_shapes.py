@@ -222,6 +222,21 @@ class Brief(Command):
         return Shape(name="brief")
 
 
+class Facts(Command):
+    """Name what the run's output knows: a named format, and stdout a terminal."""
+
+    output: Output[Shape]
+
+    def run(self) -> Shape:
+        return Shape(name=f"chosen={self.output.format_chosen},tty={self.output.to_terminal}")
+
+
+class DocFacts(Facts):
+    """Name the same facts, printed as a document by default."""
+
+    output: Output[Shape] = Output(format="yaml")
+
+
 class ShapesSettings(BaseModel):
     pass
 
@@ -247,6 +262,8 @@ class Shapes(Plugin):
         Pin,
         Draw,
         Brief,
+        Facts,
+        DocFacts,
     )
 
 
@@ -438,6 +455,27 @@ def test_an_output_s_own_default_format_prints_without_the_flag(
     assert (shown.exit_code, shown.stdout.splitlines()[0]) == (0, "name: pin"), shown.stderr
     assert json.loads(asked.stdout)["name"] == "pin"
     assert [row["name"] for row in json.loads(listed.stdout)] == ["a"]
+
+
+def test_an_output_knows_a_named_format_and_a_terminal_on_stdout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def facts(*flags: str, stdout_terminal: bool = False) -> str:
+        root = build_root_app(candidates=[SHAPES])
+        line = ["shapes", "facts", *flags]
+        result = CliInvoker().invoke(root.meta, line, stdout_terminal=stdout_terminal)
+        assert result.exit_code == 0, result.stderr
+        return result.stdout
+
+    assert "chosen=False,tty=False" in facts()
+    assert "chosen=False,tty=True" in facts(stdout_terminal=True)
+    assert "chosen=True,tty=True" in facts("--format", "table", stdout_terminal=True)
+    assert "chosen=True" in facts("-f", "yaml")
+    monkeypatch.setenv("UNTAPED_FORMAT", "table")  # the user's default names it too
+    assert "chosen=True" in facts()
+    root = build_root_app(candidates=[SHAPES])
+    doc = CliInvoker().invoke(root.meta, ["shapes", "doc-facts"])  # follows no user default
+    assert "chosen=False" in doc.stdout, doc.stderr
 
 
 def test_an_output_refuses_a_default_it_does_not_offer() -> None:

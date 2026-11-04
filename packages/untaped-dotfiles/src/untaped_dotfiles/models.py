@@ -5,10 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, JsonValue
 
 from untaped.sdk import Key, UtcTimestamp
-from untaped_dotfiles.package import MergeFormat, Mode
+from untaped_dotfiles.package import MergeFormat, Mode, Step
 from untaped_dotfiles.settings import Os
 
 KeyPath = tuple[str, ...]
@@ -41,7 +41,8 @@ class ItemRecord(BaseModel):
     first_applied_at: UtcTimestamp
     waited: tuple[tuple[str, str], ...] = ()
     """``(entry, declared target)`` of each entry that waited on an input when the item was
-    applied: asked for with the item, so ``pending`` once answered, not ``new``."""
+    applied, and ``(step, "step")`` of each step that was asked for and didn't end applied:
+    asked for with the item, so ``pending`` once answered, not ``new``."""
 
 
 class PlacedRecord(BaseModel):
@@ -70,6 +71,43 @@ class PlacedRecord(BaseModel):
     managed: tuple[KeyPath, ...] = ()
     """``merge`` only: the key paths untaped wrote into the target document."""
     applied_at: UtcTimestamp
+
+
+class RepoRecord(BaseModel):
+    """A working copy untaped cloned for a ``repos:`` entry; the copy is the person's."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: Annotated[str, Key]
+    """The working copy's absolute path: the row's key."""
+    item: str
+    """``SOURCE/PKG/ITEM``: the item whose ``repos:`` entry it is."""
+    given: str
+    """The entry's ``url`` as the package writes it: a URL, or a repo name."""
+    url: str
+    """The URL cloned (a repo name resolved to its URL)."""
+    branch: str | None = None
+    cloned_at: UtcTimestamp
+
+
+class StepRecord(BaseModel):
+    """One step as last applied here: what ``status`` checks, and what a changed step differs
+    from. It holds no secret, not even hashed."""
+
+    model_config = ConfigDict(frozen=True)
+
+    step: Annotated[str, Key]
+    """``SOURCE/PKG/ITEM/STEP``."""
+    declared: Step
+    """The step as the package wrote it."""
+    script_hash: str | None = None
+    """A ``script`` step: the script's content hash, part of what was approved."""
+    digest: str
+    """Over ``declared`` and ``script_hash``: a step whose digest differs is ``behind``."""
+    values: dict[str, JsonValue] = {}
+    """The plain top-level input values it used: a changed one counts as asking again."""
+    applied_at: UtcTimestamp
+    checked_at: UtcTimestamp
 
 
 @dataclass(frozen=True)

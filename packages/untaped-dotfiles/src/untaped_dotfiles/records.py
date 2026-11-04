@@ -15,12 +15,11 @@ from untaped.sdk import (
     Failure,
     OutcomeRecord,
     Record,
-    TargetRecord,
     UtcTimestamp,
 )
 from untaped_dotfiles.package import Mode
 from untaped_dotfiles.policy import Policy
-from untaped_dotfiles.states import FILE_STATE_ROLES, FileState
+from untaped_dotfiles.states import ENTRY_STATE_ROLES, EntryState, FileState
 
 EntryKind = Literal["file", "step", "repo"]
 
@@ -156,25 +155,36 @@ class PackageDetail(Record):
 
 
 class EntryStatus(Record):
-    """The state of one entry: a file, for now, of a package that is on or was placed before."""
+    """The state of one entry (a file, a step or a working copy) of a package that is on or
+    was applied before."""
 
     source: str
     package: Annotated[str, Column]
     item: Annotated[str, Column]
-    kind: EntryKind = "file"
+    kind: Annotated[EntryKind, Column] = "file"
     entry: Annotated[str, Column] = Field(
-        description="A file's target as the user reads it (`~/...`)."
+        description="A file's or working copy's target as the user reads it (`~/...`), or a "
+        "step's name."
     )
     mode: Annotated[Mode | None, Column] = Field(
-        default=None, description="How the file is placed here (a `link` only under `sync`)."
+        default=None,
+        description="How the file is placed here (a `link` only under `sync`); null for a step "
+        "or a working copy.",
     )
-    policy: Annotated[Policy, Column]
+    policy: Annotated[Policy | None, Column] = Field(
+        description="The policy the entry follows: for a file, this machine's choice else the "
+        "author's; for a step, this machine's choice else `manual`; null for a working copy, "
+        "which is cloned once whatever the policy."
+    )
     chosen: bool = False
-    state: Annotated[FileState, Column, FILE_STATE_ROLES] = Field(
+    state: Annotated[EntryState, Column, ENTRY_STATE_ROLES] = Field(
         description="The entry's state; the policy guide explains each one."
     )
     detail: Annotated[str, Column] = ""
-    target_path: AbsolutePath | None = None
+    target_path: AbsolutePath | None = Field(
+        default=None,
+        description="A file's or working copy's absolute target; null for a step.",
+    )
     error: Failure | None = None
 
 
@@ -201,6 +211,8 @@ class StatusSummary(Record):
     missing: int = 0
     orphan: int = 0
     off: int = 0
+    drifted: int = 0
+    unmet: int = 0
     error: int = 0
 
 
@@ -209,17 +221,17 @@ ApplyAction = Literal[
 ]
 
 
-class ApplyOutcome(OutcomeRecord, TargetRecord):
+class ApplyOutcome(OutcomeRecord):
     """What ``apply``, ``remove`` or ``unsubscribe`` did, or would do, for one entry."""
 
     source: str
     package: Annotated[str, Column]
     item: Annotated[str, Column]
-    kind: EntryKind = "file"
+    kind: Annotated[EntryKind, Column] = "file"
     entry: Annotated[str, Column]
     mode: Annotated[Mode | None, Column] = None
     action: Annotated[ApplyAction, Column]
-    state: Annotated[FileState, FILE_STATE_ROLES] | None = Field(
+    state: Annotated[EntryState, ENTRY_STATE_ROLES] | None = Field(
         default=None,
         description="The entry's state before the action, so a `skipped` row that was "
         "`behind` differs from one that was `applied`; the policy guide explains each state.",
@@ -230,4 +242,7 @@ class ApplyOutcome(OutcomeRecord, TargetRecord):
         description="A unified diff of the target's content, before and after, when the "
         "action changes it (a new file's whole content included); null otherwise.",
     )
-    target_path: AbsolutePath
+    target_path: AbsolutePath | None = Field(
+        default=None,
+        description="A file's or working copy's absolute target; null for a step.",
+    )

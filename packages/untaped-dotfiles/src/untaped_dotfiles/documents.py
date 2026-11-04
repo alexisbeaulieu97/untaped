@@ -12,6 +12,7 @@ from __future__ import annotations
 import io
 import json
 from collections.abc import Callable, Mapping, MutableMapping
+from datetime import date
 from typing import TYPE_CHECKING, Any, cast
 
 from untaped.sdk import yaml_mapping_indent
@@ -43,14 +44,14 @@ def load_document(text: str, *, fmt: MergeFormat, where: str) -> MutableMapping[
 def load_values(text: str, *, fmt: MergeFormat, where: str) -> dict[str, Any]:
     """Parse ``text`` into the values a merge writes, detached from the text.
 
-    TOML values keep their types (a date stays a date; ``plain`` would make it a
-    string) and leave the source's comments and layout behind: the target's
-    layout is kept, the source's is not.
+    YAML and TOML values keep their types (a date stays a date; ``plain`` would
+    make it a string) and leave the source's comments and layout behind: the
+    target's layout is kept, the source's is not.
     """
     document = load_document(text, fmt=fmt, where=where)
     if fmt == "toml":
         return _unwrap(document)
-    detached: dict[str, Any] = plain(document)
+    detached: dict[str, Any] = _detached(document)
     return detached
 
 
@@ -115,6 +116,31 @@ def dump_document(
 def plain(document: Any) -> Any:
     """``document`` as plain dicts, lists and scalars (hashable the same way everywhere)."""
     return json.loads(json.dumps(document, default=str))
+
+
+def _detached(value: Any) -> Any:
+    """``value`` as plain dicts, lists and scalars, as :func:`plain` makes it, except that
+    dates and timestamps stay what they are.
+
+    Keys become strings the way :func:`plain` makes them (``1`` is ``"1"``,
+    ``true`` is ``"true"``), since the managed key paths are strings.
+    """
+    if isinstance(value, Mapping):
+        return {_key(key): _detached(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_detached(item) for item in value]
+    if isinstance(value, date):  # datetime and ruamel's TimeStamp are dates too
+        # A new object each time: one object written twice becomes an anchor and aliases in
+        # the target. replace(), since a copy drops a ruamel TimeStamp's offset or fraction.
+        return value.replace()
+    return plain(value)
+
+
+def _key(key: Any) -> str:
+    if isinstance(key, str):
+        return key
+    found: str = next(iter(plain({key: None})))
+    return found
 
 
 def _inline_below_headers(parent: MutableMapping[str, Any], value: Any) -> Any:

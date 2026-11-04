@@ -6,8 +6,9 @@ with a footer of keys, drawn in the user's theme. untaped owns the shared
 behavior (keys, look, the refusal when there is no terminal, testing), so a
 screen declares what it shows and does and nothing else. Screens are
 [experimental](./versioning.md#experimental): the API may change in a minor
-release. A plugin never imports `prompt_toolkit`; `untaped lint` flags it
-(see [Enforcement](./reference/conventions.md#enforcement)).
+release. A plugin imports the kit from `untaped.screen.core` and the modules
+of `untaped.screen.components`, and never imports `prompt_toolkit`;
+`untaped lint` flags it (see [Enforcement](./reference/conventions.md#enforcement)).
 
 ## A screen
 
@@ -219,7 +220,11 @@ from its key, so a plugin's settings need no screen code: the help under a setti
 `Field(description=...)` and its bounds (`gt=0` reads "Above 0."). A command
 that builds its screen only after reading config or probing a store asks
 `terminal.require_screen_terminal(command=..., alternative=...)` first, so a run
-without a terminal exits 2 having touched nothing.
+without a terminal exits 2 having touched nothing. A command whose screen
+replaces its rows opens it only as a pager would: when `output.to_terminal`
+(stdout is a terminal), no format is named (`output.format_chosen` is false),
+no `--columns` is given (`output.requested is None`) and stdin can prompt;
+otherwise it prints the rows.
 
 A `Panes` side may also be a drawing (a function `(frame, focused) ->
 renderable`) for a pane whose model the screen owns; `SearchList` and `Tree`

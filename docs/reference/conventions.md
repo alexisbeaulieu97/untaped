@@ -380,13 +380,12 @@ whose declarations or marks break these rules (`bad-settings-keys`).
 
 ## SDK stability
 
-A plugin imports from `untaped` only `untaped.sdk`, its groups
-([`untaped.sdk.contracts`](../contracts.md), `untaped.sdk.health`,
-`untaped.sdk.network`, `untaped.sdk.process`, `untaped.sdk.projects`,
-`untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`) and
-`untaped.core.api`, core's commands for a hint
-(`Login.spelled()`); `import-boundary` flags any other. A `_` name is never
-public; any other name of these modules, or of a plugin's `api` and
+A plugin imports from `untaped` only `untaped.sdk`, its groups ([`untaped.sdk.contracts`](../contracts.md),
+`untaped.sdk.health`, `untaped.sdk.network`, `untaped.sdk.process`, `untaped.sdk.projects`,
+`untaped.sdk.prompt`, `untaped.sdk.storage`, `untaped.sdk.testing`), `untaped.core.api` (core's
+commands for a hint, `Login.spelled()`) and the [screens kit](../screens.md) (`untaped.screen.core`,
+`untaped.screen.components.*`: experimental, outside the promise); `import-boundary` flags any
+other. A `_` name is never public; any other name of these modules, or of a plugin's `api` and
 `testing`, goes only two majors after its deprecation
 ([Names plugins use](../versioning.md#names-plugins-use)).
 

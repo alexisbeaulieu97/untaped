@@ -198,9 +198,7 @@ class Inventory:
                 assert offer.error is not None  # a package that doesn't load says why
                 problems.append((offer.spelled, offer.error))
                 continue
-            failed = self._failed.get(offer.spelled)
-            if failed is None and (stale := self._stale(offer)) is not None:
-                self._failed[offer.spelled] = failed = stale  # said once per package
+            failed = self.broken(offer)
             if failed is not None:
                 if (offer.spelled, failed) not in problems:
                     problems.append((offer.spelled, failed))
@@ -293,6 +291,26 @@ class Inventory:
             ]
         return found
 
+    def broken(self, offer: Offer) -> UntapedError | None:
+        """Why ``offer`` fails this run (an answer that doesn't fit its input), or ``None``."""
+        failed = self._failed.get(offer.spelled)
+        if failed is None and (stale := self._stale(offer)) is not None:
+            self._failed[offer.spelled] = failed = stale  # said once per package
+        return failed
+
+    def wanted(self, selections: Sequence[Selection] | None) -> list[tuple[Offer, str]]:
+        """``(offer, item)`` for each item that is on in ``selections`` (``None``: every
+        package that is on), each once."""
+        return _wanted(self.on() if selections is None else selections)
+
+    def off_scope(
+        self, selections: Sequence[Selection] | None
+    ) -> dict[tuple[str, str, str], Offer]:
+        """Where a record counts as ``off`` when its package or item is off (see
+        :meth:`placements`)."""
+        everything = selections is None
+        return self._off_scope(selections or [], everything=everything)
+
     def _stale(self, offer: Offer) -> UntapedError | None:
         """Why this machine's answers don't fit ``offer``'s inputs (an input's type changed),
         unless this run answered them; ``None`` when they fit."""
@@ -369,7 +387,7 @@ class Inventory:
     def _placement(
         self, offer: Offer, item: str, file: File, *, policy: Policy, chosen: bool
     ) -> Placement:
-        target, unanswered = self._render(offer, file.target)
+        target, unanswered = self.render_target(offer, file.target)
         return Placement(
             offer=offer,
             item=item,
@@ -385,7 +403,7 @@ class Inventory:
             unanswered=unanswered,
         )
 
-    def _render(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
+    def render_target(self, offer: Offer, text: str) -> tuple[Path | None, str | None]:
         """The target ``text`` names here, or ``(None, why)`` while an input has no value."""
         package = offer.package
         assert package is not None

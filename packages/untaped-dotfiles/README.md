@@ -38,8 +38,46 @@ docstring of the
 [package model](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/package.py)
 (`untaped plugin schema dotfiles.package_file` prints its schema). A
 package that breaks a rule is one row with an `error`; the other packages
-still load. Steps and repos load and show, but `apply` places files only
-for now.
+still load.
+
+A step is a check plus what fixes it, run with no shell in your home
+folder:
+
+```yaml
+    steps:
+      - name: user-email
+        check: {command: [git, config, --global, user.email], prints: "{{ git_email }}"}
+        run: [git, config, --global, user.email, "{{ git_email }}"]
+      - name: fisher
+        check: {program: fisher}
+        fix: install fisher from https://github.com/jorgebucaran/fisher
+```
+
+`apply` shows what each step checks and runs in its preview, and runs
+nothing before you confirm. After the files are placed it runs each check,
+then the step if the check fails, then the check again. A step follows
+only a policy this machine chose (`add PKG --policy`), else `manual`, so a
+step the author adds or changes later waits for `apply PKG`. A step's own
+`inputs` are asked each time it runs and never kept; a secret reaches the
+program only on its stdin (`stdin: NAME`), and what a run prints is shown
+with every secret masked.
+
+A `repos:` entry is a working copy you work in, cloned once through the
+git plugin (its credentials and proxy, nothing left in the copy's config)
+when its target is absent:
+
+```yaml
+    repos:
+      - {url: https://git.example.com/acme/app.git, target: ~/Projects/app}
+```
+
+After that untaped never moves it: it is yours. A checkout of the URL
+already there counts as applied; anything else there is `foreign` and left
+alone. `url` can be a repo name (`acme/app`) that a plugin listing repos
+resolves when `apply` clones it; `status` asks no one, and counts a
+checkout whose `origin` ends in that name. A copy whose target holds,
+or sits in, another copy's target, or holds a file's target, isn't cloned. Policy doesn't apply, and `remove`
+forgets the copy and leaves it.
 
 On Windows, `link` needs symlink permission (Developer Mode or elevation);
 `copy` and `merge` work. Nothing is tested there yet.
@@ -49,7 +87,7 @@ On Windows, `link` needs symlink permission (Developer Mode or elevation);
 ```bash
 untaped dotfiles subscribe https://git.example.com/acme/dotfiles.git --add fish
 untaped dotfiles subscribe ~/work-dotfiles --name work
-untaped dotfiles show                     # every package the sources offer
+untaped dotfiles show                     # every package; a screen at a terminal
 untaped dotfiles add starship --policy sync
 untaped dotfiles add claude/skills        # one item of a package
 untaped dotfiles apply --dry-run
@@ -62,6 +100,17 @@ through the git plugin's repo store, so its credentials and proxy apply;
 a local folder is read as it stands, never fetched. `add` turns packages
 or items on and places nothing; `remove` takes back what they placed and
 turns them off (`--keep-files` leaves the files).
+
+`show` with no selector at a terminal opens a screen: the sources and
+their packages on the left, the package under the cursor in full on the
+right. `space` turns a package or item on or off, `p` cycles its policy
+(the author's, `sync`, `once`, `manual`), `e` answers a plain input, and
+`ctrl-s` saves every change to `config.yml` at once; esc closes saving
+nothing. It places nothing, and turning something off there takes nothing
+back (`remove` does). A named format (`show --format json`, or
+`UNTAPED_FORMAT` or `untaped.ui.format` set), `--columns`, or a stdout or
+stdin that isn't a terminal (`show | grep starship`) prints the rows
+instead, as a pager would.
 
 `apply` fetches each git source, moves its clone to the fetched commit,
 shows one preview (every entry with its destination, then a diff wherever
@@ -114,8 +163,9 @@ docstring of
 [`Policy`](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-dotfiles/src/untaped_dotfiles/policy.py).
 
 `apply` exits 0 when done with nothing left for a person, 3 when done
-with something left (an entry its policy only reports, or one waiting on
-an input), 1 when an entry failed, and 2 without a terminal and without
+with something left (an entry its policy only reports, one waiting on an
+input, or a report-only step whose check fails), 1 when an entry failed
+(a step whose check still fails after it ran included), and 2 without a terminal and without
 `--yes`. A timer treats 3 as routine news, not a failure; the
 `attention` file below counts what waits, and `untaped dotfiles status`
 lists it:

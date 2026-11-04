@@ -12,7 +12,7 @@ from untaped_dotfiles.records import EntryStatus
 
 
 class Status(DotfilesCommand):
-    """Show the state of every file entry of the packages that are on, offline.
+    """Show the state of every file, step and working copy of the packages that are on, offline.
 
     It fetches nothing, so `behind` is as of the last fetch. It also lists
     what untaped placed for a package or item that is off now (`off`): in
@@ -41,7 +41,7 @@ class Status(DotfilesCommand):
         resolved = svc.inventory.placements(selections, include_excluded=self.excluded)
         self.report_sources(svc.catalog)
         self.report(resolved.problems)
-        reading = svc.reader.read(resolved.placements)
+        reading = svc.reading(resolved.placements, selections, include_excluded=self.excluded)
         rows = reading.rows
         problems = len(resolved.problems) + len(svc.catalog.problems)
         summary = svc.reader.summary(reading, problems=problems)

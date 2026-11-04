@@ -84,6 +84,59 @@ class Policy(StrEnum):
     placed, `orphan` ones taken back, and `modified` or `conflict` ones
     refused unless `--force` (the local version is kept aside).
 
+    ## Steps
+
+    A step is a check, then what fixes it when the check fails: a program
+    (`run`), a script in the source, or a `fix` a person follows (report
+    only). Steps follow only a policy this machine chose, on the item or
+    the package; with none they follow `manual`, whatever the author
+    suggests, so an author's `sync` can't make a step they add or change
+    later run on a subscriber's timer. Choosing `sync` for a package with
+    steps trusts its author with that timer: a changed step runs on the
+    next `apply --yes`.
+
+    A check runs only for a step this machine approved: the one stored when
+    it was last applied, or one in the plan just confirmed. `pending`,
+    `new` and `behind` are known without running anything.
+
+    - `pending`: never applied here (or its item was just turned on, or an
+      input it uses changed); nothing has run.
+    - `new`: the author added it after the item was first applied here.
+    - `applied`: the stored check passes.
+    - `drifted`: stored and unchanged, and its check fails now.
+    - `behind`: the author changed it (or its script) since it was applied.
+    - `unmet`: report only and its check fails, or a step `kind` no
+      installed plugin provides.
+    - `orphan`: applied before, and the package no longer has it.
+    - `off`, `excluded`, `error`: as for files.
+
+    | State | `sync` | `once` | `manual`, or nothing chosen |
+    |---|---|---|---|
+    | `pending` | check, run if it fails | same | same |
+    | `new` | check, run if it fails | same | report |
+    | `drifted` | run again | report | report |
+    | `behind` | check the new one, run if it fails | - | report |
+    | `unmet`, `off` | report | report | report |
+    | `orphan` | forget | report | report |
+
+    A run whose check still fails is a failed row (exit 1); a report-only
+    step whose check fails is a `skipped` row naming its fix (exit 3).
+    `apply SELECTOR...` and `apply --all` treat every step they name as
+    asked for. `remove`, `unsubscribe` and turning an item on again forget
+    its steps; nothing a step did is undone.
+
+    ## Working copies
+
+    A `repos:` entry is cloned once, whatever the policy, and then never
+    moved: `pending` (the target is absent: `apply` clones it), `applied` (a
+    checkout whose `origin` is the entry's URL), `foreign` (something else is
+    there: reported, never touched), `orphan` (cloned for an entry the
+    package dropped, or whose target an input moved: forgotten), `off`,
+    `excluded` or `error` (also a copy to clone whose target holds, or sits
+    in, another copy's target, or holds a file's target: it isn't cloned).
+    `remove` and `unsubscribe` forget a copy untaped cloned and leave it in
+    place; turning an item on again keeps knowing it.
+
     ## What needs a person
 
     `status --check` exits 3 when there is something for `apply` or a person

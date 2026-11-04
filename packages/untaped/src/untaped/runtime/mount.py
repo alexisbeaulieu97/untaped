@@ -786,7 +786,7 @@ def _check_dash(option: OptionDecl, *, piped: bool) -> None:
     A ``TextOrStdin`` value is read here; a ``PathOrStdin`` keeps ``-`` for
     its command to read (:func:`~untaped.sdk.read_stdin_text`).
     """
-    from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - a dash only
+    from untaped.sdk._streams import stream_is_tty  # noqa: PLC0415 - a dash only
 
     name = option.flag or option.metavar
     if piped:  # one stdin: the rows or this text, never both
