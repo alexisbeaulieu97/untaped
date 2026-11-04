@@ -118,6 +118,15 @@ def test_a_provider_not_ready_for_some_methods_answers_the_others(
     assert ("live", "rack.item_source.items", "pass", "2 items") in rows
 
 
+def test_a_provider_naming_a_method_its_contract_lacks_fails(contract_plugins_site: Path) -> None:
+    _bin().waiting = True
+    _bin().waiting_for = ("itemz",)
+    rows = _rows(_check())
+    detail = "ready() names methods item_source doesn't have: itemz"
+    assert ("conformance", "rack.item_source", "fail", detail) in rows
+    assert not [row for row in rows if row[0] == "live"]
+
+
 def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> None:
     (contract_plugins_site / "untaped_bin" / "leak.py").write_text(
         "class Leak(Exception):\n    pass\n", encoding="utf-8"

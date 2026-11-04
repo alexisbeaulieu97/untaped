@@ -251,9 +251,18 @@ def _provider(
     candidates: Sequence[PluginCandidate],
     row: _Row,
 ) -> list[PluginCheck]:
-    from untaped.runtime.contracts.registry import ready_of  # noqa: PLC0415
+    from untaped.runtime.contracts.registry import ready_of, unknown_methods  # noqa: PLC0415
 
     ready = ready_of(provider)
+    try:
+        declared = provider.instance.ready()
+    except Exception:  # ready_of already read it as not ready, with the reason
+        declared = None
+    if declared is not None and declared.methods:
+        problem = unknown_methods(provider, declared)
+        if problem is not None:  # the author's mistake, not a wait for settings
+            binding = provider.binding
+            return [row("conformance", f"{binding.owner}.{binding.contract.name}", "fail", problem)]
     conformance = _conformance(provider, composed, candidates, _waiting(ready), row)
     return [*conformance, *_live(provider, ready, row)]
 

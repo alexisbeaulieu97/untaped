@@ -41,6 +41,7 @@ from untaped.sdk.contracts._declare import (
     contract_of,
     fills,
     item_type,
+    old_spellings,
     parameter_problems,
     settings_type,
     unused_methods,
@@ -503,11 +504,12 @@ def ready_of(provider: BoundProvider, method: str | None = None) -> NotReady | N
         _LOG.debug("%s's ready() raised %s", provider.plugin, type(exc).__name__, exc_info=exc)
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
     if ready is not None and ready.methods:
+        problem = unknown_methods(provider, ready)
+        if problem is not None:  # a misspelt or removed method: never ask it on a guess
+            return NotReady(problem)
         info = provider.binding.contract
-        unknown = [name for name in ready.methods if name not in info.methods]
-        if unknown:  # a misspelt or removed method: never ask the provider on a guess
-            names = ", ".join(unknown)
-            return NotReady(f"ready() names methods {info.name} doesn't have: {names}")
+        current = {old: name for name in info.methods for old in old_spellings(info, name)}
+        ready = replace(ready, methods=tuple(current.get(name, name) for name in ready.methods))
         if method is not None and method not in ready.methods:
             return None
     if ready is None or ready.setting is None:
@@ -515,6 +517,19 @@ def ready_of(provider: BoundProvider, method: str | None = None) -> NotReady | N
     spelled = replace(ready)  # ``spelled`` is core's to set, so no provider passes it
     object.__setattr__(spelled, "spelled", f"{_section(provider, ready.setting)}.{ready.setting}")
     return spelled
+
+
+def unknown_methods(provider: BoundProvider, ready: NotReady) -> str | None:
+    """Why ``ready.methods`` can't be read: the names the provider's contract doesn't have.
+
+    A deprecated old spelling of a renamed method is known (``ready_of`` reads
+    it as the new name).
+    """
+    info = provider.binding.contract
+    unknown = [name for name in ready.methods if name not in info.methods]
+    if not unknown:
+        return None
+    return f"ready() names methods {info.name} doesn't have: {', '.join(unknown)}"
 
 
 def _section(provider: BoundProvider, setting: SettingKey) -> str:
