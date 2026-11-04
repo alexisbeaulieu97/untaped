@@ -71,6 +71,17 @@ class RepoSource[T: Record = Repo](Contract):
     def repos(self) -> list[Repo]:
         """Every repo the provider can list in the active profile."""
 
+    @cached(max_age=timedelta(hours=6), label="selected repos")
+    def select(self, selector: RepoSelector) -> list[Repo]:
+        """The repos ``selector`` takes (optional; a provider issuing selectors fills it).
+
+        ``selector`` came from this provider's :meth:`to_selector`: read its own
+        record back with ``self.own(selector, ItsSelector)``. Callers ask through
+        :func:`~untaped_git.selection.select_repos`, which narrows the answer by
+        ``selector.match`` and asks :meth:`repos` of a provider that doesn't fill it.
+        """
+        raise NotImplementedError
+
 
 @experimental
 def looks_like_url(ident: str) -> bool:

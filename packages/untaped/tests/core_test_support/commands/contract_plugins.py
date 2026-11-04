@@ -138,10 +138,12 @@ BIN = {
             nonconforming: ClassVar[bool] = False
             broken: ClassVar[bool] = False
             waiting: ClassVar[bool] = False
+            waiting_for: ClassVar[tuple[str, ...]] = ()
 
             def ready(self) -> NotReady | None:
-                waiting = type(self).waiting
-                return NotReady("no bins yet", key(BinSettings).bins) if waiting else None
+                if not type(self).waiting:
+                    return None
+                return NotReady("no bins yet", key(BinSettings).bins, type(self).waiting_for)
 
             def to_item(self, item: Box) -> Item:
                 return Item(name=item.label)

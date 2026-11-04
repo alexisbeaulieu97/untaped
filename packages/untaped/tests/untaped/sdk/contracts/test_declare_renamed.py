@@ -15,7 +15,7 @@ from core_test_support.contracts.support import compose, plugin
 from untaped.runtime.contracts.registry import method_ranking
 from untaped.runtime.section_models import ExtensionSettings
 from untaped.sdk import Issued, Record
-from untaped.sdk.contracts import Contract, Ok, Provider, gather
+from untaped.sdk.contracts import Contract, NoProviderReady, NotReady, Ok, Provider, gather
 from untaped.sdk.contracts._declare import contract_of, method_contract, old_spellings
 from untaped.sdk.marks import deprecated
 
@@ -119,6 +119,20 @@ def test_a_consumer_asking_the_old_name_asks_the_new_one() -> None:
     )
     [answer] = gather(ItemSource.items)()
     assert isinstance(answer, Ok) and [item.name for item in answer.value] == ["new"]
+
+
+def test_a_provider_waiting_under_the_old_name_waits_under_the_new_one() -> None:
+    class Waiting(OldShop):
+        def ready(self) -> NotReady:
+            return NotReady("no stock yet", methods=("items",))
+
+    compose(
+        plugin("owner", offers=(ItemSource,), records=(Item,), module=__name__),
+        plugin("p0", fills=(Waiting,), module=__name__),
+    )
+    with pytest.raises(NoProviderReady) as caught:
+        gather(ItemSource.all_items)()
+    assert caught.value.not_ready["p0"].methods == ("all_items",)
 
 
 # --- a renamed bridge ----------------------------------------------------------------------

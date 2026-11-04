@@ -109,6 +109,7 @@ Kept in `~/.untaped/plugins/dotfiles/state.yml`.
 | `git.probe_parallel` | integer | `8` | `UNTAPED_GIT__PROBE_PARALLEL` | How many remotes a ref probe reads at once: ls-remote calls, and the requests a host's own batch probe runs together. 1 to 32. |
 | `git.untaped_helper_only` | boolean | `false` | `UNTAPED_GIT__UNTAPED_HELPER_ONLY` | In untaped's worktrees, ask only untaped for a host's credentials, instead of your own Git credential helpers first. |
 | `git.caches.repo_source_repos.max_age_seconds` | integer | `21600` | `UNTAPED_GIT__CACHES__REPO_SOURCE_REPOS__MAX_AGE_SECONDS` | Seconds repos is served before untaped checks upstream; 0 checks every time. 0 or more. |
+| `git.caches.repo_source_select.max_age_seconds` | integer | `21600` | `UNTAPED_GIT__CACHES__REPO_SOURCE_SELECT__MAX_AGE_SECONDS` | Seconds selected repos is served before untaped checks upstream; 0 checks every time. 0 or more. |
 
 ## `github`
 

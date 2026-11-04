@@ -53,6 +53,10 @@ class Scope(BaseModel):
       to no repos.
     - Scopes add up: `--org acme --team backend` is the whole org plus that
       team. For one team, pass `--team acme/backend` alone.
+    - `repos selector` takes `--org`, `--team` and `--repo` and prints them as
+      a `github.repo_selector` without listing anything: a command that saves
+      a selection keeps it, and github lists its repos each time it is used.
+      It never falls back to `github.default_org`.
 
     ## Knowing a result is complete
 

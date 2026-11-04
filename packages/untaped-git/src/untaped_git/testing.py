@@ -265,10 +265,17 @@ def conformance(provider: object) -> None:
 
     untaped's plugin checks call it for every provider of git's contracts; a
     ``GitHost`` provider has nothing to check here. Repos are found by name, so
-    two repos one provider lists under one name could never be told apart.
+    two repos one provider lists under one name could never be told apart. A
+    provider that issues selectors (``to_selector``) also fills ``select``, which
+    reads them back.
     """
     if not isinstance(provider, RepoSource):
         return
+    cls = type(provider)
+    if cls.to_selector is not RepoSource.to_selector:
+        assert cls.select is not RepoSource.select, (
+            "a provider issuing selectors (to_selector) fills select to read them back"
+        )
     names = [repo.name.lower() for repo in provider.repos()]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     assert not duplicates, f"repos share a name: {', '.join(duplicates)}"

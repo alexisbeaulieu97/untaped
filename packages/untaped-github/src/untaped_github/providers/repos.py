@@ -2,8 +2,14 @@
 
 ``repos()`` lists the repositories of the inventory scope (``github.inventory.orgs``
 and ``teams``, else ``github.default_org``) live: a failed listing raises, so
-the contract's answer cache is the only place stale repos come from. A
-provider with no scope is not ready, so whoever asks says which setting to set.
+the contract's answer cache is the only place stale repos come from. The
+provider needs a token to list or select, and ``repos`` alone also waits for an
+inventory scope: ``ready()`` names the methods it can't answer, so the bridges
+(no API call) work with neither.
+
+``to_selector`` issues a ``github.repo_selector`` (orgs, teams, repos) as a
+``git.repo_selector``, and ``select`` reads it back and lists its repos the
+same way, whatever the inventory scope.
 
 ``to_repo`` turns a ``github.repo`` row (listed, or piped from any github
 command) into a ``git.repo`` without an API call: its URL is the row's
@@ -16,6 +22,7 @@ from __future__ import annotations
 from untaped.sdk import UsageError, key, kind_of, run_hint, setting_name
 from untaped.sdk.contracts import NotReady, Provider
 from untaped_git.api import Repo as GitRepo
+from untaped_git.api import RepoSelector as GitRepoSelector
 from untaped_git.api import RepoSource, store_key
 from untaped_github.application.inventory import (
     RepositoryInventoryScope,
@@ -25,9 +32,9 @@ from untaped_github.application.scopes import normalize_team_scopes
 from untaped_github.domain.errors import github_failures
 from untaped_github.domain.hosts import github_web_host
 from untaped_github.errors import GithubError
-from untaped_github.records import Repo
+from untaped_github.records import Repo, RepoSelector
 from untaped_github.server import github_api
-from untaped_github.settings import GithubSettings
+from untaped_github.settings import TOKEN, GithubSettings
 
 
 class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
@@ -37,6 +44,8 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
         unready = super().ready()
         if unready is not None:
             return unready
+        if TOKEN.answer(self.settings.server) is None:
+            return NotReady(f"no token; {_login()}", methods=("repos", "select"))
         try:
             inventory_scope(self.settings)
         except GithubError as exc:
@@ -44,6 +53,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
             return NotReady(
                 "github.inventory.teams needs ORG/SLUG entries" if teams else "no inventory scope",
                 key(GithubSettings).inventory.teams if teams else key(GithubSettings).default_org,
+                methods=("repos",),
             )
         return None
 
@@ -68,11 +78,22 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
             archived=item.archived,
         )
 
+    def to_selector(self, item: RepoSelector) -> GitRepoSelector:
+        return GitRepoSelector()
+
     def repos(self) -> list[GitRepo]:
-        settings = self.settings
-        scope = inventory_scope(settings)
+        return self._listed(inventory_scope(self.settings))
+
+    def select(self, selector: GitRepoSelector) -> list[GitRepo]:
+        own = self.own(selector, RepoSelector)
+        teams = normalize_team_scopes(own.teams)
+        return self._listed(
+            RepositoryInventoryScope(orgs=tuple(own.orgs), teams=teams, repos=tuple(own.repos))
+        )
+
+    def _listed(self, scope: RepositoryInventoryScope) -> list[GitRepo]:
         with github_failures():
-            rows = ResolveRepositoryInventory(github_api(settings))(scope)
+            rows = ResolveRepositoryInventory(github_api(self.settings))(scope)
         return [self.to_repo(row) for row in rows]
 
 
@@ -111,3 +132,9 @@ def _set_orgs() -> str:
     from untaped.core.api import Set  # noqa: PLC0415 - core's commands load only here
 
     return run_hint(Set.spelled(key(GithubSettings).inventory.orgs, "'[\"ORG\"]'"))
+
+
+def _login() -> str:
+    from untaped.core.api import Login  # noqa: PLC0415 - core's commands load only here
+
+    return run_hint(Login.spelled("github"))

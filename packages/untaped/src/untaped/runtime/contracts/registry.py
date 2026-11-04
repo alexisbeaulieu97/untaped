@@ -41,6 +41,7 @@ from untaped.sdk.contracts._declare import (
     contract_of,
     fills,
     item_type,
+    old_spellings,
     parameter_problems,
     settings_type,
     unused_methods,
@@ -488,23 +489,47 @@ class DoctorRow:
     fix: str | None = None
 
 
-def ready_of(provider: BoundProvider) -> NotReady | None:
+def ready_of(provider: BoundProvider, method: str | None = None) -> NotReady | None:
     """``provider``'s ``ready()``, its setting spelled in full; a raising one is not ready.
 
-    ``key(S).field`` is spelled under the section of the plugin whose
-    settings model ``S`` is (the owner rule), whoever runs the provider; a
-    model no composed plugin owns is spelled under the provider's plugin.
+    With ``method``, a ``NotReady`` naming other ``methods`` doesn't count:
+    the provider can answer ``method``. ``key(S).field`` is spelled under the
+    section of the plugin whose settings model ``S`` is (the owner rule),
+    whoever runs the provider; a model no composed plugin owns is spelled
+    under the provider's plugin.
     """
     try:
         ready = provider.instance.ready()
     except Exception as exc:
         _LOG.debug("%s's ready() raised %s", provider.plugin, type(exc).__name__, exc_info=exc)
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
+    if ready is not None and ready.methods:
+        problem = unknown_methods(provider, ready)
+        if problem is not None:  # a misspelt or removed method: never ask it on a guess
+            return NotReady(problem)
+        info = provider.binding.contract
+        current = {old: name for name in info.methods for old in old_spellings(info, name)}
+        ready = replace(ready, methods=tuple(current.get(name, name) for name in ready.methods))
+        if method is not None and method not in ready.methods:
+            return None
     if ready is None or ready.setting is None:
         return ready
     spelled = replace(ready)  # ``spelled`` is core's to set, so no provider passes it
     object.__setattr__(spelled, "spelled", f"{_section(provider, ready.setting)}.{ready.setting}")
     return spelled
+
+
+def unknown_methods(provider: BoundProvider, ready: NotReady) -> str | None:
+    """Why ``ready.methods`` can't be read: the names the provider's contract doesn't have.
+
+    A deprecated old spelling of a renamed method is known (``ready_of`` reads
+    it as the new name).
+    """
+    info = provider.binding.contract
+    unknown = [name for name in ready.methods if name not in info.methods]
+    if not unknown:
+        return None
+    return f"ready() names methods {info.name} doesn't have: {', '.join(unknown)}"
 
 
 def _section(provider: BoundProvider, setting: SettingKey) -> str:
@@ -567,7 +592,8 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     ready = ready_of(entry)
     if ready is not None:
         why = f"waits for {ready.spelled}" if ready.spelled else f"inactive: {ready.reason}"
-        detail = f"{what}: {why}"
+        only = f"{', '.join(ready.methods)} " if ready.methods else ""
+        detail = f"{what}: {only}{why}"
         return DoctorRow("contract-provider", entry.plugin, "pass", Reason.not_configured, detail)
     methods = ", ".join(name for name in info.methods if fills(provider, info, name))
     detail = f"fills {what}: {methods}"

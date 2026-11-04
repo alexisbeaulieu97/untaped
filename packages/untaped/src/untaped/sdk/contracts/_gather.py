@@ -277,7 +277,7 @@ def gather[C: Contract, **P, R](
                         rank,
                     )
                 continue
-            ready = ready_of(entry)
+            ready = ready_of(entry, wanted.name)
             if ready is not None:
                 answers[entry.plugin] = Skipped(
                     entry.plugin, Reason.not_configured, ready.reason, rank

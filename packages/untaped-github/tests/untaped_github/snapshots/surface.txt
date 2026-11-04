@@ -119,6 +119,20 @@ cli untaped github repos list --org VALUE... default=unset
 cli untaped github repos list --regex switch default=unset
 cli untaped github repos list --team VALUE... default=unset
 cli untaped github repos list [PATTERN]@1 default=unset
+cli untaped github repos selector
+cli untaped github repos selector --columns VALUE... default=unset
+cli untaped github repos selector --columns alias=-c
+cli untaped github repos selector --format VALUE default=table
+cli untaped github repos selector --format alias=-f
+cli untaped github repos selector --format choice=json
+cli untaped github repos selector --format choice=pipe
+cli untaped github repos selector --format choice=raw
+cli untaped github repos selector --format choice=table
+cli untaped github repos selector --format choice=yaml
+cli untaped github repos selector --org VALUE... default=unset
+cli untaped github repos selector --repo VALUE... default=unset
+cli untaped github repos selector --repo alias=-r
+cli untaped github repos selector --team VALUE... default=unset
 cli untaped github search
 cli untaped github search code
 cli untaped github search code --columns VALUE... default=unset
@@ -470,6 +484,10 @@ record github.repo.stargazers_count default=None
 record github.repo.stargazers_count integer?
 record github.repo.updated_at default=None
 record github.repo.updated_at string?
+record github.repo_selector
+record github.repo_selector.orgs string(pattern=^[^/\s]+$)[]
+record github.repo_selector.repos string(pattern=^[^/\s]+/[^/\s]+$)[]
+record github.repo_selector.teams string(pattern=^[^/\s]+/[^/\s]+$)[]
 record github.sweep_file
 record github.sweep_file.hits integer
 record github.sweep_file.path string
