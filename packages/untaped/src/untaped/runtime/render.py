@@ -30,7 +30,7 @@ from rich.text import Text
 
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
-from untaped.sdk._streams import stream_is_tty as stream_is_tty
+from untaped.sdk._streams import stream_is_tty
 from untaped.sdk._theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
 from untaped.sdk.fields import Roled
 

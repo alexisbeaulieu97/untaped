@@ -7,8 +7,8 @@ import sys
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 
-from untaped.runtime.render import stream_is_tty
 from untaped.sdk._pipe import PipeEnvelope, is_envelope_line, parse_envelope_line
+from untaped.sdk._streams import stream_is_tty
 from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.words import q
 

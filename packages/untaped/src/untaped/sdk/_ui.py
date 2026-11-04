@@ -14,11 +14,11 @@ from untaped.runtime.render import (
     render_message,
     render_styled,
     should_colorize,
-    stream_is_tty,
 )
 from untaped.runtime.run_output import count_row_failures, current_sink
 from untaped.runtime.theme import BUILTIN_THEMES, OutputFormat, resolve_theme_or_default
 from untaped.sdk._run import is_quiet, is_verbose
+from untaped.sdk._streams import stream_is_tty
 from untaped.sdk._theme import ThemeSpec
 from untaped.sdk.diagnostic import Message
 from untaped.sdk.errors import (

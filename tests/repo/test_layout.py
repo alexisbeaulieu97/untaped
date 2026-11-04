@@ -35,7 +35,6 @@ STILL_IMPORTS_THE_RUN = frozenset(
         "untaped.sdk._render",
         "untaped.sdk._exports",
         "untaped.sdk._schema",
-        "untaped.sdk._stdin",
         "untaped.sdk._ui",
         "untaped.sdk.contracts._cache",
         "untaped.sdk.contracts._declare",

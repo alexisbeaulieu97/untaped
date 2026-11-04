@@ -231,6 +231,12 @@ class Facts(Command):
         return Shape(name=f"chosen={self.output.format_chosen},tty={self.output.to_terminal}")
 
 
+class DocFacts(Facts):
+    """Name the same facts, printed as a document by default."""
+
+    output: Output[Shape] = Output(format="yaml")
+
+
 class ShapesSettings(BaseModel):
     pass
 
@@ -257,6 +263,7 @@ class Shapes(Plugin):
         Draw,
         Brief,
         Facts,
+        DocFacts,
     )
 
 
@@ -466,6 +473,9 @@ def test_an_output_knows_a_named_format_and_a_terminal_on_stdout(
     assert "chosen=True" in facts("-f", "yaml")
     monkeypatch.setenv("UNTAPED_FORMAT", "table")  # the user's default names it too
     assert "chosen=True" in facts()
+    root = build_root_app(candidates=[SHAPES])
+    doc = CliInvoker().invoke(root.meta, ["shapes", "doc-facts"])  # follows no user default
+    assert "chosen=False" in doc.stdout, doc.stderr
 
 
 def test_an_output_refuses_a_default_it_does_not_offer() -> None:

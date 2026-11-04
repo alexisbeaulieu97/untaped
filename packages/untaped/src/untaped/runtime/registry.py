@@ -720,8 +720,8 @@ def _reading_plugins() -> Iterator[None]:
     than print a progress line a ``-q`` asked to mute. On a terminal that
     ``-q`` still sees the spinner, which clears when composition ends.
     """
-    from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - only a fill reads it
     from untaped.runtime.run_output import current_sink  # noqa: PLC0415 - as above
+    from untaped.sdk._streams import stream_is_tty  # noqa: PLC0415 - only a fill reads it
 
     with current_sink().progress(READING_PLUGINS, quiet=not stream_is_tty(sys.stderr)):
         yield

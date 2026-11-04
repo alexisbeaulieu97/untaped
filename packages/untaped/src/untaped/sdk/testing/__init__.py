@@ -440,8 +440,8 @@ def invoke_cli(
     never touches a terminal: ``prompt_backend=ScriptedTerminal().screens(...)``
     is enough (and ``interactive=True`` only if the command checks for a TTY itself).
     ``stdout_terminal=True`` makes the captured stdout claim to be a terminal
-    (``Output.to_terminal``), as at a prompt rather than in a pipe; color still
-    follows ``NO_COLOR`` and ``FORCE_COLOR``.
+    (``Output.to_terminal``), as at a prompt rather than in a pipe; rows and
+    rendered pages then come in color as at a terminal, unless ``NO_COLOR`` is set.
     """
     from untaped.runtime.run import invocation  # noqa: PLC0415
 

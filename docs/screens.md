@@ -222,8 +222,9 @@ that builds its screen only after reading config or probing a store asks
 `terminal.require_screen_terminal(command=..., alternative=...)` first, so a run
 without a terminal exits 2 having touched nothing. A command whose screen
 replaces its rows opens it only as a pager would: when `output.to_terminal`
-(stdout is a terminal), no format is named (`output.format_chosen` is false)
-and stdin can prompt; otherwise it prints the rows.
+(stdout is a terminal), no format is named (`output.format_chosen` is false),
+no `--columns` is given (`output.requested is None`) and stdin can prompt;
+otherwise it prints the rows.
 
 A `Panes` side may also be a drawing (a function `(frame, focused) ->
 renderable`) for a pane whose model the screen owns; `SearchList` and `Tree`

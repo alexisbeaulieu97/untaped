@@ -52,7 +52,7 @@ def test_rows_with_a_format_or_without_a_terminal(
     terminal.present()
     assert [r["name"] for r in as_json(["show"])] == ["starship"]  # --format json: rows
     assert "starship" in run(["show"]).stdout  # stdout piped (show | grep): rows
-    for named in (["--format", "table"], ["--columns", "name"]):
+    for named in (["--format", "table"], ["--columns", "name"], ["-f", "json"]):
         assert "starship" in run(["show", *named], on_screen=True).stdout
     assert terminal.ran == []
 
@@ -66,6 +66,9 @@ def test_a_format_named_by_the_environment_prints_rows(
     result = run(["show"], on_screen=True)
     assert result.exit_code == 0, result.output
     assert "name: starship" in result.stdout
+    monkeypatch.delenv("UNTAPED_FORMAT")
+    assert installed().cli(["config", "set", "untaped.ui.format", "table"]).exit == 0
+    assert "starship" in run(["show"], on_screen=True).stdout
     assert terminal.ran == []
 
 
