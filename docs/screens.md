@@ -6,8 +6,9 @@ with a footer of keys, drawn in the user's theme. untaped owns the shared
 behavior (keys, look, the refusal when there is no terminal, testing), so a
 screen declares what it shows and does and nothing else. Screens are
 [experimental](./versioning.md#experimental): the API may change in a minor
-release. A plugin never imports `prompt_toolkit`; `untaped lint` flags it
-(see [Enforcement](./reference/conventions.md#enforcement)).
+release. A plugin imports the kit from `untaped.screen.core` and the modules
+of `untaped.screen.components`, and never imports `prompt_toolkit`;
+`untaped lint` flags it (see [Enforcement](./reference/conventions.md#enforcement)).
 
 ## A screen
 

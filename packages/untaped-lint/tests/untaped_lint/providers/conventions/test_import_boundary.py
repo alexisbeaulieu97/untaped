@@ -106,6 +106,20 @@ def test_the_sdk_modules_and_own_modules_are_allowed(check: Check) -> None:
     assert check({"cli/__init__.py": source, "domain/__init__.py": "x = 1\n"}) == []
 
 
+def test_the_screens_kit_is_allowed_and_the_rest_of_screen_is_not(check: Check) -> None:
+    source = (
+        "from untaped.screen.core import Cmd, Screen\n"
+        "from untaped.screen.components.lists import Tree\n"
+        "from untaped.screen.terminal import run_terminal_screen\n"
+        "from untaped.screen.components._private import x\n"
+    )
+    assert check({"screen.py": source}) == [
+        "demo/screen.py:3::import-boundary::imports untaped.screen.terminal; use untaped.sdk",
+        "demo/screen.py:4::import-boundary::imports untaped.screen.components._private; "
+        "use untaped.sdk",
+    ]
+
+
 def test_function_level_and_type_checking_imports_count(check: Check) -> None:
     source = (
         "from typing import TYPE_CHECKING\n"

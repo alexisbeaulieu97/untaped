@@ -1,8 +1,11 @@
 """Import boundary of a plugin: core only through the SDK, other plugins only through ``api``.
 
 A plugin's own source may import ``untaped`` only as one of the SDK modules
-(``untaped.sdk`` and its groups, :data:`SDK_MODULES`) or as
-``untaped.core.api`` (the core commands a hint names), and another plugin only as that
+(``untaped.sdk`` and its groups, :data:`SDK_MODULES`), as
+``untaped.core.api`` (the core commands a hint names) or as the experimental
+screens kit (``untaped.screen.core`` and ``untaped.screen.components``'s
+modules, :func:`is_screen_kit`: outside the SDK promise, a kit a plugin takes
+knowing it is one), and another plugin only as that
 plugin's ``api`` module, and only when its distribution requires the
 other's (by default: the ``requires`` of its ``untaped.installed_plugin``
 record). Which packages are plugins
@@ -47,6 +50,17 @@ SDK_MODULES = frozenset(
 
 #: Core's own ``api`` module: the commands a plugin names in a hint (``Set.spelled(...)``).
 CORE_API = "untaped.core.api"
+#: The screens kit's modules (``docs/screens.md``): its core and its components.
+SCREEN_CORE = "untaped.screen.core"
+SCREEN_COMPONENTS = "untaped.screen.components"
+
+
+def is_screen_kit(target: str) -> bool:
+    """Whether ``target`` is the screens kit: ``untaped.screen.core`` or a component module."""
+    if target == SCREEN_CORE or target.startswith(f"{SCREEN_CORE}."):
+        return True
+    rest = target.removeprefix(f"{SCREEN_COMPONENTS}.")
+    return rest != target and not rest.startswith("_")
 
 
 def _targets(
@@ -91,7 +105,12 @@ def _detail(
                 f"{plugin_packages[other]}'s"
             )
         return None
-    if _is_within(target, "untaped") and target not in SDK_MODULES and target != CORE_API:
+    if (
+        _is_within(target, "untaped")
+        and target not in SDK_MODULES
+        and target != CORE_API
+        and not is_screen_kit(target)
+    ):
         return f"imports {target}; use {_SDK}"
     return None
 

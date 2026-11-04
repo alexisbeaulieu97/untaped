@@ -87,7 +87,7 @@ On Windows, `link` needs symlink permission (Developer Mode or elevation);
 ```bash
 untaped dotfiles subscribe https://git.example.com/acme/dotfiles.git --add fish
 untaped dotfiles subscribe ~/work-dotfiles --name work
-untaped dotfiles show                     # every package the sources offer
+untaped dotfiles show                     # every package; a screen at a terminal
 untaped dotfiles add starship --policy sync
 untaped dotfiles add claude/skills        # one item of a package
 untaped dotfiles apply --dry-run
@@ -100,6 +100,14 @@ through the git plugin's repo store, so its credentials and proxy apply;
 a local folder is read as it stands, never fetched. `add` turns packages
 or items on and places nothing; `remove` takes back what they placed and
 turns them off (`--keep-files` leaves the files).
+
+`show` with no selector at a terminal opens a screen: the sources and
+their packages on the left, the package under the cursor in full on the
+right. `space` turns a package or item on or off, `p` cycles its policy
+(the author's, `sync`, `once`, `manual`), `e` answers a plain input, and
+`ctrl-s` saves every change to `config.yml` at once; esc closes saving
+nothing. It places nothing. `show --format json`, or no terminal, prints
+the rows instead.
 
 `apply` fetches each git source, moves its clone to the fetched commit,
 shows one preview (every entry with its destination, then a diff wherever
