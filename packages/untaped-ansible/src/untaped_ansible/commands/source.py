@@ -8,6 +8,7 @@ from collections.abc import Iterator
 from pydantic import Field, ValidationError
 
 from untaped.sdk import (
+    ConfigError,
     Confirm,
     ErrorCategory,
     Failure,
@@ -70,10 +71,13 @@ class Set(AnsibleCommand):
 
     Pipe the selector a plugin prints (a pipe-format row) with --stdin, or
     name a plugin with --from to take every repo it lists; --match narrows
-    either to the repos whose full name matches a glob. The source's plugin is asked for its
-    repos at each refresh, so it must be installed and ready then.
+    either to the repos whose full name matches a glob, beside any patterns
+    the piped selector carries. The source's plugin is asked for its repos
+    at each refresh, so it must be installed and ready then, not when the
+    source is saved.
 
-    It replaces the whole definition; `source patch` adds or removes one
+    It replaces the whole definition, a damaged row of that name included;
+    `source patch` adds or removes one
     path or ref selector. A change drops the source's cached data, so the
     next `deps`, `impact`, `find` or `graph` that reads it refreshes it
     first.
@@ -114,7 +118,9 @@ class Set(AnsibleCommand):
             source = SourceDefinition(
                 name=self.name,
                 source=plugin,
-                selector=selector.model_copy(update={"match": self.match}),
+                selector=selector.model_copy(
+                    update={"match": list(dict.fromkeys([*selector.match, *self.match]))}
+                ),
                 dependency_paths=self.path,
                 ref_kinds=self.ref_kind,
                 ref_patterns=self.ref_pattern,
@@ -122,12 +128,24 @@ class Set(AnsibleCommand):
             )
         except ValidationError as exc:
             raise UsageError(first_validation_error(exc)) from exc
-        previous = SOURCES.get(self.name)
-        action = "created" if previous is None else "unchanged" if previous == source else "updated"
+        action = self._action(source)
         if action != "unchanged":
             SOURCES.put(source)
             open_index().clear(saved_source_key(self.name))
         return SourceOutcome(action=action, name=self.name)
+
+    def _action(self, source: SourceDefinition) -> str:
+        """``created``, ``updated`` or ``unchanged``; a damaged row of the name is dropped."""
+        try:
+            previous = SOURCES.get(self.name)
+        except ConfigError:
+            names = SOURCES.keys()  # never stops on a damaged row
+            if self.name not in names:
+                raise
+            # Such as a row an older version saved: set replaces a definition whole.
+            SOURCES.delete(self.name)
+            return "updated"
+        return "created" if previous is None else "unchanged" if previous == source else "updated"
 
     def _selection(self) -> tuple[str, RepoSelector]:
         """The plugin the source asks, and its selector: the one piped, or none of its own."""
@@ -417,9 +435,9 @@ def _release_repos(
 ) -> tuple[list[str], list[tuple[str, UntapedError]]]:
     """Release ``repos`` (name → URLs) no other saved source selects.
 
-    Each repo is tried at its stored URL and every remote URL its scans
-    fetched; https and ssh URLs of a repo are one store repo. Repos ansible
-    has no part in are skipped. Returns the outcome lines and the failed
+    Each repo is tried at its stored URL and every URL its scans fetched,
+    once per store repo (an https and an ssh URL of one repo are one). Repos ansible has no
+    part in are skipped. Returns the outcome lines and the failed
     releases.
     """
     changes: list[str] = []

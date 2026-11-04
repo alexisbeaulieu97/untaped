@@ -133,7 +133,6 @@ def scan(
         source_ref=source_ref,
         source_sha=sha or f"sha-{source_ref}",
         clone_url=f"https://github.com/{source_repo}.git",
-        clone_protocol="https",
         dependency_paths_fingerprint="paths-a",
         checked_at=now,
         indexed_at=now,

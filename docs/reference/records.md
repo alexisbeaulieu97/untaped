@@ -181,12 +181,13 @@ per row (raw prints an event's `counter` and a log's `line`); with
 | `ansible find` | `ansible.dependency_match` (with the input record's `input_kind`, `input_id`, `input_name`) |
 | `ansible source-alias list` | `ansible.source_alias` |
 | `ansible source-alias set`, `source-alias remove` | `ansible.source_alias_outcome` |
-| `ansible source list`, `source get` | `ansible.source` (`ref_scan_default` `null` when the source leaves it to the `ansible.ref_scan_default` setting) |
+| `ansible source list`, `source get` | `ansible.source` (`source`, the plugin asked for its repos; `selects`, the selector in words; `selector`; `ref_scan_default` `null` when the source leaves it to the `ansible.ref_scan_default` setting; experimental) |
 | `ansible source status` | `ansible.source_status` |
 | `ansible source set`, `source patch`, `source remove` | `ansible.source_outcome` |
 
 | Consumer | Reads | Field used |
 |---|---|---|
+| `ansible source set --stdin` | one selector a plugin issued: any kind a `RepoSource` provider reads as a selector (github: `github.repo_selector`), or a `git.repo_selector` that carries its issuer | the whole record, as the issuing plugin's selector; the source's plugin is its issuer (experimental) |
 | `ansible find --stdin` | any installed plugin's record kind; or `NAME@ref` lines | repository from `scm_url`, `repo_url`, `repo` or `full_name`; ref from `effective_scm_ref` or `ref`; identity from `id` and `name` |
 
 `ansible graph` writes one `ansible.graph_document`, the JSON graph; `tree`

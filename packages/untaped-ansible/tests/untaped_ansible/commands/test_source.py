@@ -274,6 +274,52 @@ def test_source_set_match_narrows_a_piped_selector(tmp_path: Path, monkeypatch) 
     assert row["selects"] == "orgs acme; match acme/api-*"
 
 
+def test_source_set_keeps_the_match_a_piped_selector_carries(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+    issued = {"plugin": "github", "kind": "github.repo_selector", "record": {"orgs": ["acme"]}}
+    record = {"match": ["acme/api-*"], "source": issued}
+    selector = {"untaped": "1", "kind": "git.repo_selector", "record": record}
+
+    result = run(
+        "source",
+        "set",
+        "prod",
+        "--stdin",
+        "--match",
+        "acme/web-*",
+        "--match",
+        "acme/api-*",
+        input=json.dumps(selector) + "\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(run("source", "list", "--format", "json").stdout)
+    assert row["selector"]["match"] == ["acme/api-*", "acme/web-*"]
+
+
+def test_source_set_replaces_a_damaged_row_of_its_name(tmp_path: Path, monkeypatch) -> None:
+    # A row in an older shape reads as damaged; set replaces a definition whole.
+    old = {"name": "prod", "orgs": ["acme"]}
+    use_config(tmp_path, monkeypatch, {"sources": [old, github_source("other", orgs=["acme"])]})
+
+    result = run("source", "set", "prod", "--from", "gitlab", "--format", "json")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "updated"
+    assert [row["name"] for row in read_state()["sources"]] == ["other", "prod"]
+    assert run("source", "get", "prod").exit_code == 0
+
+
+def test_source_refresh_names_a_plugin_that_lists_no_repos(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+    assert run("source", "set", "infra", "--from", "nosuch").exit_code == 0
+
+    result = run("source", "refresh", "infra")
+
+    assert result.exit_code == 4
+    assert "no installed plugin named nosuch fills it" in result.stderr
+
+
 @pytest.mark.parametrize(
     ("args", "piped", "message"),
     [
@@ -819,7 +865,7 @@ def test_source_remove_clears_a_damaged_row_and_is_not_stopped_by_one(
     # A row failing its model is what the damaged error tells the user to remove.
     sources = [
         github_source("good", repos=["acme/site"]),
-        github_source("bad", repos=["not a repo"]),
+        {"name": "bad", "orgs": ["acme"]},  # an older shape: no source, no selector
     ]
     use_config(tmp_path, monkeypatch, {"sources": sources})
 

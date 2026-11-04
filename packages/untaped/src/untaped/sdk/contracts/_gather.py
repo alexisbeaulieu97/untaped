@@ -292,7 +292,9 @@ def gather[C: Contract, **P, R](
             for answer in answers.values()
         ):
             what = f"{owner}.{info.name}.{wanted.name}"
-            detail = "; ".join(reasons) if reasons else "no installed plugin fills it"
+            detail = (
+                "; ".join(reasons) if reasons else f"no installed plugin {_named(plugins)}fills it"
+            )
             raise NoProviderReady(
                 f"no provider of {what} is ready: {detail}",
                 not_ready=not_ready,
@@ -324,6 +326,12 @@ def gather[C: Contract, **P, R](
         )
 
     return call
+
+
+def _named(plugins: Collection[type[Contract] | str] | None) -> str:
+    """``named a, b `` for the plugin names ``gather(plugins=)`` asked, else nothing."""
+    names = sorted(each for each in plugins or () if isinstance(each, str))
+    return f"named {', '.join(names)} " if names else ""
 
 
 def _picked(
