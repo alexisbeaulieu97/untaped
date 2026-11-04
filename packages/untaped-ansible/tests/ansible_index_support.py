@@ -176,7 +176,7 @@ class LiveHub:
         self.calls.append(("locate", name))
         repo = self.repos.get(name)
         if repo is None:
-            raise UsageError(f"repo not found: {name!r}", hint="pass the repo's clone URL")
+            raise UsageError(f"repo not found: {name!r}")
         if "error" in repo:
             raise repo["error"]
         return Repo(name=name, url=_url(name), default_branch=repo.get("default"))

@@ -1005,7 +1005,7 @@ def test_a_target_that_cannot_be_read_live_fails_the_command(
     result = run(command, "acme/gone", "-f", "json")
 
     assert result.exit_code == 2, result.output
-    assert "repo not found: 'acme/gone'" in result.stderr
+    assert "could not read acme/gone live: repo not found: 'acme/gone'" in result.stderr
     assert "no declared downstream dependencies" not in result.stderr
 
 
@@ -1022,7 +1022,7 @@ def test_find_warns_for_an_unreadable_root_and_fails_when_none_was_read(
     assert [row[0] for row in _match_rows(some)] == ["acme/app"]
     assert "acme/gone: could not read acme/gone live: repo not found" in some.stderr
     assert none.exit_code == 2, none.output
-    assert "repo not found: 'acme/gone'" in none.stderr
+    assert "could not read acme/gone live: repo not found: 'acme/gone'" in none.stderr
 
 
 def test_graph_depth_defaults_to_unlimited(tmp_path: Path, monkeypatch) -> None:

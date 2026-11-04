@@ -306,12 +306,14 @@ class StoreDependencyIndex:
 
 
 def _failed(read: _LiveRead, repo: str, ref: str | None, exc: UntapedError) -> _LiveRead:
-    """``read`` emptied, with ``exc`` as its failure and its warning."""
+    """``read`` emptied, with ``exc`` (naming the repo) as its failure and its warning."""
     label = f"{repo}@{ref}" if ref else repo
+    message = f"could not read {label} live: {exc}"
     hint = f" ({exc.hint})" if exc.hint else ""
     read.edges.clear()
     read.skipped.clear()
     read.default_branch = None
-    read.failure = exc
-    read.errors.append(f"could not read {label} live: {exc}{hint}; not expanding its dependencies")
+    read.failure = AnsibleError(message, category=exc.category, system=exc.system, hint=exc.hint)
+    read.failure.__cause__ = exc
+    read.errors.append(f"{message}{hint}; not expanding its dependencies")
     return read

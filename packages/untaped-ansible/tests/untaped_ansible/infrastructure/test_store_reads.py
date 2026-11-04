@@ -181,7 +181,7 @@ def test_a_failed_read_warns_and_leaves_its_node_unread() -> None:
     assert _edges(results[("acme/site", None)]) == [("acme/site", "main", "acme/base")]
     assert results[("acme/gone", None)] == results[("acme/site", "nope")] == []
     assert index.errors == (
-        "could not read acme/gone live: repo not found: 'acme/gone' (pass the repo's clone URL); "
+        "could not read acme/gone live: repo not found: 'acme/gone'; "
         "not expanding its dependencies",
         "could not read acme/site@nope live: no branch or tag named 'nope'; "
         "not expanding its dependencies",
