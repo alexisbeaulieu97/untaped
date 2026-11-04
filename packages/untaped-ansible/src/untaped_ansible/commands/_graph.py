@@ -47,7 +47,7 @@ from untaped_ansible.domain.graph import DependencyGraph
 from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
-from untaped_ansible.refresh import GIT_PARALLEL_CAP, Backend, serve_sources
+from untaped_ansible.refresh import GIT_PARALLEL_CAP, serve_sources
 from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, alias_map
 from untaped_github.api import GithubSettings, github_api
 
@@ -77,13 +77,6 @@ class GraphCommand(AnsibleCommand):
     parallel: Parallel = Parallel(
         default=key(AnsibleSettings).git_fetch_parallel, cap=GIT_PARALLEL_CAP
     )
-    backend: Backend | None = Field(
-        None,
-        description=(
-            "Ref probe backend for a refresh this command runs: auto, graphql, or git; "
-            "not with --cached."
-        ),
-    )
     depth: str | None = Field(None, description=DEPTH)
 
     # -- the source -------------------------------------------------------------
@@ -107,7 +100,6 @@ class GraphCommand(AnsibleCommand):
             for flag, given in (
                 ("--refresh", self.refresh.directive is True),
                 ("--cached", self.refresh.directive is False),
-                ("--backend", self.backend is not None),
             )
             if given
         ]
@@ -116,8 +108,6 @@ class GraphCommand(AnsibleCommand):
                 f"{flags[0]} needs a source; select one with --source NAME or inline selectors "
                 "(or set ansible.default_source)"
             )
-        if self.backend is not None and self.refresh.directive is False:
-            raise UsageError("--backend needs a refresh; drop --cached")
         aliases = alias_map()
         github = self.github
         github_host = self.github_host
@@ -169,7 +159,7 @@ class GraphCommand(AnsibleCommand):
         """
         if not _reads_source(env, direction):
             return read()
-        wiring = self.wiring(env.sqlite_index, parallel=self.parallel.value, backend=self.backend)
+        wiring = self.wiring(env.sqlite_index, parallel=self.parallel.value)
 
         def served_read() -> T:
             env.resolvers.forget()  # a refresh may have stored repositories on new hosts

@@ -5,13 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from untaped.sdk import ErrorCategory, UtcTimestamp
-
-ProbeFallbackReason = Literal["graphql_rate_limited", "graphql_transient"]
-GRAPHQL_RATE_LIMIT_FALLBACK: ProbeFallbackReason = "graphql_rate_limited"
-GRAPHQL_TRANSIENT_FALLBACK: ProbeFallbackReason = "graphql_transient"
 
 
 class IndexedDependency(BaseModel):
@@ -61,33 +57,6 @@ class ProbeTarget(BaseModel):
     url: str
     default_branch: str
     ssh_url: str | None = None
-
-
-class ProbeFailure(BaseModel):
-    """One repository that could not be probed for refs.
-
-    ``category`` is the failure's category (``unavailable`` for a transient
-    one), which the refresh's exit code follows.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    reason: str
-    kind: Literal["missing", "transient", "chunk", "git"]
-    category: ErrorCategory = ErrorCategory.FAILED
-
-
-class ProbeReport(BaseModel):
-    """Outcome of one batched ref freshness probe."""
-
-    model_config = ConfigDict(frozen=True)
-
-    repos: dict[str, ProbedRepo] = Field(default_factory=dict)
-    failures: dict[str, ProbeFailure] = Field(default_factory=dict)
-    fallbacks: dict[str, str] = Field(default_factory=dict)
-    rate_limit_cost: int | None = None
-    rate_limit_remaining: int | None = None
-    rate_limit_reset_at: datetime | None = None
 
 
 class RepoFailure(BaseModel):

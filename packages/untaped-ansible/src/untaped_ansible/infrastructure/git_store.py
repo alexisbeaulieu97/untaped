@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from untaped.sdk import PluginHandle, UntapedError, attribution
+from untaped.sdk import PluginHandle
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
 from untaped_git.api import (
@@ -28,9 +28,7 @@ from untaped_git.api import (
     Removed,
     RepoStore,
     check_names,
-    default_branch,
     git_toplevel,
-    ls_remote,
     run_git,
 )
 
@@ -89,20 +87,6 @@ class GitSourceStore:
         if check_names([ref.name]) is None:
             return None
         return "git allows this name, but the repo store cannot hold it"
-
-    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
-        """``ref → commit`` of ``url``'s refs matching ``patterns``, with untaped's credentials."""
-        try:
-            return ls_remote(url, patterns)
-        except UntapedError as exc:
-            raise RepoStoreError(str(exc), **attribution(exc)) from exc
-
-    def default_branch(self, url: str) -> str | None:
-        """The branch ``url``'s ``HEAD`` points at, or ``None``."""
-        try:
-            return default_branch(url)
-        except UntapedError as exc:
-            raise RepoStoreError(str(exc), **attribution(exc)) from exc
 
     def read_files(
         self, url: str, shas: Sequence[str], paths: Sequence[str]

@@ -9,6 +9,7 @@ from pydantic import Field
 
 from untaped.sdk import (
     Confirm,
+    ErrorCategory,
     Failure,
     Group,
     Output,
@@ -28,7 +29,6 @@ from untaped.sdk import (
 from untaped.sdk.storage import FreshnessRecord
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.commands._ansible import (
-    BACKEND,
     REF_SCAN_DEFAULT,
     TEAM,
     AnsibleCommand,
@@ -45,11 +45,9 @@ from untaped_ansible.infrastructure import (
     SqliteDependencyIndex,
     open_index,
 )
-from untaped_ansible.infrastructure.github_ref_probe import is_transient_ref_probe_failure
 from untaped_ansible.records import Source, SourceOutcome, SourceStatus
 from untaped_ansible.refresh import (
     GIT_PARALLEL_CAP,
-    Backend,
     RefreshRecord,
     SelectedSource,
     fill_summary,
@@ -250,18 +248,23 @@ class Refresh(AnsibleCommand):
     it to retry only the failures. When every repo fails, the previous data
     is kept (`index left unchanged`).
 
-    When GitHub's GraphQL budget drops below
-    `ansible.source_refresh_rate_limit_floor`, the refresh stops with the
-    finished batches saved and exits 5; rerunning resumes where it left off.
-    Secondary rate limits, a rejected token, forbidden requests and unknown
-    GraphQL access failures abort the whole refresh instead. `--backend auto`
-    falls back to `git ls-remote` for the remaining repos when GraphQL's
-    budget is spent; `git` probes every repo that way.
+    Each repo's branches and tags are probed by the plugin that serves its
+    host, many repos per request when that plugin can, else with
+    `git ls-remote`, `git.probe_parallel` at once. A repo the host's probe
+    could not read is read with `git ls-remote` instead, with one warning
+    for all of them; a repo the host says does not exist fails.
+
+    Repos are probed and saved in batches of
+    `ansible.source_refresh_repo_batch_size`. Once a host's probe budget is
+    spent, the refresh stops after the batch with the finished batches saved
+    and exits 5, and the error's `retry_at` says when the budget resets;
+    rerunning resumes where it left off. A probe the host refused, such as
+    a rejected token, aborts the whole refresh instead.
 
     Examples
     --------
     ```console
-    $ untaped ansible source refresh platform --backend git
+    $ untaped ansible source refresh platform --parallel 16
     ```
     """
 
@@ -269,13 +272,12 @@ class Refresh(AnsibleCommand):
     parallel: Parallel = Parallel(
         default=key(AnsibleSettings).git_fetch_parallel, cap=GIT_PARALLEL_CAP
     )
-    backend: Backend | None = Field(None, description=BACKEND)
 
     def run(self) -> None:
         name = self.name
         source = self.saved(name)
         key = saved_source_key(name)
-        wiring = self.wiring(open_index(), parallel=self.parallel.value, backend=self.backend)
+        wiring = self.wiring(open_index(), parallel=self.parallel.value)
         selection = SelectedSource(definition=source, key=key, label=name, subject=f"source {name}")
         record = RefreshRecord()
         try:
@@ -297,7 +299,7 @@ class Refresh(AnsibleCommand):
                 raise _partial_refresh_error(result) from None
             if result is not None:  # paused, or every repo failed
                 self._report_repo_failures(result)
-                warn_refresh(result, self.settings, self.ctx.diag.warning)
+                warn_refresh(result, self.ctx.diag.warning)
             if error is not None:
                 raise error from None  # the fill's own, without serve()'s hint to --cached
             if exc.details.get("key") == key:
@@ -318,13 +320,13 @@ class Refresh(AnsibleCommand):
         """The summary, then each repo that failed, then the refresh's warning groups."""
         self.ctx.diag.info(f"refreshed source {self.name}: {fill_summary(result)}")
         self._report_repo_failures(result)
-        warn_refresh(result, self.settings, self.ctx.diag.warning)
+        warn_refresh(result, self.ctx.diag.warning)
 
     def _report_repo_failures(self, result: RefreshResult) -> None:
         """One failure line per repo the refresh could not read, and a rerun hint when it helps."""
         for failure, error in zip(result.failures, repo_errors(result), strict=True):
             self.ctx.diag.failure(error, item=failure.repo)
-        if any(is_transient_ref_probe_failure(failure.reason) for failure in result.failures):
+        if any(failure.category == ErrorCategory.UNAVAILABLE for failure in result.failures):
             self.ctx.diag.hint(
                 f"rerun `{command_line(Refresh.spelled(shlex.quote(self.name)))}`; "
                 "unchanged repos skip Git fetch and dependency scan work"

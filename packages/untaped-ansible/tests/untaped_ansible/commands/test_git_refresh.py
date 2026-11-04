@@ -2,8 +2,10 @@
 
 The remotes answer at ``https://github.com/acme/<name>.git`` (rewritten to
 local paths), the store root is a temp ``git.store_dir``, and github fills
-``GitHost`` with the profile's token, so the refresh runs exactly as the CLI
-wires it: GitHub's REST inventory is the only fake.
+``GitHost`` with the profile's token, so the refresh runs as the CLI wires it
+for a host whose plugin has no batch ref probe: refs come from ``git
+ls-remote`` with that plugin's credentials. GitHub's REST inventory is the
+only fake.
 """
 
 from __future__ import annotations
@@ -23,13 +25,14 @@ from untaped.sdk import ErrorCategory, plugin_of
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
-from untaped_ansible.infrastructure import GitRemoteRefProbe, GitSourceStore, SqliteDependencyIndex
+from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
 from untaped_ansible.settings import AnsibleSettings, SourceDefinition
 from untaped_git import remote as remote_module
 from untaped_git import store_git as store_module
-from untaped_git.api import GitCommandError, GitResult, Released, RepoStore, store_key
+from untaped_git.api import GitResult, Released, RepoStore, store_key
 from untaped_git.host_auth import basic_header
 from untaped_git.testing import GitRemote, git_remote
+from untaped_github.providers.git import GithubHost
 
 _REQS = "roles/requirements.yml"
 _META = "meta/main.yml"
@@ -79,6 +82,8 @@ def store_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path
     """A temp store root, a github token, and the block run as an ansible command runs."""
     root = tmp_path / "store"
     monkeypatch.setenv("GH_TOKEN", _TOKEN)
+    # GitHub's batch probe would ask GraphQL: without it, its host is probed as any other.
+    monkeypatch.delattr(GithubHost, "probe_refs")
     configure(git={"store_dir": root})
     with running():
         yield root
@@ -103,7 +108,6 @@ def _refresh(
     refresh = RefreshGitSourceIndex(
         github=FakeGitHub(),
         git=git,
-        probe=GitRemoteRefProbe(git, clone_protocol="https"),
         index=SqliteDependencyIndex(index_path(tmp_path)),
         aliases={},
         default_dependency_paths=_PATHS,
@@ -270,43 +274,29 @@ def test_dependency_files_read_under_any_locale(
     assert files == {sha: {_REQS: "- src: acme/two\n", "requirements.yml": "- src: acme/one\n"}}
 
 
-def test_a_failed_ls_remote_keeps_the_git_errors_attribution(
+def test_a_refresh_without_git_fails_each_repo_as_a_config_error(
     tmp_path: Path, store_root: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A missing git binary is ``config``/``local``, unlike RepoStoreError's own defaults.
+    _remote(tmp_path, "site", {_REQS: "- src: acme/base\n"})
     monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
-    with pytest.raises(RepoStoreError) as caught:
-        _store().ls_remote("https://github.com/acme/site.git", patterns=["HEAD"])
 
-    assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
-    assert isinstance(caught.value.__cause__.__cause__, GitCommandError)  # type: ignore[union-attr]
+    result = _refresh(tmp_path, "site")
+
+    [failure] = result.failures
+    assert (failure.repo, failure.category) == ("acme/site", ErrorCategory.CONFIG)
 
 
 def _basic(token: str) -> str:
     return basic_header("x-access-token", token)
 
 
-def test_the_remotes_default_branch_and_the_names_the_store_holds(
-    tmp_path: Path, store_root: Path
-) -> None:
-    site = _remote(tmp_path, "site", {"requirements.yml": "- src: acme/one\n"})
+def test_the_names_the_store_holds(store_root: Path) -> None:
     store = _store()
 
-    assert store.default_branch(site.url) == "main"
     assert store.refusal(GitRef(kind="heads", name="feature/+x", sha="0" * 40)) is None
     assert store.refusal(GitRef(kind="heads", name="-wip", sha="0" * 40)) == (
         "git allows this name, but the repo store cannot hold it"
     )
-
-
-def test_a_failed_default_branch_lookup_keeps_the_git_errors_attribution(
-    tmp_path: Path, store_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("PATH", str(tmp_path / "no-bin"))
-    with pytest.raises(RepoStoreError) as caught:
-        _store().default_branch("https://github.com/acme/site.git")
-
-    assert (caught.value.system, caught.value.category) == ("local", ErrorCategory.CONFIG)
 
 
 def _save_sources(*names: str, repo: str = "acme/site") -> None:

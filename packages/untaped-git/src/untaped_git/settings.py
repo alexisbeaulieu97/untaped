@@ -23,6 +23,15 @@ class GitSettings(BaseModel):
             "under the home."
         ),
     )
+    probe_parallel: int = Field(
+        default=8,
+        ge=1,
+        le=32,
+        description=(
+            "How many remotes a ref probe reads at once: ls-remote calls, and the "
+            "requests a host's own batch probe runs together."
+        ),
+    )
     untaped_helper_only: bool = Field(
         default=False,
         description=(

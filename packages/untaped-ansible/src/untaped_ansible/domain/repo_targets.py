@@ -1,4 +1,4 @@
-"""Repository target helpers shared by source refresh backends."""
+"""Repository target helpers for source refresh: the URL each repository is read from."""
 
 from __future__ import annotations
 

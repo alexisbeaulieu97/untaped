@@ -34,7 +34,6 @@ from untaped.sdk.testing import cache_clock, progress_clock
 from untaped_ansible import refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.domain.payloads import (
-    GRAPHQL_TRANSIENT_FALLBACK,
     IndexedDependency,
     RepoFailure,
     SkippedDependencyFile,
@@ -43,6 +42,7 @@ from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE
 from untaped_ansible.settings import SOURCE_DATA
+from untaped_git.api import HostBudget
 
 _PROD = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
 _TWO = {"sources": [{"name": "a", "repos": ["acme/site"]}, {"name": "b", "repos": ["acme/app"]}]}
@@ -60,11 +60,10 @@ def _seed_rows(tmp_path: Path, key: str, *edges: IndexedDependency, ago: timedel
 
 
 class Fill:
-    """The fake wired refresh: the keys it filled, the backend each was asked for."""
+    """The fake wired refresh: the keys it filled."""
 
     def __init__(self) -> None:
         self.keys: list[str] = []
-        self.backends: list[str | None] = []
         self.edges: tuple[IndexedDependency, ...] = (make_edge(),)
         self.error: BaseException | None = None
         self.result: RefreshResult | None = None
@@ -76,11 +75,9 @@ class Fill:
         *,
         source_key: str,
         index: SqliteDependencyIndex,
-        backend: str | None = None,
         **_: Any,
     ) -> RefreshResult:
         self.keys.append(source_key)
-        self.backends.append(backend)
         if self.during is not None:
             self.during()
         if self.error is not None:
@@ -425,7 +422,7 @@ def test_ctrl_c_is_remembered_for_five_minutes(
 
 
 @pytest.mark.parametrize("cached_data", [True, False])
-def test_a_pause_at_the_rate_limit_floor_under_auto(
+def test_a_pause_once_a_probe_budget_is_spent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill, cached_data: bool
 ) -> None:
     if cached_data:
@@ -435,12 +432,15 @@ def test_a_pause_at_the_rate_limit_floor_under_auto(
     fill.result = RefreshResult(
         source_key="",
         completed=False,
-        pause_reason="GitHub GraphQL rate limit is low: 200 points remaining",
+        pause_reason="the ref probe budget is spent on github.com (200 left)",
         repos=2,
         refs=1,
         edges=1,
-        rate_limit_remaining=200,
-        rate_limit_reset_at=reset,
+        budgets=(
+            HostBudget(
+                plugin="github", host="github.com", remaining=200, reset_at=reset, exhausted=True
+            ),
+        ),
     )
 
     result = _impact()
@@ -468,25 +468,6 @@ def test_refresh_whose_fill_fails_over_recent_data_warns(
     assert _repos(result) == ["acme/site"]
     [stale] = _stale(result)
     assert stale.error is not None
-
-
-def test_backend_applies_to_the_refresh_that_runs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
-) -> None:
-    _seed(tmp_path, "source:prod", make_edge(), ago=timedelta(hours=1))
-    use_config(tmp_path, monkeypatch, _PROD)
-
-    refused = _impact("--backend", "git", "--cached")
-    fresh = _impact("--backend", "git")
-    _seed(tmp_path, "source:prod", make_edge(), ago=timedelta(hours=30))
-    with running():
-        SOURCE_DATA.forget("source:prod")  # reseeded from the older row
-    stale = _impact("--backend", "git")
-
-    assert refused.exit_code == 2
-    assert "--backend needs a refresh; drop --cached" in refused.stderr
-    assert _repos(fresh) == _repos(stale) == ["acme/site"]
-    assert (fill.keys, fill.backends) == (["source:prod"], ["git"])
 
 
 def test_deps_live_never_refreshes_the_source(
@@ -644,14 +625,14 @@ def test_source_refresh_prints_its_summary_then_each_warning_group_once(
         refs=1,
         edges=1,
         changed_refs=1,
-        rate_limit_remaining=10,
+        budgets=(HostBudget(plugin="github", host="github.com", remaining=10, exhausted=True),),
         ignored_collections=("community.general",),
         skipped_files=(
             SkippedDependencyFile(
                 repo="acme/site", ref="main", source_path="roles/x.yml", reason="bad yaml"
             ),
         ),
-        probe_fallbacks={"acme/site": GRAPHQL_TRANSIENT_FALLBACK},
+        probe_fallbacks={"acme/site": "github could not probe it (busy)"},
     )
 
     with progress_clock() as clock:
@@ -664,7 +645,7 @@ def test_source_refresh_prints_its_summary_then_each_warning_group_once(
     messages = [d for d in result.diagnostics if isinstance(d, Message)]
     assert [d.message for d in messages if d.level == "info"] == [summary]
     warnings = [d.message for d in messages if d.level == "warning"]
-    for group in ("rate limit is low", "skipped acme/site@main", "collection", "ls-remote"):
+    for group in ("budget on github.com", "skipped acme/site@main", "collection", "ls-remote"):
         assert sum(group in w for w in warnings) == 1, group
     assert messages[0].message == summary  # the warnings follow it
     tasks = [d for d in result.diagnostics if isinstance(d, Progress)]

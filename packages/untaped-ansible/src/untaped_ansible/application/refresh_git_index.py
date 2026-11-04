@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import batched
 from typing import Literal
@@ -18,7 +18,7 @@ from untaped_ansible.application.ports import (
     GitCache,
     GitHubDependencyReader,
     IncrementalDependencyIndexWriter,
-    RefProbe,
+    ProbeRefs,
 )
 from untaped_ansible.application.source_refs import (
     RefScanDefault,
@@ -32,7 +32,6 @@ from untaped_ansible.domain.payloads import (
     GitRef,
     IndexedDependency,
     ProbedRepo,
-    ProbeReport,
     ProbeTarget,
     RefScan,
     RefScanMetadata,
@@ -45,6 +44,7 @@ from untaped_ansible.domain.payloads import (
 from untaped_ansible.domain.repo_targets import remote_url_for
 from untaped_ansible.domain.variable_models import AnalysedFile, CommitListing
 from untaped_ansible.settings import SourceDefinition, analyser_version, parser_version
+from untaped_git.api import HostBudget, probe_refs
 from untaped_github.api import (
     RepositoryInventoryScope,
     ResolveRepositoryInventory,
@@ -77,9 +77,9 @@ class RefreshResult(Filled):
     skipped_files: tuple[SkippedDependencyFile, ...] = ()
     skipped_refs: tuple[SkippedRef, ...] = ()
     probe_fallbacks: dict[str, str] = Field(default_factory=dict)
-    rate_limit_cost: int | None = None
-    rate_limit_remaining: int | None = None
-    rate_limit_reset_at: datetime | None = None
+    """Each repo read with ``git ls-remote`` although its host has a probe, and why."""
+    budgets: tuple[HostBudget, ...] = ()
+    """Each probing host's budget after the refresh's last probe of it."""
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,20 @@ class _RepoRefreshResult:
     skipped_files: tuple[SkippedDependencyFile, ...]
     analysed: tuple[AnalysedFile, ...] = ()
     listings: tuple[CommitListing, ...] = ()
+
+
+@dataclass
+class _Probed:
+    """What the probes of a refresh read so far: refs, failures, fallbacks, budgets."""
+
+    repos: dict[str, ProbedRepo] = field(default_factory=dict)
+    failures: dict[str, RepoFailure] = field(default_factory=dict)
+    fallbacks: dict[str, str] = field(default_factory=dict)
+    budgets: dict[tuple[str, str], HostBudget] = field(default_factory=dict)
+
+    def spent(self) -> list[HostBudget]:
+        """The hosts whose budget is spent: the refresh asks them nothing more."""
+        return [budget for budget in self.budgets.values() if budget.exhausted]
 
 
 @dataclass(frozen=True)
@@ -117,7 +131,6 @@ class RefreshGitSourceIndex:
         *,
         github: GitHubDependencyReader,
         git: GitCache,
-        probe: RefProbe,
         index: IncrementalDependencyIndexWriter,
         aliases: dict[str, str],
         default_dependency_paths: list[str],
@@ -125,9 +138,9 @@ class RefreshGitSourceIndex:
         ref_scan_default: RefScanDefault = "all",
         concurrency: int = 8,
         repo_batch_size: int = 100,
-        rate_limit_floor: int = 500,
         progress: ProgressHandle = NO_PROGRESS,
         github_web_host: str | None = None,
+        probe: ProbeRefs = probe_refs,
     ) -> None:
         if clone_protocol not in {"https", "ssh"}:
             raise ValueError("clone_protocol must be 'https' or 'ssh'")
@@ -135,8 +148,6 @@ class RefreshGitSourceIndex:
             raise ValueError("concurrency must be between 1 and 32")
         if repo_batch_size < 1:
             raise ValueError("repo_batch_size must be at least 1")
-        if rate_limit_floor < 0:
-            raise ValueError("rate_limit_floor cannot be negative")
         self._github = github
         self._git = git
         self._probe = probe
@@ -147,7 +158,6 @@ class RefreshGitSourceIndex:
         self._ref_scan_default = ref_scan_default
         self._concurrency = concurrency
         self._repo_batch_size = repo_batch_size
-        self._rate_limit_floor = rate_limit_floor
         self._progress = progress
         self._github_web_host = github_web_host
 
@@ -180,38 +190,19 @@ class RefreshGitSourceIndex:
         checked_at = datetime.now(UTC)
         changed_refs = 0
         unchanged_refs = 0
-        rate_limit_cost: int | None = None
-        rate_limit_remaining: int | None = None
-        rate_limit_reset_at: datetime | None = None
         probe_kinds = self._probe_kinds(source)
         probe_mode = self._probe_mode(source)
-        probe_fallbacks: dict[str, str] = {}
+        probed = _Probed()
         analyser = analyser_version()
 
         for batch_index, batch in enumerate(
             batched(pending_repos, self._repo_batch_size, strict=False)
         ):
-            probe_report = self._probe.probe(
-                batch,
-                kinds=probe_kinds,
-                mode=probe_mode,
-                on_progress=self._probe_progress,
-            )
-            probe_fallbacks.update(probe_report.fallbacks)
-            rate_limit_cost, rate_limit_remaining, rate_limit_reset_at = _merge_rate_limit(
-                rate_limit_cost,
-                rate_limit_remaining,
-                rate_limit_reset_at,
-                probe_report,
-            )
-            batch_failures: dict[str, RepoFailure] = {
-                repo: RepoFailure(repo=repo, reason=failure.reason, category=failure.category)
-                for repo, failure in probe_report.failures.items()
-            }
+            batch_failures = self._probe_batch(batch, probed, kinds=probe_kinds, mode=probe_mode)
             tasks = [
-                self._repo_refresh_task(source, repo, probe_report.repos[repo.full_name])
+                self._repo_refresh_task(source, repo, probed.repos[repo.full_name])
                 for repo in batch
-                if repo.full_name in probe_report.repos
+                if repo.full_name in probed.repos
             ]
             skipped_refs.extend(skipped for task in tasks for skipped in task.skipped)
             batch_selected: set[tuple[str, str, str]] = set()
@@ -266,11 +257,7 @@ class RefreshGitSourceIndex:
                 )
 
             repos_left = len(pending_repos) - (batch_index + 1) * self._repo_batch_size
-            if (
-                repos_left > 0
-                and rate_limit_remaining is not None
-                and rate_limit_remaining < self._rate_limit_floor
-            ):
+            if repos_left > 0 and probed.spent():
                 return self._refresh_result(
                     source_key=source_key,
                     repos=repos,
@@ -281,12 +268,9 @@ class RefreshGitSourceIndex:
                     changed_refs=changed_refs,
                     unchanged_refs=unchanged_refs,
                     failures=failures,
-                    probe_fallbacks=probe_fallbacks,
-                    rate_limit_cost=rate_limit_cost,
-                    rate_limit_remaining=rate_limit_remaining,
-                    rate_limit_reset_at=rate_limit_reset_at,
+                    probed=probed,
                     completed=False,
-                    pause_reason=_rate_limit_pause_reason(rate_limit_remaining),
+                    pause_reason=_pause_reason(probed.spent()),
                 )
 
         # When every expanded repo failed there is nothing trustworthy to mark
@@ -311,10 +295,7 @@ class RefreshGitSourceIndex:
             changed_refs=changed_refs,
             unchanged_refs=unchanged_refs,
             failures=failures,
-            probe_fallbacks=probe_fallbacks,
-            rate_limit_cost=rate_limit_cost,
-            rate_limit_remaining=rate_limit_remaining,
-            rate_limit_reset_at=rate_limit_reset_at,
+            probed=probed,
             completed=True,
         )
 
@@ -330,10 +311,7 @@ class RefreshGitSourceIndex:
         changed_refs: int,
         unchanged_refs: int,
         failures: dict[str, RepoFailure],
-        probe_fallbacks: dict[str, str],
-        rate_limit_cost: int | None,
-        rate_limit_remaining: int | None,
-        rate_limit_reset_at: datetime | None,
+        probed: _Probed,
         completed: bool,
         pause_reason: str | None = None,
     ) -> RefreshResult:
@@ -353,10 +331,8 @@ class RefreshGitSourceIndex:
             failures=tuple(failures[repo] for repo in sorted(failures)),
             skipped_files=_dedupe_skipped_files(skipped_files),
             skipped_refs=tuple(skipped_refs),
-            probe_fallbacks=probe_fallbacks,
-            rate_limit_cost=rate_limit_cost,
-            rate_limit_remaining=rate_limit_remaining,
-            rate_limit_reset_at=rate_limit_reset_at,
+            probe_fallbacks=probed.fallbacks,
+            budgets=tuple(probed.budgets.values()),
         )
 
     def _refresh_repos(
@@ -407,6 +383,50 @@ class RefreshGitSourceIndex:
 
         bounded_map(outcome_of, tasks, concurrency=self._concurrency, on_each=record)
         return outcomes
+
+    def _probe_batch(
+        self,
+        batch: Sequence[ProbeTarget],
+        probed: _Probed,
+        *,
+        kinds: Sequence[str],
+        mode: ProbeMode,
+    ) -> dict[str, RepoFailure]:
+        """Probe ``batch``'s refs into ``probed``; each repo that could not be read, by name."""
+        by_url = {remote_url_for(repo, self._clone_protocol): repo for repo in batch}
+        result = self._probe(
+            list(by_url),
+            kinds=kinds,
+            default_branch_only=mode == "default_branch",
+            default_branches={
+                url: repo.default_branch
+                for url, repo in by_url.items()
+                if repo.default_branch != "HEAD"
+            },
+            on_progress=self._probe_progress,
+        )
+        probed.fallbacks.update(
+            {by_url[url].full_name: why for url, why in result.fallbacks.items() if url in by_url}
+        )
+        probed.budgets.update({(budget.plugin, budget.host): budget for budget in result.budgets})
+        failures: dict[str, RepoFailure] = {}
+        for url, repo in by_url.items():
+            row = result.repos.get(url)
+            if row is None:
+                failures[repo.full_name] = RepoFailure(
+                    repo=repo.full_name, reason="ref probe did not read it"
+                )
+            elif row.failure is not None:
+                failures[repo.full_name] = RepoFailure(
+                    repo=repo.full_name,
+                    reason=f"ref probe failed: {row.failure.message}",
+                    category=row.failure.category,
+                )
+            else:
+                probed.repos[repo.full_name] = ProbedRepo(
+                    default_branch=row.default_branch, refs=_git_refs(row.refs, kinds)
+                )
+        return failures
 
     def _probe_kinds(self, source: SourceDefinition) -> tuple[str, ...]:
         """Union of ref kinds needed across all repos.
@@ -806,28 +826,23 @@ def source_refresh_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _merge_rate_limit(
-    current_cost: int | None,
-    current_remaining: int | None,
-    current_reset_at: datetime | None,
-    report: ProbeReport,
-) -> tuple[int | None, int | None, datetime | None]:
-    cost = current_cost
-    if report.rate_limit_cost is not None:
-        cost = report.rate_limit_cost if cost is None else cost + report.rate_limit_cost
-    remaining = current_remaining
-    if report.rate_limit_remaining is not None:
-        remaining = (
-            report.rate_limit_remaining
-            if remaining is None
-            else min(remaining, report.rate_limit_remaining)
-        )
-    reset_at = report.rate_limit_reset_at or current_reset_at
-    return cost, remaining, reset_at
+def _git_refs(refs: Mapping[str, str], kinds: Sequence[str]) -> tuple[GitRef, ...]:
+    """The probed ``refs/<kind>/<name> → commit`` of ``kinds``, as sorted :class:`GitRef`."""
+    found = [
+        GitRef(kind=kind, name=ref.removeprefix(f"refs/{kind}/"), sha=sha)
+        for ref, sha in refs.items()
+        for kind in kinds
+        if ref.startswith(f"refs/{kind}/")
+    ]
+    return tuple(sorted(found, key=lambda ref: (ref.kind, ref.name)))
 
 
-def _rate_limit_pause_reason(remaining: int) -> str:
-    return f"GitHub GraphQL rate limit is low: {remaining} points remaining"
+def _pause_reason(spent: Sequence[HostBudget]) -> str:
+    hosts = ", ".join(
+        f"{budget.host} ({budget.remaining} left)" if budget.remaining is not None else budget.host
+        for budget in spent
+    )
+    return f"the ref probe budget is spent on {hosts}"
 
 
 def _str(value: object) -> str | None:

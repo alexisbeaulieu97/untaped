@@ -1,4 +1,4 @@
-"""GitHub's ``GitHost``: the credentials the repo store gets for the GitHub host.
+"""GitHub's ``GitHost``: the credentials the repo store gets, and the batch ref probe.
 
 Asked the way git asks it: ``gather`` on a ``GitHost`` method under a run
 composing git and github.
@@ -7,6 +7,8 @@ composing git and github.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,13 +16,20 @@ import pytest
 from pydantic import SecretStr
 
 from github_test_support import Settings, installed
-from untaped.sdk import ConfigError
+from untaped.sdk import ConfigError, ErrorCategory
 from untaped.sdk.contracts import Ok, Provider, gather
 from untaped.sdk.testing import install
-from untaped_git.api import Credential, GitHost, HostAuth, RepoStore, ls_remote
+from untaped_git.api import Credential, GitHost, HostAuth, RefProbe, RepoStore, ls_remote
 from untaped_git.hosts import resolve_host
+from untaped_github.domain.models import (
+    BatchRepoRefsFailure,
+    BatchRepoRefsResult,
+    RepoRef,
+    RepoRefs,
+)
 from untaped_github.errors import GitCorpusError
 from untaped_github.plugin import Github
+from untaped_github.providers import git as git_provider
 from untaped_github.settings import GithubSettings
 
 
@@ -165,3 +174,139 @@ def test_the_credential_carries_the_server_s_tls_setting(
     assert credential is not None
     want = expected if isinstance(expected, bool) else tmp_path / expected
     assert credential.verify_tls == want
+
+
+class BatchApi:
+    """GitHub's batched ref reads, answered from :attr:`result`."""
+
+    def __init__(self, result: BatchRepoRefsResult) -> None:
+        self.result = result
+        self.asked: list[tuple[str, tuple[str, ...], tuple[str, ...], int]] = []
+
+    def batch_repo_refs(
+        self, repos: Sequence[str], *, kinds: Sequence[str], concurrency: int
+    ) -> BatchRepoRefsResult:
+        self.asked.append(("all", tuple(repos), tuple(kinds), concurrency))
+        return self.result
+
+    def batch_default_branch_refs(
+        self, repos: Sequence[str], *, concurrency: int
+    ) -> BatchRepoRefsResult:
+        self.asked.append(("default", tuple(repos), (), concurrency))
+        return self.result
+
+
+def probe(
+    monkeypatch: pytest.MonkeyPatch,
+    result: BatchRepoRefsResult,
+    urls: list[str],
+    *,
+    default_branch_only: bool = False,
+) -> tuple[RefProbe, BatchApi]:
+    """github's ``probe_refs`` of ``urls``, its batched reads answering ``result``."""
+    api = BatchApi(result)
+    monkeypatch.setattr(git_provider, "github_api", lambda _settings: api)
+    with installed().running():
+        answers = gather(GitHost.probe_refs, plugins=["github"])(
+            urls, kinds=["heads", "tags"], default_branch_only=default_branch_only, parallel=4
+        )
+    [answer] = answers
+    assert isinstance(answer, Ok), answer
+    return answer.value, api
+
+
+def test_probe_refs_reads_every_repo_in_one_batch(monkeypatch: pytest.MonkeyPatch) -> None:
+    read = RepoRefs(
+        full_name="acme/api",
+        default_branch="main",
+        refs=(
+            RepoRef(kind="heads", name="main", sha="1"),
+            RepoRef(kind="tags", name="v1", sha="2"),
+        ),
+    )
+    result = BatchRepoRefsResult(
+        repos=(read,),
+        missing=("acme/gone",),
+        failures=(
+            BatchRepoRefsFailure(
+                full_name="acme/busy", reason="502 from GitHub", kind="server_error"
+            ),
+            BatchRepoRefsFailure(
+                full_name="acme/proxied",
+                reason="404 from the endpoint",
+                kind="request",
+                category=ErrorCategory.NOT_FOUND,
+            ),
+        ),
+        rate_limit_remaining=4000,
+        rate_limit_reset_at=datetime(2026, 11, 3, 23, tzinfo=UTC),
+    )
+    urls = [
+        "https://github.com/Acme/API.git",
+        "git@github.com:acme/gone.git",
+        "https://github.com/acme/busy.git",
+        "https://github.com/acme/proxied.git",
+    ]
+
+    answer, api = probe(monkeypatch, result, urls)
+
+    names = ("acme/api", "acme/gone", "acme/busy", "acme/proxied")
+    assert api.asked == [("all", names, ("heads", "tags"), 4)]
+    rows = {row.url: row for row in answer.repos}
+    assert rows[urls[0]].refs == {"refs/heads/main": "1", "refs/tags/v1": "2"}
+    assert rows[urls[0]].default_branch == "main"
+    gone, busy = rows[urls[1]].failure, rows[urls[2]].failure
+    assert gone is not None
+    assert (gone.category, gone.system) == (ErrorCategory.NOT_FOUND, "github")
+    assert busy is not None
+    assert busy.message == "batch request failed: 502 from GitHub"
+    assert busy.category == ErrorCategory.UNAVAILABLE
+    # A failed request says nothing of the repo: never not_found, so git reads it itself.
+    proxied = rows[urls[3]].failure
+    assert proxied is not None
+    assert proxied.category == ErrorCategory.FAILED
+    assert (answer.remaining, answer.exhausted) == (4000, False)
+    assert answer.reset_at == datetime(2026, 11, 3, 23, tzinfo=UTC)
+
+
+def test_probe_refs_reads_only_default_branches_when_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _answer, api = probe(
+        monkeypatch,
+        BatchRepoRefsResult(),
+        ["https://github.com/acme/api.git"],
+        default_branch_only=True,
+    )
+
+    assert api.asked == [("default", ("acme/api",), (), 4)]
+
+
+@pytest.mark.parametrize(("floor", "exhausted"), [(500, True), (100, False)])
+def test_probe_refs_says_the_budget_is_spent_below_the_floor(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch, floor: int, exhausted: bool
+) -> None:
+    settings["ref_probe"] = {"rate_limit_floor": floor}
+
+    answer, _api = probe(
+        monkeypatch,
+        BatchRepoRefsResult(rate_limit_remaining=200),
+        ["https://github.com/acme/api.git"],
+    )
+
+    assert answer.exhausted is exhausted
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["https://gitlab.example/acme/api.git", "https://github.com/acme/roles/web.git"],
+)
+def test_probe_refs_refuses_a_url_that_is_not_a_github_repo(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    answer, api = probe(monkeypatch, BatchRepoRefsResult(), [url])
+
+    assert api.asked == []
+    [row] = answer.repos
+    assert row.failure is not None
+    assert row.failure.category == ErrorCategory.INVALID
