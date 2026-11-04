@@ -31,7 +31,7 @@ class Ansible(Plugin):
     - When the source has not scanned the default branch (a tags-only source),
       every cached ref is read, with a warning.
     - An unpinned dependency resolves to its default-branch node: the source's
-      recorded default branch, or GitHub's for live reads. With no known default
+      recorded default branch, or its provider's for live reads. With no known default
       branch the node stays ref-less; a tags-only source stops there with a "ref
       is not cached" warning.
     - `impact --ref R` (and `graph --ref R --direction up`) includes unpinned
@@ -44,26 +44,28 @@ class Ansible(Plugin):
       `group/sub/project` on GitLab. Names match in any case (`Acme/Base` is
       `acme/base`).
     - A URL names the repo at its path when its host is one any refreshed
-      source's repositories live on, or the host of `github.server.url`, where
-      live reads go. A target's URL is read against the hosts known before the
+      source's repositories live on, or one an installed plugin serves (`untaped
+      git hosts`), where live reads go. A target's URL is read against the hosts known before the
       command refreshes. A URL on any other host, a download (`.tar.gz`,
       `.zip`), a web page (`/-/`), a template and a path-like source in a
       requirements file such as `./local` stay unresolved.
     - A local path's Git remote is read at the top level of a checkout, linked
       worktrees included.
-    - Without a source, a local target is read live. With no GitHub token it
-      stays offline and warns that its transitive dependencies were not read.
+    - Without a source, a local target's dependencies are read live, each from
+      the plugin that lists it; one no plugin lists warns and stays unread.
 
     ## Where a walk stops
 
     - A row's `stopped` field says why a repo's own edges were not read. When
       `--depth` left repos unread, one `hint:` on stderr says how many (per root
       for `find`).
-    - A live read that fails for one repo (a deleted repo or tag, lost access)
-      is a warning and leaves that node unread. A rejected token or a rate limit
-      stops the command instead.
+    - A live read that fails for one dependency (a name no plugin lists, a
+      deleted repo, a ref that is no branch or tag, a clone the credential
+      can't reach) is a warning and leaves that node unread. A target that
+      can't be read fails the command (`find`: when none of its roots can
+      be), and so does a listing's rejected credential or missing setup.
     - Collections in requirements files are not followed. A source refresh and
-      a local target print one warning listing them; live GitHub reads do not.
+      a local target print one warning listing them; live reads do not.
     - Cycles are found only within the depth that was walked.
 
     ## Skipped dependency files
@@ -84,7 +86,7 @@ class Ansible(Plugin):
     index = INDEX_DIR
     source_data = SOURCE_DATA
     skill = StubSkill(
-        "Ansible role and project dependencies across GitHub repositories: what a role "
+        "Ansible role and project dependencies across Git repositories: what a role "
         "depends on, what depends on it, which of its variables they use and what checks "
         "them out (job templates, say), which projects reach a repo, and dependency "
         "graphs. Use when the work concerns who uses a role, the impact of changing one, "

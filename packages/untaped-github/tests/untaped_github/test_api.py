@@ -105,28 +105,18 @@ def _params(name: str) -> Any:
     return inspect.signature(getattr(GithubApi, name)).parameters
 
 
-def test_the_port_covers_ansible_reader_operations() -> None:
+def test_the_port_covers_repo_and_ref_reads() -> None:
     params = _params  # local alias for compact assertions below
     for name in (
         "get_repository",
         "list_org_repos",
         "list_team_repos",
-        "list_matching_refs",
-        "get_tree",
-        "get_raw_content",
         "batch_repo_refs",
         "batch_default_branch_refs",
     ):
         assert callable(getattr(GithubApi, name)), name
     assert params("get_repository").keys() == {"self", "owner", "repo"}
     assert list(params("list_team_repos")) == ["self", "org", "team_slug"]
-    assert list(params("list_matching_refs")) == ["self", "owner", "repo", "namespace"]
-    tree = params("get_tree")
-    assert list(tree) == ["self", "owner", "repo", "tree_sha", "recursive"]
-    assert tree["recursive"].kind is inspect.Parameter.KEYWORD_ONLY
-    raw = params("get_raw_content")
-    assert list(raw) == ["self", "owner", "repo", "path", "ref"]
-    assert raw["ref"].kind is inspect.Parameter.KEYWORD_ONLY
     batch = params("batch_repo_refs")
     assert list(batch) == ["self", "repos", "kinds", "chunk_size", "concurrency", "on_progress"]
     assert batch["kinds"].kind is inspect.Parameter.KEYWORD_ONLY

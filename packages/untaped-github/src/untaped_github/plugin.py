@@ -1,8 +1,8 @@
 """The ``github`` plugin class: what the plugin has, each under its own name.
 
 The ``untaped.plugins`` entry point names :class:`Github`, in this leaf
-module: the class imports every command, so ``api`` (which ansible imports)
-and the providers import without them.
+module: the class imports every command, so ``api`` (which other plugins may
+import) and the providers import without them.
 """
 
 from __future__ import annotations

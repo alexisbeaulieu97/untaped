@@ -37,7 +37,7 @@ class Source(Record):
 
 
 class SourceAlias(Record):
-    """A role or Galaxy name mapped to the GitHub repo it stands for (``source-alias list``)."""
+    """A role or Galaxy name mapped to the repo it stands for (``source-alias list``)."""
 
     alias: str
     repo: str
@@ -129,7 +129,7 @@ class ReachedRow(Record):
         description="The ref reached; an unpinned dependency reaches its default branch."
     )
     unresolved: str | None = Field(
-        description="The declared name of a dependency that names no GitHub repo, else null."
+        description="The declared name of a dependency that names no known repo, else null."
     )
     declared_ref: str | None = Field(
         description="The ref as the edge that reached the repo declares it, verbatim."

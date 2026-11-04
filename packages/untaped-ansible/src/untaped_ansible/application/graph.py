@@ -531,15 +531,16 @@ class _GraphBuilder:
             self._add_warning(
                 self._with_refresh_hint(
                     f"not expanding {node} from cached source data: ref is not cached "
-                    f"(available refs: {available}). Scan the matching ref/tag or use --live "
-                    "for downstream."
+                    f"(available refs: {available}). Scan the matching ref/tag, or drop the "
+                    "source to read downstream live."
                 )
             )
             return
         self._add_warning(
             self._with_refresh_hint(
                 f"not expanding {node} from cached source data: repo/ref is not cached. "
-                "Add it to the source, scan the matching ref/tag, or use --live for downstream."
+                "Add it to the source, scan the matching ref/tag, or drop the source to read "
+                "downstream live."
             )
         )
 

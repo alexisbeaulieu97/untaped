@@ -17,12 +17,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import respx
 
 from ansible_index_support import (
     index_path,
+    live_repos,
     make_edge,
-    mock_dependency_file,
     open_index,
     record_refresh,
     seed_index,
@@ -367,7 +366,7 @@ def test_a_partial_refresh_with_an_empty_answer_fails_with_its_category(
 # --- --cached, --refresh, Ctrl-C, pauses -------------------------------------
 
 
-def test_cached_on_a_never_refreshed_source_names_live_for_deps(
+def test_cached_on_a_never_refreshed_source_fails_with_no_hint(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
 ) -> None:
     use_config(tmp_path, monkeypatch, _PROD)
@@ -377,8 +376,7 @@ def test_cached_on_a_never_refreshed_source_names_live_for_deps(
 
     assert (deps.exit_code, impact.exit_code) == (1, 1)
     [deps_failure], [impact_failure] = _failures(deps), _failures(impact)
-    assert "--live" in (deps_failure.hint or "")
-    assert impact_failure.hint is None
+    assert deps_failure.hint is impact_failure.hint is None
     assert fill.keys == []
 
 
@@ -456,38 +454,17 @@ def test_refresh_whose_fill_fails_over_recent_data_warns(
     assert stale.error is not None
 
 
-def test_deps_live_never_refreshes_the_source(
+def test_deps_without_a_source_never_refreshes_a_saved_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
 ) -> None:
     _seed(tmp_path, "source:prod", make_edge(), ago=timedelta(hours=30))
-    use_config(tmp_path, monkeypatch, _PROD, token=True)
+    use_config(tmp_path, monkeypatch, _PROD)
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/base\n", "acme/base": ""})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        mock_dependency_file(mock, "acme/base", content="")
-        result = run("deps", "acme/site", "--source", "prod", "--live", "-f", "json")
+    result = run("deps", "acme/site", "-f", "json")
 
     assert _repos(result) == ["acme/base"]
     assert (fill.keys, _stale(result)) == ([], [])
-
-
-@pytest.mark.parametrize("ago", [timedelta(hours=30), None], ids=["stale", "never"])
-def test_graph_live_refreshes_the_source_for_its_upstream_half(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill, ago: timedelta | None
-) -> None:
-    if ago is not None:
-        _seed(tmp_path, "source:prod", make_edge(), ago=ago)
-    use_config(tmp_path, monkeypatch, _PROD, token=True)
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/base", content="")
-        result = run("graph", "acme/base", "--source", "prod", "--live", "--depth", "1")
-
-    assert result.exit_code == 0, result.output
-    assert result.stdout.startswith("acme/base  source prod, downstream live · depth 1\n")
-    assert "acme/site" in result.stdout  # the upstream half, read from the refreshed source
-    assert fill.keys == ["source:prod"]
-    assert _stale(result) == []
 
 
 def test_the_failed_task_precedes_the_stale_line_and_the_roots_warnings_follow(

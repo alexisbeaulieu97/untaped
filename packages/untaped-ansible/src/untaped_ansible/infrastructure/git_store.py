@@ -1,11 +1,11 @@
 """Ansible's dependency sources in the git plugin's repo store.
 
 Each source repo is a store repo (``RepoStore.for_url(url, plugin=...)``),
-which workspace and github may share: ansible's refs live in its own
+which other plugins may share: ansible's refs live in its own
 namespace, ``refs/untaped/ansible/heads/*`` and ``refs/untaped/ansible/tags/*``,
 and its private file is the repo's ``untaped-ansible.json``. The store fetches
-full history blobless and holds the credentials (github's ``GithubHost``
-answers for the GitHub host), so nothing here sees a token, a depth or a filter.
+full history blobless and holds the credentials (the plugin serving the
+host answers for it), so nothing here sees a token, a depth or a filter.
 
 Dependency files are read through one ``prefetched()`` handle per repo: one
 blob fetch for every changed ref's files, then one local ``cat-file --batch``.

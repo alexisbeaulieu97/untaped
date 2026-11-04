@@ -1,31 +1,38 @@
-"""GitHub-backed dependency read adapter for live dependency graphing."""
+"""Dependencies read live from each repo's provider, through the repo store.
+
+With no source to answer, a graph reads a repo where its provider lists it:
+the name is located over the plugins that list repos (``RepoFinder``), the
+ref is listed with ``ls-remote``, fetched into ansible's namespace of the
+repo store only when it moved (so a second read fetches nothing), and the
+dependency files are read from it as a source refresh reads them.
+"""
 
 from __future__ import annotations
 
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from untaped.sdk import UntapedError, bounded_map
+from untaped.sdk import ErrorCategory, UntapedError, bounded_map
 from untaped_ansible.domain.identity import IdentityResolver, repo_key
 from untaped_ansible.domain.parser import parse_dependency_file
 from untaped_ansible.domain.payloads import (
     CachedRef,
+    GitRef,
     IndexedDependency,
     SkippedDependencyFile,
 )
 from untaped_ansible.errors import AnsibleError
-from untaped_github.api import is_global_github_failure, split_repo_id
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from untaped_ansible.application.ports import (
-        DependencyIndex,
-        GitHubDependencyReader,
-    )
+    from untaped_ansible.application.ports import DependencyIndex, GitCache
+    from untaped_git.api import Repo
 
-# Read ref used when GitHub reports no default branch; never recorded as one.
-_NO_DEFAULT_BRANCH = "HEAD"
+#: A listing's failures that hit every repo alike: a rejected credential, missing setup.
+_GLOBAL = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
 
 
 @dataclass
@@ -35,32 +42,48 @@ class _LiveRead:
     edges: list[IndexedDependency] = field(default_factory=list)
     skipped: list[SkippedDependencyFile] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    failure: UntapedError | None = None
     default_branch: str | None = None
 
 
-class GithubDependencyIndex:
-    """Read declared dependencies live from GitHub, with indexed impact fallback.
+class StoreDependencyIndex:
+    """Read declared dependencies live through the repo store, with indexed impact fallback.
 
-    A failed read (deleted repo, missing tag, permission error) is recorded in
-    :attr:`errors` and leaves that node unexpanded instead of aborting the
-    whole graph. Uncached pairs of a batch are read concurrently.
+    ``locate`` names a repo's provider listing (its URL and default
+    branch), ``remote_refs`` lists a URL's refs (``ls-remote``) and
+    ``default_branch`` asks a URL's ``HEAD``, which wins over the listing's
+    possibly cached default. A failed read (an unknown name, a deleted repo
+    or tag, a clone the credential can't reach) is recorded in
+    :attr:`errors` and :meth:`failure` and leaves that node unexpanded
+    instead of aborting the whole graph; a listing's rejected credential or
+    missing setup fails every repo alike, so it raises, as does git's own
+    missing setup. Uncached pairs of a batch are read concurrently.
     """
 
     def __init__(
         self,
         *,
-        github: GitHubDependencyReader,
+        locate: Callable[[str], Repo],
+        remote_refs: Callable[[str, Sequence[str]], dict[str, str]],
+        default_branch: Callable[[str], str | None],
+        store: GitCache,
         wrapped: DependencyIndex,
         resolver: IdentityResolver,
         dependency_paths: list[str],
         concurrency: int = 1,
     ) -> None:
-        self._github = github
+        self._locate = locate
+        self._located: dict[str, Repo | UntapedError] = {}
+        self._locating = threading.Lock()
+        self._remote_refs = remote_refs
+        self._default_branch = default_branch
+        self._store = store
         self._concurrency = concurrency
         self._wrapped = wrapped
         self._resolver = resolver
         self._dependency_paths = dependency_paths
         self._cache: dict[tuple[str, str | None], list[IndexedDependency]] = {}
+        self._failures: dict[tuple[str, str | None], UntapedError] = {}
         # Default branch resolved by each ref-less read, keyed by repo_key.
         self._default_branches: dict[str, str] = {}
         self._warnings: list[SkippedDependencyFile] = []
@@ -84,6 +107,10 @@ class GithubDependencyIndex:
         source_key: str | None,
     ) -> list[IndexedDependency]:
         return self.dependencies_batch([(repo, ref)], source_key=source_key)[(repo, ref)]
+
+    def failure(self, repo: str, ref: str | None) -> UntapedError | None:
+        """Why ``repo`` at ``ref`` could not be read live, if it was read and failed."""
+        return self._failures.get((repo_key(repo), ref))
 
     def dependents(
         self,
@@ -129,6 +156,8 @@ class GithubDependencyIndex:
         for repo, ref in pending:
             read = reads[(repo, ref)]
             self._cache[(repo_key(repo), ref)] = read.edges
+            if read.failure is not None:
+                self._failures[(repo_key(repo), ref)] = read.failure
             if read.default_branch is not None:
                 self._default_branches[repo_key(repo)] = read.default_branch
             self._warnings.extend(read.skipped)
@@ -193,40 +222,38 @@ class GithubDependencyIndex:
 
     def _live_read(self, repo: str, ref: str | None) -> _LiveRead:
         read = _LiveRead()
-        label = f"{repo}@{ref}" if ref else repo
         try:
-            self._read_into(read, repo, ref)
+            located = self._located_repo(repo)
         except UntapedError as exc:
-            # Auth and rate-limit failures hit every repo alike: surface them once.
-            if is_global_github_failure(exc):
+            if exc.category in _GLOBAL:
                 raise
-            read.edges.clear()
-            read.errors.append(
-                f"could not read {label} live: {exc}; not expanding its dependencies"
-            )
+            return _failed(read, repo, ref, exc)
+        try:
+            self._read_into(read, repo, ref, located.url, located.default_branch)
+        except UntapedError as exc:
+            # One clone's rejected credential is that repo's; git's missing setup is everyone's.
+            if exc.category is ErrorCategory.CONFIG:
+                raise
+            return _failed(read, repo, ref, exc)
         return read
 
-    def _read_into(self, read: _LiveRead, repo: str, ref: str | None) -> None:
-        owner, name = _split_repo(repo)
-        read_ref = self._read_ref(owner, name, ref)
-        if ref is None and read_ref != _NO_DEFAULT_BRANCH:
-            read.default_branch = read_ref
-        source_ref = ref or read_ref
-        paths, truncated = self._tree_paths(owner, name, read_ref)
-        if truncated:
-            read.errors.append(
-                f"GitHub truncated the file listing for {repo}@{source_ref}; "
-                "dependency files missing from it were not read"
-            )
+    def _read_into(
+        self, read: _LiveRead, repo: str, ref: str | None, url: str, listed_default: str | None
+    ) -> None:
+        source_ref = ref or self._default_branch(url) or listed_default
+        if source_ref is None:
+            raise AnsibleError(f"{repo} has no default branch", category="not_found")
+        git_ref = self._ref(url, source_ref)
+        self._store.fetch(url, [git_ref])
+        files = self._store.read_files(url, [git_ref.sha], self._dependency_paths)[git_ref.sha]
+        if ref is None:
+            read.default_branch = source_ref
         resolver = self._resolver
         edges = read.edges
         for path in self._dependency_paths:
-            if path not in paths:
+            if path not in files:
                 continue
-            report = parse_dependency_file(
-                path,
-                self._github.get_raw_content(owner, name, path, ref=read_ref),
-            )
+            report = parse_dependency_file(path, files[path])
             read.skipped.extend(
                 SkippedDependencyFile(
                     repo=repo,
@@ -250,50 +277,43 @@ class GithubDependencyIndex:
                     )
                 )
 
-    def _read_ref(self, owner: str, repo: str, ref: str | None) -> str:
-        if ref is None:
-            return _default_branch(self._github.get_repository(owner, repo))
-        return self._resolved_ref_sha(owner, repo, ref) or ref
+    def _located_repo(self, repo: str) -> Repo:
+        """``repo`` as its provider lists it, located once per name however many reads ask.
 
-    def _resolved_ref_sha(self, owner: str, repo: str, ref: str) -> str | None:
-        for namespace in ("heads", "tags"):
-            expected_ref = f"refs/{namespace}/{ref}"
-            for row in self._github.list_matching_refs(owner, repo, f"{namespace}/{ref}"):
-                if not isinstance(row, dict) or row.get("ref") != expected_ref:
-                    continue
-                ref_object = row.get("object")
-                if not isinstance(ref_object, dict):
-                    continue
-                sha = ref_object.get("sha")
-                if isinstance(sha, str) and sha:
-                    return sha
-        return None
+        Locating holds the lock: the finder asks its providers once, on first
+        use, and is not shared safely between threads.
+        """
+        with self._locating:
+            key = repo_key(repo)
+            if key not in self._located:
+                try:
+                    self._located[key] = self._locate(repo)
+                except UntapedError as exc:
+                    self._located[key] = exc
+            located = self._located[key]
+        if isinstance(located, UntapedError):
+            raise located
+        return located
 
-    def _tree_paths(self, owner: str, repo: str, ref: str) -> tuple[set[str], bool]:
-        response = self._github.get_tree(owner, repo, ref, recursive=True)
-        truncated = response.get("truncated") is True
-        tree = response.get("tree")
-        if not isinstance(tree, list):
-            return set(), truncated
-        paths = set()
-        for entry in tree:
-            if not isinstance(entry, dict):
-                continue
-            path = entry.get("path")
-            if isinstance(path, str) and path:
-                paths.add(path)
-        return paths, truncated
+    def _ref(self, url: str, name: str) -> GitRef:
+        """The branch ``name`` of ``url``, else its tag: the store fetches names, not commits."""
+        listed = self._remote_refs(url, [f"refs/heads/{name}", f"refs/tags/{name}"])
+        for kind in ("heads", "tags"):
+            sha = listed.get(f"refs/{kind}/{name}")
+            if sha:
+                return GitRef(kind=kind, name=name, sha=sha)
+        raise AnsibleError(f"no branch or tag named {name!r}", category="not_found")
 
 
-def _split_repo(repo: str) -> tuple[str, str]:
-    parts = split_repo_id(repo)
-    if parts is None:
-        raise AnsibleError(f"repo must be owner/name (got {repo!r})", category="invalid")
-    return parts
-
-
-def _default_branch(repository: dict[str, object]) -> str:
-    default_branch = repository.get("default_branch")
-    if isinstance(default_branch, str) and default_branch:
-        return default_branch
-    return _NO_DEFAULT_BRANCH
+def _failed(read: _LiveRead, repo: str, ref: str | None, exc: UntapedError) -> _LiveRead:
+    """``read`` emptied, with ``exc`` (naming the repo) as its failure and its warning."""
+    label = f"{repo}@{ref}" if ref else repo
+    message = f"could not read {label} live: {exc}"
+    hint = f" ({exc.hint})" if exc.hint else ""
+    read.edges.clear()
+    read.skipped.clear()
+    read.default_branch = None
+    read.failure = AnsibleError(message, category=exc.category, system=exc.system, hint=exc.hint)
+    read.failure.__cause__ = exc
+    read.errors.append(f"{message}{hint}; not expanding its dependencies")
+    return read

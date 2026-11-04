@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from importlib.metadata import requires
 
 import pytest
 import yaml
@@ -15,6 +17,19 @@ from untaped_lint.testing import assert_clean
 
 def test_ansible_passes_lint() -> None:
     assert_clean("ansible")
+
+
+def test_ansible_requires_no_plugin_but_git() -> None:
+    """Repos come from whichever plugins fill git's contracts, so ansible names none of them.
+
+    lint's import-boundary rule (above) refuses an import of a plugin the
+    distribution doesn't require: this keeps ansible's code off every forge plugin.
+    """
+    names = {
+        re.split(r"[^A-Za-z0-9_.-]", line, maxsplit=1)[0]
+        for line in requires("untaped-ansible") or []
+    }
+    assert {name for name in names if name.startswith("untaped")} == {"untaped", "untaped-git"}
 
 
 def test_ansible_passes_its_plugin_check() -> None:

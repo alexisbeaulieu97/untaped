@@ -7,7 +7,8 @@ data cache, as a refresh by this code would. :func:`fake_refresh` and
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -17,13 +18,15 @@ import pytest
 import respx
 
 from ansible_test_support import Result, github_source, running
+from untaped.sdk import UsageError
 from untaped.sdk.storage import Filled, ProgressHandle
 from untaped.sdk.testing import cache_clock
-from untaped_ansible import refresh
+from untaped_ansible import live_reads, refresh
 from untaped_ansible.application.refresh_git_index import RefreshResult
-from untaped_ansible.domain.payloads import IndexedDependency, RefScan, SourceRepoMetadata
-from untaped_ansible.infrastructure import SqliteDependencyIndex
+from untaped_ansible.domain.payloads import GitRef, IndexedDependency, RefScan, SourceRepoMetadata
+from untaped_ansible.infrastructure import SqliteDependencyIndex, StoreDependencyIndex
 from untaped_ansible.settings import SOURCE_DATA
+from untaped_git.api import Repo
 
 #: The dependency file the seeded edges are declared in.
 REQS = "roles/requirements.yml"
@@ -156,21 +159,103 @@ def record_refresh(key: str, at: datetime, seed: Callable[[], None]) -> None:
         SOURCE_DATA.serve({key: key}, refresh=True, fill=fill, read=lambda: None)
 
 
-def mock_dependency_file(
-    mock: respx.MockRouter,
-    repo: str,
-    *,
-    sha: str | None = None,
-    content: str = "- src: https://github.com/acme/base\n",
-) -> None:
-    """Answer GitHub's reads of ``repo``'s :data:`REQS` with ``content``."""
-    mock.get(f"/repos/{repo}").mock(
-        return_value=httpx.Response(200, json={"default_branch": "main"})
+@dataclass
+class LiveHub:
+    """Repos by name: each one's default branch, refs (``heads/x`` → sha) and files by sha.
+
+    The listing carries ``default``; ``HEAD`` names ``head`` when the repo
+    sets it (``None``: the remote didn't say), else ``default`` too. An
+    ``error`` fails the listing, a ``fetch_error`` the fetch. Every call is
+    recorded.
+    """
+
+    repos: dict[str, dict[str, Any]]
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def locate(self, name: str) -> Repo:
+        self.calls.append(("locate", name))
+        repo = self.repos.get(name)
+        if repo is None:
+            raise UsageError(f"repo not found: {name!r}")
+        if "error" in repo:
+            raise repo["error"]
+        return Repo(name=name, url=_url(name), default_branch=repo.get("default"))
+
+    def remote_refs(self, url: str, patterns: Sequence[str]) -> dict[str, str]:
+        self.calls.append(("ls-remote", url, *patterns))
+        refs = self.repos[_name(url)].get("refs", {})
+        return {f"refs/{ref}": sha for ref, sha in refs.items() if f"refs/{ref}" in patterns}
+
+    def default_branch(self, url: str) -> str | None:
+        self.calls.append(("head", url))
+        repo = self.repos[_name(url)]
+        default: str | None = repo["head"] if "head" in repo else repo.get("default")
+        return default
+
+    def fetch(self, url: str, refs: Sequence[GitRef]) -> None:
+        self.calls.append(("fetch", _name(url), *(f"{ref.kind}/{ref.name}" for ref in refs)))
+        if "fetch_error" in self.repos[_name(url)]:
+            raise self.repos[_name(url)]["fetch_error"]
+
+    def read_files(
+        self, url: str, shas: Sequence[str], paths: Sequence[str]
+    ) -> dict[str, dict[str, str]]:
+        files = self.repos[_name(url)].get("files", {})
+        return {sha: {p: t for p, t in files.get(sha, {}).items() if p in paths} for sha in shas}
+
+    def refusal(self, ref: GitRef) -> str | None:
+        return None
+
+    def list_files(self, url: str, sha: str) -> list[tuple[str, str]]:
+        return []
+
+    def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
+        return {}
+
+    def asked(self, kind: str) -> list[tuple[str, ...]]:
+        return [call for call in self.calls if call[0] == kind]
+
+
+def _url(name: str) -> str:
+    return f"https://git.example/{name}.git"
+
+
+def _name(url: str) -> str:
+    return url.removeprefix("https://git.example/").removesuffix(".git")
+
+
+def live_repos(monkeypatch: pytest.MonkeyPatch, repos: dict[str, str]) -> LiveHub:
+    """Serve the commands' live reads from ``repos`` (name → its :data:`REQS` on ``main``).
+
+    A name not listed is one no plugin lists. Returns the hub, whose
+    ``calls`` record each read.
+    """
+    hub = LiveHub(
+        {
+            name: {
+                "default": "main",
+                "refs": {"heads/main": f"sha-{name}"},
+                "files": {f"sha-{name}": {REQS: text}},
+            }
+            for name, text in repos.items()
+        }
     )
-    mock.get(f"/repos/{repo}/git/trees/{sha or 'main'}").mock(
-        return_value=httpx.Response(200, json={"tree": [{"path": REQS, "type": "blob"}]})
-    )
-    mock.get(f"/repos/{repo}/contents/{REQS}").mock(return_value=httpx.Response(200, text=content))
+
+    def index(self: live_reads.LiveReads) -> StoreDependencyIndex:
+        if self._index is None:
+            self._index = StoreDependencyIndex(
+                locate=hub.locate,
+                remote_refs=hub.remote_refs,
+                default_branch=hub.default_branch,
+                store=hub,
+                wrapped=self._wrapped,
+                resolver=self._resolver(),
+                dependency_paths=self._settings.dependency_paths,
+            )
+        return self._index
+
+    monkeypatch.setattr(live_reads.LiveReads, "index", index)
+    return hub
 
 
 #: A role meta file templated with `{@ @}`, which does not parse as YAML.
@@ -287,12 +372,13 @@ __all__ = [
     "RATE_LIMIT_EXCEEDED",
     "REQS",
     "TEMPLATED",
+    "LiveHub",
     "capture_git_refresh",
     "commit_scans",
     "fake_refresh",
     "index_path",
+    "live_repos",
     "make_edge",
-    "mock_dependency_file",
     "mock_expansion",
     "open_index",
     "prod",

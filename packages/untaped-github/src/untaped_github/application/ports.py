@@ -76,22 +76,12 @@ class GithubRepositoryInventoryService(GithubRepoListService, Protocol):
 
 
 class GithubApi(GithubMeService, GithubSearchService, GithubRepositoryInventoryService, Protocol):
-    """github's port: every call its commands, providers and ansible make to the GitHub API.
+    """github's port: every call its commands and providers make to the GitHub API.
 
     One adapter per REST API version serves it
     (:class:`untaped_github.infrastructure.rest_2022.Rest2022`); commands reach it
     through ``SERVER_API.port(settings)``. Rows are GitHub's JSON objects.
     """
-
-    def list_matching_refs(
-        self, owner: str, repo: str, namespace: str
-    ) -> Iterator[dict[str, Any]]: ...
-
-    def get_tree(
-        self, owner: str, repo: str, tree_sha: str, *, recursive: bool = False
-    ) -> dict[str, Any]: ...
-
-    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str: ...
 
     def batch_repo_refs(
         self,

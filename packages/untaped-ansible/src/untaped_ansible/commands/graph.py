@@ -1,4 +1,4 @@
-"""``deps``, ``impact``, ``find`` and ``graph``: Ansible dependency answers over a source or GitHub.
+"""``deps``, ``impact``, ``find`` and ``graph``: Ansible dependency answers over a source or live.
 
 ``deps``, ``impact`` (with ``impact uses`` and ``impact checkouts``) and
 ``find`` answer one question each and print rows (``ansible.dependency``,
@@ -32,6 +32,7 @@ from untaped.sdk import (
     Short,
     Stdin,
     TreeGraph,
+    UntapedError,
     UsageError,
     key,
     plural,
@@ -43,7 +44,6 @@ from untaped_ansible.application.graph import GraphDirection
 from untaped_ansible.checkouts import Checkout, CheckoutSource
 from untaped_ansible.commands._graph import (
     ALL_REFS,
-    LIVE,
     TARGET,
     TARGET_REPO,
     GraphCommand,
@@ -97,7 +97,6 @@ class _Reaching(GraphCommand):
         direction: Literal["deps", "impact"],
         *,
         ref: str | None,
-        live: bool,
         all_refs: bool,
         env: GraphEnv | None = None,
     ) -> list[Reach]:
@@ -107,7 +106,7 @@ class _Reaching(GraphCommand):
         """
         relation: EdgeRelation = "requires" if direction == "deps" else "impacts"
         check_all_refs(ref, all_refs=all_refs)
-        env = env or self.env(command=direction, live=live, all_refs=all_refs)
+        env = env or self.env(command=direction, all_refs=all_refs)
         repo = require_repo(env, self.role, target_repo=self.target_repo)
 
         def read() -> _Reached:
@@ -126,11 +125,13 @@ class Deps(_Reaching):
     """Show what ROLE depends on (downstream), one row per repository per ROLE ref.
 
     Reads a source's data when one is selected (--source or
-    ansible.default_source), refreshed first when older than its max age,
-    and GitHub live otherwise (or with --live). Each row carries the ref as declared, the shortest
-    path from ROLE and the ROLE ref it was reached from; each repo appears
-    once per ROLE ref. `untaped ansible --help` explains refs, local targets
-    and where a walk stops.
+    ansible.default_source), refreshed first when older than its max age;
+    otherwise it reads each repo live from the plugin that lists it, through
+    the repo store, which fetches a ref again only when it moved. Each row
+    carries the ref as declared, the shortest path from ROLE and the ROLE
+    ref it was reached from; each repo appears once per ROLE ref.
+    `untaped ansible --help` explains refs, local targets and where a walk
+    stops.
 
     Examples
     --------
@@ -140,15 +141,12 @@ class Deps(_Reaching):
     ```
     """
 
-    ref: str | None = Field(
-        None, description="Branch, tag, or SHA of ROLE; omit for its default branch."
-    )
+    ref: str | None = Field(None, description="Branch or tag of ROLE; omit for its default branch.")
     all_refs: bool = Field(False, description=ALL_REFS)
-    live: bool = Field(False, description=LIVE)
     output: Output[Dependency]
 
     def run(self) -> Iterator[Dependency]:
-        rows = self.reached("deps", ref=self.ref, live=self.live, all_refs=self.all_refs)
+        rows = self.reached("deps", ref=self.ref, all_refs=self.all_refs)
         self.output.empty(f"No dependencies found{within(parse_depth(self.depth))}.")
         table = self.output.format == "table"
         for hit in rows:
@@ -179,7 +177,7 @@ class Impact(_Reaching):
     output: Output[Dependent]
 
     def run(self) -> Iterator[Dependent]:
-        rows = self.reached("impact", ref=self.ref, live=False, all_refs=False)
+        rows = self.reached("impact", ref=self.ref, all_refs=False)
         self.output.empty(f"No dependents found{within(parse_depth(self.depth))}.")
         table = self.output.format == "table"
         for hit in rows:
@@ -229,7 +227,7 @@ class Uses(_Reaching):
     def run(self) -> Iterator[VariableUseHit]:
         names = _variable_names(self.name)
         depth = parse_depth(self.depth)
-        env = self.env(command="impact", live=False, all_refs=False)
+        env = self.env(command="impact", all_refs=False)
         repo = require_repo(env, self.role, target_repo=self.target_repo)
 
         def read() -> _Reached:
@@ -359,8 +357,8 @@ class Checkouts(_Reaching):
     )
 
     def run(self) -> Iterator[CheckoutHit]:
-        env = self.env(command="impact", live=False, all_refs=False)
-        reached = self.reached("impact", ref=self.ref, live=False, all_refs=False, env=env)
+        env = self.env(command="impact", all_refs=False)
+        reached = self.reached("impact", ref=self.ref, all_refs=False, env=env)
         rows = [hit.row for hit in reached]
         self.output.empty(
             f"No checkouts of {self.role}'s dependents found{within(parse_depth(self.depth))}."
@@ -456,7 +454,6 @@ class Find(GraphCommand):
     )
     stdin: Stdin[Record]
     all_refs: bool = Field(False, description=ALL_REFS)
-    live: bool = Field(False, description=LIVE)
     output: Output[DependencyMatch]
 
     def run(self) -> Iterator[DependencyMatch]:
@@ -470,7 +467,7 @@ class Find(GraphCommand):
             if self.stdin.requested
             else list(dict.fromkeys((root_from_line(r), RootInput()) for r in self.root))
         )
-        env = self.env(command="find", live=self.live, all_refs=self.all_refs)
+        env = self.env(command="find", all_refs=self.all_refs)
         wanted = [require_repo(env, repo) for repo in self.target]
         resolved = [(root, source, require_repo(env, root.target)) for root, source in inputs]
 
@@ -478,20 +475,28 @@ class Find(GraphCommand):
             # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
             graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
             found = _Found()
+            unread: list[UntapedError] = []
             for root, source, repo in resolved:
                 local = root.target if Path(root.target).expanduser().exists() else None
                 key = (repo_key(repo), root.ref, local)
                 graph = graphs.get(key)
                 if graph is None:
-                    graph = graphs[key] = self.target_graph(
+                    built = self.target_graph(
                         env,
                         target=root.target,
                         ref=root.ref,
                         target_repo=repo,
                         direction="deps",
-                    ).graph
+                        strict=False,
+                    )
+                    graph = graphs[key] = built.graph
+                    if built.unread is not None:
+                        unread.append(built.unread)
                     found.graphs.append((_root_label(root), graph))
                 found.matches.extend(find_matches(graph, wanted, source=source))
+            # One unreadable root of many warns; when none could be read, the search failed.
+            if unread and len(unread) == len(graphs):
+                raise unread[0]
             return found
 
         found = self.answer(env, "deps", read, empty=lambda found: not found.matches)
@@ -592,9 +597,7 @@ class Graph(GraphCommand):
     target: Positional[str] = Field(description=TARGET)
     ref: str | None = Field(
         None,
-        description=(
-            "Target branch, tag, or SHA; omit for its default branch (and every ref upstream)."
-        ),
+        description=("Target branch or tag; omit for its default branch (and every ref upstream)."),
     )
     direction: Direction = Field(
         "both",
@@ -605,7 +608,6 @@ class Graph(GraphCommand):
     )
     all_refs: bool = Field(False, description=ALL_REFS)
     target_repo: str | None = Field(None, description=TARGET_REPO)
-    live: bool = Field(False, description=LIVE)
     out: Annotated[Path | None, Short("-o")] = Field(
         None, description="Write the graph to this file instead of stdout (tree, mermaid or json)."
     )
@@ -617,7 +619,7 @@ class Graph(GraphCommand):
     def run(self) -> GraphDocument | None:
         check_all_refs(self.ref, all_refs=self.all_refs)
         direction = _DIRECTIONS[self.direction]
-        env = self.env(command="graph", live=self.live, all_refs=self.all_refs)
+        env = self.env(command="graph", all_refs=self.all_refs)
         repo = require_repo(env, self.target, target_repo=self.target_repo)
         built = self.answer(
             env,

@@ -8,28 +8,29 @@ depend on each other through their requirements files: what a role depends
 on, what depends on it, which projects reach a repository, and the whole
 graph. It is for anyone about to change a shared role.
 
-Downstream works from live GitHub reads. Upstream needs a *source*: a saved
-selection of the repos a plugin lists, whose dependency files `untaped` scans
-and caches.
+Downstream reads each repo live from the plugin that lists it. Upstream
+needs a *source*: a saved selection of the repos a plugin lists, whose
+dependency files `untaped` scans and caches.
 
 ## Set up
 
-`untaped ansible` reads GitHub through the `github` settings, so set a GitHub
-token first. Then save a source from the selector a plugin prints, refresh it
-once, and make it the default so you can leave out `--source`:
+Repos come from the installed plugins that list them (those filling the git
+plugin's `RepoSource`; `untaped plugin list` shows each plugin's `fills`), so
+install and set up one of them first. Then save a source, refresh it once,
+and make it the default so you can leave out `--source`:
 
 ```bash
-untaped auth login github
-untaped github repos selector --org acme --team acme/platform --format pipe \
-  | untaped ansible source set platform --stdin
+untaped ansible source set platform --from PLUGIN --match 'acme/*'
 untaped ansible source refresh platform
 untaped config set ansible.default_source platform
 ```
 
-`source set --from PLUGIN --match 'infra/*'` takes the repos a plugin lists
-whose full name matches instead. Each refresh asks the source's plugin for its
-repos again. Private repos also need Git access over HTTPS with that token, or
-over SSH with `github.git_protocol: ssh`. The repos live in the git plugin's repo store
+`--from PLUGIN` takes the repos that plugin lists, and `--match` keeps those
+whose full name matches. A plugin with its own way to select repos (by team,
+say) prints a selector row with one of its commands; pipe it to
+`source set NAME --stdin` instead. Each refresh asks the source's plugin for
+its repos again, at the URLs it gives, with the credentials of the plugin
+serving each host. The repos live in the git plugin's repo store
 (`git.store_dir`). Scanned files, the index location and refresh tuning are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible).
 
@@ -42,8 +43,9 @@ untaped ansible deps ./roles/web --target-repo acme/web --format json
 ```
 
 One row per repo the role reaches, with the file that declares it and the
-shortest path. With a source selected, `deps` reads its cache; `--live` reads
-GitHub instead.
+shortest path. With a source selected, `deps` reads its cache; without one, it
+reads each repo live where its plugin lists it, through the repo store, which
+fetches a ref again only when it moved.
 
 ## Find what depends on a role
 
@@ -132,4 +134,4 @@ saved source or plugin still uses stays.
 
 - [Output records](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/records.md#ansible) and [exit codes](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/exit-codes.md)
 - [Settings](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible)
-- [GitHub](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-github/README.md)
+- [Git](https://github.com/alexisbeaulieu97/untaped/blob/main/packages/untaped-git/README.md): the repo store, and the contracts plugins fill to list repos and serve hosts

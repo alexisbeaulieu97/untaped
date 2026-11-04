@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from untaped_ansible.domain import payloads, variable_models
 
@@ -151,31 +151,6 @@ class ProbeRefs(Protocol):
         default_branches: Mapping[str, str] | None,
         on_progress: Callable[[int, int], None] | None,
     ) -> ProbeResult: ...
-
-
-class GitHubDependencyReader(Protocol):
-    """GitHub operations needed by dependency index refresh."""
-
-    def get_repository(self, owner: str, repo: str) -> dict[str, Any]: ...
-
-    def list_org_repos(self, org: str) -> Iterator[dict[str, Any]]: ...
-
-    def list_team_repos(self, org: str, team_slug: str) -> Iterator[dict[str, Any]]: ...
-
-    def list_matching_refs(
-        self, owner: str, repo: str, namespace: str
-    ) -> Iterable[dict[str, object]]: ...
-
-    def get_tree(
-        self,
-        owner: str,
-        repo: str,
-        tree_sha: str,
-        *,
-        recursive: bool = False,
-    ) -> dict[str, object]: ...
-
-    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str: ...
 
 
 class EdgeBatchRead(Protocol):
