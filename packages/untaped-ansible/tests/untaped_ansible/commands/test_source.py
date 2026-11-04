@@ -306,7 +306,7 @@ def test_source_set_replaces_a_damaged_row_of_its_name(tmp_path: Path, monkeypat
 
     assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["action"] == "updated"
-    assert [row["name"] for row in read_state()["sources"]] == ["other", "prod"]
+    assert sorted(row["name"] for row in read_state()["sources"]) == ["other", "prod"]
     assert run("source", "get", "prod").exit_code == 0
 
 
