@@ -30,6 +30,7 @@ from rich.text import Text
 
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
+from untaped.sdk._streams import stream_is_tty as stream_is_tty
 from untaped.sdk._theme import DEFAULT_SYMBOLS, BorderStyle, ThemeSpec
 from untaped.sdk.fields import Roled
 
@@ -442,16 +443,6 @@ def _role_style(theme: ThemeSpec, role: str, *, colorize: bool) -> str | None:
     if not colorize:
         return None
     return theme.color_roles.get(role)
-
-
-def stream_is_tty(stream: TextIO) -> bool:
-    isatty = getattr(stream, "isatty", None)
-    if not callable(isatty):
-        return False
-    try:
-        return bool(isatty())
-    except OSError, ValueError:  # ValueError: a closed stream
-        return False
 
 
 def should_colorize(stream: TextIO) -> bool:

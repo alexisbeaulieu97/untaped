@@ -6742,10 +6742,12 @@ sdk untaped.sdk.Output(render=) default=None callback(*)
 sdk untaped.sdk.Output(stream=) default=false
 sdk untaped.sdk.Output.empty(text)
 sdk untaped.sdk.Output.field_kind class
+sdk untaped.sdk.Output.format_chosen  [experimental]
 sdk untaped.sdk.Output.formats
 sdk untaped.sdk.Output.options class
 sdk untaped.sdk.Output.panel class
 sdk untaped.sdk.Output.requested
+sdk untaped.sdk.Output.to_terminal  [experimental]
 sdk untaped.sdk.OutputFormat choice=json
 sdk untaped.sdk.OutputFormat choice=pipe
 sdk untaped.sdk.OutputFormat choice=raw
@@ -7770,6 +7772,7 @@ sdk untaped.sdk.testing.CliInvoker.invoke(command) callback(command, *)
 sdk untaped.sdk.testing.CliInvoker.invoke(input=) default=None
 sdk untaped.sdk.testing.CliInvoker.invoke(interactive=) default=false
 sdk untaped.sdk.testing.CliInvoker.invoke(prompt_backend=) default=None
+sdk untaped.sdk.testing.CliInvoker.invoke(stdout_terminal=) default=false
 sdk untaped.sdk.testing.CliInvoker.invoke(terminal=) default=false
 sdk untaped.sdk.testing.CliResult(diagnostics@5=) default=[]
 sdk untaped.sdk.testing.CliResult(exception@4=) default=None
@@ -7787,6 +7790,7 @@ sdk untaped.sdk.testing.Install(candidates)
 sdk untaped.sdk.testing.Install.candidates
 sdk untaped.sdk.testing.Install.cli(input=) default=None
 sdk untaped.sdk.testing.Install.cli(line)
+sdk untaped.sdk.testing.Install.cli(stdout_terminal=) default=false
 sdk untaped.sdk.testing.Install.run(**knobs)
 sdk untaped.sdk.testing.Install.run(command)
 sdk untaped.sdk.testing.Install.run(raise_on_error=) default=false
@@ -7916,6 +7920,7 @@ sdk untaped.sdk.testing.invoke_cli(command) callback(command, *)
 sdk untaped.sdk.testing.invoke_cli(input=) default=None
 sdk untaped.sdk.testing.invoke_cli(interactive=) default=false
 sdk untaped.sdk.testing.invoke_cli(prompt_backend=) default=None
+sdk untaped.sdk.testing.invoke_cli(stdout_terminal=) default=false
 sdk untaped.sdk.testing.invoke_cli(terminal=) default=false
 sdk untaped.sdk.testing.invoke_root(argv)
 sdk untaped.sdk.testing.invoke_root(input=) default=None

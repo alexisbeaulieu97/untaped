@@ -165,13 +165,20 @@ class Install:
             )
         return _ran(result, printed[0] if printed else None, read_back=False)
 
-    def cli(self, line: str | Sequence[str], *, input: str | None = None) -> Ran:
+    def cli(
+        self,
+        line: str | Sequence[str],
+        *,
+        input: str | None = None,
+        stdout_terminal: bool = False,
+    ) -> Ran:
         """Run ``untaped <line>`` through the command line core mounts, as a user would.
 
         The terminal is the ``terminal`` fixture's: absent unless the test
         scripted it, so a command that asks first exits 2 without ``--yes``.
-        ``input`` is what is piped on stdin. The rows of ``--format json`` or
-        ``pipe`` are read back through their JSON.
+        ``input`` is what is piped on stdin. stdout is captured as a pipe, or as
+        a terminal with ``stdout_terminal=True`` (``Output.to_terminal``). The
+        rows of ``--format json`` or ``pipe`` are read back through their JSON.
         """
         from untaped.runtime.bootstrap import build_root_app  # noqa: PLC0415
         from untaped.runtime.mount import watching  # noqa: PLC0415
@@ -189,6 +196,7 @@ class Install:
                 prompt_backend=backend,
                 terminal=backend is not None,
                 interactive=backend is not None and input is None,
+                stdout_terminal=stdout_terminal,
             )
         return _ran(result, printed[-1] if printed else None, read_back=True)
 

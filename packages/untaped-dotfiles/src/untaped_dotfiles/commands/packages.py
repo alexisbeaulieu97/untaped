@@ -293,13 +293,14 @@ class Show(DotfilesCommand):
     items, entries and their state here; nothing shown runs a command from a
     source. A package file that doesn't load is a row with `error` (exit 1).
 
-    With no SELECTOR at a terminal (and the table format), it opens a screen
-    instead: `space` turns a package or item on or off, `p` cycles its policy,
-    `e` answers a plain input, and `ctrl-s` saves every change to
-    `config.yml` at once (esc closes saving nothing); each change is said
-    after it closes. It places nothing, and turning something off there
-    takes nothing back: `apply` places, `remove` takes back. `--format json`,
-    or no terminal, prints the rows.
+    With no SELECTOR, at a terminal, it opens a screen instead: `space` turns
+    a package or item on or off, `p` cycles its policy, `e` answers a plain
+    input, and `ctrl-s` saves every change to `config.yml` at once (esc
+    closes saving nothing); each change is said after it closes. It places
+    nothing, and turning something off there takes nothing back: `apply`
+    places, `remove` takes back. A named format (`--format`,
+    `UNTAPED_FORMAT` or `untaped.ui.format`), `--columns`, or a stdout or
+    stdin that isn't a terminal (`show | grep starship`) prints the rows.
     """
 
     selector: Positional[str | None] = Field(
@@ -324,10 +325,12 @@ class Show(DotfilesCommand):
         return iter(rows)
 
     def _screen_wanted(self) -> bool:
+        """Whether the run wants the screen: as a pager, only when it would draw on a terminal."""
         return (
             self.selector is None
-            and self.output.format == "table"
+            and not self.output.format_chosen
             and self.output.requested is None
+            and self.output.to_terminal
             and self.ctx.terminal.can_prompt
         )
 

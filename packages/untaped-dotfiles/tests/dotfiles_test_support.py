@@ -168,9 +168,12 @@ def forget_installed() -> None:
     _INSTALLED.clear()
 
 
-def run(args: Sequence[str], *, input: str | None = None) -> Result:
-    """Run ``untaped dotfiles ARGS`` in the test's home, with the ``terminal`` fixture's answers."""
-    ran = installed().cli(["dotfiles", *args], input=input)
+def run(args: Sequence[str], *, input: str | None = None, on_screen: bool = False) -> Result:
+    """Run ``untaped dotfiles ARGS`` in the test's home, with the ``terminal`` fixture's answers.
+
+    ``on_screen``: stdout is a terminal too, not a pipe.
+    """
+    ran = installed().cli(["dotfiles", *args], input=input, stdout_terminal=on_screen)
     return Result(int(ran.exit), ran.stdout, "".join(f"{line}\n" for line in ran.stderr), ran)
 
 

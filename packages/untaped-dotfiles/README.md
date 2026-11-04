@@ -107,8 +107,9 @@ right. `space` turns a package or item on or off, `p` cycles its policy
 (the author's, `sync`, `once`, `manual`), `e` answers a plain input, and
 `ctrl-s` saves every change to `config.yml` at once; esc closes saving
 nothing. It places nothing, and turning something off there takes nothing
-back (`remove` does). `show --format json`, or no terminal, prints the
-rows instead.
+back (`remove` does). A named format (`show --format json`), or a stdout
+or stdin that isn't a terminal (`show | grep starship`), prints the rows
+instead, as a pager would.
 
 `apply` fetches each git source, moves its clone to the fetched commit,
 shows one preview (every entry with its destination, then a diff wherever
