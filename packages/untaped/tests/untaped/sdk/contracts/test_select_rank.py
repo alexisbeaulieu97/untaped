@@ -610,7 +610,7 @@ def test_a_provider_whose_ready_raises_is_inactive_in_doctor() -> None:
 def test_a_provider_not_ready_for_some_methods_names_them_in_doctor() -> None:
     class Partly(Shop):
         def ready(self) -> NotReady:
-            return NotReady("no stock list", methods=(BookSource.books, BookSource.first))
+            return NotReady("no stock list", methods=("books", "first"))
 
     compose(shelf_plugin(), plugin("shop", fills=(Partly,)))
     [row] = doctor_rows()

@@ -123,19 +123,24 @@ def test_a_provider_not_configured_is_skipped_and_none_ready_is_exit_4() -> None
 def test_a_provider_not_ready_for_some_methods_answers_the_others() -> None:
     class Partly(Shop):
         def ready(self) -> NotReady:
-            return NotReady("no stock list", methods=(BookSource.books,))
+            return NotReady("no stock list", methods=("books",))
 
     compose(shelf_plugin(), plugin("shop", fills=(Partly,)))
     with pytest.raises(NoProviderReady, match="shop: no stock list") as caught:
         gather(BookSource.books)()
-    assert caught.value.not_ready["shop"].method_names == ("books",)
+    assert caught.value.not_ready["shop"].methods == ("books",)
     [answer] = gather(BookSource.by_author)("Herbert")
     assert isinstance(answer, Ok)
 
 
-def test_not_ready_takes_contract_methods_not_names() -> None:
-    with pytest.raises(TypeError, match="is not a contract method"):
-        NotReady("waiting", methods=("books",))  # type: ignore[arg-type]  # the mistake
+def test_a_not_ready_naming_a_method_the_contract_lacks_is_not_ready_for_any() -> None:
+    class Misspelt(Shop):
+        def ready(self) -> NotReady:
+            return NotReady("no stock list", methods=("book",))
+
+    compose(shelf_plugin(), plugin("shop", fills=(Misspelt,)))
+    with pytest.raises(NoProviderReady, match="names methods book_source doesn't have: book"):
+        gather(BookSource.by_author)("Herbert")
 
 
 def test_only_providers_that_fill_the_method_are_asked() -> None:

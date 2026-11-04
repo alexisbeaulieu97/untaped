@@ -7030,7 +7030,7 @@ sdk untaped.sdk.contracts.Contract implement=
 sdk untaped.sdk.contracts.Contract.__init_subclass__(shell=) default=None
 sdk untaped.sdk.contracts.Contract.own(cls@2=) default=None
 sdk untaped.sdk.contracts.Contract.own(item)
-sdk untaped.sdk.contracts.Contract.ready() -> NotReady | None
+sdk untaped.sdk.contracts.Contract.ready() -> NotReady?
 sdk untaped.sdk.contracts.Errored(plugin, error)
 sdk untaped.sdk.contracts.Errored(rank@3=) default=None
 sdk untaped.sdk.contracts.Errored(reason@4=) default=None
@@ -7058,10 +7058,9 @@ sdk untaped.sdk.contracts.NotFound.exit_code
 sdk untaped.sdk.contracts.NotFound.hint class
 sdk untaped.sdk.contracts.NotFound.retryable
 sdk untaped.sdk.contracts.NotFound.system class
-sdk untaped.sdk.contracts.NotReady(methods@3=) default=[] callback(*)
+sdk untaped.sdk.contracts.NotReady(methods@3=) default=[]
 sdk untaped.sdk.contracts.NotReady(reason)
 sdk untaped.sdk.contracts.NotReady(setting@2=) default=None
-sdk untaped.sdk.contracts.NotReady.method_names
 sdk untaped.sdk.contracts.NotReady.methods
 sdk untaped.sdk.contracts.NotReady.reason
 sdk untaped.sdk.contracts.NotReady.setting
@@ -8499,7 +8498,7 @@ sdk untaped_git.testing.Listing implement=  [experimental]
 sdk untaped_git.testing.Listing.calls class  [experimental]
 sdk untaped_git.testing.Listing.error class  [experimental]
 sdk untaped_git.testing.Listing.not_ready class  [experimental]
-sdk untaped_git.testing.Listing.ready() -> NotReady | None  [experimental]
+sdk untaped_git.testing.Listing.ready() -> NotReady?  [experimental]
 sdk untaped_git.testing.Listing.repos()  [experimental]
 sdk untaped_git.testing.Listing.rows class  [experimental]
 sdk untaped_git.testing.conformance(provider)  [experimental]

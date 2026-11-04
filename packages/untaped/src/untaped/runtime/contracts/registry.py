@@ -502,13 +502,14 @@ def ready_of(provider: BoundProvider, method: str | None = None) -> NotReady | N
     except Exception as exc:
         _LOG.debug("%s's ready() raised %s", provider.plugin, type(exc).__name__, exc_info=exc)
         return NotReady(f"ready() raised {type(exc).__name__}: {exc}")
-    if (
-        ready is not None
-        and method is not None
-        and ready.methods
-        and method not in ready.method_names
-    ):
-        return None
+    if ready is not None and ready.methods:
+        info = provider.binding.contract
+        unknown = [name for name in ready.methods if name not in info.methods]
+        if unknown:  # a misspelt or removed method: never ask the provider on a guess
+            names = ", ".join(unknown)
+            return NotReady(f"ready() names methods {info.name} doesn't have: {names}")
+        if method is not None and method not in ready.methods:
+            return None
     if ready is None or ready.setting is None:
         return ready
     spelled = replace(ready)  # ``spelled`` is core's to set, so no provider passes it
@@ -576,7 +577,7 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
     ready = ready_of(entry)
     if ready is not None:
         why = f"waits for {ready.spelled}" if ready.spelled else f"inactive: {ready.reason}"
-        only = f"{', '.join(ready.method_names)} " if ready.methods else ""
+        only = f"{', '.join(ready.methods)} " if ready.methods else ""
         detail = f"{what}: {only}{why}"
         return DoctorRow("contract-provider", entry.plugin, "pass", Reason.not_configured, detail)
     methods = ", ".join(name for name in info.methods if fills(provider, info, name))
