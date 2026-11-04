@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -150,7 +151,9 @@ def test_a_target_input_waits_for_a_value(make_remote: MakeRemote, user_home: Pa
 
 
 def test_a_clone_that_fails_fails_its_row(make_remote: MakeRemote, user_home: Path) -> None:
-    _subscribed(make_remote, "https://git.example/missing.git")
+    gone = make_remote("gone", packages={}, files={"README": "x\n"})
+    shutil.rmtree(gone.path)  # its URL still maps to the local path: no network is asked
+    _subscribed(make_remote, gone.url)
     code, rows = _repo_rows(["apply", "--yes"])
     assert code == 1 and rows[0]["action"] == "failed"
     assert states()["~/Projects/app"] == "pending"
