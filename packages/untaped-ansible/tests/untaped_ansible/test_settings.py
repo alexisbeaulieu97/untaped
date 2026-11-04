@@ -13,12 +13,13 @@ import pytest
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from ansible_test_support import run_root
+from ansible_test_support import github_source, run_root
 from untaped.sdk import home
 from untaped.sdk.health.deprecated_keys import key_mappings, mapping_errors
-from untaped_ansible.settings import AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import AnsibleSettings
+from untaped_ansible.sources import SourceDefinition
 
-_SOURCE = {"name": "prod", "repos": ["acme/site"]}
+_SOURCE = github_source("prod", repos=["acme/site"])
 
 
 @pytest.mark.parametrize(
@@ -46,11 +47,16 @@ def test_source_definition_accepts_per_source_ref_scan_default_and_tag_only_scan
 
 
 def test_source_definition_is_frozen_and_normalized() -> None:
-    source = SourceDefinition(name="prod", repos=["acme/b", "acme/a", "acme/b"])
+    source = SourceDefinition(**_SOURCE, dependency_paths=["b.yml", "a.yml", "b.yml"])
 
-    assert source.repos == ["acme/a", "acme/b"]
+    assert source.dependency_paths == ["a.yml", "b.yml"]
     with pytest.raises(ValidationError):
         source.name = "other"
+
+
+def test_a_source_s_selector_was_issued_by_its_plugin() -> None:
+    with pytest.raises(ValidationError, match="the selector was issued by github, not forge"):
+        SourceDefinition(**{**_SOURCE, "source": "forge"})
 
 
 _DELETED = {

@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from ansible_index_support import make_edge, seed
-from ansible_test_support import Result, run, use_config
+from ansible_test_support import Result, github_source, run, use_config
 from untaped_ansible.domain.payloads import SourceRepoMetadata
 
 _HOST = "gitlab.example.com"
@@ -41,7 +41,7 @@ def _gitlab_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         make_edge(_BASE, _LIB),
         repo_metadata=(_metadata(_WEB), _metadata(_BASE)),
     )
-    state = {"sources": [{"name": "prod", "orgs": ["infra"]}]}
+    state = {"sources": [github_source("prod", orgs=["infra"])]}
     use_config(tmp_path, monkeypatch, state)
 
 

@@ -47,7 +47,7 @@ Kept in `~/.untaped/plugins/untaped/state.yml`.
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
 | `ansible.index_dir` | path (optional) | unset | `UNTAPED_ANSIBLE__INDEX_DIR` | Folder of the SQLite index of refreshed source data, an absolute path; the file in it is `index.v<layout>.sqlite3`, one per layout. Unset: `plugins/ansible/index/` under the untaped home. |
-| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` or inline selector is given. |
+| `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. 1 to 32. |
 | `ansible.source_refresh_repo_batch_size` | integer | `100` | `UNTAPED_ANSIBLE__SOURCE_REFRESH_REPO_BATCH_SIZE` | Repos probed and committed per source refresh batch; a refresh pauses between batches once a host's probe budget is spent. 1 or more. |
@@ -61,7 +61,7 @@ Kept in `~/.untaped/plugins/ansible/state.yml`.
 
 | Key | Type | Description |
 |---|---|---|
-| `ansible.sources` | list | Named GitHub search boundary for index refresh and impact queries. |
+| `ansible.sources` | list | A saved source: the repos a plugin selects, and what a refresh scans in them. |
 | `ansible.aliases` | list | A role or Galaxy name and the repository name it stands for. |
 
 ## `awx`

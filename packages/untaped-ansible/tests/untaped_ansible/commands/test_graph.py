@@ -32,7 +32,7 @@ from ansible_index_support import (
     seed,
     table,
 )
-from ansible_test_support import Awx, Result, run, use_config
+from ansible_test_support import Awx, Result, github_source, run, use_config
 from untaped.sdk import Failure, Message, Stale
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.domain.payloads import (
@@ -44,8 +44,8 @@ from untaped_git.api import HostBudget
 
 _TWO_SOURCES = {
     "sources": [
-        {"name": "platform", "repos": ["acme/site"]},
-        {"name": "ops", "repos": ["acme/deploy"]},
+        github_source("platform", repos=["acme/site"]),
+        github_source("ops", repos=["acme/deploy"]),
     ]
 }
 
@@ -114,12 +114,13 @@ def test_empty_table_guides_with_stderr_hint(
 
 
 def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "bad", "repos": ["not-a-repo"]}]})
+    bad = {**github_source("bad", repos=["acme/site"]), "source": "gitlab"}
+    use_config(tmp_path, monkeypatch, {"sources": [bad]})
 
     result = run("source", "refresh", "bad")
 
     assert result.exit_code == 4  # a broken saved source is local setup
-    assert "repo must be owner/name" in result.output
+    assert "the selector was issued by github, not gitlab" in result.output
 
 
 @pytest.mark.parametrize(
@@ -133,11 +134,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
         ),
         (["--refresh"], "--refresh needs a source; select one with --source NAME"),
         (["--cached"], "--cached needs a source; select one with --source NAME"),
-        (["--refresh", "--path", REQS], "--refresh needs a source"),
-        (["--refresh", "--ref-kind", "heads"], "--refresh needs a source"),
-        (["--refresh", "--ref-pattern", "v*"], "--refresh needs a source"),
-        (["--refresh", "--ref-scan-default", "default_branch"], "--refresh needs a source"),
-        (["--source", "platform", "--org", "acme"], "--source cannot be combined with --org"),
+        (["--source", "platform", "--org", "acme"], "--org"),
         (
             ["--source", "platform", "--ref-scan-default", "default_branch"],
             "--ref-scan-default",
@@ -149,7 +146,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
 def test_graph_usage_errors_fail_before_refreshing(
     tmp_path: Path, monkeypatch, args: list[str], message: str
 ) -> None:
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "orgs": ["acme"]}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", orgs=["acme"])]})
     calls = fake_refresh(monkeypatch)
 
     result = run("graph", "acme/site", *args)
@@ -388,15 +385,11 @@ def test_graph_cached_on_a_never_refreshed_source_fails_naming_it(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--direction=up"], "upstream requires --source NAME, inline selectors"),
+        (["--direction=up"], "upstream requires --source NAME or ansible.default_source"),
         (["--source", "nope"], "source not found: 'nope'; known: ops, platform"),
         (
             ["--source", "platform", "--source", "ops", "--cached"],
             "no cached source data for source platform; drop --cached to refresh it",
-        ),
-        (
-            ["--org", "acme", "--direction=up", "--cached"],
-            "no cached source data for inline source --org acme",
         ),
     ],
 )
@@ -575,7 +568,10 @@ def test_graph_repeated_sources_refresh_each_saved_source(tmp_path: Path, monkey
     calls = fake_refresh(
         monkeypatch,
         lambda source: (
-            make_edge(source.repos[0], ref="main" if source.name == "platform" else "release"),
+            make_edge(
+                source.selector.source.record["repos"][0],
+                ref="main" if source.name == "platform" else "release",
+            ),
         ),
     )
 
@@ -593,74 +589,6 @@ def test_graph_repeated_sources_refresh_each_saved_source(tmp_path: Path, monkey
     assert result.exit_code == 0, result.output
     assert [source.name for source in calls] == ["platform", "ops"]
     assert _tree(result.stdout) == ["acme/deploy@release", "acme/site@main"]
-
-
-def test_graph_inline_upstream_with_ref_renders_all_matching_source_refs(
-    tmp_path: Path, monkeypatch
-) -> None:
-    use_config(tmp_path, monkeypatch)
-    calls = fake_refresh(
-        monkeypatch,
-        (
-            make_edge("acme/playbook", ref="master", version="v3"),
-            make_edge("acme/playbook", ref="v3", version="v3"),
-        ),
-    )
-
-    result = run(
-        "graph", "acme/base", "--ref", "v3", "--org", "acme", "--team", "platform",
-        "--direction=up", "--refresh",
-    )  # fmt: skip
-
-    assert result.exit_code == 0, result.output
-    assert (calls[0].ref_kinds, calls[0].ref_patterns) == ([], [])
-    assert _tree(result.stdout) == ["acme/playbook@master", "acme/playbook@v3"]
-
-
-def test_graph_inline_source_preserves_repeated_selectors(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch)
-    calls = fake_refresh(monkeypatch, (make_edge(),))
-
-    result = run(
-        "graph", "acme/base",
-        "--org", "acme", "--org", "beta",
-        "--team", "acme/platform", "--team", "beta/platform",
-        "--repo", "acme/site", "--repo", "beta/site",
-        "--path", REQS, "--path", "meta/main.yml",
-        "--ref-kind", "heads", "--ref-kind", "tags",
-        "--ref-pattern", "main", "--ref-pattern", "v*",
-        "--ref-scan-default", "default_branch",
-        "--direction=up", "--refresh",
-    )  # fmt: skip
-
-    assert result.exit_code == 0, result.output
-    (source,) = calls
-    assert source.orgs == ["acme", "beta"]
-    assert source.teams == ["acme/platform", "beta/platform"]
-    assert source.repos == ["acme/site", "beta/site"]
-    assert source.dependency_paths == ["meta/main.yml", REQS]
-    assert source.ref_kinds == ["heads", "tags"]
-    assert source.ref_patterns == ["main", "v*"]
-    assert source.ref_scan_default == "default_branch"
-
-
-def test_inline_source_cache_key_is_order_insensitive(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch)
-    calls = fake_refresh(monkeypatch, lambda source: tuple(make_edge(r) for r in source.repos))
-    selectors = ["--ref-kind", "heads", "--direction=up"]
-
-    first = run(
-        "graph", "acme/base", "--repo", "acme/a", "--repo", "acme/b", *selectors, "--refresh"
-    )
-    second = run(
-        "graph", "acme/base", "--repo", "acme/b", "--repo", "acme/a", *selectors, "--cached"
-    )
-
-    assert first.exit_code == 0, first.output
-    assert second.exit_code == 0, second.output
-    assert "acme/a@main" in second.stdout
-    assert "acme/b@main" in second.stdout
-    assert len(calls) == 1
 
 
 def test_graph_refresh_with_partial_failures_warns_with_a_stale_line(
@@ -968,10 +896,9 @@ def test_refresh_overrides_reach_the_git_refresh(
 
 _CONTAINS_SOURCE = {
     "sources": [
-        {
-            "name": "platform",
-            "repos": ["acme/site", "acme/app", "acme/common", "acme/multi", "acme/lib"],
-        }
+        github_source(
+            "platform", repos=["acme/site", "acme/app", "acme/common", "acme/multi", "acme/lib"]
+        )
     ]
 }
 
@@ -1049,7 +976,7 @@ def test_find_searches_the_full_graph_by_default(tmp_path: Path, monkeypatch) ->
         *(make_edge(repo, dep, version="main") for repo, dep in pairwise(chain)),
         make_edge("acme/r4", "acme/target", version="v1"),
     )
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", repos=chain)]})
 
     deep = _find("acme/r1@main\n", "--format", "json")
     bounded = _find("acme/r1@main\n", "--depth", "3")
@@ -1130,7 +1057,7 @@ def test_graph_depth_defaults_to_unlimited(tmp_path: Path, monkeypatch) -> None:
         *(make_edge(repo, dep, version="main") for repo, dep in pairwise(chain)),
         make_edge("acme/r4", "acme/target", version="v1"),
     )
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", repos=chain)]})
 
     result = run(
         "graph", "acme/r1", "--ref", "main", "--source", "platform", "--direction=down",
@@ -1350,7 +1277,7 @@ def test_deps_follows_the_whole_graph_unless_depth_is_given(tmp_path: Path, monk
         "source:platform",
         *(make_edge(repo, dep, version="main") for repo, dep in pairwise(chain)),
     )
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", repos=chain)]})
 
     deep = run("deps", "acme/r1", "--ref", "main", "--source", "platform", "-f", "json")
     bounded = run("deps", "acme/r1", "--ref", "main", "--source", "platform", "--depth", "1")
@@ -1489,7 +1416,7 @@ def test_reach_reports_each_repo_once_through_diamonds_and_cycles(
     tmp_path: Path, monkeypatch, command: str, role: str, expected: list[tuple[str, int]]
 ) -> None:
     repos = _seed_diamond_cycle(tmp_path)
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": repos}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", repos=repos)]})
 
     result = run(command, role, "--ref", "main", "--source", "platform", "-f", "json")
 
@@ -1706,7 +1633,7 @@ def _seed_chain(tmp_path: Path, monkeypatch) -> None:
         now,
         lambda: commit_scans(open_index(tmp_path), "source:platform", scans, scanned_at=now),
     )
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "platform", "repos": chain}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("platform", repos=chain)]})
 
 
 _DEPTH_HINT = "hint: 1 repo not read beyond --depth 2; pass --depth unlimited to read it"

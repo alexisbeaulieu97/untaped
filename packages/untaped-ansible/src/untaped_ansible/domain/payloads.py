@@ -48,7 +48,7 @@ class ProbedRepo(BaseModel):
 class ProbeTarget(BaseModel):
     """A source repository: its name and URL as its provider gives them, and its default branch.
 
-    ``ssh_url`` is the provider's SSH form of ``url``, when it gives one.
+    ``url`` is the one Git reads: the provider chose its protocol.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -56,7 +56,6 @@ class ProbeTarget(BaseModel):
     full_name: str
     url: str
     default_branch: str
-    ssh_url: str | None = None
 
 
 class RepoFailure(BaseModel):
@@ -125,7 +124,6 @@ class RefScanMetadata(BaseModel):
     source_ref: str
     source_sha: str
     clone_url: str | None = None
-    clone_protocol: str | None = None
     dependency_paths_fingerprint: str
     aliases_fingerprint: str = ""
     checked_at: datetime

@@ -27,7 +27,7 @@ from ansible_index_support import (
     record_refresh,
     seed_index,
 )
-from ansible_test_support import Result, run, run_root, running, use_config
+from ansible_test_support import Result, github_source, run, run_root, running, use_config
 from untaped.sdk import ErrorCategory, Failure, Message, Progress, Stale
 from untaped.sdk.storage import Freshness
 from untaped.sdk.testing import cache_clock, progress_clock
@@ -44,8 +44,10 @@ from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE
 from untaped_ansible.settings import SOURCE_DATA
 from untaped_git.api import HostBudget
 
-_PROD = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
-_TWO = {"sources": [{"name": "a", "repos": ["acme/site"]}, {"name": "b", "repos": ["acme/app"]}]}
+_PROD = {"sources": [github_source("prod", repos=["acme/site"])]}
+_TWO = {
+    "sources": [github_source("a", repos=["acme/site"]), github_source("b", repos=["acme/app"])]
+}
 
 
 def _seed(tmp_path: Path, key: str, *edges: IndexedDependency, ago: timedelta) -> None:
@@ -311,22 +313,6 @@ def test_a_never_refreshed_source_fills_under_auto_and_fails_under_cached(
     assert fill.keys == ["source:a"]
 
 
-def test_an_inline_source_is_named_by_its_selectors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fill: Fill
-) -> None:
-    use_config(tmp_path, monkeypatch)
-
-    with progress_clock() as clock:
-        fill.during = lambda: clock.advance(3)
-        result = run("impact", "acme/base", "--org", "acme", "--repo", "acme/x", "-f", "json")
-
-    assert _repos(result) == ["acme/site"]
-    [key] = fill.keys
-    assert key.startswith("inline:")
-    task = next(d for d in result.diagnostics if isinstance(d, Progress))
-    assert task.label == "Refreshing inline source --org acme --repo acme/x (first use)"
-
-
 # --- partial refreshes --------------------------------------------------------
 
 
@@ -542,7 +528,7 @@ def test_a_redefined_source_is_refreshed_not_served_empty(
     use_config(tmp_path, monkeypatch, _PROD)
     assert _repos(_impact()) == ["acme/site"]  # seeds the cache
 
-    assert run("source", "set", "prod", "--repo", "acme/other").exit_code == 0
+    assert run("source", "set", "prod", "--from", "github", "--match", "acme/*").exit_code == 0
     cached = _impact("--cached")
     auto = _impact()
 
@@ -745,7 +731,7 @@ def test_source_status_reports_the_cache_freshness(
 ) -> None:
     sources = {
         "sources": [
-            {"name": name, "repos": ["acme/site"]} for name in ("fresh", "old", "failed", "never")
+            github_source(name, repos=["acme/site"]) for name in ("fresh", "old", "failed", "never")
         ]
     }
     _seed(tmp_path, "source:fresh", make_edge(), ago=timedelta(hours=1))

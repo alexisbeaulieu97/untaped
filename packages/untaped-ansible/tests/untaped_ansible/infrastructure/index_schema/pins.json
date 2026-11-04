@@ -10,5 +10,9 @@
   "6": {
     "sha256": "dbfbab201605c31762edbf93e855dbfa839fe56e7e98755a779c3ebd27be8bbc",
     "additive_since": 6
+  },
+  "7": {
+    "sha256": "169af493cebafc7daa4578675da4af679e92e1835344e943095df250ae70967f",
+    "additive_since": 7
   }
 }

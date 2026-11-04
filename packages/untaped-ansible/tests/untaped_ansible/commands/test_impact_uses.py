@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from ansible_index_support import index_path, record_refresh, seed_index
-from ansible_test_support import Result, run, use_config
+from ansible_test_support import Result, github_source, run, use_config
 from untaped.sdk import Message
 from untaped_ansible.domain.graph import GraphNode
 from untaped_ansible.domain.payloads import IndexedDependency
@@ -24,7 +24,7 @@ from untaped_ansible.records import ReachedRow
 from untaped_ansible.settings import analyser_version
 
 _ROLE = "acme/haku-role"
-_SOURCE = {"sources": [{"name": "platform", "orgs": ["acme"]}]}
+_SOURCE = {"sources": [github_source("platform", orgs=["acme"])]}
 _SITE = """\
 - hosts: web
   roles:
@@ -259,7 +259,12 @@ def test_one_ref_held_at_two_commits_by_two_sources_gives_each_fact_once(
     use_config(
         tmp_path,
         monkeypatch,
-        {"sources": [{"name": "platform", "orgs": ["acme"]}, {"name": "ops", "orgs": ["acme"]}]},
+        {
+            "sources": [
+                github_source("platform", orgs=["acme"]),
+                github_source("ops", orgs=["acme"]),
+            ]
+        },
     )
 
     result = run(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import batched
@@ -16,7 +16,6 @@ from untaped.sdk import UntapedError, bounded_map
 from untaped.sdk.storage import NO_PROGRESS, Filled, ProgressHandle
 from untaped_ansible.application.ports import (
     GitCache,
-    GitHubDependencyReader,
     IncrementalDependencyIndexWriter,
     ProbeRefs,
 )
@@ -41,17 +40,15 @@ from untaped_ansible.domain.payloads import (
     SkippedRef,
     SourceRepoMetadata,
 )
-from untaped_ansible.domain.repo_targets import remote_url_for
 from untaped_ansible.domain.variable_models import AnalysedFile, CommitListing
-from untaped_ansible.settings import SourceDefinition, analyser_version, parser_version
-from untaped_git.api import HostBudget, probe_refs
-from untaped_github.api import (
-    RepositoryInventoryScope,
-    ResolveRepositoryInventory,
-    normalize_team_scopes,
-)
+from untaped_ansible.settings import analyser_version, parser_version
+from untaped_ansible.sources import SourceDefinition
+from untaped_git.api import HostBudget, Repo, Selection, probe_refs
 
 ProbeMode = Literal["all", "default_branch"]
+
+#: The repos a source selects, asked of its plugin (``select_repos`` in production).
+SelectRepos = Callable[[SourceDefinition], Selection]
 
 
 class RefreshResult(Filled):
@@ -80,6 +77,8 @@ class RefreshResult(Filled):
     """Each repo read with ``git ls-remote`` although its host has a probe, and why."""
     budgets: tuple[HostBudget, ...] = ()
     """Each probing host's budget after the refresh's last probe of it."""
+    selection_note: str | None = None
+    """Why the source's plugin listed its repos rather than reading its selector back."""
 
 
 @dataclass(frozen=True)
@@ -129,40 +128,34 @@ class RefreshGitSourceIndex:
     def __init__(
         self,
         *,
-        github: GitHubDependencyReader,
+        select: SelectRepos,
         git: GitCache,
         index: IncrementalDependencyIndexWriter,
         aliases: dict[str, str],
         default_dependency_paths: list[str],
-        clone_protocol: str,
         ref_scan_default: RefScanDefault = "all",
         concurrency: int = 8,
         repo_batch_size: int = 100,
         progress: ProgressHandle = NO_PROGRESS,
-        github_web_host: str | None = None,
         probe: ProbeRefs = probe_refs,
     ) -> None:
-        if clone_protocol not in {"https", "ssh"}:
-            raise ValueError("clone_protocol must be 'https' or 'ssh'")
         if concurrency < 1 or concurrency > 32:
             raise ValueError("concurrency must be between 1 and 32")
         if repo_batch_size < 1:
             raise ValueError("repo_batch_size must be at least 1")
-        self._github = github
+        self._select = select
         self._git = git
         self._probe = probe
         self._index = index
         self._aliases = aliases
         self._default_dependency_paths = default_dependency_paths
-        self._clone_protocol = clone_protocol
         self._ref_scan_default = ref_scan_default
         self._concurrency = concurrency
         self._repo_batch_size = repo_batch_size
         self._progress = progress
-        self._github_web_host = github_web_host
 
     def __call__(self, source: SourceDefinition, *, source_key: str) -> RefreshResult:
-        repos = self._expand_repos(source)
+        repos, note = self._expand_repos(source)
         # A URL names a repository on a host any source's repositories live on.
         hosts = self._index.repo_hosts() | url_hosts(repo.url for repo in repos)
         resolver = IdentityResolver(self._aliases, hosts=hosts)
@@ -175,7 +168,6 @@ class RefreshGitSourceIndex:
             paths_fingerprint=paths_fingerprint,
             aliases_fingerprint=aliases_fingerprint,
             ref_scan_default=self._effective_ref_scan_default(source),
-            clone_protocol=self._clone_protocol,
         )
         progress = self._index.refresh_progress(source_key, source_fingerprint)
         failures: dict[str, RepoFailure] = {}
@@ -271,6 +263,7 @@ class RefreshGitSourceIndex:
                     probed=probed,
                     completed=False,
                     pause_reason=_pause_reason(probed.spent()),
+                    note=note,
                 )
 
         # When every expanded repo failed there is nothing trustworthy to mark
@@ -297,6 +290,7 @@ class RefreshGitSourceIndex:
             failures=failures,
             probed=probed,
             completed=True,
+            note=note,
         )
 
     def _refresh_result(
@@ -314,6 +308,7 @@ class RefreshGitSourceIndex:
         probed: _Probed,
         completed: bool,
         pause_reason: str | None = None,
+        note: str | None = None,
     ) -> RefreshResult:
         status = self._index.status(source_key)
         refs = status.refs if completed and status is not None else len(selected)
@@ -333,6 +328,7 @@ class RefreshGitSourceIndex:
             skipped_refs=tuple(skipped_refs),
             probe_fallbacks=probed.fallbacks,
             budgets=tuple(probed.budgets.values()),
+            selection_note=note,
         )
 
     def _refresh_repos(
@@ -393,7 +389,7 @@ class RefreshGitSourceIndex:
         mode: ProbeMode,
     ) -> dict[str, RepoFailure]:
         """Probe ``batch``'s refs into ``probed``; each repo that could not be read, by name."""
-        by_url = {remote_url_for(repo, self._clone_protocol): repo for repo in batch}
+        by_url = {repo.url: repo for repo in batch}
         result = self._probe(
             list(by_url),
             kinds=kinds,
@@ -507,7 +503,7 @@ class RefreshGitSourceIndex:
         ignored_collections: set[str] = set()
         pending_scans: list[RefScan] = []
         pending_touches: list[RefScanTouch] = []
-        clone_url = remote_url_for(repo, self._clone_protocol)
+        clone_url = repo.url
         metadata_by_ref = self._ref_scan_metadata(source_key, repo.full_name, task.refs)
         changed_refs: list[GitRef] = []
         for ref in task.refs:
@@ -518,7 +514,6 @@ class RefreshGitSourceIndex:
                 and metadata.source_sha == ref.sha
                 and metadata.dependency_paths_fingerprint == paths_fingerprint
                 and metadata.aliases_fingerprint == aliases_fingerprint
-                and metadata.clone_protocol == self._clone_protocol
                 and metadata.clone_url == clone_url
             ):
                 pending_touches.append(
@@ -596,7 +591,6 @@ class RefreshGitSourceIndex:
                     source_ref=ref.name,
                     source_sha=ref.sha,
                     clone_url=clone_url,
-                    clone_protocol=self._clone_protocol,
                     dependency_paths_fingerprint=paths_fingerprint,
                     aliases_fingerprint=aliases_fingerprint,
                     checked_at=checked_at,
@@ -671,24 +665,18 @@ class RefreshGitSourceIndex:
                     )
         return analysed, listings, list(skipped.values())
 
-    def _expand_repos(self, source: SourceDefinition) -> list[ProbeTarget]:
-        """Expand explicit repos, orgs, and teams into candidates.
+    def _expand_repos(self, source: SourceDefinition) -> tuple[list[ProbeTarget], str | None]:
+        """The repos the source's plugin selects, and its note when it listed them instead.
 
-        Expansion failures propagate: an unknown org/team/repo is a source
-        misconfiguration, not a per-repo refresh failure.
+        A failure propagates: a selection the plugin can't answer is a
+        source problem, not a per-repo refresh failure.
         """
-        selector_count = len(source.repos) + len(source.orgs) + len(source.teams)
-        inventory = ResolveRepositoryInventory(self._github)(
-            RepositoryInventoryScope(
-                orgs=tuple(source.orgs),
-                teams=normalize_team_scopes(source.teams, orgs=tuple(source.orgs)),
-                repos=tuple(source.repos),
-            )
-        )
-        self._progress.update(phase="expanding source", done=selector_count, total=selector_count)
-        return [
-            repo_candidate(item.model_dump(), web_host=self._github_web_host) for item in inventory
-        ]
+        selection = self._select(source)
+        targets: dict[str, ProbeTarget] = {}
+        for repo in selection.repos:  # a repo the plugin names twice is scanned once
+            targets.setdefault(repo.name, _target(repo))
+        self._progress.update(phase="selecting repos", done=len(targets), total=len(targets))
+        return list(targets.values()), selection.note
 
     def _probe_progress(self, done: int, total: int) -> None:
         self._progress.update(phase="probing refs", done=done, total=total)
@@ -768,26 +756,10 @@ def _skipped_file_key(skipped: SkippedDependencyFile) -> tuple[str, str, str, st
     )
 
 
-def repo_candidate(row: dict[str, object], *, web_host: str | None = None) -> ProbeTarget:
-    """A GitHub repository row as a source repository: its URL is its clone URL.
-
-    Without ``clone_url``, the URL comes from ``html_url``, then from
-    ``web_host`` (``github.com`` when unset) and the full name.
-    """
-    full_name = _str(row.get("full_name"))
-    if full_name is None:
-        raise ValueError("repository metadata missing full_name")
-    html_url = _str(row.get("html_url"))
-    url = (
-        _str(row.get("clone_url"))
-        or (html_url and f"{html_url.removesuffix('/')}.git")
-        or f"https://{web_host or 'github.com'}/{full_name}.git"
-    )
+def _target(repo: Repo) -> ProbeTarget:
+    """A selected repo as a source repository: its name and URL as its plugin gives them."""
     return ProbeTarget(
-        full_name=full_name,
-        url=url,
-        default_branch=_str(row.get("default_branch")) or "HEAD",
-        ssh_url=_str(row.get("ssh_url")),
+        full_name=repo.name, url=repo.url, default_branch=repo.default_branch or "HEAD"
     )
 
 
@@ -812,7 +784,6 @@ def source_refresh_fingerprint(
     paths_fingerprint: str,
     aliases_fingerprint: str,
     ref_scan_default: RefScanDefault,
-    clone_protocol: str,
 ) -> str:
     payload = {
         "source": source.model_dump(mode="json", exclude={"name"}),
@@ -820,7 +791,6 @@ def source_refresh_fingerprint(
         "paths_fingerprint": paths_fingerprint,
         "aliases_fingerprint": aliases_fingerprint,
         "ref_scan_default": ref_scan_default,
-        "clone_protocol": clone_protocol,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -843,7 +813,3 @@ def _pause_reason(spent: Sequence[HostBudget]) -> str:
         for budget in spent
     )
     return f"the ref probe budget is spent on {hosts}"
-
-
-def _str(value: object) -> str | None:
-    return value if isinstance(value, str) and value else None

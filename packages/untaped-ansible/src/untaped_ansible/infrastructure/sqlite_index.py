@@ -56,7 +56,7 @@ _diag = Diagnostics()
 def open_index() -> SqliteDependencyIndex:
     """The dependency index of the active settings: the one way the plugin opens it.
 
-    The file is the index place's own layout (``index.v6.sqlite3`` in
+    The file is the index place's own layout (``index.v7.sqlite3`` in
     ``ansible.index_dir``, else in ``plugins/ansible/index/``), held in use
     while the process runs.
     """
@@ -97,7 +97,7 @@ class SqliteDependencyIndex:
                         values {placeholders}
                     )
                     select scans.source_key, scans.source_repo, scans.ref_kind, scans.source_ref,
-                           scans.source_sha, scans.clone_url, scans.clone_protocol,
+                           scans.source_sha, scans.clone_url,
                            scans.dependency_paths_fingerprint, scans.aliases_fingerprint,
                            scans.checked_at, scans.indexed_at
                     from source_ref_scans as scans

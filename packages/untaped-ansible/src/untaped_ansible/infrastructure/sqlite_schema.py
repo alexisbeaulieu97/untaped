@@ -16,8 +16,10 @@ from untaped_ansible.errors import DependencyIndexError
 # ``variable_*`` tables (variable facts per analysed file, which files each
 # commit has, and which commits were analysed), only adding to version 4.
 # Version 6 added ``source_repo_metadata.url``: each repo's URL as its
-# provider gives it, where node identity and remote URLs come from.
-SCHEMA_VERSION = 6
+# provider gives it, where node identity and remote URLs come from. Version 7
+# dropped ``source_ref_scans.clone_protocol``: a repo's URL is its provider's,
+# so ``clone_url`` alone says how it was fetched.
+SCHEMA_VERSION = 7
 #: The oldest schema version this one only adds to (new tables or columns,
 #: never a change to an existing one). Stamped in ``schema_meta`` beside
 #: ``user_version``: a reader whose ``SCHEMA_VERSION`` is at least a newer
@@ -26,7 +28,7 @@ SCHEMA_VERSION = 6
 #: existing table raises it to the new ``SCHEMA_VERSION``. Foreign keys are
 #: off and an older writer deletes and replaces rows in the tables it knows,
 #: so a table a newer version adds must tolerate rows whose parent is gone.
-ADDITIVE_SINCE = 6
+ADDITIVE_SINCE = 7
 
 SCHEMA_SQL = """
 create table if not exists source_runs (
@@ -66,7 +68,6 @@ create table if not exists source_ref_scans (
     source_ref text not null,
     source_sha text not null,
     clone_url text,
-    clone_protocol text,
     dependency_paths_fingerprint text not null,
     aliases_fingerprint text not null default '',
     checked_at text not null,

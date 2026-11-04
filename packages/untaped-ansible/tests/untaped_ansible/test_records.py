@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from ansible_test_support import installed, read_state, run, write_state
+from ansible_test_support import github_source, installed, read_state, run, write_state
 from untaped.sdk import ConfigError, Failure, Record
 from untaped_ansible.records import (
     Dependency,
@@ -25,6 +25,7 @@ from untaped_ansible.records import (
     SourceStatus,
     VariableUseHit,
 )
+from untaped_git.api import RepoSelector
 
 _REACHED = {
     "repo": "acme/base",
@@ -42,9 +43,9 @@ _SAMPLES: list[tuple[Record, str, list[str]]] = [
     (
         Source(
             name="prod",
-            orgs=["acme"],
-            teams=[],
-            repos=[],
+            source="gitlab",
+            selects="match infra/*",
+            selector=RepoSelector(match=["infra/*"]),
             dependency_paths=[],
             ref_kinds=[],
             ref_patterns=[],
@@ -52,9 +53,9 @@ _SAMPLES: list[tuple[Record, str, list[str]]] = [
         "ansible.source",
         [
             "name",
-            "orgs",
-            "teams",
-            "repos",
+            "source",
+            "selects",
+            "selector",
             "dependency_paths",
             "ref_kinds",
             "ref_patterns",
@@ -154,7 +155,7 @@ def test_the_bases_are_no_kind_of_their_own() -> None:
 
 
 def test_source_get_writes_an_unset_ref_scan_default_as_null() -> None:
-    state = {"sources": [{"name": "prod", "orgs": ["acme"]}]}
+    state = {"sources": [github_source("prod", orgs=["acme"])]}
     write_state(state)
 
     result = run("source", "get", "prod", "-f", "json")
@@ -162,9 +163,16 @@ def test_source_get_writes_an_unset_ref_scan_default_as_null() -> None:
     assert result.exit_code == 0, result.stderr
     assert json.loads(result.stdout) == {
         "name": "prod",
-        "orgs": ["acme"],
-        "teams": [],
-        "repos": [],
+        "source": "github",
+        "selects": "orgs acme",
+        "selector": {
+            "match": [],
+            "source": {
+                "plugin": "github",
+                "kind": "github.repo_selector",
+                "record": {"orgs": ["acme"], "teams": [], "repos": []},
+            },
+        },
         "dependency_paths": [],
         "ref_kinds": [],
         "ref_patterns": [],
@@ -177,14 +185,17 @@ def test_source_get_writes_an_unset_ref_scan_default_as_null() -> None:
     [
         (
             ["source", "list", "--columns", "name,bogus"],
-            "name, orgs, teams, repos, dependency_paths, ref_kinds, ref_patterns, ref_scan_default",
+            (
+                "name, source, selects, selector, dependency_paths, ref_kinds, ref_patterns, "
+                "ref_scan_default"
+            ),
         ),
         (["source-alias", "list", "--columns", "bogus"], "alias, repo"),
     ],
     ids=["source list", "source-alias list"],
 )
 def test_an_unknown_column_is_a_usage_error(argv: list[str], valid: str) -> None:
-    state = {"sources": [{"name": "prod", "orgs": ["acme"]}], "aliases": {"common": "acme/c"}}
+    state = {"sources": [github_source("prod", orgs=["acme"])], "aliases": {"common": "acme/c"}}
     write_state(state)
 
     result = run(*argv)
@@ -219,9 +230,9 @@ _ROWS: list[Record] = [
     ),
     Source(
         name="prod",
-        orgs=["acme"],
-        teams=["acme/platform"],
-        repos=[],
+        source="gitlab",
+        selects="match infra/*",
+        selector=RepoSelector(match=["infra/*"]),
         dependency_paths=[],
         ref_kinds=["heads"],
         ref_patterns=[],

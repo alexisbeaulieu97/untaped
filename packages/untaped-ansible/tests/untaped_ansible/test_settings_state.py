@@ -8,7 +8,8 @@ import pytest
 
 from ansible_test_support import running, state_path, write_state
 from untaped.sdk import ConfigError
-from untaped_ansible.settings import SOURCES, alias_map
+from untaped_ansible.settings import alias_map
+from untaped_ansible.sources import SOURCES
 
 
 @pytest.mark.parametrize(
@@ -24,8 +25,7 @@ from untaped_ansible.settings import SOURCES, alias_map
         (
             SOURCES.all,
             {"sources": [{"name": "prod"}]},
-            "ansible.sources row prod in {path} is damaged: "
-            "a source selects at least one org, team or repo",
+            "ansible.sources row prod in {path} is damaged: source: Field required",
         ),
     ],
 )

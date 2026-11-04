@@ -125,8 +125,8 @@ class _Reaching(GraphCommand):
 class Deps(_Reaching):
     """Show what ROLE depends on (downstream), one row per repository per ROLE ref.
 
-    Reads a source's data when one is selected (--source, inline selectors,
-    or ansible.default_source), refreshed first when older than its max age,
+    Reads a source's data when one is selected (--source or
+    ansible.default_source), refreshed first when older than its max age,
     and GitHub live otherwise (or with --live). Each row carries the ref as declared, the shortest
     path from ROLE and the ROLE ref it was reached from; each repo appears
     once per ROLE ref. `untaped ansible --help` explains refs, local targets
@@ -158,9 +158,8 @@ class Deps(_Reaching):
 class Impact(_Reaching):
     """Show what depends on ROLE (upstream), one row per repository per root ref.
 
-    Reads a source's data (--source, inline selectors, or
-    ansible.default_source), refreshed first when older than its max age.
-    Each row carries the ref it
+    Reads a source's data (--source or ansible.default_source), refreshed
+    first when older than its max age. Each row carries the ref it
     declares, its shortest path to ROLE and the ROLE ref it was reached from
     (`root_ref` tells a dependent's pinned refs apart). `impact uses` asks
     which of them use a variable of ROLE instead.
@@ -198,8 +197,8 @@ class Uses(_Reaching):
     commit the source indexed; a dependent with no row does not mention it.
 
     Dependents whose refresh failed have no variable facts: an error names
-    them and how to refresh them (`source refresh NAME`, or --refresh for
-    inline selectors), and the command exits 1. A hint that ROLE defines no
+    them and how to refresh them (`source refresh NAME`), and the command
+    exits 1. A hint that ROLE defines no
     such variable usually means a typo.
 
     Examples
@@ -307,9 +306,6 @@ class Uses(_Reaching):
             )
         )
         selections = env.graph_source.selections
-        if not env.graph_source.saved:
-            self.ctx.diag.hint("re-run this command with --refresh")
-            return
         holding = env.sqlite_index.selecting_sources(selection.key for selection in selections)
         labels = {f"{row.repo}@{row.ref}" if row.ref else str(row.repo): row for row in rows}
         involved = {
@@ -568,10 +564,7 @@ def _json(document: GraphDocument) -> str:
 class Graph(GraphCommand):
     """Render the Ansible dependency graph of a role, repo, or playbook.
 
-    For task-shaped answers as rows, use `deps`, `impact` or `find`. Inline
-    source selectors (--org, --team, --repo, --path, --ref-kind,
-    --ref-pattern, --ref-scan-default) are cached under a deterministic
-    fingerprint key, so repeated identical invocations reuse the same scan.
+    For task-shaped answers as rows, use `deps`, `impact` or `find`.
     --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
 
     The tree's first line names the target, the data it read and the depth;
@@ -590,7 +583,7 @@ class Graph(GraphCommand):
     Examples
     --------
     ```console
-    $ untaped ansible graph acme/base --org acme --team acme/platform --direction up --refresh
+    $ untaped ansible graph acme/base --source platform --direction up --refresh
     $ untaped ansible graph acme/app --source prod --depth 2
     $ untaped ansible graph ./roles/web --target-repo acme/web --direction down
     ```

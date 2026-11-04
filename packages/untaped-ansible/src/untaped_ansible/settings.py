@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import timedelta
 from pathlib import Path
-from typing import Annotated, ClassVar, Literal, Self
+from typing import Annotated, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.sdk import Key, installed_code, key
 from untaped.sdk.health import Retired
@@ -23,47 +23,6 @@ DEFAULT_DEPENDENCY_PATHS = (
     "meta/main.yml",
     "meta/main.yaml",
 )
-ALLOWED_REF_KINDS = ("heads", "tags")
-
-
-class SourceDefinition(BaseModel):
-    """Named GitHub search boundary for index refresh and impact queries."""
-
-    model_config = ConfigDict(frozen=True)
-
-    name: Annotated[str, Key]
-    orgs: list[str] = Field(default_factory=list)
-    teams: list[str] = Field(default_factory=list)
-    repos: list[str] = Field(default_factory=list)
-    dependency_paths: list[str] = Field(default_factory=list)
-    ref_kinds: list[str] = Field(default_factory=list)
-    ref_patterns: list[str] = Field(default_factory=list)
-    ref_scan_default: Literal["all", "default_branch"] | None = None
-
-    @field_validator("orgs", "repos", "dependency_paths", "ref_kinds", "ref_patterns")
-    @classmethod
-    def _dedupe(cls, values: list[str]) -> list[str]:
-        return _dedupe_sorted(values)
-
-    @field_validator("teams")
-    @classmethod
-    def _normalize_teams(cls, teams: list[str], info: ValidationInfo) -> list[str]:
-        return normalize_team_refs(_dedupe_sorted(teams), info.data.get("orgs", []))
-
-    @model_validator(mode="after")
-    def _validate_source(self) -> Self:
-        if not any((self.orgs, self.teams, self.repos)):
-            raise ValueError("a source selects at least one org, team or repo")
-        # A source lists GitHub repos, so a repo it selects is GitHub's owner/name.
-        from untaped_github.api import split_repo_id  # noqa: PLC0415 - not on every start
-
-        for repo in self.repos:
-            if split_repo_id(repo) is None:
-                raise ValueError(f"repo must be owner/name: {repo!r}")
-        invalid_ref_kinds = sorted(set(self.ref_kinds) - set(ALLOWED_REF_KINDS))
-        if invalid_ref_kinds:
-            raise ValueError("ref-kind must be heads or tags")
-        return self
 
 
 class AnsibleSettings(BaseModel):
@@ -100,8 +59,7 @@ class AnsibleSettings(BaseModel):
     default_source: str | None = Field(
         default=None,
         description=(
-            "Saved source `deps`, `impact`, `find` and `graph` use when no "
-            "`--source` or inline selector is given."
+            "Saved source `deps`, `impact`, `find` and `graph` use when no `--source` is given."
         ),
     )
     ref_scan_default: Literal["all", "default_branch"] = Field(
@@ -134,8 +92,6 @@ class Alias(BaseModel):
     repo: str
 
 
-#: Saved sources, one row per name. Managed by `ansible source` commands.
-SOURCES = StateRows[SourceDefinition](omit_none=True)
 #: Role or Galaxy name to repository name aliases. Managed by `ansible source-alias` commands.
 ALIASES = StateRows[Alias]()
 
@@ -145,13 +101,13 @@ def alias_map() -> dict[str, str]:
     return {row.alias: row.repo for row in ALIASES.all()}
 
 
-#: The dependency index: ``<ansible.index_dir>/index.v6.sqlite3``, or
+#: The dependency index: ``<ansible.index_dir>/index.v7.sqlite3``, or
 #: ``plugins/ansible/index/`` under the home when the setting is unset. The
 #: layout is ``sqlite_schema.ADDITIVE_SINCE`` (a test holds them equal;
 #: importing the schema here would load the plugin's infrastructure at
 #: startup), not the schema version: an additive schema change keeps sharing
 #: the layout's file.
-INDEX_DIR = Dir(at=key(AnsibleSettings).index_dir, layout=6, file="index.sqlite3")
+INDEX_DIR = Dir(at=key(AnsibleSettings).index_dir, layout=7, file="index.sqlite3")
 
 #: The version of what a ref's dependency edges are made by: the parser and
 #: identity code, the models they build and PyYAML. Folded into the dependency
@@ -187,14 +143,3 @@ def _index_version() -> str:
 SOURCE_DATA = Cache(
     label="source data", max_age=timedelta(days=1), version=_index_version, follows=INDEX_DIR
 )
-
-
-def normalize_team_refs(teams: list[str], orgs: list[str]) -> list[str]:
-    """Expand bare team slugs when the source has one unambiguous org."""
-    from untaped_github.api import normalize_team_scopes  # noqa: PLC0415 - not on every start
-
-    return [f"{scope.org}/{scope.slug}" for scope in normalize_team_scopes(teams, orgs=tuple(orgs))]
-
-
-def _dedupe_sorted(values: list[str]) -> list[str]:
-    return sorted(dict.fromkeys(values))

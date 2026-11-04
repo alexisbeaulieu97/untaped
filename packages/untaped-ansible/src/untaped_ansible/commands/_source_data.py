@@ -1,10 +1,8 @@
-"""The source data the graph commands read: the selector flags they share, and their guide."""
+"""The source data the graph commands read: the ``--source`` they share, and their guide."""
 
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-
-from untaped_ansible.commands._ansible import REF_SCAN_DEFAULT, TEAM, RefScanDefault
 
 
 class SourceData(BaseModel):
@@ -12,9 +10,9 @@ class SourceData(BaseModel):
     (GitHub or a source's cache), when a source refreshes, and how a stale, partial or
     paused refresh shows.
 
-    A *source* is a saved set of GitHub orgs, teams and repos whose dependency
-    files are indexed in a local cache; the repos themselves live in the git
-    plugin's repo store. `impact` needs one; `deps`, `find` and `graph` read one
+    A *source* is a saved selection of a plugin's repos (`source set`) whose
+    dependency files are indexed in a local cache; the repos themselves live
+    in the git plugin's repo store. `impact` needs one; `deps`, `find` and `graph` read one
     when it is selected.
 
     ## Where the answer comes from
@@ -29,21 +27,16 @@ class SourceData(BaseModel):
     - `--live` with a source: downstream reads GitHub live, upstream the source's
       cache.
 
-    A source is selected by `--source`, by the inline selectors (`--org`,
-    `--team`, `--repo`, `--path`, `--ref-kind`, `--ref-pattern`,
-    `--ref-scan-default`), or by `ansible.default_source` when neither is
-    given; an unknown name there fails naming the setting. Repeated `--source`
-    and inline selectors add up, and repeating the same inline selectors
-    reuses their cached scan. `--refresh` and `--cached` need a boundary
-    (`--source`, `--org`, `--team`, `--repo` or `ansible.default_source`);
-    `--path` and the ref selectors do not count on their own.
+    A source is selected by `--source`, or by `ansible.default_source` when
+    none is given; an unknown name there fails naming the setting. Repeated
+    `--source` add up. `--refresh` and `--cached` need a source.
 
     ## When a source refreshes
 
     A command that reads a source refreshes it first when it was never
     refreshed or is older than `ansible.caches.source_data.max_age_seconds`.
     `--refresh` refreshes it now; `--cached` reads only what is cached, never
-    checks GitHub, and fails with "no cached source data" for a source with no
+    asks the source's plugin, and fails with "no cached source data" for a source with no
     cached data (never refreshed, or changed by `source set` or `source patch`
     since). `deps --live` never reads or refreshes the source; `graph --live
     --direction both` refreshes it for the upstream half.
@@ -81,35 +74,3 @@ class SourceData(BaseModel):
             "Defaults to ansible.default_source."
         ),
     )
-    org: list[str] = Field(default_factory=list, description="Inline source GitHub org.")
-    team: list[str] = Field(default_factory=list, description=f"Inline source {TEAM}")
-    repo: list[str] = Field(
-        default_factory=list, description="Inline source GitHub repo as owner/name."
-    )
-    path: list[str] = Field(default_factory=list, description="Inline source dependency path.")
-    ref_kind: list[str] = Field(
-        default_factory=list,
-        description="Inline source ref namespace to scan: heads or tags; omit for the default.",
-    )
-    ref_pattern: list[str] = Field(
-        default_factory=list,
-        description="Inline source fnmatch pattern for branch/tag names; omit for the default.",
-    )
-    ref_scan_default: RefScanDefault | None = Field(
-        None, description=f"Inline source {REF_SCAN_DEFAULT[0].lower()}{REF_SCAN_DEFAULT[1:]}"
-    )
-
-    @property
-    def inline(self) -> bool:
-        """Whether any inline source selector or modifier is given."""
-        return any(
-            (
-                self.org,
-                self.team,
-                self.repo,
-                self.path,
-                self.ref_kind,
-                self.ref_pattern,
-                self.ref_scan_default,
-            )
-        )

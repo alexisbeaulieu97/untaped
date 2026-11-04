@@ -12,7 +12,8 @@ from untaped_ansible.checkouts import CheckoutSource
 from untaped_ansible.commands.graph import Deps, Find, Graph, ImpactGroup
 from untaped_ansible.commands.source import SourceGroup
 from untaped_ansible.commands.source_alias import SourceAliasGroup
-from untaped_ansible.settings import ALIASES, INDEX_DIR, SOURCE_DATA, SOURCES, AnsibleSettings
+from untaped_ansible.settings import ALIASES, INDEX_DIR, SOURCE_DATA, AnsibleSettings
+from untaped_ansible.sources import SOURCES
 
 
 class Ansible(Plugin):

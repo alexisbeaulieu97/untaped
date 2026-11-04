@@ -1,11 +1,11 @@
-"""``untaped ansible source``: saved GitHub sources, their cached data and its refresh."""
+"""``untaped ansible source``: saved sources, their cached data and its refresh."""
 
 from __future__ import annotations
 
 import shlex
 from collections.abc import Iterator
 
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from untaped.sdk import (
     Confirm,
@@ -15,8 +15,12 @@ from untaped.sdk import (
     Output,
     Parallel,
     Positional,
+    Stdin,
     UntapedError,
+    UsageError,
     command_line,
+    experimental,
+    first_validation_error,
     key,
     most_severe,
     not_found,
@@ -30,11 +34,9 @@ from untaped.sdk.storage import FreshnessRecord
 from untaped_ansible.application.refresh_git_index import RefreshResult
 from untaped_ansible.commands._ansible import (
     REF_SCAN_DEFAULT,
-    TEAM,
     AnsibleCommand,
     RefScanDefault,
     saved_source_key,
-    source_definition,
     unknown_source,
 )
 from untaped_ansible.commands._changes import Changes, edited
@@ -56,31 +58,44 @@ from untaped_ansible.refresh import (
     sync_freshness,
     warn_refresh,
 )
-from untaped_ansible.settings import SOURCE_DATA, SOURCES, AnsibleSettings, SourceDefinition
-from untaped_git.api import Removed, store_key
+from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings
+from untaped_ansible.sources import SOURCES, SourceDefinition
+from untaped_git.api import Removed, RepoSelector, RepoSource, store_key
 
 NAME = "Source name."
 
 
 class Set(AnsibleCommand):
-    """Create or replace a reusable GitHub source.
+    """Create or replace a saved source: the repos a plugin selects, and what to scan in them.
+
+    Pipe the selector a plugin prints (a pipe-format row) with --stdin, or
+    name a plugin with --from to take every repo it lists; --match narrows
+    either to the repos whose full name matches a glob. The source's plugin is asked for its
+    repos at each refresh, so it must be installed and ready then.
 
     It replaces the whole definition; `source patch` adds or removes one
-    org, team, repo, path or ref selector. A change drops the source's cached
-    data, so the next `deps`, `impact`, `find` or `graph` that reads it
-    refreshes it first.
+    path or ref selector. A change drops the source's cached data, so the
+    next `deps`, `impact`, `find` or `graph` that reads it refreshes it
+    first.
 
     Examples
     --------
     ```console
-    $ untaped ansible source set platform --org acme --team acme/platform
+    $ untaped ansible source set infra --from gitlab --match 'infra/*'
     ```
     """
 
+    stability = experimental  # it reads and stores the git plugin's experimental RepoSelector
+
     name: Positional[str] = Field(description=NAME)
-    org: list[str] = Field(default_factory=list, description="GitHub org to scan.")
-    team: list[str] = Field(default_factory=list, description=TEAM)
-    repo: list[str] = Field(default_factory=list, description="GitHub repo as owner/name.")
+    stdin: Stdin[RepoSelector] = Stdin(via=RepoSource.to_selector)
+    from_: str | None = Field(
+        None, description="Plugin whose repos the source takes: every repo it lists."
+    )
+    match: list[str] = Field(
+        default_factory=list,
+        description="Glob a repo's full name must match (infra/*), any case; repeat for any.",
+    )
     path: list[str] = Field(default_factory=list, description="Dependency file path.")
     ref_kind: list[str] = Field(
         default_factory=list,
@@ -94,16 +109,19 @@ class Set(AnsibleCommand):
     output: Output[SourceOutcome]
 
     def run(self) -> SourceOutcome:
-        source = source_definition(
-            name=self.name,
-            orgs=self.org,
-            teams=self.team,
-            repos=self.repo,
-            paths=self.path,
-            ref_kinds=self.ref_kind,
-            ref_patterns=self.ref_pattern,
-            ref_scan_default=self.ref_scan_default,
-        )
+        plugin, selector = self._selection()
+        try:
+            source = SourceDefinition(
+                name=self.name,
+                source=plugin,
+                selector=selector.model_copy(update={"match": self.match}),
+                dependency_paths=self.path,
+                ref_kinds=self.ref_kind,
+                ref_patterns=self.ref_pattern,
+                ref_scan_default=self.ref_scan_default,
+            )
+        except ValidationError as exc:
+            raise UsageError(first_validation_error(exc)) from exc
         previous = SOURCES.get(self.name)
         action = "created" if previous is None else "unchanged" if previous == source else "updated"
         if action != "unchanged":
@@ -111,17 +129,39 @@ class Set(AnsibleCommand):
             open_index().clear(saved_source_key(self.name))
         return SourceOutcome(action=action, name=self.name)
 
+    def _selection(self) -> tuple[str, RepoSelector]:
+        """The plugin the source asks, and its selector: the one piped, or none of its own."""
+        if not self.stdin.requested:
+            if self.from_ is None:
+                raise UsageError(
+                    "source set needs --stdin (a selector a plugin issued) or --from PLUGIN"
+                )
+            return self.from_, RepoSelector()
+        if self.from_ is not None:
+            raise UsageError("--from names the plugin of a source without a piped selector")
+        rows = self.stdin.rows()
+        if len(rows) != 1:
+            raise UsageError(f"source set reads one selector from stdin, got {len(rows)}")
+        issued = rows[0].source
+        if issued is None:
+            raise UsageError(
+                "the piped selector names no plugin that issued it",
+                hint="pipe a selector a plugin issues, or use --from PLUGIN --match PATTERN",
+            )
+        return issued.plugin, rows[0]
+
 
 class Patch(AnsibleCommand):
-    """Patch a saved GitHub source definition.
+    """Patch what a saved source scans: its dependency paths and ref selectors.
 
-    A change drops the source's cached data, as `source set` does;
-    `changes` on the outcome lists what was added or removed.
+    Its selector is replaced whole with `source set`. A change drops the
+    source's cached data, as `source set` does; `changes` on the outcome
+    lists what was added or removed.
 
     Examples
     --------
     ```console
-    $ untaped ansible source patch platform --add-repo acme/site --remove-org legacy
+    $ untaped ansible source patch platform --add-path meta/main.yml --add-ref-kind tags
     ```
     """
 
@@ -142,6 +182,8 @@ class Patch(AnsibleCommand):
 class List(AnsibleCommand):
     """List saved sources."""
 
+    stability = experimental  # its rows carry the git plugin's experimental RepoSelector
+
     output: Output[Source]
 
     def run(self) -> Iterator[Source]:
@@ -154,6 +196,8 @@ class List(AnsibleCommand):
 
 class Get(AnsibleCommand):
     """Show one saved source."""
+
+    stability = experimental  # its row carries the git plugin's experimental RepoSelector
 
     name: Positional[str] = Field(description=NAME)
     output: Output[Source]
@@ -238,7 +282,11 @@ class Status(AnsibleCommand):
 
 
 class Refresh(AnsibleCommand):
-    """Refresh a saved source from GitHub.
+    """Refresh a saved source: ask its plugin for its repos, then scan them.
+
+    The source's plugin is asked live for the repos its selector takes; a
+    plugin that can't read its selector back lists every repo instead,
+    narrowed by the source's match patterns, with a warning saying so.
 
     --parallel defaults to ansible.git_fetch_parallel and is capped at 32.
     Progress goes to stderr. A failure for one repo does not stop the
@@ -343,7 +391,21 @@ def _partial_refresh_error(result: RefreshResult) -> AnsibleError:
 
 
 def _source_row(source: SourceDefinition) -> Source:
-    return Source.model_validate(source.model_dump())
+    return Source.model_validate({**source.model_dump(), "selects": _selects(source.selector)})
+
+
+def _selects(selector: RepoSelector) -> str:
+    """What ``selector`` takes, in words: its plugin's record field by field, then ``match``.
+
+    The record is the plugin's own: each field is shown as given, never read.
+    """
+    record = {} if selector.source is None else selector.source.record
+    parts = [
+        f"{field} {', '.join(map(str, value)) if isinstance(value, list) else value}"
+        for field, value in {**record, "match": selector.match}.items()
+        if value not in (None, "", [], {})
+    ]
+    return "; ".join(parts) or "every repo"
 
 
 def _release_repos(
@@ -415,6 +477,6 @@ def _status_row(name: str, *, index: SqliteDependencyIndex, configured: bool) ->
 
 
 class SourceGroup(Group):
-    """Manage reusable GitHub sources."""
+    """Manage saved sources: the repos a plugin selects, scanned for dependencies."""
 
     commands = (Set, Patch, List, Get, Remove, Status, Refresh)

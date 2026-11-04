@@ -30,8 +30,9 @@ from untaped_ansible.application.refresh_git_index import (
 from untaped_ansible.domain.payloads import SkippedDependencyFile
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
-from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, SourceDefinition
-from untaped_github.api import GithubSettings, github_api, github_web_host
+from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings
+from untaped_ansible.sources import SourceDefinition
+from untaped_git.api import select_repos
 
 GIT_PARALLEL_CAP = 32
 """Upper bound for ``--parallel`` Git fetches (matches ``ansible.git_fetch_parallel``)."""
@@ -46,10 +47,9 @@ _MAX_LISTED_REASONS = 3
 class SelectedSource:
     """One source a command reads: its definition, its index key and how a human names it.
 
-    ``key`` is the index's own (``source:prod``, ``inline:<hash>``);
-    ``label`` names it in a tree header and warnings (``prod``); ``subject``
-    in the refresh task and the stale line (``source prod``). An inline
-    source's label and subject are both its selector flags.
+    ``key`` is the index's own (``source:prod``); ``label`` names it in a
+    tree header and warnings (``prod``); ``subject`` in the refresh task and
+    the stale line (``source prod``).
     """
 
     definition: SourceDefinition
@@ -65,7 +65,6 @@ class RefreshWiring:
     index: SqliteDependencyIndex
     aliases: dict[str, str]
     settings: AnsibleSettings
-    github_settings: GithubSettings
     plugin: PluginHandle
     warn: Callable[[str], None]
     """Where the refresh's warnings go: the command's ``diag.warning``."""
@@ -156,7 +155,6 @@ def _filler(
             index=wiring.index,
             aliases=wiring.aliases,
             settings=wiring.settings,
-            github_settings=wiring.github_settings,
             plugin=wiring.plugin,
             concurrency=wiring.concurrency,
             progress=progress,
@@ -251,7 +249,10 @@ def fill_summary(result: RefreshResult) -> str:
 
 
 def warn_refresh(result: RefreshResult, warn: Callable[[str], None]) -> None:
-    """The refresh's warning groups: probe budgets, skipped refs and files, collections, probes."""
+    """The refresh's warnings: the selection's note, probe budgets, skipped refs and files,
+    collections, probes."""
+    if result.selection_note is not None:
+        warn(result.selection_note)
     for budget in result.budgets:
         if budget.exhausted:
             left = "" if budget.remaining is None else f": {budget.remaining} left"
@@ -270,27 +271,25 @@ def refresh_source(
     index: SqliteDependencyIndex,
     aliases: dict[str, str],
     settings: AnsibleSettings,
-    github_settings: GithubSettings,
     plugin: PluginHandle,
     concurrency: int,
     progress: ProgressHandle = NO_PROGRESS,
 ) -> RefreshResult:
-    """Run a git-backed source refresh with fully wired adapters."""
-    # The forge decides how its URLs look; the git plugin's GitHost supplies its token.
-    protocol = github_settings.git_protocol
-    github = github_api(github_settings)
+    """Run a git-backed source refresh with fully wired adapters.
+
+    The source's plugin is asked live for its repos; their URLs are its own,
+    and the git plugin's GitHost for each URL's host supplies the credential.
+    """
     return RefreshGitSourceIndex(
-        github=github,
+        select=lambda source: select_repos(source.source, source.selector, refresh=True),
         git=GitSourceStore(plugin=plugin),
         index=index,
         aliases=aliases,
         default_dependency_paths=settings.dependency_paths,
-        clone_protocol=protocol,
         concurrency=concurrency,
         ref_scan_default=settings.ref_scan_default,
         repo_batch_size=settings.source_refresh_repo_batch_size,
         progress=progress,
-        github_web_host=github_web_host(github_settings.api_url),
     )(source, source_key=source_key)
 
 

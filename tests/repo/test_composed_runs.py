@@ -26,10 +26,11 @@ def _untaped(home: Path, *argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def test_a_dependent_plugin_reads_its_dependencys_credential(tmp_path: Path) -> None:
-    # ansible reads github's token through untaped_github.api; no token is
-    # set, so the refresh stops before the network.
-    assert _untaped(tmp_path, "ansible", "source", "set", "s", "--repo", "o/n").returncode == 0
+    # ansible asks github for a source's repos through git's RepoSource; no
+    # token is set, so github isn't asked and the refresh stops before the network.
+    saved = _untaped(tmp_path, "ansible", "source", "set", "s", "--from", "github")
+    assert saved.returncode == 0, saved.stderr
     refresh = _untaped(tmp_path, "ansible", "source", "refresh", "s")
     assert "Traceback" not in refresh.stderr
-    assert refresh.stderr.startswith("error: no github token"), refresh.stderr
+    assert "github: no token; run `untaped auth login github`" in refresh.stderr, refresh.stderr
     assert refresh.returncode == 4

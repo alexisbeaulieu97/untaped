@@ -36,7 +36,6 @@ def ref_scan_from_row(row: sqlite3.Row) -> RefScanMetadata:
         source_ref=row["source_ref"],
         source_sha=row["source_sha"],
         clone_url=row["clone_url"],
-        clone_protocol=row["clone_protocol"],
         dependency_paths_fingerprint=row["dependency_paths_fingerprint"],
         aliases_fingerprint=row["aliases_fingerprint"],
         checked_at=load_dt(row["checked_at"]),

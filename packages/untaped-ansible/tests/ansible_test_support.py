@@ -8,7 +8,7 @@ sections the next run writes, and :func:`write_state` the plugin's
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -151,8 +151,26 @@ class Awx(Plugin):
     commands = (JobTemplates,)
 
 
-def installed(*also: type[Plugin]) -> Install:
-    """ansible (with github and git) installed with the test's sections, and ``also``."""
+def github_source(
+    name: str,
+    *,
+    orgs: Sequence[str] = (),
+    teams: Sequence[str] = (),
+    repos: Sequence[str] = (),
+    **fields: Any,
+) -> dict[str, Any]:
+    """A saved source's ``state.yml`` row whose selector github issued for ``orgs``, ``teams``
+    and ``repos``, as ``github repos selector`` pipes it to ``source set --stdin``."""
+    record = {"orgs": list(orgs), "teams": list(teams), "repos": list(repos)}
+    issued = {"plugin": "github", "kind": "github.repo_selector", "record": record}
+    return {"name": name, "source": "github", "selector": {"source": issued}, **fields}
+
+
+def installed(
+    *also: type[Plugin], providers: Mapping[str, Sequence[type]] | None = None
+) -> Install:
+    """ansible (with github and git) installed with the test's sections, ``also`` and
+    ``providers`` (a test's provider classes, composed as one plugin per key)."""
     current = sections()
     return install(
         Ansible,
@@ -162,12 +180,18 @@ def installed(*also: type[Plugin]) -> Install:
             GithubSettings(**current.github),
             GitSettings(**current.git),
         ],
+        providers=providers,
     )
 
 
-def run(*args: str, input: str | None = None, also: tuple[type[Plugin], ...] = ()) -> Result:
-    """``untaped ansible ARGS``, with ``input`` piped on stdin and ``also`` installed."""
-    return _result(installed(*also).cli(["ansible", *args], input=input))
+def run(
+    *args: str,
+    input: str | None = None,
+    also: tuple[type[Plugin], ...] = (),
+    providers: Mapping[str, Sequence[type]] | None = None,
+) -> Result:
+    """``untaped ansible ARGS``, with ``input`` piped on stdin, ``also`` and ``providers``."""
+    return _result(installed(*also, providers=providers).cli(["ansible", *args], input=input))
 
 
 def run_root(*args: str, input: str | None = None) -> Result:
@@ -234,6 +258,7 @@ __all__ = [
     "Result",
     "Sections",
     "configure",
+    "github_source",
     "installed",
     "read_state",
     "run",
