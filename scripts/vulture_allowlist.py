@@ -158,6 +158,7 @@ Core.unknown_keys
 Core.token_store
 Dotfiles.cloned
 Dotfiles.clones
+Dotfiles.step_kinds
 Git.repo_store
 WorkspacePlugin.workspaces
 WorkspacePlugin.checkouts

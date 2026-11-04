@@ -201,7 +201,9 @@ class Step(Where):
         default_factory=dict, description="Asked each time the step runs."
     )
     fix: str | None = Field(None, description="What a person does; required when nothing runs.")
-    kind: str | None = Field(None, description="A step kind a plugin provides ...")
+    kind: str | None = Field(
+        None, description="A step kind another plugin provides (`macos.defaults`) ..."
+    )
     with_: dict[str, JsonValue] = Field(
         default_factory=dict, alias="with", description="... and its fields."
     )
@@ -220,6 +222,13 @@ class Step(Where):
         _named(value, "input", INPUT_NAME)
         return value
 
+    @field_validator("kind")
+    @classmethod
+    def _kind(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[a-z][a-z0-9-]*\.[a-z][a-z0-9_]*", value):
+            raise ValueError(f"kind {value!r} is PLUGIN.NAME, as the plugin's docs spell it")
+        return value
+
     @field_validator("script")
     @classmethod
     def _script_inside(cls, value: str | None) -> str | None:
@@ -232,6 +241,11 @@ class Step(Where):
                 raise ValueError(f"step {self.name!r} needs a check")
             if self.with_:
                 raise ValueError(f"step {self.name!r}: with applies to a kind only")
+        elif any(v is not None for v in (self.check, self.run, self.script, self.fix)) or self.args:
+            raise ValueError(
+                f"step {self.name!r} runs through its kind: leave out check, run, script, "
+                "args and fix"
+            )
         if self.run is not None and self.script is not None:
             raise ValueError(f"step {self.name!r} has run and script; keep one")
         if self.args and self.script is None:
@@ -253,6 +267,19 @@ class Step(Where):
             yield "run", each
         for each in self.args:
             yield "args", each
+        yield from _strings(self.with_, "with")
+
+
+def _strings(value: JsonValue, at: str) -> Iterator[tuple[str, str]]:
+    """``(field, text)`` for every string in ``value``, its path spelled ``with.key[0]``."""
+    if isinstance(value, str):
+        yield at, value
+    elif isinstance(value, dict):
+        for key, each in value.items():
+            yield from _strings(each, f"{at}.{key}")
+    elif isinstance(value, list):
+        for n, each in enumerate(value):
+            yield from _strings(each, f"{at}[{n}]")
 
 
 class Repo(Where):
@@ -343,10 +370,13 @@ class PackageFile(Where):
     A step has a `check` (exactly one of `command`, with an optional exact
     `prints`, `path` or `program`), and a `run` (an argv, no shell), a
     `script` in the source with `args`, or a `fix` for a person. `run` and
-    `script` exclude each other. `kind` with `with` names a step kind a
-    plugin provides. An argument (of `run`, `args` or a check's `command`)
-    that starts with `~/` names the home folder, and a check's `path` is
-    `~/...` or absolute once its inputs are filled in.
+    `script` exclude each other. `kind` (`PLUGIN.NAME`) with `with` names a
+    step kind a plugin provides instead: that plugin checks and runs it, so
+    the step has no `check`, `run`, `script`, `args` or `fix`, and `with`'s
+    placeholders name the package's inputs, not the step's own. An argument
+    (of `run`, `args` or a check's `command`) that starts with `~/` names the
+    home folder, and a check's `path` is `~/...` or absolute once its inputs
+    are filled in.
 
     ## Example
 
@@ -410,7 +440,8 @@ class PackageFile(Where):
             for step in item.steps:
                 where = f"item {name!r} step {step.name!r}"
                 for field, text in step.texts():
-                    own = {} if field.startswith("check.") else step.inputs
+                    # a kind's check reads ``with:`` too, later, in status: no own input there
+                    own = {} if field.startswith(("check.", "with")) else step.inputs
                     self._placeholders(where, field, text, own, step_inputs=step.inputs)
                 if step.stdin is not None and step.stdin not in {**self.inputs, **step.inputs}:
                     raise ValueError(f"{where}: stdin names no declared input {step.stdin!r}")

@@ -17,12 +17,15 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from untaped.sdk import q
+from pydantic import SecretStr
+
+from untaped.sdk import Record, UntapedError, q
 from untaped.sdk.process import ProcessResult, run_process
 from untaped_dotfiles.errors import DotfilesError
 from untaped_values.api import InputError, render
@@ -30,6 +33,7 @@ from untaped_values.api import InputError, render
 if TYPE_CHECKING:
     from untaped_dotfiles.models import StepRecord
     from untaped_dotfiles.package import PackageInput, Step
+    from untaped_dotfiles.step_kinds import StepKinds
 
 CHECK_TIMEOUT = 30.0
 RUN_TIMEOUT = 600.0
@@ -122,16 +126,33 @@ class Checked:
 class StepRunner:
     """Runs approved steps' checks and runs; ``relay`` gets what a run prints, masked."""
 
-    def __init__(self, *, home: Path, relay: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        home: Path,
+        relay: Callable[[str], None] | None = None,
+        kinds: StepKinds | None = None,
+    ) -> None:
         self._home = home
         self._relay = relay
+        self.kinds = kinds if kinds is not None else _no_installed_kinds()
+        """Where a ``kind:`` step's provider is found and asked."""
 
     def with_relay(self, relay: Callable[[str], None]) -> StepRunner:
-        return StepRunner(home=self._home, relay=relay)
+        return StepRunner(home=self._home, relay=relay, kinds=self.kinds)
 
-    def check(self, approved: ApprovedStep) -> Checked:
+    def check(self, approved: ApprovedStep, *, secrets: Sequence[str] = ()) -> Checked:
+        """Run the step's check (or its kind's); ``secrets`` are masked in what a kind says."""
+        kind = approved.step.kind
+        if kind is not None:
+            provider = self.kinds.provider(kind)
+            with _masking(secrets):
+                result = self.kinds.check(provider, self._fields(approved, provider.record))
+            return Checked(
+                result.passes, _masked(result.detail, secrets) or f"its {kind} check fails"
+            )
         check = approved.step.check
-        assert check is not None  # a step without a check has a kind, which never gets here
+        assert check is not None  # a step without a check has a kind
         if check.path is not None:
             text = approved.text(check.path, at="check.path")
             path = self._home_path(text)
@@ -158,13 +179,26 @@ class StepRunner:
         return Checked(False, f"`{_shown(argv)}` doesn't print {wanted!r}")
 
     def run(self, approved: ApprovedStep, *, stdin: bytes | None, secrets: Sequence[str]) -> None:
-        """Run the step's program; a run that doesn't exit 0 raises, naming its status."""
+        """Run the step's program (or its kind); a run that doesn't exit 0 (or pass) raises."""
+        kind = approved.step.kind
+        if kind is not None:
+            provider = self.kinds.provider(kind)
+            secret = None if stdin is None else SecretStr(stdin.decode("utf-8"))
+            with _masking(secrets):  # what it says is shown as a run's output is: masked
+                result = self.kinds.run(provider, self._fields(approved, provider.record), secret)
+            if not result.passes:
+                detail = _masked(result.detail, secrets) or "it says it didn't pass"
+                raise DotfilesError(f"the {kind} run failed: {detail}")
+            return
         assert approved.argv is not None  # report-only steps never run
         argv = [self._home_text(each) for each in approved.argv]
         ended = self._process(argv, timeout=RUN_TIMEOUT, what="run", stdin=stdin)
         self._relayed(ended, secrets)
         if ended.returncode != 0:
             raise DotfilesError(f"`{_shown(argv)}` exits {ended.returncode}")
+
+    def _fields(self, approved: ApprovedStep, record: type[Record]) -> Record:
+        return self.kinds.fields(approved.step, record, lambda v, at: approved.text(v, at=at))
 
     def _process(
         self, argv: list[str], *, timeout: float, what: str, stdin: bytes | None
@@ -185,10 +219,7 @@ class StepRunner:
         if self._relay is None:
             return
         for stream in (ended.stdout, ended.stderr):
-            text = stream.decode("utf-8", "replace")
-            for secret in secrets:
-                if secret:
-                    text = text.replace(secret, "***")
+            text = _masked(stream.decode("utf-8", "replace"), secrets)
             for line in text.splitlines():
                 self._relay(line)
 
@@ -205,5 +236,52 @@ class StepRunner:
         return str(self._home_path(text)) if text == "~" or text.startswith("~/") else text
 
 
+def _masked(text: str, secrets: Sequence[str]) -> str:
+    """``text`` with every secret value of the run masked."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
+
+
+def _masked_value(value: object, secrets: Sequence[str]) -> object:
+    """``value`` (an error's ``details``) with every secret in its strings masked."""
+    if isinstance(value, str):
+        return _masked(value, secrets)
+    if isinstance(value, Mapping):
+        return {key: _masked_value(each, secrets) for key, each in value.items()}
+    if isinstance(value, list | tuple):
+        return [_masked_value(each, secrets) for each in value]
+    return value
+
+
+@contextmanager
+def _masking(secrets: Sequence[str]) -> Iterator[None]:
+    """An error a step kind's provider raises, re-raised with every secret value masked.
+
+    Its message, hint and details; the original is dropped (``from None``) so no
+    traceback carries it.
+    """
+    try:
+        yield
+    except UntapedError as exc:
+        message = _masked(str(exc), secrets)
+        hint = None if exc.hint is None else _masked(exc.hint, secrets)
+        details = _masked_value(dict(exc.details), secrets)
+        if (message, hint, details) == (str(exc), exc.hint, dict(exc.details)):
+            raise
+        assert isinstance(details, dict)
+        raise UntapedError(
+            message, category=exc.category, system=exc.system, hint=hint, details=details
+        ) from None
+
+
 def _shown(argv: Sequence[str]) -> str:
     return " ".join(argv)
+
+
+def _no_installed_kinds() -> StepKinds:
+    """Step kinds found among the providers alone, not knowing which plugins are installed."""
+    from untaped_dotfiles.step_kinds import StepKinds  # noqa: PLC0415 - contracts on use
+
+    return StepKinds()

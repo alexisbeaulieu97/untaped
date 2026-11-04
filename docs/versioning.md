@@ -103,6 +103,11 @@ command) is marked with `@experimental` in the code and listed here, not in a
   repo.
 - `clone` in `untaped_git.api`: a working copy the user owns afterwards,
   cloned with untaped's credentials for its host.
+- `StepKind`, `StepFields` and `StepResult` in `untaped_dotfiles.api`: the
+  contract a plugin fills to add a dotfiles step kind.
+- `providers` and `ProviderOffer` in `untaped.sdk.contracts`: every offer to
+  fill a contract, with each provider's own record and its kind, or why it
+  was refused.
 - `Stdin.text` in `untaped.sdk`: stdin's whole text for an argument whose
   `-` the command tells from a value itself.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:

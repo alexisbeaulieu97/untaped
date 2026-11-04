@@ -44,6 +44,7 @@ from untaped.sdk.contracts import (
     Reason,
     Skipped,
     gather,
+    providers,
 )
 from untaped.sdk.diagnostic import Stale
 from untaped.sdk.errors import ConfigError, ExitCode, HttpTransportError, UntapedError
@@ -373,7 +374,7 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
     assert [row["title"] for row in _value(path)] == ["Dune", "Emma"]
     stamp = _stamp(path)
     assert stamp["file"] == 1
-    assert stamp["key"].startswith("library:")
+    assert stamp["key"].startswith("library:library.volume:")  # its record's kind names it
     assert stamp["refreshed_at"] is not None
 
 
@@ -805,3 +806,26 @@ def test_composing_inside_a_contract_call_fails_that_provider(
     assert reregistered == []  # nothing re-registered the settings under the neighbours
     assert bootstrap.composition() is composed
     bootstrap.compose_root(candidates=[])  # outside any contract call it works as before
+
+
+def test_providers_lists_each_offer_with_its_own_record_and_kind() -> None:
+    """An owner telling providers apart by their records reads them here, then asks one."""
+
+    class Exploding(BookSource, Provider):
+        def __init__(self) -> None:
+            raise RuntimeError("boom")
+
+    compose(shelf_plugin(), library_plugin(), plugin("shop", fills=(Exploding,)), kiosk_plugin())
+    kiosk, library, shop = providers(BookSource)
+    assert (kiosk.plugin, kiosk.provider, kiosk.record, kiosk.kind) == ("kiosk", Kiosk, None, None)
+    assert (library.provider, library.record, library.kind) == (Library, Volume, "library.volume")
+    assert (shop.plugin, shop.provider, shop.refused) == ("shop", None, "bad-provider")
+    assert "raised" in shop.detail
+    write_config(LIBRARY_CONFIG)
+    assert [a.plugin for a in gather(BookSource.books, plugins={library.provider})()] == ["library"]
+
+
+def test_providers_takes_a_contract_class_only() -> None:
+    compose(shelf_plugin(), shop_plugin())
+    with pytest.raises(TypeError, match="not a contract"):
+        providers(Shop)

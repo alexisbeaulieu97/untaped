@@ -14,6 +14,7 @@ from core_test_support.commands.support import make_plugin
 from untaped.core.plugin_check.check import PluginCheck, check_plugins
 from untaped.runtime import bootstrap
 from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import Record
 from untaped.sdk.contracts import Provider
 from untaped.sdk.testing import assert_fills, compose_with, plugin_candidate
 
@@ -37,9 +38,9 @@ def _bin() -> type:
 def test_a_provider_that_fills_its_contract_passes_every_check(contract_plugins_site: Path) -> None:
     assert _rows(_check()) == [
         ("conventions", "conventions", "pass", "no violations"),
-        ("conformance", "rack.item_source", "pass", "rack's conformance checks pass"),
-        ("live", "rack.item_source.items", "pass", "2 items"),
-        ("live", "rack.item_source.named", "pass", "skipped: it needs arguments"),
+        ("conformance", "rack.item_source (bin.box)", "pass", "rack's conformance checks pass"),
+        ("live", "rack.item_source.items (bin.box)", "pass", "2 items"),
+        ("live", "rack.item_source.named (bin.box)", "pass", "skipped: it needs arguments"),
     ]
 
 
@@ -62,8 +63,13 @@ def test_failures_are_reported(contract_plugins_site: Path) -> None:
     _bin().nonconforming = True
     _bin().broken = True
     rows = _rows(_check())
-    assert ("conformance", "rack.item_source", "fail", "items must be sorted") in rows
-    assert ("live", "rack.item_source.items", "fail", "RuntimeError: the bin is locked") in rows
+    assert ("conformance", "rack.item_source (bin.box)", "fail", "items must be sorted") in rows
+    assert (
+        "live",
+        "rack.item_source.items (bin.box)",
+        "fail",
+        "RuntimeError: the bin is locked",
+    ) in rows
     assert not [row for row in rows if row[0] in {"fills", "schema"}]
 
 
@@ -103,8 +109,8 @@ def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Pat
     _bin().waiting = True
     rows = _rows(_check())
     waiting = "skipped: not ready: no bins yet (set bin.bins)"
-    assert ("conformance", "rack.item_source", "pass", waiting) in rows
-    assert ("live", "rack.item_source.items", "pass", waiting) in rows
+    assert ("conformance", "rack.item_source (bin.box)", "pass", waiting) in rows
+    assert ("live", "rack.item_source.items (bin.box)", "pass", waiting) in rows
 
 
 def test_a_provider_not_ready_for_some_methods_answers_the_others(
@@ -114,8 +120,8 @@ def test_a_provider_not_ready_for_some_methods_answers_the_others(
     _bin().waiting_for = ("named",)
     rows = _rows(_check())
     waiting = "skipped: not ready: no bins yet (set bin.bins)"
-    assert ("conformance", "rack.item_source", "pass", waiting) in rows
-    assert ("live", "rack.item_source.items", "pass", "2 items") in rows
+    assert ("conformance", "rack.item_source (bin.box)", "pass", waiting) in rows
+    assert ("live", "rack.item_source.items (bin.box)", "pass", "2 items") in rows
 
 
 def test_a_provider_naming_a_method_its_contract_lacks_fails(contract_plugins_site: Path) -> None:
@@ -123,7 +129,7 @@ def test_a_provider_naming_a_method_its_contract_lacks_fails(contract_plugins_si
     _bin().waiting_for = ("itemz",)
     rows = _rows(_check())
     detail = "ready() names methods item_source doesn't have: itemz"
-    assert ("conformance", "rack.item_source", "fail", detail) in rows
+    assert ("conformance", "rack.item_source (bin.box)", "fail", detail) in rows
     assert not [row for row in rows if row[0] == "live"]
 
 
@@ -267,3 +273,37 @@ def test_a_provider_of_the_owners_own_model_is_checked_on_its_items(
     result = bootstrap.compose_root(candidates=found)
     rows = _rows(check_plugins(result, found, "shelf"))
     assert ("live", "rack.item_source.items", "pass", "1 item") in rows
+
+
+def test_each_provider_of_one_plugin_is_checked_alone(contract_plugins_site: Path) -> None:
+    """A plugin fills a contract once per record: each live row is its own provider's answer."""
+    api = importlib.import_module("untaped_rack.api")
+
+    class Crate(Record):
+        label: str
+
+    class Tray(Record):
+        label: str
+
+    class Crates(api.ItemSource[Crate], Provider):  # type: ignore[misc,name-defined]
+        def to_item(self, item: Crate) -> object:
+            return api.Item(name=item.label)
+
+        def items(self) -> list[object]:
+            return [self.to_item(Crate(label="crate"))]
+
+    class Trays(api.ItemSource[Tray], Provider):  # type: ignore[misc,name-defined]
+        def to_item(self, item: Tray) -> object:
+            return api.Item(name=item.label)
+
+        def items(self) -> list[object]:
+            return [self.to_item(Tray(label=each)) for each in ("a", "b")]
+
+    stack = make_plugin("stack", fills=(Crates, Trays), records=(Crate, Tray))
+    found = [*candidates(), plugin_candidate(stack)]
+    result = bootstrap.compose_root(candidates=found)
+    live = [row for row in _rows(check_plugins(result, found, "stack")) if row[0] == "live"]
+    assert [(title, detail) for _, title, _, detail in live] == [
+        ("rack.item_source.items (stack.crate)", "1 item"),
+        ("rack.item_source.items (stack.tray)", "2 items"),
+    ]

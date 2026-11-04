@@ -1,6 +1,7 @@
 """The answer cache behind ``@cached``: providers' answers kept in the owner's :class:`Cache`.
 
-One entry per provider, method, settings and arguments, keyed ``<provider>:<hash>``
+One entry per provider, method, settings and arguments, keyed ``<plugin>:<hash>``,
+or ``<plugin>:<kind>:<hash>`` for a provider issuing its own record of that kind
 (``<hash>`` is the sha256 of the arguments' canonical JSON) in the partition of
 the provider's settings digest (:mod:`untaped.sdk.storage._digest`): the cache is the
 owner's and the entry one provider's, so whatever reports an entry (a stale
@@ -83,8 +84,14 @@ def _typing(binding: Binding, hint: Any) -> ValueTyping:
 
 
 def entry_key(binding: Binding, digest: str) -> str:
-    """The entry's key in the owner's cache: ``<provider>:<arguments hash>``."""
-    return f"{binding.plugin}:{digest}"
+    """The entry's key in the owner's cache: ``<plugin>:<arguments hash>``.
+
+    A provider issuing its own record adds that record's kind
+    (``<plugin>:<kind>:<hash>``): one plugin's providers of a contract each
+    issue their own, and two plugins may issue one record.
+    """
+    issues = "" if binding.owns_item else binding.item_kind
+    return f"{binding.plugin}:{issues}:{digest}" if issues else f"{binding.plugin}:{digest}"
 
 
 def argument_key(function: Callable[..., Any], provider: object, args: Any, kwargs: Any) -> str:

@@ -19,6 +19,7 @@ from untaped_dotfiles.repos import Repos
 from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings, Os
 from untaped_dotfiles.sources import Clones, Sources
 from untaped_dotfiles.status import Evaluator, Reading, StatusReader
+from untaped_dotfiles.step_kinds import StepKinds
 from untaped_dotfiles.step_runner import StepRunner
 from untaped_dotfiles.steps import Steps
 from untaped_dotfiles.store import StateDotfilesStore
@@ -123,9 +124,13 @@ class DotfilesCommand(Command[DotfilesSettings]):
             evaluator=evaluator,
             reader=StatusReader(evaluator, now=utc_now),
             applier=Applier(store, placer, inventory, evaluator, now=utc_now),
-            steps=Steps(inventory, store, StepRunner(home=home), now=utc_now),
+            steps=Steps(inventory, store, self._runner(home), now=utc_now),
             repos=Repos(inventory, store, now=utc_now),
         )
+
+    def _runner(self, home: Path) -> StepRunner:
+        """The step runner, finding step kinds among this run's installed plugins."""
+        return StepRunner(home=home, kinds=StepKinds(lambda: self.ctx.plugins))
 
     def report(self, problems: Sequence[tuple[str, UntapedError]]) -> None:
         """Each problem on stderr, named; each counts toward the exit code."""

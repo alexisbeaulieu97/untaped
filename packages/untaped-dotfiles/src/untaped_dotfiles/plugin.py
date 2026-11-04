@@ -8,11 +8,13 @@ imports without them.
 from __future__ import annotations
 
 from untaped.sdk import Plugin, StubSkill, experimental
+from untaped.sdk.health import DoctorCheck
 from untaped_dotfiles.commands.apply import Apply
 from untaped_dotfiles.commands.packages import Add, Remove, Show
 from untaped_dotfiles.commands.sources import Subscribe, Unsubscribe
 from untaped_dotfiles.commands.status import Status
 from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings
+from untaped_dotfiles.step_kinds import StepKind, step_kinds_check
 from untaped_dotfiles.store import CHANGING, CLONED, ITEMS, PLACED, REPOS, STEPS
 
 
@@ -22,6 +24,7 @@ class Dotfiles(Plugin):
     settings = DotfilesSettings
     stability = experimental
     commands = (Subscribe, Unsubscribe, Show, Add, Remove, Apply, Status)
+    offers = (StepKind,)
     cloned = CLONED
     items = ITEMS
     placed = PLACED
@@ -31,6 +34,7 @@ class Dotfiles(Plugin):
     clones = CLONES
     kept = KEPT
     prompt = PROMPT
+    step_kinds = DoctorCheck(title="step kinds", run=step_kinds_check)
     skill = StubSkill(
         "Dotfiles placed on a machine from packages: `.untaped/dotfiles/*.yml` files in "
         "subscribed git repos or folders, turned on per machine with a sync, once or manual "

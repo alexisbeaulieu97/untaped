@@ -615,6 +615,7 @@ class PluginWalk:
                 contract=target_of(info.cls),
                 summary=first_paragraph(prose(filled)[1]),
                 takes=bridge_targets(filled, info),
+                record=own_record(filled, info),
             )
             for filled in cls.fills
             if (info := contract_of(filled)) is not None
@@ -844,6 +845,17 @@ def is_plugin(obj: object) -> typing.TypeGuard[type[Plugin]]:
 
 def is_command(obj: object) -> typing.TypeGuard[type[Command[Any]]]:
     return isinstance(obj, type) and issubclass(obj, Command)
+
+
+def own_record(provider: type, info: ContractInfo) -> str | None:
+    """The target of the provider's own ``T`` when it isn't the owner's model, else ``None``."""
+    from untaped.sdk.contracts._declare import ContractError, item_type  # noqa: PLC0415
+
+    try:
+        item = item_type(typing.cast("type[Contract]", provider), info)
+    except ContractError:
+        return None  # the registry quarantines the offer, naming why
+    return None if item is None or item is info.item else target_of(item)
 
 
 def bridge_targets(provider: type, info: ContractInfo) -> dict[str, str]:
