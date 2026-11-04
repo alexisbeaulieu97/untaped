@@ -38,10 +38,12 @@ class RepoFinder:
 
     Keep one finder for a command that names several repos: the providers
     are asked the first time a name is resolved, and every later name reads
-    the same answers.
+    the same answers. A caller that takes no clone URL in place of a name
+    passes ``offer_url=False``, so its errors' hints don't suggest one.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, offer_url: bool = True) -> None:
+        self._offer_url = offer_url
         self._answers: Answers[list[Repo]] | None = None
         self._live: dict[str, Answers[list[Repo]] | None] = {}
 
@@ -57,11 +59,13 @@ class RepoFinder:
         try:
             answers = self._ask(progress)
         except NoProviderReady as exc:
-            raise UsageError(not_found("repo", ident), hint=_unasked_hint(exc)) from None
+            hint = _unasked_hint(exc, offer_url=self._offer_url)
+            raise UsageError(not_found("repo", ident), hint=hint) from None
         try:
             repo = select_one(answers, lambda repo: name_matches(repo.name, ident))
         except NotFound as exc:
-            raise UsageError(_not_found(ident, answers), hint=exc.hint or _URL_HINT) from None
+            remedy: str | None = exc.hint or (_URL_HINT if self._offer_url else None)
+            raise UsageError(_not_found(ident, answers), hint=remedy) from None
         return self.admit(repo)
 
     def admit(self, repo: Repo) -> Repo:
@@ -132,16 +136,17 @@ def name_matches(name: str, ident: str) -> bool:
     return name.rpartition("/")[2].lower() == wanted
 
 
-def _unasked_hint(exc: NoProviderReady) -> str:
+def _unasked_hint(exc: NoProviderReady, *, offer_url: bool) -> str:
     """``forge wasn't asked: …; set forge.org, or pass the repo's clone URL``."""
+    url = f", or {_URL_HINT}" if offer_url else ""
     if not exc.not_ready:
         # Nobody is merely unconfigured: none is installed, or each was set aside.
-        return f"{exc}; install or upgrade a plugin that lists repos, or {_URL_HINT}"
+        return f"{exc}; install or upgrade a plugin that lists repos{url}"
     parts = []
     for plugin, ready in exc.not_ready.items():
         setting = f"; set {ready.spelled}" if ready.spelled else ""
         parts.append(f"{plugin} wasn't asked: {ready.reason}{setting}")
-    return f"{'; '.join(parts)}, or {_URL_HINT}"
+    return f"{'; '.join(parts)}{url}"
 
 
 def _not_found(ident: str, answers: Answers[list[Repo]]) -> str:

@@ -21,7 +21,7 @@ from typing import Literal, NamedTuple
 
 from pydantic import Field
 
-from untaped.sdk import Parallel, Refresh, UsageError, key, plural, q
+from untaped.sdk import Parallel, Refresh, UntapedError, UsageError, key, plural, q
 from untaped.sdk.contracts import NoProviderReady, Ok, gather
 from untaped_ansible.application.graph import GraphDirection, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
@@ -168,8 +168,14 @@ class GraphCommand(AnsibleCommand):
         ref: str | None,
         target_repo: str | None,
         direction: GraphDirection,
+        strict: bool = True,
     ) -> BuiltGraph:
-        """Build one root's graph, with its warnings attached, and say what it read."""
+        """Build one root's graph, with its warnings attached, and say what it read.
+
+        A root that could not be read live raises its error; with ``strict``
+        off (a command reading many roots) it is returned as ``unread``, its
+        warning attached.
+        """
         target_repo_name = require_repo(env, target, target_repo=target_repo)
         graph_source = env.graph_source
         direction, graph_warnings = effective_direction(graph_source, direction=direction)
@@ -203,17 +209,23 @@ class GraphCommand(AnsibleCommand):
             use_live=should_use_live_dependencies(direction=direction, source_key=graph_source.key),
             live_reads=env.live_reads,
         )
+        if reads.unread is not None and strict:
+            raise reads.unread
         parse_warnings.extend(read_warnings)
         graph = with_graph_warnings(
             graph,
             [
                 *graph_warnings,
                 *parse_warnings,
-                *empty_graph_warnings(
-                    graph,
-                    direction=direction,
-                    dependency_paths=env.settings.dependency_paths,
-                    source_label=graph_source.label,
+                *(
+                    empty_graph_warnings(
+                        graph,
+                        direction=direction,
+                        dependency_paths=env.settings.dependency_paths,
+                        source_label=graph_source.label,
+                    )
+                    if reads.unread is None
+                    else ()
                 ),
             ],
         )
@@ -222,7 +234,7 @@ class GraphCommand(AnsibleCommand):
             parts.append(graph_source.header)
         if reads.live:
             parts.append("live reads")
-        return BuiltGraph(graph, ", ".join(parts))
+        return BuiltGraph(graph, ", ".join(parts), reads.unread)
 
     # -- what it says on stderr ---------------------------------------------------
 
@@ -295,6 +307,8 @@ class BuiltGraph(NamedTuple):
     graph: DependencyGraph
     data_source: str
     """What the build read, for the tree header: ``source prod`` or ``live reads``."""
+    unread: UntapedError | None = None
+    """Why the root could not be read live (a build that isn't ``strict``)."""
 
 
 def parse_depth(value: str | None) -> int | None:

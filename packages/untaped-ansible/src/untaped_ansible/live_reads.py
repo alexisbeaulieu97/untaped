@@ -44,7 +44,7 @@ class LiveReads:
     def index(self) -> StoreDependencyIndex:
         if self._index is None:
             self._index = StoreDependencyIndex(
-                locate=RepoFinder().resolve,
+                locate=RepoFinder(offer_url=False).resolve,
                 remote_refs=ls_remote,
                 default_branch=default_branch,
                 store=GitSourceStore(plugin=self._plugin),

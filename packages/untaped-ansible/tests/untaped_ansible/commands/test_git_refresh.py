@@ -516,6 +516,7 @@ def test_deps_without_a_source_reads_through_the_store_and_fetches_once(
     assert rows == [("infra/base", "main", None), ("infra/gone", "v1", None)]
     # A repo no plugin lists stays unread, with a warning.
     assert "could not read infra/gone@v1 live: repo not found: 'infra/gone'" in first.stderr
+    assert "clone URL" not in first.stderr  # ansible takes no URL in place of a name
     assert [argv[-1] for argv in fetched] == [f"+refs/heads/main:{_NAMESPACE}heads/main"] * 2
     assert second.stdout == first.stdout
     assert _fetches(calls, stdin=False) == _fetches(calls, stdin=True) == []

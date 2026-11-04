@@ -163,12 +163,13 @@ def record_refresh(key: str, at: datetime, seed: Callable[[], None]) -> None:
 class LiveHub:
     """Repos by name: each one's default branch, refs (``heads/x`` → sha) and files by sha.
 
-    ``listed_default`` says whether the provider's listing carries the
-    default branch (else git's ``HEAD`` is asked). Every call is recorded.
+    The listing carries ``default``; ``HEAD`` names ``head`` when the repo
+    sets it (``None``: the remote didn't say), else ``default`` too. An
+    ``error`` fails the listing, a ``fetch_error`` the fetch. Every call is
+    recorded.
     """
 
     repos: dict[str, dict[str, Any]]
-    listed_default: bool = True
     calls: list[tuple[str, ...]] = field(default_factory=list)
 
     def locate(self, name: str) -> Repo:
@@ -178,8 +179,7 @@ class LiveHub:
             raise UsageError(f"repo not found: {name!r}", hint="pass the repo's clone URL")
         if "error" in repo:
             raise repo["error"]
-        default = repo.get("default") if self.listed_default else None
-        return Repo(name=name, url=_url(name), default_branch=default)
+        return Repo(name=name, url=_url(name), default_branch=repo.get("default"))
 
     def remote_refs(self, url: str, patterns: Sequence[str]) -> dict[str, str]:
         self.calls.append(("ls-remote", url, *patterns))
@@ -188,11 +188,14 @@ class LiveHub:
 
     def default_branch(self, url: str) -> str | None:
         self.calls.append(("head", url))
-        default: str | None = self.repos[_name(url)].get("default")
+        repo = self.repos[_name(url)]
+        default: str | None = repo["head"] if "head" in repo else repo.get("default")
         return default
 
     def fetch(self, url: str, refs: Sequence[GitRef]) -> None:
         self.calls.append(("fetch", _name(url), *(f"{ref.kind}/{ref.name}" for ref in refs)))
+        if "fetch_error" in self.repos[_name(url)]:
+            raise self.repos[_name(url)]["fetch_error"]
 
     def read_files(
         self, url: str, shas: Sequence[str], paths: Sequence[str]

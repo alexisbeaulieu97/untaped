@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from untaped_ansible.application.ports import DependencyIndex, GitCache
     from untaped_git.api import Repo
 
-#: Failures that hit every repo alike: a rejected credential, missing setup.
+#: A listing's failures that hit every repo alike: a rejected credential, missing setup.
 _GLOBAL = frozenset({ErrorCategory.AUTH, ErrorCategory.CONFIG})
 
 
@@ -42,6 +42,7 @@ class _LiveRead:
     edges: list[IndexedDependency] = field(default_factory=list)
     skipped: list[SkippedDependencyFile] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    failure: UntapedError | None = None
     default_branch: str | None = None
 
 
@@ -50,11 +51,13 @@ class StoreDependencyIndex:
 
     ``locate`` names a repo's provider listing (its URL and default
     branch), ``remote_refs`` lists a URL's refs (``ls-remote``) and
-    ``default_branch`` asks a URL's ``HEAD`` when the provider didn't say.
-    A failed read (an unknown name, a deleted repo or tag) is recorded in
-    :attr:`errors` and leaves that node unexpanded instead of aborting the
-    whole graph; a rejected credential or missing setup fails every repo
-    alike, so it raises. Uncached pairs of a batch are read concurrently.
+    ``default_branch`` asks a URL's ``HEAD``, which wins over the listing's
+    possibly cached default. A failed read (an unknown name, a deleted repo
+    or tag, a clone the credential can't reach) is recorded in
+    :attr:`errors` and :meth:`failure` and leaves that node unexpanded
+    instead of aborting the whole graph; a listing's rejected credential or
+    missing setup fails every repo alike, so it raises, as does git's own
+    missing setup. Uncached pairs of a batch are read concurrently.
     """
 
     def __init__(
@@ -80,6 +83,7 @@ class StoreDependencyIndex:
         self._resolver = resolver
         self._dependency_paths = dependency_paths
         self._cache: dict[tuple[str, str | None], list[IndexedDependency]] = {}
+        self._failures: dict[tuple[str, str | None], UntapedError] = {}
         # Default branch resolved by each ref-less read, keyed by repo_key.
         self._default_branches: dict[str, str] = {}
         self._warnings: list[SkippedDependencyFile] = []
@@ -103,6 +107,10 @@ class StoreDependencyIndex:
         source_key: str | None,
     ) -> list[IndexedDependency]:
         return self.dependencies_batch([(repo, ref)], source_key=source_key)[(repo, ref)]
+
+    def failure(self, repo: str, ref: str | None) -> UntapedError | None:
+        """Why ``repo`` at ``ref`` could not be read live, if it was read and failed."""
+        return self._failures.get((repo_key(repo), ref))
 
     def dependents(
         self,
@@ -148,6 +156,8 @@ class StoreDependencyIndex:
         for repo, ref in pending:
             read = reads[(repo, ref)]
             self._cache[(repo_key(repo), ref)] = read.edges
+            if read.failure is not None:
+                self._failures[(repo_key(repo), ref)] = read.failure
             if read.default_branch is not None:
                 self._default_branches[repo_key(repo)] = read.default_branch
             self._warnings.extend(read.skipped)
@@ -212,30 +222,32 @@ class StoreDependencyIndex:
 
     def _live_read(self, repo: str, ref: str | None) -> _LiveRead:
         read = _LiveRead()
-        label = f"{repo}@{ref}" if ref else repo
         try:
-            self._read_into(read, repo, ref)
+            located = self._located_repo(repo)
         except UntapedError as exc:
             if exc.category in _GLOBAL:
                 raise
-            read.edges.clear()
-            hint = f" ({exc.hint})" if exc.hint else ""
-            read.errors.append(
-                f"could not read {label} live: {exc}{hint}; not expanding its dependencies"
-            )
+            return _failed(read, repo, ref, exc)
+        try:
+            self._read_into(read, repo, ref, located.url, located.default_branch)
+        except UntapedError as exc:
+            # One clone's rejected credential is that repo's; git's missing setup is everyone's.
+            if exc.category is ErrorCategory.CONFIG:
+                raise
+            return _failed(read, repo, ref, exc)
         return read
 
-    def _read_into(self, read: _LiveRead, repo: str, ref: str | None) -> None:
-        located = self._located_repo(repo)
-        url = located.url
-        source_ref = ref or located.default_branch or self._default_branch(url)
+    def _read_into(
+        self, read: _LiveRead, repo: str, ref: str | None, url: str, listed_default: str | None
+    ) -> None:
+        source_ref = ref or self._default_branch(url) or listed_default
         if source_ref is None:
             raise AnsibleError(f"{repo} has no default branch", category="not_found")
-        if ref is None:
-            read.default_branch = source_ref
         git_ref = self._ref(url, source_ref)
         self._store.fetch(url, [git_ref])
         files = self._store.read_files(url, [git_ref.sha], self._dependency_paths)[git_ref.sha]
+        if ref is None:
+            read.default_branch = source_ref
         resolver = self._resolver
         edges = read.edges
         for path in self._dependency_paths:
@@ -266,7 +278,11 @@ class StoreDependencyIndex:
                 )
 
     def _located_repo(self, repo: str) -> Repo:
-        """``repo`` as its provider lists it, located once per name however many reads ask."""
+        """``repo`` as its provider lists it, located once per name however many reads ask.
+
+        Locating holds the lock: the finder asks its providers once, on first
+        use, and is not shared safely between threads.
+        """
         with self._locating:
             key = repo_key(repo)
             if key not in self._located:
@@ -287,3 +303,15 @@ class StoreDependencyIndex:
             if sha:
                 return GitRef(kind=kind, name=name, sha=sha)
         raise AnsibleError(f"no branch or tag named {name!r}", category="not_found")
+
+
+def _failed(read: _LiveRead, repo: str, ref: str | None, exc: UntapedError) -> _LiveRead:
+    """``read`` emptied, with ``exc`` as its failure and its warning."""
+    label = f"{repo}@{ref}" if ref else repo
+    hint = f" ({exc.hint})" if exc.hint else ""
+    read.edges.clear()
+    read.skipped.clear()
+    read.default_branch = None
+    read.failure = exc
+    read.errors.append(f"could not read {label} live: {exc}{hint}; not expanding its dependencies")
+    return read

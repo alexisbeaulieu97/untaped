@@ -72,17 +72,24 @@ def _edges(edges: list[IndexedDependency]) -> list[tuple[str, str | None, str | 
     return [(edge.source_repo, edge.source_ref, edge.dependency_repo) for edge in edges]
 
 
-@pytest.mark.parametrize("listed_default", [True, False], ids=["listed", "asked"])
-def test_a_ref_less_read_takes_the_default_branch_from_the_listing_or_head(
-    listed_default: bool,
-) -> None:
-    hub = Hub({"acme/site": _repo("acme/base")}, listed_default=listed_default)
+@pytest.mark.parametrize(
+    ("head", "read"),
+    [("main", "main"), ("trunk", "trunk"), (None, "main")],
+    ids=["agree", "head-wins", "listing-when-head-is-silent"],
+)
+def test_a_ref_less_read_asks_head_before_the_listing(head: str | None, read: str) -> None:
+    """The listing may be cached past a rename; HEAD is asked live."""
+    site = _repo("acme/base", head=head)
+    site["refs"]["heads/trunk"] = "t"
+    site["files"]["t"] = {_REQS: "- src: https://git.example/acme/right\n"}
+    hub = Hub({"acme/site": site})
 
     edges = _index(hub).dependencies("acme/site", None, source_key=None)
 
-    assert _edges(edges) == [("acme/site", "main", "acme/base")]
-    assert len(hub.asked("head")) == (0 if listed_default else 1)
-    assert hub.asked("fetch") == [("fetch", "acme/site", "heads/main")]
+    expected = "acme/right" if read == "trunk" else "acme/base"
+    assert _edges(edges) == [("acme/site", read, expected)]
+    assert len(hub.asked("head")) == 1
+    assert hub.asked("fetch") == [("fetch", "acme/site", f"heads/{read}")]
 
 
 def test_a_ref_is_a_branch_before_a_tag() -> None:
@@ -197,45 +204,62 @@ def test_a_live_graph_keeps_building_past_a_failed_repo() -> None:
 
 
 @pytest.mark.parametrize("category", [ErrorCategory.AUTH, ErrorCategory.CONFIG])
-def test_a_failure_every_repo_shares_stops_the_read(category: ErrorCategory) -> None:
+def test_a_listing_failure_every_repo_shares_stops_the_read(category: ErrorCategory) -> None:
     hub = Hub({"acme/site": {"error": UntapedError("rejected", category=category)}})
 
     with pytest.raises(UntapedError, match="rejected"):
         _index(hub).dependencies("acme/site", None, source_key=None)
 
 
+def test_a_clone_the_credential_cannot_reach_warns_for_that_repo() -> None:
+    site = _repo("acme/private")
+    private = _repo(fetch_error=UntapedError("could not read Username", category="auth"))
+    index = _index(Hub({"acme/site": site, "acme/private": private}))
+
+    graph = BuildGraph(index)(GraphRequest(repo="acme/site", direction="deps", depth=None))
+
+    assert "acme/private" in {node.id for node in graph.nodes}
+    assert index.errors == (
+        "could not read acme/private live: could not read Username; not expanding its dependencies",
+    )
+    failure = index.failure("acme/private", None)
+    assert failure is not None
+    assert failure.category is ErrorCategory.AUTH
+    assert index.failure("acme/site", None) is None
+
+
+def test_gits_missing_setup_stops_the_read() -> None:
+    site = _repo(fetch_error=UntapedError("git is not installed", category="config"))
+
+    with pytest.raises(UntapedError, match="git is not installed"):
+        _index(Hub({"acme/site": site})).dependencies("acme/site", None, source_key=None)
+
+
+def test_a_failed_ref_less_read_records_no_default_branch() -> None:
+    site = _repo(fetch_error=UntapedError("gone", category="not_found"))
+    index = _index(Hub({"acme/site": site}))
+
+    index.dependencies("acme/site", None, source_key=None)
+
+    assert index.cached_ref_metadata("acme/site", source_key=None) == ()
+
+
 def _renamed_default() -> Hub:
-    """``acme/base`` now defaults to ``trunk``; its old ``main`` still exists."""
-    base = _repo("acme/right", default="trunk", sha="t")
-    base["refs"]["heads/main"] = "m"
+    """``acme/base`` now defaults to ``trunk``; its old ``main`` still exists, still listed."""
+    base = _repo("acme/right", default="main", head="trunk", sha="t")
+    base["refs"] |= {"heads/trunk": "t", "heads/main": "m"}
     base["files"]["m"] = {_REQS: "- src: https://git.example/acme/wrong\n"}
     return Hub({"acme/site": _repo("acme/base"), "acme/base": base, "acme/right": _repo()})
 
 
-class StaleDefaultIndex(EmptyIndex):
-    """Cached source data scanned while ``acme/base`` still defaulted to ``main``."""
-
-    def cached_ref_metadata(self, repo: str, *, source_key: str | None) -> tuple[CachedRef, ...]:
-        if repo != "acme/base":
-            return ()
-        return (CachedRef(name="main", kind="heads", default_branch="main"),)
-
-    def cached_ref_metadata_batch(
-        self, repos: Sequence[str], *, source_key: str | None
-    ) -> dict[str, tuple[CachedRef, ...]]:
-        return {repo: self.cached_ref_metadata(repo, source_key=source_key) for repo in repos}
-
-
 def _graph(hub: Hub, *, depth: int | None) -> tuple[set[str], StoreDependencyIndex]:
-    index = _index(hub, wrapped=StaleDefaultIndex())
-    request = GraphRequest(
-        repo="acme/site", direction="deps", depth=depth, source_key="source:prod", live=True
-    )
+    index = _index(hub)
+    request = GraphRequest(repo="acme/site", direction="deps", depth=depth, live=True)
     graph = BuildGraph(index)(request)
     return {node.id for node in graph.nodes}, index
 
 
-def test_an_unpinned_hop_follows_the_current_default_branch_not_the_cached_one() -> None:
+def test_an_unpinned_hop_follows_the_current_default_branch_not_the_listed_one() -> None:
     hub = _renamed_default()
 
     nodes, index = _graph(hub, depth=None)
@@ -243,9 +267,7 @@ def test_an_unpinned_hop_follows_the_current_default_branch_not_the_cached_one()
     assert {"acme/base@trunk", "acme/right@main"} <= nodes
     assert not nodes & {"acme/base@main", "acme/wrong@main"}
     assert ("fetch", "acme/base", "heads/main") not in hub.calls
-    # The live default overrides the stale cached one in ref metadata.
-    assert index.cached_ref_metadata("acme/base", source_key="source:prod") == (
-        CachedRef(name="main", kind="heads", default_branch="trunk"),
+    assert index.cached_ref_metadata("acme/base", source_key=None) == (
         CachedRef(name="trunk", default_branch="trunk"),
     )
 
@@ -256,7 +278,6 @@ def test_an_unpinned_hop_stays_ref_less_when_its_live_read_fails() -> None:
 
     nodes, index = _graph(hub, depth=None)
 
-    # No live default was resolved, so the stale cached one is not trusted either.
     assert nodes == {"acme/site", "acme/site@main", "acme/base"}
     assert len(index.errors) == 1
     assert index.errors[0].startswith("could not read acme/base live")
@@ -267,6 +288,5 @@ def test_an_unpinned_hop_at_the_depth_limit_stays_ref_less() -> None:
 
     nodes, _ = _graph(hub, depth=1)
 
-    # Not read live, so the stale cached default is not trusted to pin it.
     assert nodes == {"acme/site", "acme/site@main", "acme/base"}
     assert [call[1] for call in hub.asked("locate")] == ["acme/site"]

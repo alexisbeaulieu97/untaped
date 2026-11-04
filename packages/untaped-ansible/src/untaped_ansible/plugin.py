@@ -59,9 +59,11 @@ class Ansible(Plugin):
     - A row's `stopped` field says why a repo's own edges were not read. When
       `--depth` left repos unread, one `hint:` on stderr says how many (per root
       for `find`).
-    - A live read that fails for one repo (a name no plugin lists, a deleted
-      repo, a ref that is no branch or tag) is a warning and leaves that node
-      unread. A rejected credential or missing setup stops the command instead.
+    - A live read that fails for one dependency (a name no plugin lists, a
+      deleted repo, a ref that is no branch or tag, a clone the credential
+      can't reach) is a warning and leaves that node unread. A target that
+      can't be read fails the command (`find`: when none of its roots can
+      be), and so does a listing's rejected credential or missing setup.
     - Collections in requirements files are not followed. A source refresh and
       a local target print one warning listing them; live reads do not.
     - Cycles are found only within the depth that was walked.

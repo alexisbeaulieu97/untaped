@@ -32,6 +32,7 @@ from untaped.sdk import (
     Short,
     Stdin,
     TreeGraph,
+    UntapedError,
     UsageError,
     key,
     plural,
@@ -140,9 +141,7 @@ class Deps(_Reaching):
     ```
     """
 
-    ref: str | None = Field(
-        None, description="Branch, tag, or SHA of ROLE; omit for its default branch."
-    )
+    ref: str | None = Field(None, description="Branch or tag of ROLE; omit for its default branch.")
     all_refs: bool = Field(False, description=ALL_REFS)
     output: Output[Dependency]
 
@@ -476,20 +475,28 @@ class Find(GraphCommand):
             # Spellings of one repo (URL, .git, SSH, alias) share one graph build.
             graphs: dict[tuple[str, str | None, str | None], DependencyGraph] = {}
             found = _Found()
+            unread: list[UntapedError] = []
             for root, source, repo in resolved:
                 local = root.target if Path(root.target).expanduser().exists() else None
                 key = (repo_key(repo), root.ref, local)
                 graph = graphs.get(key)
                 if graph is None:
-                    graph = graphs[key] = self.target_graph(
+                    built = self.target_graph(
                         env,
                         target=root.target,
                         ref=root.ref,
                         target_repo=repo,
                         direction="deps",
-                    ).graph
+                        strict=False,
+                    )
+                    graph = graphs[key] = built.graph
+                    if built.unread is not None:
+                        unread.append(built.unread)
                     found.graphs.append((_root_label(root), graph))
                 found.matches.extend(find_matches(graph, wanted, source=source))
+            # One unreadable root of many warns; when none could be read, the search failed.
+            if unread and len(unread) == len(graphs):
+                raise unread[0]
             return found
 
         found = self.answer(env, "deps", read, empty=lambda found: not found.matches)
@@ -590,9 +597,7 @@ class Graph(GraphCommand):
     target: Positional[str] = Field(description=TARGET)
     ref: str | None = Field(
         None,
-        description=(
-            "Target branch, tag, or SHA; omit for its default branch (and every ref upstream)."
-        ),
+        description=("Target branch or tag; omit for its default branch (and every ref upstream)."),
     )
     direction: Direction = Field(
         "both",

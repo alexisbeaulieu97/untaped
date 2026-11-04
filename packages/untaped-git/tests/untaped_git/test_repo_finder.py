@@ -236,6 +236,22 @@ def test_with_no_provider_installed_a_name_is_not_found() -> None:
     )
 
 
+def test_a_caller_that_takes_no_url_gets_hints_that_offer_none() -> None:
+    github = listing(
+        make_repo("acme/api"), not_ready=NotReady("no inventory scope", key(_Github).default_org)
+    )
+    with providers(github=[github]), pytest.raises(UsageError) as unasked:
+        RepoFinder(offer_url=False).resolve("acme/api")
+    with providers(github=[listing(make_repo("acme/api"))]), pytest.raises(UsageError) as unknown:
+        RepoFinder(offer_url=False).resolve("acme/gone")
+    with providers(), pytest.raises(UsageError) as uninstalled:
+        RepoFinder(offer_url=False).resolve("acme/api")
+    assert unasked.value.hint == "github wasn't asked: no inventory scope; set github.default_org"
+    assert unknown.value.hint is None
+    assert uninstalled.value.hint is not None
+    assert uninstalled.value.hint.endswith("install or upgrade a plugin that lists repos")
+
+
 def test_a_listed_url_on_another_host_than_its_source_serves_is_refused() -> None:
     """S17 (the finder's side): github serves github.com, so its repo on evil.example is
     refused (exit 2) before anything is fetched."""

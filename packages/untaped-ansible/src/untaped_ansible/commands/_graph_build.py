@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
 
+from untaped.sdk import UntapedError
 from untaped_ansible.application.graph import BuildGraph, GraphDirection, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
 from untaped_ansible.domain.graph import DependencyGraph
@@ -33,6 +34,8 @@ class _Reads(NamedTuple):
     """The cached source data."""
     live: bool
     """Downstream dependencies from each repo's provider."""
+    unread: UntapedError | None = None
+    """Why the root itself could not be read live (it has no local checkout)."""
 
 
 @dataclass(frozen=True)
@@ -130,7 +133,11 @@ def graph_for_target(
             *live_index.errors[seen_errors:],
             *_live_parse_warning_messages(live_index.warnings[seen_warnings:]),
         ],
-        _Reads(source=False, live=True),
+        _Reads(
+            source=False,
+            live=True,
+            unread=None if local is not None else live_index.failure(request.repo, request.ref),
+        ),
     )
 
 
