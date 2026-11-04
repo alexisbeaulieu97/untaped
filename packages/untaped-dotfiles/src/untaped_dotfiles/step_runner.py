@@ -22,7 +22,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from untaped.sdk import q
+from pydantic import SecretStr
+
+from untaped.sdk import Record, q
 from untaped.sdk.process import ProcessResult, run_process
 from untaped_dotfiles.errors import DotfilesError
 from untaped_values.api import InputError, render
@@ -30,6 +32,7 @@ from untaped_values.api import InputError, render
 if TYPE_CHECKING:
     from untaped_dotfiles.models import StepRecord
     from untaped_dotfiles.package import PackageInput, Step
+    from untaped_dotfiles.step_kinds import StepKinds
 
 CHECK_TIMEOUT = 30.0
 RUN_TIMEOUT = 600.0
@@ -122,16 +125,29 @@ class Checked:
 class StepRunner:
     """Runs approved steps' checks and runs; ``relay`` gets what a run prints, masked."""
 
-    def __init__(self, *, home: Path, relay: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        home: Path,
+        relay: Callable[[str], None] | None = None,
+        kinds: StepKinds | None = None,
+    ) -> None:
         self._home = home
         self._relay = relay
+        self.kinds = kinds if kinds is not None else _no_installed_kinds()
+        """Where a ``kind:`` step's provider is found and asked."""
 
     def with_relay(self, relay: Callable[[str], None]) -> StepRunner:
-        return StepRunner(home=self._home, relay=relay)
+        return StepRunner(home=self._home, relay=relay, kinds=self.kinds)
 
     def check(self, approved: ApprovedStep) -> Checked:
+        kind = approved.step.kind
+        if kind is not None:
+            provider = self.kinds.provider(kind)
+            result = self.kinds.check(provider, self._fields(approved, provider.record))
+            return Checked(result.passes, result.detail or f"its {kind} check fails")
         check = approved.step.check
-        assert check is not None  # a step without a check has a kind, which never gets here
+        assert check is not None  # a step without a check has a kind
         if check.path is not None:
             text = approved.text(check.path, at="check.path")
             path = self._home_path(text)
@@ -158,13 +174,25 @@ class StepRunner:
         return Checked(False, f"`{_shown(argv)}` doesn't print {wanted!r}")
 
     def run(self, approved: ApprovedStep, *, stdin: bytes | None, secrets: Sequence[str]) -> None:
-        """Run the step's program; a run that doesn't exit 0 raises, naming its status."""
+        """Run the step's program (or its kind); a run that doesn't exit 0 (or pass) raises."""
+        kind = approved.step.kind
+        if kind is not None:
+            provider = self.kinds.provider(kind)
+            secret = None if stdin is None else SecretStr(stdin.decode("utf-8"))
+            result = self.kinds.run(provider, self._fields(approved, provider.record), secret)
+            if not result.passes:
+                detail = result.detail or "it says it didn't pass"
+                raise DotfilesError(f"the {kind} run failed: {detail}")
+            return
         assert approved.argv is not None  # report-only steps never run
         argv = [self._home_text(each) for each in approved.argv]
         ended = self._process(argv, timeout=RUN_TIMEOUT, what="run", stdin=stdin)
         self._relayed(ended, secrets)
         if ended.returncode != 0:
             raise DotfilesError(f"`{_shown(argv)}` exits {ended.returncode}")
+
+    def _fields(self, approved: ApprovedStep, record: type[Record]) -> Record:
+        return self.kinds.fields(approved.step, record, lambda v, at: approved.text(v, at=at))
 
     def _process(
         self, argv: list[str], *, timeout: float, what: str, stdin: bytes | None
@@ -207,3 +235,10 @@ class StepRunner:
 
 def _shown(argv: Sequence[str]) -> str:
     return " ".join(argv)
+
+
+def _no_installed_kinds() -> StepKinds:
+    """Step kinds found among the providers alone, not knowing which plugins are installed."""
+    from untaped_dotfiles.step_kinds import StepKinds  # noqa: PLC0415 - contracts on use
+
+    return StepKinds()

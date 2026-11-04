@@ -77,6 +77,8 @@ class Quarantined:
     contract: type[Contract] | None = None
     #: What to do about it; empty: upgrade the plugin, as for any defect in its offer.
     fix: str = ""
+    #: The provider class refused; ``None`` when the registry never got to one.
+    provider: type[Contract] | None = None
 
     @property
     def described(self) -> str:
@@ -251,23 +253,43 @@ def _load(
         (each.plugin_ref.distribution for each in _plugins(state) if each.name == owner), owner
     )
     entries: list[BoundProvider | Quarantined] = []
-    seen: dict[type[Contract], int] = {}
+    seen: dict[tuple[type[Contract], type[BaseModel] | None], int] = {}
     for value in values:
         entry = _check(
             plugin, owner, owned, value, state.profile, _kinds(state), owner_distribution
         )
         if isinstance(entry, BoundProvider):
+            # A plugin fills a contract once per record: providers issuing records of
+            # their own (each its own kind) stand side by side; two issuing the same don't.
             contract = entry.binding.contract.cls
-            if contract in seen:
+            key = (contract, entry.binding.item)
+            if key in seen:
                 twice = f"{plugin.name} provides {contract.__qualname__} twice"
-                entries[seen[contract]] = Quarantined(
-                    plugin.name, owner, Reason.bad_provider, twice, contract
-                )
-                entry = Quarantined(plugin.name, owner, Reason.bad_provider, twice, contract)
+                if entry.binding.item is not None and not entry.binding.owns_item:
+                    twice += f" with the record {entry.binding.item.__qualname__}"
+                entries[seen[key]] = _refused(entries[seen[key]], twice)
+                entry = _refused(entry, twice)
             else:
-                seen[contract] = len(entries)
+                seen[key] = len(entries)
         entries.append(entry)
     return tuple(entries)
+
+
+def _provider_of(entry: BoundProvider | Quarantined) -> type[Contract] | None:
+    return type(entry.instance) if isinstance(entry, BoundProvider) else entry.provider
+
+
+def _refused(entry: BoundProvider | Quarantined, detail: str) -> Quarantined:
+    """``entry`` refused as a duplicate provider (``bad-provider``) saying ``detail``."""
+    contract = entry.binding.contract.cls if isinstance(entry, BoundProvider) else entry.contract
+    return Quarantined(
+        entry.plugin,
+        entry.binding.owner if isinstance(entry, BoundProvider) else entry.owner,
+        Reason.bad_provider,
+        detail,
+        contract,
+        provider=_provider_of(entry),
+    )
 
 
 def _kinds(state: _State) -> Callable[[type[BaseModel]], str]:
@@ -292,7 +314,8 @@ def _check(
     def quarantined(
         reason: QuarantineReason, detail: str, contract: type[Contract] | None = None
     ) -> Quarantined:
-        return Quarantined(plugin.name, owner, reason, detail, contract)
+        provider = type(value) if isinstance(value, Contract) else None
+        return Quarantined(plugin.name, owner, reason, detail, contract, provider=provider)
 
     info = contract_of(type(value)) if isinstance(value, Contract) else None
     if info is None or not isinstance(value, Contract) or type(value) is info.cls:
@@ -310,7 +333,7 @@ def _check(
     problems = parameter_problems(provider, info)
     if problems:
         detail, fix = _uses_missing(plugin, owner_distribution, problems)
-        return Quarantined(plugin.name, owner, Reason.uses_missing, detail, info.cls, fix)
+        return Quarantined(plugin.name, owner, Reason.uses_missing, detail, info.cls, fix, provider)
     try:
         item = item_type(provider, info)
         record_kinds = _record_kinds(provider, info, kinds)
@@ -558,7 +581,8 @@ def _offer_row(entry: BoundProvider | Quarantined) -> DoctorRow:
         detail = f"{entry.owner}{name}: {entry.detail}; {entry.fix or upgrade}"
         return DoctorRow("contract-provider", entry.plugin, "warn", entry.reason, detail)
     info = entry.binding.contract
-    what = f"{entry.binding.owner}.{info.name}"
+    issues = "" if entry.binding.owns_item else entry.binding.item_kind
+    what = f"{entry.binding.owner}.{info.name}" + (f" ({issues})" if issues else "")
     provider = type(entry.instance)
     unused = unused_methods(provider, info)
     if unused:

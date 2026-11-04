@@ -228,23 +228,6 @@ def test_a_changed_step_under_manual_is_behind_until_asked(
     assert probe.calls()[calls:] == ["check", "run v2", "check"]
 
 
-def test_a_step_kind_no_plugin_provides_is_unmet(make_remote: MakeRemote) -> None:
-    package = """\
-version: 1
-items:
-  tool:
-    steps:
-      - name: fonts
-        kind: font
-        with: {name: fira}
-"""
-    subscribe(_source(make_remote, package).url, "--add", "tool")
-    rows = {r["entry"]: r for r in as_json(["status"])}
-    assert rows["fonts"]["state"] == "unmet"
-    assert "step kind 'font'" in str(rows["fonts"]["detail"])
-    assert _apply("--yes")[0] == 3
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="a script with a shebang")
 def test_a_script_step_runs_the_file_from_the_source(make_remote: MakeRemote, probe: Probe) -> None:
     package = f"""\

@@ -1,4 +1,4 @@
-"""Dotfiles port Protocols: source trees, the filesystem placer, and the store."""
+"""Dotfiles port Protocols: source trees, the filesystem placer, the store, installed plugins."""
 
 from __future__ import annotations
 
@@ -113,3 +113,13 @@ class DotfilesStore(Protocol):
     def write_status(self, summary: StatusSummary) -> None:
         """Write ``status.json`` and the one-line ``attention`` file."""
         ...
+
+
+class Installed(Protocol):
+    """An installed plugin as ``ctx.plugins`` lists it: its name and whether it is ready."""
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def status(self) -> str: ...

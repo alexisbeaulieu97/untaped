@@ -30,6 +30,8 @@ cfg awx.server_version string? default=unset
 cfg awx.test_parallel integer(exclusiveMinimum=0) default=4  [experimental]
 cfg awx.test_timeout_seconds number(exclusiveMinimum=0) default=1800  [experimental]
 cfg dotfiles.clones_dir string(format=path)? default=unset  [experimental]
+cfg dotfiles.extensions.step_kind.rank.check string[] default=[]  [experimental]
+cfg dotfiles.extensions.step_kind.rank.run string[] default=[]  [experimental]
 cfg dotfiles.kept_dir string(format=path)? default=unset  [experimental]
 cfg dotfiles.os choice=linux  [experimental]
 cfg dotfiles.os choice=macos  [experimental]
@@ -4203,6 +4205,19 @@ contract ansible.Source.record object default={}
 contract ansible.checkout_source abstract=checkouts  [experimental]
 contract ansible.checkout_source.checkouts() -> Checkout[]  [experimental]
 contract ansible.checkout_source.to_checkout(item: Checkout) -> Checkout  [experimental]
+contract dotfiles.Source(kind, plugin)
+contract dotfiles.Source.kind string
+contract dotfiles.Source.plugin string
+contract dotfiles.Source.record object default={}
+contract dotfiles.StepFields()  [experimental]
+contract dotfiles.StepFields.source Source? default=None  [experimental]
+contract dotfiles.StepResult(passes)  [experimental]
+contract dotfiles.StepResult.detail string default=""  [experimental]
+contract dotfiles.StepResult.passes boolean  [experimental]
+contract dotfiles.step_kind abstract=check,run  [experimental]
+contract dotfiles.step_kind.check(step: StepFields) -> StepResult  [experimental]
+contract dotfiles.step_kind.run(secret@2=) string(format=password)? default=None  [experimental]
+contract dotfiles.step_kind.run(step: StepFields) -> StepResult  [experimental]
 contract git.Credential(password, username)
 contract git.Credential.password string(format=password)
 contract git.Credential.username string
@@ -5318,6 +5333,8 @@ record dotfiles.package_file.policy string  [experimental]
 record dotfiles.package_file.unless default=[]  [experimental]
 record dotfiles.package_file.unless string[]  [experimental]
 record dotfiles.package_file.version integer  [experimental]
+record dotfiles.step_fields  [experimental]
+record dotfiles.step_fields.source Source?  [experimental]
 record git.RepoCount
 record git.RepoCount.repos integer
 record git.RepoCount.size_bytes integer
@@ -7057,6 +7074,20 @@ sdk untaped.sdk.contracts.Ok.value
 sdk untaped.sdk.contracts.Provider()
 sdk untaped.sdk.contracts.Provider.ctx
 sdk untaped.sdk.contracts.Provider.settings
+sdk untaped.sdk.contracts.ProviderOffer(detail@6=) default=""  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(fix@7=) default=""  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(kind@4=) default=None  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(plugin)  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(provider@2=) default=None  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(record@3=) default=None  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer(refused@5=) default=None  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.detail  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.fix  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.kind  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.plugin  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.provider  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.record  [experimental]
+sdk untaped.sdk.contracts.ProviderOffer.refused  [experimental]
 sdk untaped.sdk.contracts.ProviderRecord
 sdk untaped.sdk.contracts.Reason.active = active
 sdk untaped.sdk.contracts.Reason.bad_contracts = bad-contracts
@@ -7089,6 +7120,7 @@ sdk untaped.sdk.contracts.gather(method, /) callback(method, P)
 sdk untaped.sdk.contracts.gather(plugins=) default=None
 sdk untaped.sdk.contracts.gather(progress=) default=NO_PROGRESS
 sdk untaped.sdk.contracts.gather(refresh=) default=None
+sdk untaped.sdk.contracts.providers(contract, /)  [experimental]
 sdk untaped.sdk.contracts.providing(candidates=) default=None
 sdk untaped.sdk.contracts.providing(offered)
 sdk untaped.sdk.contracts.select_one(answers, matches) callback(matches, 1)
@@ -8208,6 +8240,17 @@ sdk untaped_awx.api.unknown_field(resources)  [experimental]
 sdk untaped_awx.api.unresolved_reference(resources)  [experimental]
 sdk untaped_awx.testing.resources()  [experimental]
 sdk untaped_awx.testing.resources(*yaml_texts)  [experimental]
+sdk untaped_dotfiles.api.StepFields base=untaped.sdk.Issued  [experimental]
+sdk untaped_dotfiles.api.StepFields base=untaped.sdk.Record  [experimental]
+sdk untaped_dotfiles.api.StepFields extra=forbid  [experimental]
+sdk untaped_dotfiles.api.StepFields()  [experimental]
+sdk untaped_dotfiles.api.StepFields(source=) default=None  [experimental]
+sdk untaped_dotfiles.api.StepKind base=untaped.sdk.contracts.Contract  [experimental]
+sdk untaped_dotfiles.api.StepKind implement=check,run  [experimental]
+sdk untaped_dotfiles.api.StepResult(*, passes)  [experimental]
+sdk untaped_dotfiles.api.StepResult(detail=) default=""  [experimental]
+sdk untaped_dotfiles.api.StepResult.detail  [experimental]
+sdk untaped_dotfiles.api.StepResult.passes  [experimental]
 sdk untaped_git.api.Credential(*, username, password)
 sdk untaped_git.api.Credential(verify_tls=) default=true
 sdk untaped_git.api.Credential.password

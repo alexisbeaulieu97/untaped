@@ -25,6 +25,7 @@ from core_test_support.contracts.support import (
 from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate
+from untaped.sdk import Record
 from untaped.sdk.contracts import Errored, Ok, Provider, Skipped, gather
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
@@ -77,13 +78,65 @@ def test_a_provider_breaking_a_rule_is_quarantined_alone() -> None:
 
 
 class _Again(Library):
-    """A second provider of the contract ``Library`` fills."""
+    """A second provider issuing the record ``Library`` issues."""
 
 
-def test_one_plugin_providing_a_contract_twice_is_quarantined() -> None:
+def test_one_plugin_providing_a_contract_twice_with_one_record_is_quarantined() -> None:
     compose(shelf_plugin(), library_plugin(Library, _Again))
     write_config(LIBRARY_CONFIG)
     assert [entry.reason for entry in offers(_info())] == ["bad-provider", "bad-provider"]  # type: ignore[union-attr]
+    assert all(
+        entry.detail == "library provides BookSource twice with the record Volume"  # type: ignore[union-attr]
+        for entry in offers(_info())
+    )
+
+
+class Pamphlet(Record):
+    title: str
+
+
+class MapSheet(Record):
+    title: str
+
+
+class _Pamphlets(BookSource[Pamphlet], Provider):
+    def to_book(self, item: Pamphlet) -> Book:
+        return Book(title=item.title)
+
+    def books(self) -> list[Book]:
+        return [self.to_book(Pamphlet(title="Tide tables"))]
+
+
+class _Maps(BookSource[MapSheet], Provider):
+    def to_book(self, item: MapSheet) -> Book:
+        return Book(title=item.title)
+
+    def books(self) -> list[Book]:
+        return [self.to_book(MapSheet(title="Harbour"))]
+
+
+def test_one_plugin_fills_a_contract_once_per_record_it_issues() -> None:
+    """Each provider issues its own kind, so they stand side by side and answer apart."""
+    atlas = plugin(
+        "atlas", fills=(_Pamphlets, _Maps), records=(Pamphlet, MapSheet), module=__name__
+    )
+    compose(shelf_plugin(), atlas)
+    taken = offers(_info())
+    assert [entry.binding.item_kind for entry in taken] == ["atlas.pamphlet", "atlas.map_sheet"]  # type: ignore[union-attr]
+    answers = gather(BookSource.books)()
+    assert [(a.plugin, [b.title for b in a.value]) for a in answers.ok] == [
+        ("atlas", ["Tide tables"]),
+        ("atlas", ["Harbour"]),
+    ]
+    cached = gather(BookSource.books, refresh=False)()  # each kept apart in the cache
+    assert [[b.title for b in a.value] for a in cached.ok] == [["Tide tables"], ["Harbour"]]
+    alone = gather(BookSource.books, plugins={_Maps})()
+    assert [b.title for b in alone.ok[0].value] == ["Harbour"]
+    rows = [row for row in doctor_rows() if row.plugin == "atlas"]
+    assert [row.detail for row in rows] == [
+        "fills shelf.book_source (atlas.pamphlet): to_book, books",
+        "fills shelf.book_source (atlas.map_sheet): to_book, books",
+    ]
 
 
 def test_the_providers_group_loads_once_per_composition() -> None:
@@ -177,7 +230,7 @@ def test_doctor_has_a_row_per_provider_and_an_inactive_one_passes() -> None:
     write_config("")
     [library, _] = doctor_rows()
     assert (library.status, library.title) == ("pass", "not-configured")
-    assert library.detail == "shelf.book_source: waits for library.catalog"
+    assert library.detail == "shelf.book_source (library.volume): waits for library.catalog"
     compose(shelf_plugin(), library_plugin(_NoBridge))
     [row] = doctor_rows()
     assert (row.status, row.title) == ("warn", "missing-bridge")
@@ -261,3 +314,22 @@ def test_a_fill_no_composed_plugin_owns_waits_silently() -> None:
     result = bootstrap.compose_root(candidates=[lends])
     [spec] = [each for each in result.plugins if each.name == "lends"]
     assert spec.fill_owners == ()
+
+
+class _MoreMaps(_Maps):
+    """A second provider of ``MapSheet`` in atlas."""
+
+
+def test_a_refused_provider_is_asked_by_its_class_alone() -> None:
+    atlas = plugin(
+        "atlas", fills=(_Pamphlets, _Maps, _MoreMaps), records=(Pamphlet, MapSheet), module=__name__
+    )
+    compose(shelf_plugin(), atlas)
+    [pamphlets] = gather(BookSource.books, plugins={_Pamphlets})()
+    assert isinstance(pamphlets, Ok)
+    with pytest.raises(ConfigError, match="twice with the record MapSheet"):
+        gather(BookSource.books, plugins={_Maps})()
+    assert [entry.provider for entry in offers(_info()) if isinstance(entry, Quarantined)] == [
+        _Maps,
+        _MoreMaps,
+    ]

@@ -26,8 +26,10 @@ from untaped.sdk.contracts._gather import (
     Errored,
     NoProviderReady,
     Ok,
+    ProviderOffer,
     Skipped,
     gather,
+    providers,
 )
 from untaped.sdk.contracts._providing import providing
 from untaped.sdk.contracts._reasons import Reason
@@ -43,11 +45,13 @@ __all__ = [
     "NotReady",
     "Ok",
     "Provider",
+    "ProviderOffer",
     "ProviderRecord",
     "Reason",
     "Skipped",
     "cached",
     "gather",
+    "providers",
     "providing",
     "select_one",
 ]

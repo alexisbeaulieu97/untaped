@@ -27,7 +27,7 @@ from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import ApplyAction, ApplyOutcome, EntryStatus
 from untaped_dotfiles.states import Action, StepState, decide_step, decide_step_asked
 from untaped_dotfiles.step_runner import ApprovedStep, Checked, StepRunner, step_digest
-from untaped_values.api import Ask, placeholders, resolve
+from untaped_values.api import Ask, InputError, placeholders, render, resolve
 
 if TYPE_CHECKING:
     from untaped_dotfiles.catalog import Offer, Selection
@@ -223,8 +223,11 @@ class Steps:
         """The state of a step of an item that is on, from its row and its stored check."""
         step = entry.step
         if step.kind is not None:
-            return StepFound("unmet", f"needs a plugin that provides step kind {q(step.kind)}")
+            why = self._runner.kinds.unavailable(step.kind)
+            if why:
+                return StepFound("unmet", why)
         try:
+            self._validated(entry)
             digest = step_digest(step, self._script_hash(entry))
         except UntapedError as exc:
             return _error(exc)
@@ -252,6 +255,22 @@ class Steps:
         if _report_only(step):
             return StepFound("unmet", f"needs you: {step.fix}")
         return StepFound("drifted", f"its check fails now: {checked.detail}")
+
+    def _validated(self, entry: StepEntry) -> None:
+        """Check a kind step's ``with:`` as its kind's record, with the values it reads now."""
+        step = entry.step
+        if step.kind is None:
+            return
+        kinds = self._runner.kinds
+        values = self._values(entry)
+
+        def text(value: str, at: str) -> str:
+            try:
+                return render(value, values, entry.specs, field=at)
+            except InputError as exc:
+                raise DotfilesError(f"step {q(step.name)}: {exc}") from exc
+
+        kinds.fields(step, kinds.provider(step.kind).record, text)
 
     def _script(self, entry: StepEntry) -> Path | None:
         script = entry.step.script
@@ -520,7 +539,7 @@ def _missing(names: Sequence[str], asked: Mapping[str, PackageInput]) -> str:
 
 
 def _report_only(step: Step) -> bool:
-    return step.run is None and step.script is None
+    return step.kind is None and step.run is None and step.script is None
 
 
 def _error(exc: UntapedError) -> StepFound:
@@ -539,6 +558,9 @@ def _off_detail(entry: StepEntry) -> str:
 
 def describe(step: Step) -> str:
     """What applying ``step`` does, as the package writes it: ``if CHECK fails, runs: ARGV``."""
+    if step.kind is not None:
+        reads = f" (stdin: {step.stdin})" if step.stdin is not None else ""
+        return f"if its {step.kind} check fails, runs it{reads}"
     check = step.check
     if check is None:
         when = "always"

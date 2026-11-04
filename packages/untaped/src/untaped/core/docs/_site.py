@@ -145,6 +145,17 @@ class Site:
             if fill.contract == target
         )
 
+    def records(self, target: str) -> list[tuple[str, KindDecl]]:
+        """Each plugin filling contract ``target`` with its own record, and that record's kind."""
+        found = [
+            (plugin.name, kind)
+            for plugin in self.declaration.plugins
+            for fill in plugin.fills
+            if fill.contract == target and fill.record is not None
+            if (kind := self.kind_of_target(fill.record)) is not None
+        ]
+        return sorted(found, key=lambda pair: pair[1].kind)
+
     def provided(self, target: str, bridge: str) -> list[KindDecl]:
         """The own records contract ``target``'s composed providers' fills of ``bridge`` take."""
         items = [
