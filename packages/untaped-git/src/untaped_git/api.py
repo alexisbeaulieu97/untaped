@@ -7,6 +7,8 @@ contract a forge plugin fills to supply credentials and a proxy for its host;
 name, issuing ``Repo`` records (and ``RepoSelector`` records from a
 provider's own selector), and ``RepoFinder`` resolves a typed name or
 URL to one of them (``typed_repo`` names a URL with no provider asked);
+``select_repos`` takes the repos a saved ``RepoSelector`` names from the
+provider that issued it;
 ``ls_remote`` and ``default_branch`` query a remote with those credentials,
 ``probe_refs`` reads many remotes' refs through their host's probe (``GitHost.probe_refs``)
 or ``ls-remote``,
@@ -41,6 +43,7 @@ from untaped_git.repos import (
     typed_repo,
 )
 from untaped_git.run import GitCommandError, GitResult, git_toplevel, run_git
+from untaped_git.selection import Selection, select_repos
 from untaped_git.settings import store_root
 from untaped_git.store import RepoStore
 from untaped_git.store_prefetch import Prefetched
@@ -68,6 +71,7 @@ __all__ = [
     "RepoSelector",
     "RepoSource",
     "RepoStore",
+    "Selection",
     "TreeEntry",
     "check_names",
     "clone",
@@ -78,6 +82,7 @@ __all__ = [
     "probe_refs",
     "repo_url_parts",
     "run_git",
+    "select_repos",
     "store_key",
     "store_root",
     "typed_repo",

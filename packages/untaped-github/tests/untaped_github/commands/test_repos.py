@@ -211,3 +211,45 @@ def test_repos_list_help_documents_pattern_targeting() -> None:
     assert result.exit_code == 0, result.output
     for phrase in ("glob", "owner/name", "unanchored", "additive", "exactly one --org", "--regex"):
         assert phrase in result.output
+
+
+# --- repos selector ------------------------------------------------------------------------
+
+
+def test_repos_selector_prints_a_selector_without_a_token_or_a_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GH_TOKEN")
+    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
+        api = mock.route().mock(return_value=httpx.Response(500))
+        scope = ["--org", "acme", "--team", "platform", "-r", "solo/tool"]
+        result = run(["repos", "selector", *scope, "--format", "pipe"])
+
+    assert result.exit_code == 0, result.output
+    assert api.call_count == 0
+    [envelope] = [json.loads(line) for line in result.stdout.splitlines()]
+    assert envelope["kind"] == "github.repo_selector"
+    assert envelope["record"] == {
+        "orgs": ["acme"],
+        "teams": ["acme/platform"],
+        "repos": ["solo/tool"],
+    }
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        ([], "repos selector needs --org, --team or --repo"),
+        (["--team", "platform"], "ORG/SLUG"),
+        (["--repo", "tool"], "--repo must be OWNER/NAME, not 'tool'"),
+        (["--repo", "acme/tools/x"], "--repo must be OWNER/NAME"),
+        (["--org", "acme/api"], "--org must be an org name, not 'acme/api'"),
+        (["--org", "acme", "--limit", "5"], "--limit"),
+    ],
+    ids=["no-scope", "bare-team", "bare-repo", "nested-repo", "org-path", "listing-flag"],
+)
+def test_repos_selector_usage_errors_exit_2(args: list[str], message: str) -> None:
+    result = run(["repos", "selector", *args])
+
+    assert result.exit_code == 2, result.output
+    assert message in result.output

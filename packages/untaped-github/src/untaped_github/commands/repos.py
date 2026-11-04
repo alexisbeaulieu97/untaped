@@ -1,25 +1,28 @@
-"""``untaped github repos``: the repository inventory of org and team scopes."""
+"""``untaped github repos``: the repository inventory of org and team scopes, and selectors."""
 
 from __future__ import annotations
 
 import re
 from collections.abc import Iterator
+from typing import Annotated
 
 from pydantic import Field
 
-from untaped.sdk import Group, Limit, Output, Positional, UsageError, plural
+from untaped.sdk import Group, Limit, Output, Positional, Short, UsageError, plural
 from untaped_github.application import ListRepos, RepoListFilters
 from untaped_github.commands._github import (
     ARCHIVED,
     FORK,
     FORKS,
+    REPO,
     ForkMode,
     GithubCommand,
     Scope,
     team_scopes,
 )
 from untaped_github.domain import ArchivedMode
-from untaped_github.records import Repo
+from untaped_github.domain.repo_id import split_repo_id
+from untaped_github.records import Repo, RepoSelector
 
 
 class List(GithubCommand):
@@ -84,7 +87,51 @@ class List(GithubCommand):
                 raise UsageError(f"invalid regular expression: {exc}") from exc
 
 
-class ReposGroup(Group):
-    """List GitHub repository inventory from org/team scopes."""
+class Selector(GithubCommand):
+    """Print a selector naming orgs, teams and repos, for a saved source to keep.
 
-    commands = (List,)
+    A command that saves a selection of repos reads it on its stdin and asks
+    github for the repos each time it uses it, so the selection follows the
+    orgs and teams. Nothing is listed now: no token is needed, and the
+    names are checked only for their shape.
+
+    Examples
+    --------
+    ```console
+    $ untaped github repos selector --team acme/platform --repo acme/tools --format pipe
+    ```
+    """
+
+    org: list[str] = Field(
+        default_factory=list, description="Every repository of this org. Repeatable."
+    )
+    team: list[str] = Field(
+        default_factory=list,
+        description="Every repository of this team: ORG/SLUG, or SLUG with exactly one --org. "
+        "Repeatable.",
+    )
+    repo: Annotated[list[str], Short("-r")] = Field(default_factory=list, description=REPO)
+    output: Output[RepoSelector]
+
+    def run(self) -> RepoSelector:
+        orgs = tuple(self.org)
+        if not (orgs or self.team or self.repo):
+            raise UsageError("repos selector needs --org, --team or --repo")
+        for org in orgs:
+            if not org or "/" in org or any(char.isspace() for char in org):
+                raise UsageError(f"--org must be an org name, not {org!r}")
+        teams = team_scopes(self.team, orgs=orgs)
+        for name in self.repo:
+            if split_repo_id(name) is None or any(char.isspace() for char in name):
+                raise UsageError(f"--repo must be OWNER/NAME, not {name!r}")
+        return RepoSelector(
+            orgs=list(orgs),
+            teams=[f"{team.org}/{team.slug}" for team in teams],
+            repos=list(self.repo),
+        )
+
+
+class ReposGroup(Group):
+    """List GitHub repository inventory from org/team scopes, or print a selector of them."""
+
+    commands = (List, Selector)

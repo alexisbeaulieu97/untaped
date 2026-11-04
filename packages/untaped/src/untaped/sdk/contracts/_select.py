@@ -195,7 +195,7 @@ def bridged[R](
             f"line {envelope.lineno}: no installed provider reads {kind} records as {owner_kind}"
         )
     plugin = provider.plugin
-    ready = ready_of(provider)
+    ready = ready_of(provider, method.name)
     if ready is not None:
         setting = f" (set {ready.spelled})" if ready.spelled else ""
         raise ConfigError(

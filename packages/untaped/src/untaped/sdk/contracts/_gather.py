@@ -353,7 +353,7 @@ def gather[C: Contract, **P, R](
                         rank,
                     )
                 continue
-            ready = ready_of(entry)
+            ready = ready_of(entry, wanted.name)
             if ready is not None:
                 answers[at] = Skipped(entry.plugin, Reason.not_configured, ready.reason, rank)
                 not_ready.setdefault(entry.plugin, ready)

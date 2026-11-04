@@ -1,9 +1,11 @@
 # untaped surface 3
 cfg git.caches.repo_source_repos.max_age_seconds integer(minimum=0) default=21600
+cfg git.caches.repo_source_select.max_age_seconds integer(minimum=0) default=21600
 cfg git.extensions.git_host.rank.credential string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.home string[] default=[]  [experimental]
 cfg git.extensions.git_host.rank.probe_refs string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.repos string[] default=[]  [experimental]
+cfg git.extensions.repo_source.rank.select string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_repo string[] default=[]  [experimental]
 cfg git.extensions.repo_source.rank.to_selector string[] default=[]  [experimental]
 cfg git.probe_parallel integer(maximum=32,minimum=1) default=8
@@ -88,6 +90,7 @@ contract git.git_host.home() -> string?  [experimental]
 contract git.git_host.probe_refs(urls: string[], *, kinds: string[], default_branch_only: boolean, parallel: integer) -> RefProbe  [experimental]
 contract git.repo_source abstract=repos  [experimental]
 contract git.repo_source.repos() -> Repo[]  [experimental]
+contract git.repo_source.select(selector: RepoSelector) -> Repo[]  [experimental]
 contract git.repo_source.to_repo(item: Repo) -> Repo  [experimental]
 contract git.repo_source.to_selector(item: any) -> RepoSelector  [experimental]
 record git.RepoCount
@@ -304,6 +307,10 @@ sdk untaped_git.api.RepoStore.write_private()  [experimental]
 sdk untaped_git.api.RepoStore.write_private(refreshed_at=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_private(value@1=) default=None  [experimental]
 sdk untaped_git.api.RepoStore.write_worktree_config(worktree)
+sdk untaped_git.api.Selection(note@2=) default=None  [experimental]
+sdk untaped_git.api.Selection(repos)  [experimental]
+sdk untaped_git.api.Selection.note  [experimental]
+sdk untaped_git.api.Selection.repos  [experimental]
 sdk untaped_git.api.TreeEntry base=untaped.sdk.Record
 sdk untaped_git.api.TreeEntry extra=forbid
 sdk untaped_git.api.TreeEntry(*, mode, type, oid, path)
@@ -344,6 +351,8 @@ sdk untaped_git.api.run_git(locale_c=) default=true
 sdk untaped_git.api.run_git(retry_transient=) default=false
 sdk untaped_git.api.run_git(sleep=) default=<computed> callback(1)
 sdk untaped_git.api.run_git(stdin=) default=None
+sdk untaped_git.api.select_repos(plugin, selector)  [experimental]
+sdk untaped_git.api.select_repos(refresh=) default=None  [experimental]
 sdk untaped_git.api.store_key(url)
 sdk untaped_git.api.store_root()
 sdk untaped_git.api.typed_repo(url)  [experimental]
