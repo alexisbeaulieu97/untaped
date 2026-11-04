@@ -52,6 +52,13 @@ def page(site: Site, plugin: PluginDecl, point: PointDecl) -> list[str]:
     lines += [
         f"- {each}: {markdown(summary)}" if summary else f"- {each}" for each, summary in fillers
     ] or ["- No installed plugin fills it."]
+    records = site.records(point.target)
+    if records:
+        lines += ["", "## Records its providers issue"]
+    for issuer, record in records:
+        lines += ["", f"### `{record.kind}` ({issuer})"]
+        lines += ["", markdown(record.summary)] if record.summary else []
+        lines += tables(record.fields, f"{record.kind}.")
     if described.body:
         lines += ["", "## How to fill it", "", described.body]
     if point.methods:

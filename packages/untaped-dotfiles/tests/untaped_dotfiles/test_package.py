@@ -77,6 +77,11 @@ REFUSED: dict[str, tuple[str, str]] = {
         _step("{name: s, check: {program: x}, fix: do it, with: {a: 1}}"),
         "with applies to a kind only",
     ),
+    "a kind with no plugin": (_step("{name: s, kind: brew}"), "is PLUGIN.NAME"),
+    "a kind with its own run": (
+        _step("{name: s, kind: brew.formula, run: [x]}"),
+        "runs through its kind",
+    ),
     "a check with two tests": (
         _step("{name: s, check: {program: x, path: ~/x}, fix: do it}"),
         "exactly one of command, path or program",
@@ -157,7 +162,7 @@ def test_a_step_input_renders_in_its_own_step_and_a_kind_needs_no_check() -> Non
     package = parse_package(
         "version: 1\nitems:\n  x:\n    steps:\n"
         "      - {name: s, check: {path: ~/x}, run: [x, '{{ dir }}'], inputs: {dir: {}}}\n"
-        "      - {name: t, kind: brew, with: {formula: fish}}\n",
+        "      - {name: t, kind: brew.formula, with: {formula: fish}}\n",
         where="dots/x",
     )
     assert [step.name for step in package.items["x"].steps] == ["s", "t"]

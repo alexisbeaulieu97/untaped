@@ -149,6 +149,14 @@ class Library(Plugin):
   answer; a provider never gets the handle.
   `select_one(answers, matches)` picks one item and raises the deciding
   provider's error, `NotFound` or `Ambiguous`.
+- **Telling providers apart** (experimental). `providers(Contract)` lists
+  every offer to fill the contract, one per provider: a taken one's `provider`
+  class, and its own `record` and that record's `kind` when it issues one;
+  a refused one's quarantine reason (`refused`), `detail` and `fix`. An owner
+  whose files name a provider by its record's kind (dotfiles'
+  `kind: macos.defaults` steps) finds the one that issues it and asks it
+  alone, `gather(StepKind.check, plugins={offer.provider})`. Listing loads
+  the offers as an ask would and asks none.
 - **Reading piped rows.** `stdin: Stdin[Book] = Stdin(via=BookSource.to_book)`
   takes `shelf.book` rows and the rows of any provider's own record
   (`library.volume`), each read through that provider's bridge, so
@@ -186,12 +194,17 @@ A class in
 `fills` that is no `Provider`, or reads another plugin's settings, is a
 composition problem (`bad-provider`) that quarantines its plugin. A provider method
 the contract no longer has (`unused-method`) is simply never called.
+A plugin fills a contract once per record: several providers of one
+contract stand side by side when each issues a record of its own (each its
+own kind, such as two dotfiles step kinds), and are asked, cached and
+reported apart under their plugin's one rank; two issuing the same record,
+or both keeping the owner's model, are both quarantined (`bad-provider`).
 
 Each ask goes to every provider that fills the method. One not configured in
 the profile is skipped silently; with none ready, and no plugin named in
 `plugins` answering `not-filled`, `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
-isn't ready and `quarantined` each refused offer to its reason (both empty:
+isn't ready and `quarantined` each plugin to its first refused offer's reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
 nothing and is only in `composition().quarantine`), so an owner can turn it
 into its own error (git's repo finder reports a repo name nobody could look up as not found, naming the

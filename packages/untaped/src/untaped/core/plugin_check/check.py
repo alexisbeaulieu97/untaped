@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from untaped.runtime.composed import ComposedPlugin
     from untaped.runtime.contracts.registry import BoundProvider
     from untaped.sdk.contracts import NotReady
+    from untaped.sdk.contracts._declare import Binding
 
 
 def check_plugins(
@@ -262,7 +263,8 @@ def _provider(
         problem = unknown_methods(provider, declared)
         if problem is not None:  # the author's mistake, not a wait for settings
             binding = provider.binding
-            return [row("conformance", f"{binding.owner}.{binding.contract.name}", "fail", problem)]
+            what = f"{binding.owner}.{binding.contract.name}{_issuing(binding)}"
+            return [row("conformance", what, "fail", problem)]
     conformance = _conformance(provider, composed, candidates, _waiting(ready), row)
     return [*conformance, *_live(provider, ready, row)]
 
@@ -283,7 +285,7 @@ def _conformance(
     row: _Row,
 ) -> Iterator[PluginCheck]:
     binding = provider.binding
-    what = f"{binding.owner}.{binding.contract.name}"
+    what = f"{binding.owner}.{binding.contract.name}{_issuing(binding)}"
     check = _owner_conformance(binding.owner, composed, candidates)
     if check is None:
         return
@@ -296,6 +298,13 @@ def _conformance(
         yield row("conformance", what, "fail", _message(exc))
         return
     yield row("conformance", what, "pass", f"{binding.owner}'s conformance checks pass")
+
+
+def _issuing(binding: Binding) -> str:
+    """`` (kind)`` for a provider issuing its own record, as doctor names it: a plugin fills
+    a contract once per record, so the kind tells its providers apart."""
+    issues = "" if binding.owns_item else binding.item_kind
+    return f" ({issues})" if issues else ""
 
 
 def _owner_conformance(
@@ -324,7 +333,7 @@ def _live(provider: BoundProvider, ready: NotReady | None, row: _Row) -> Iterato
     for name, method in info.methods.items():
         if method.bridge or not fills(type(provider.instance), info, name):
             continue
-        title = f"{binding.owner}.{info.name}.{name}"
+        title = f"{binding.owner}.{info.name}.{name}{_issuing(binding)}"
         waiting = _waiting(ready, name)
         parameters = list(inspect.signature(method.function).parameters.values())[1:]
         if any(parameter.default is parameter.empty for parameter in parameters):
@@ -341,11 +350,11 @@ def _call(provider: BoundProvider, name: str, title: str, row: _Row) -> PluginCh
     binding = provider.binding
     try:
         method = getattr(binding.contract.cls, name)
-        answers = gather(method, plugins={binding.plugin}, refresh=True)()
+        answers = gather(method, plugins={type(provider.instance)}, refresh=True)()
     except Exception as exc:
         return row("live", title, "fail", _message(exc))
     answers.take_stale()  # a stale answer is this row's failure, not a warning
-    answer = next((each for each in answers if each.plugin == binding.plugin), None)
+    answer = next(iter(answers), None)  # this provider's alone
     if isinstance(answer, Errored):
         return row("live", title, "fail", _message(answer.error))
     if not isinstance(answer, Ok):

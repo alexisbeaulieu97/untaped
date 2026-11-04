@@ -67,7 +67,14 @@ def test_lists_a_ready_provider_with_its_distribution_version() -> None:
         [make_candidate(make_plugin("acme"), "acme-dist", distribution_version="1.2.3")]
     )
     assert [{key: row[key] for key in row if key not in _LOCATED} for row in rows] == [
-        {"name": "acme", "status": "ready", "distribution": "acme-dist", "version": "1.2.3"}
+        {
+            "name": "acme",
+            "status": "ready",
+            "distribution": "acme-dist",
+            "version": "1.2.3",
+            "reason": None,
+            "detail": None,
+        }
     ]
 
 
@@ -155,6 +162,9 @@ def test_a_quarantined_blank_distribution_candidate_lists_its_own_version() -> N
             "requires": [],
             "fills": [],
             "root": False,
+            "reason": "import-failed",
+            "detail": f"importing entry point {broken.target!r} of "
+            "distribution '  ' raised RuntimeError: x",
         }
     ]
 
@@ -190,6 +200,9 @@ def test_quarantined_provider_lists_with_entry_point_name() -> None:
             "requires": [],
             "fills": [],
             "root": False,
+            "reason": "malformed-entry-point",  # why, as composition says it
+            "detail": "could not resolve entry point 'example_mod:provider' of distribution "
+            "'example-dist': No module named 'example_mod'",
         }
     ]
 

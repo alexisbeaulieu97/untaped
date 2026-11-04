@@ -314,6 +314,9 @@ class FillDecl(_Frozen):
     #: when not the owner's model, a record bridge the record its fill names), which a
     #: ``Stdin(via=)`` of that bridge reads.
     takes: dict[str, str] = {}
+    #: The provider's own record (its ``T``) when it isn't the owner's model, which the
+    #: point's page shows (a step kind's fields); ``None``: it keeps the owner's.
+    record: str | None = None
 
 
 class UseDecl(_Frozen):

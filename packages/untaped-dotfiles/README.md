@@ -62,6 +62,24 @@ step the author adds or changes later waits for `apply PKG`. A step's own
 program only on its stdin (`stdin: NAME`), and what a run prints is shown
 with every secret masked.
 
+A step can instead use a kind another plugin provides, its fields under
+`with:` (placeholders render there too, from the package's inputs):
+
+```yaml
+      - name: dock-autohide
+        kind: macos.defaults
+        with: {domain: com.apple.dock, key: autohide, type: bool, value: true}
+```
+
+The plugin checks and runs it, only as you approved it, and `with:` must
+be the fields that kind declares (`untaped docs dotfiles extensions
+step-kind` lists every installed kind's). A kind no installed plugin
+provides is a `skipped` row naming the plugin to install, and the rest
+applies (exit 3). A plugin adds a kind by filling `StepKind` from
+`untaped_dotfiles.api` with a record of its own: `StepKind[Defaults]` in the
+plugin `macos` is the kind `macos.defaults`, and a plugin fills it once for
+each kind it adds.
+
 A `repos:` entry is a working copy you work in, cloned once through the
 git plugin (its credentials and proxy, nothing left in the copy's config)
 when its target is absent:
