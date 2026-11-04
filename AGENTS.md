@@ -19,8 +19,11 @@ understand, change and build on. Nobody enjoys hunting through the code for
 every string a rename might break; we'd rather build the kind of project where
 that never comes up. Working code is where care starts, not where it ends. A
 bug often says something about the design, and so does a change that only fits
-by being bolted on. When edge cases pile up, we settle on a convention instead.
-The task is why we're in the code, not the limit of what we notice.
+by being bolted on. Not every edge case is ours to handle: we handle a failure
+when its harm spreads beyond it, the way one missing dependency shouldn't break
+every plugin, and otherwise let it fail on its own. When edge cases pile up, we
+settle on a convention instead. The task is why we're in the code, not the
+limit of what we notice.
 
 Everything untaped does can run unattended, so scripts and agents can drive it:
 what a command asks at a terminal can come from a flag, an environment variable
