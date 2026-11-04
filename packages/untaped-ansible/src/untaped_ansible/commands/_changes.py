@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, ValidationError
 from untaped.sdk import UsageError, first_validation_error
 from untaped_ansible.commands._ansible import REF_SCAN_DEFAULT, RefScanDefault
 from untaped_ansible.errors import AnsibleError
-from untaped_ansible.settings import SourceDefinition, normalize_team_refs
+from untaped_ansible.sources import SourceDefinition
 
 
 def _add(what: str) -> list[str]:
@@ -21,15 +21,6 @@ def _remove(what: str) -> list[str]:
 class Changes(BaseModel):
     """What ``source patch`` adds to, removes from or clears in a saved source."""
 
-    add_org: list[str] = _add("GitHub org")
-    remove_org: list[str] = _remove("GitHub org")
-    clear_org: bool = Field(False, description="Remove every org.")
-    add_team: list[str] = _add("GitHub team as ORG/SLUG (or SLUG with one org)")
-    remove_team: list[str] = _remove("GitHub team as ORG/SLUG (or SLUG with one org)")
-    clear_team: bool = Field(False, description="Remove every team.")
-    add_repo: list[str] = _add("GitHub repo as owner/name")
-    remove_repo: list[str] = _remove("GitHub repo as owner/name")
-    clear_repo: bool = Field(False, description="Remove every repo.")
     add_path: list[str] = _add("Dependency file path")
     remove_path: list[str] = _remove("Dependency file path")
     clear_path: bool = Field(False, description="Remove every dependency file path.")
@@ -60,15 +51,6 @@ def edited(source: SourceDefinition, edit: Changes) -> tuple[SourceDefinition, l
     ) -> list[str]:
         return _apply(name, label, current, add=add, remove=remove, clear=clear, changes=changes)
 
-    orgs = apply("org", source.orgs, edit.add_org, edit.remove_org, edit.clear_org)
-    teams = apply(
-        "team",
-        source.teams,
-        _teams(edit.add_team, orgs),
-        _teams(edit.remove_team, source.orgs),
-        edit.clear_team,
-    )
-    repos = apply("repo", source.repos, edit.add_repo, edit.remove_repo, edit.clear_repo)
     paths = apply("path", source.dependency_paths, edit.add_path, edit.remove_path, edit.clear_path)
     ref_kinds = apply(
         "ref-kind", source.ref_kinds, edit.add_ref_kind, edit.remove_ref_kind, edit.clear_ref_kind
@@ -88,15 +70,14 @@ def edited(source: SourceDefinition, edit: Changes) -> tuple[SourceDefinition, l
         scan = edit.ref_scan_default
         changes.append(f"set ref-scan-default {scan}")
     try:
-        result = SourceDefinition(
-            name=name,
-            orgs=orgs,
-            teams=teams,
-            repos=repos,
-            dependency_paths=paths,
-            ref_kinds=ref_kinds,
-            ref_patterns=ref_patterns,
-            ref_scan_default=scan,
+        result = SourceDefinition.model_validate(
+            {
+                **source.model_dump(),
+                "dependency_paths": paths,
+                "ref_kinds": ref_kinds,
+                "ref_patterns": ref_patterns,
+                "ref_scan_default": scan,
+            }
         )
     except ValidationError as exc:
         # The flags made it, as source set's do: the same usage error.
@@ -131,12 +112,3 @@ def _apply(
         edited.append(value)
         changes.append(f"added {label} {value}")
     return edited
-
-
-def _teams(values: list[str], orgs: list[str]) -> list[str]:
-    if not values:
-        return values
-    try:
-        return normalize_team_refs(values, orgs)
-    except ValueError as exc:
-        raise AnsibleError(str(exc), category="invalid") from exc

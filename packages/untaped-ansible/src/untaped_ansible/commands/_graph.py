@@ -1,8 +1,8 @@
 """What the graph commands share: the source they read, the graph of one root, and its report.
 
 ``deps``, ``impact``, ``find`` and ``graph`` resolve their source data the
-same way (:meth:`GraphCommand.env`): the selected sources, or the inline
-selectors, or ``ansible.default_source``; nothing is refreshed until
+same way (:meth:`GraphCommand.env`): the selected sources, or
+``ansible.default_source``; nothing is refreshed until
 :meth:`GraphCommand.answer` reads, so arguments are checked first. Each
 root's graph is built by :meth:`GraphCommand.target_graph`, overlaying a local
 checkout and reading downstream GitHub live when the source can't answer.
@@ -92,9 +92,7 @@ class GraphCommand(AnsibleCommand):
         if live and self.refresh.directive is not None:
             flag = "--refresh" if self.refresh.directive else "--cached"
             raise UsageError(f"--live reads GitHub live; drop {flag}")
-        has_source = bool(
-            data.source or data.org or data.team or data.repo or settings.default_source
-        )
+        has_source = bool(data.source or settings.default_source)
         flags = [
             flag
             for flag, given in (
@@ -105,7 +103,7 @@ class GraphCommand(AnsibleCommand):
         ]
         if flags and not has_source:
             raise UsageError(
-                f"{flags[0]} needs a source; select one with --source NAME or inline selectors "
+                f"{flags[0]} needs a source; select one with --source NAME "
                 "(or set ansible.default_source)"
             )
         aliases = alias_map()

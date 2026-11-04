@@ -157,6 +157,24 @@ def test_plugins_picks_providers_by_class_or_by_name() -> None:
     assert [a.plugin for a in gather(BookSource.books, plugins={"library"})()] == ["library"]
 
 
+@pytest.mark.parametrize(
+    ("plugins", "detail"),
+    [
+        ({"nosuch"}, "no installed plugin named nosuch fills it"),
+        (["zed", "nosuch"], "no installed plugin named nosuch, zed fills it"),
+        (None, "no installed plugin fills it"),
+    ],
+    ids=["a name", "names, sorted", "no names"],
+)
+def test_no_provider_names_the_plugins_asked_for_that_none_fills(
+    plugins: list[str] | set[str] | None, detail: str
+) -> None:
+    compose(shelf_plugin())
+    with pytest.raises(NoProviderReady) as err:
+        gather(BookSource.books, plugins=plugins)()
+    assert str(err.value).endswith(f"is ready: {detail}")
+
+
 def test_plugins_picks_a_provider_class_exactly_and_refuses_a_bare_name() -> None:
     class Branch(Shop):
         pass

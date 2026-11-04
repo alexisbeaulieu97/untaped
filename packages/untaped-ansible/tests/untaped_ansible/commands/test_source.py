@@ -28,7 +28,7 @@ from ansible_index_support import (
     seed,
     table,
 )
-from ansible_test_support import read_state, run, use_config
+from ansible_test_support import github_source, read_state, run, run_root, use_config
 from untaped.runtime.settings import get_settings
 from untaped.sdk import Failure, Message, Progress, UntapedError
 from untaped.sdk.testing import progress_clock
@@ -188,32 +188,43 @@ def _seed_unchanged_scan(
     assert result.exit_code == (1 if missing else 0), result.output
 
 
-def test_source_set_get_remove_updates_state(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch)
-    selectors = ["--org", "acme", "--team", "platform", "--repo", "acme/site"]
+def _selector(*flags: str) -> str:
+    """What ``github repos selector FLAGS -f pipe`` prints: github's own selector record."""
+    piped = run_root("github", "repos", "selector", *flags, "--format", "pipe")
+    assert piped.exit_code == 0, piped.output
+    return piped.stdout
+
+
+def test_source_set_stores_the_selector_its_plugin_issued(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)  # no token: issuing a selector reads nothing
+    selector = _selector("--org", "acme", "--team", "platform", "--repo", "acme/site")
     ref_flags = ["--ref-kind", "heads", "--ref-pattern", "release/*"]
 
     result = run(
         "source",
         "set",
         "prod",
-        *selectors,
+        "--stdin",
         "--path",
         "deploy/requirements.yml",
         *ref_flags,
         "--ref-scan-default",
         "default_branch",
+        input=selector,
     )
     assert result.exit_code == 0, result.output
 
-    # A single source renders as a bare object; a bare team slug expands
-    # against the single --org.
+    # A single source renders as a bare object: the selector as github issued it.
     result = run("source", "get", "prod", "--format", "json")
+    record = {"orgs": ["acme"], "teams": ["acme/platform"], "repos": ["acme/site"]}
     assert json.loads(result.stdout) == {
         "name": "prod",
-        "orgs": ["acme"],
-        "teams": ["acme/platform"],
-        "repos": ["acme/site"],
+        "source": "github",
+        "selects": "orgs acme; teams acme/platform; repos acme/site",
+        "selector": {
+            "match": [],
+            "source": {"plugin": "github", "kind": "github.repo_selector", "record": record},
+        },
         "dependency_paths": ["deploy/requirements.yml"],
         "ref_kinds": ["heads"],
         "ref_patterns": ["release/*"],
@@ -227,6 +238,124 @@ def test_source_set_get_remove_updates_state(tmp_path: Path, monkeypatch) -> Non
 
     assert run("source", "remove", "prod", "--yes").exit_code == 0
     assert "sources" not in read_state()
+
+
+def test_source_set_from_a_plugin_takes_its_listing_narrowed_by_match(
+    tmp_path: Path, monkeypatch
+) -> None:
+    use_config(tmp_path, monkeypatch)
+
+    result = run("source", "set", "infra", "--from", "gitlab", "--match", "infra/*")
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(run("source", "list", "--format", "json").stdout)
+    assert (row["source"], row["selects"], row["selector"]) == (
+        "gitlab",
+        "match infra/*",
+        {"match": ["infra/*"], "source": None},
+    )
+
+
+def test_source_set_match_narrows_a_piped_selector(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+
+    result = run(
+        "source",
+        "set",
+        "prod",
+        "--stdin",
+        "--match",
+        "acme/api-*",
+        input=_selector("--org", "acme"),
+    )
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(run("source", "list", "--format", "json").stdout)
+    assert row["selects"] == "orgs acme; match acme/api-*"
+
+
+def test_source_set_keeps_the_match_a_piped_selector_carries(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+    issued = {"plugin": "github", "kind": "github.repo_selector", "record": {"orgs": ["acme"]}}
+    record = {"match": ["acme/api-*"], "source": issued}
+    selector = {"untaped": "1", "kind": "git.repo_selector", "record": record}
+
+    result = run(
+        "source",
+        "set",
+        "prod",
+        "--stdin",
+        "--match",
+        "acme/web-*",
+        "--match",
+        "acme/api-*",
+        input=json.dumps(selector) + "\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    [row] = json.loads(run("source", "list", "--format", "json").stdout)
+    assert row["selector"]["match"] == ["acme/api-*", "acme/web-*"]
+
+
+def test_source_set_replaces_a_damaged_row_of_its_name(tmp_path: Path, monkeypatch) -> None:
+    # A row in an older shape reads as damaged; set replaces a definition whole.
+    old = {"name": "prod", "orgs": ["acme"]}
+    use_config(tmp_path, monkeypatch, {"sources": [old, github_source("other", orgs=["acme"])]})
+
+    result = run("source", "set", "prod", "--from", "gitlab", "--format", "json")
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["action"] == "updated"
+    assert sorted(row["name"] for row in read_state()["sources"]) == ["other", "prod"]
+    assert run("source", "get", "prod").exit_code == 0
+
+
+def test_source_refresh_names_a_plugin_that_lists_no_repos(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+    assert run("source", "set", "infra", "--from", "nosuch").exit_code == 0
+
+    result = run("source", "refresh", "infra")
+
+    assert result.exit_code == 4
+    assert "no installed plugin named nosuch fills it" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("args", "piped", "message"),
+    [
+        ([], None, "source set needs --stdin (a selector a plugin issued) or --from PLUGIN"),
+        (["--stdin", "--from", "gitlab"], ("--org", "acme"), "--from names the plugin of a source"),
+        (["--stdin"], ("--org", "acme"), None),
+    ],
+)
+def test_source_set_takes_one_selector_or_a_plugin(
+    tmp_path: Path,
+    monkeypatch,
+    args: list[str],
+    piped: tuple[str, ...] | None,
+    message: str | None,
+) -> None:
+    use_config(tmp_path, monkeypatch)
+    given = None if piped is None else _selector(*piped)
+    if message is None:  # two selectors piped
+        given = (given or "") * 2
+        message = "source set reads one selector from stdin, got 2"
+
+    result = run("source", "set", "prod", *args, input=given)
+
+    assert result.exit_code == 2
+    assert message in result.stderr
+    assert "sources" not in read_state()
+
+
+def test_source_set_refuses_a_selector_no_plugin_issued(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch)
+    row = {"untaped": "1", "kind": "git.repo_selector", "record": {"match": ["infra/*"]}}
+
+    result = run("source", "set", "prod", "--stdin", input=json.dumps(row) + "\n")
+
+    assert result.exit_code == 2
+    assert "the piped selector names no plugin that issued it" in result.stderr
 
 
 def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, monkeypatch) -> None:
@@ -256,23 +385,19 @@ def test_source_remove_keeps_the_source_when_a_release_fails(tmp_path: Path, mon
 
 
 def test_source_patch_add_remove_and_clear_updates_state(tmp_path: Path, monkeypatch) -> None:
-    source = {
-        "name": "prod",
-        "orgs": ["acme"],
-        "teams": ["acme/old-platform"],
-        "repos": ["acme/site"],
-        "dependency_paths": ["old/requirements.yml"],
-        "ref_kinds": ["heads"],
-        "ref_patterns": ["release/*"],
-    }
+    source = github_source(
+        "prod",
+        orgs=["acme"],
+        dependency_paths=["old/requirements.yml"],
+        ref_kinds=["heads"],
+        ref_patterns=["release/*"],
+    )
     use_config(tmp_path, monkeypatch, {"sources": [source]})
 
     result = run(
         "source",
         "patch",
         "prod",
-        *("--remove-team", "acme/old-platform", "--add-team", "acme/platform"),
-        *("--remove-repo", "acme/site", "--add-repo", "acme/api"),
         *("--clear-path", "--add-path", REQS),
         *("--remove-ref-kind", "heads", "--add-ref-kind", "tags"),
         *("--clear-ref-pattern", "--add-ref-pattern", "v*"),
@@ -280,15 +405,11 @@ def test_source_patch_add_remove_and_clear_updates_state(tmp_path: Path, monkeyp
 
     assert result.exit_code == 0, result.output
     assert "action: updated" in result.stdout
-    assert "removed team acme/old-platform" in result.stdout
-    assert "added team acme/platform" in result.stdout
     assert "cleared path" in result.stdout
+    assert "added ref-kind tags" in result.stdout
     assert read_state()["sources"] == [
         {
-            "name": "prod",
-            "orgs": ["acme"],
-            "teams": ["acme/platform"],
-            "repos": ["acme/api"],
+            **source,
             "dependency_paths": [REQS],
             "ref_kinds": ["tags"],
             "ref_patterns": ["v*"],
@@ -296,33 +417,22 @@ def test_source_patch_add_remove_and_clear_updates_state(tmp_path: Path, monkeyp
     ]
 
 
-def test_source_patch_bare_team_removal_uses_original_source_org(
-    tmp_path: Path, monkeypatch
-) -> None:
-    use_config(
-        tmp_path,
-        monkeypatch,
-        {"sources": [{"name": "prod", "orgs": ["acme"], "teams": ["acme/platform"]}]},
-    )
+def test_source_patch_leaves_the_selector_to_source_set(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch, prod())
 
-    result = run(
-        "source", "patch", "prod", "--remove-org", "acme", "--remove-team", "platform",
-        "--add-repo", "acme/site",
-    )  # fmt: skip
+    result = run("source", "patch", "prod", "--add-repo", "acme/api")
 
-    assert result.exit_code == 0, result.output
-    assert read_state()["sources"][0]["teams"] == []
+    assert result.exit_code == 2
+    assert read_state() == prod()
 
 
 @pytest.mark.parametrize(
     ("args", "message", "exit_code"),
     [
-        (["set", "prod", "--path", REQS], "selects at least one org, team or repo", 2),
-        (["set", "prod", "--repo", "not-a-repo"], "repo must be owner/name", 2),
-        (["set", "prod", "--repo", "a/b", "--ref-kind", "pulls"], "ref-kind must be heads or", 2),
-        (["patch", "missing", "--add-repo", "acme/api"], "source not found: 'missing'", 1),
-        (["patch", "prod", "--remove-team", "acme/x"], "source 'prod' has no team acme/x", 1),
-        (["patch", "prod", "--clear-repo"], "a source selects at least one org, team or repo", 2),
+        (["set", "prod", "--from", "x", "--ref-kind", "pulls"], "ref-kind must be heads or", 2),
+        (["patch", "missing", "--add-path", REQS], "source not found: 'missing'", 1),
+        (["patch", "prod", "--remove-path", "x.yml"], "source 'prod' has no path x.yml", 1),
+        (["patch", "prod", "--add-ref-kind", "pulls"], "ref-kind must be heads or tags", 2),
     ],
 )
 def test_source_set_and_patch_reject_invalid_definitions(
@@ -341,10 +451,10 @@ def test_source_set_and_patch_reject_invalid_definitions(
 @pytest.mark.parametrize(
     ("args", "kept"),
     [
-        (["set", "platform", "--repo", "acme/site"], True),
-        (["patch", "platform", "--add-repo", "acme/site"], True),
-        (["set", "platform", "--repo", "acme/new-site"], False),
-        (["patch", "platform", "--add-repo", "acme/api"], False),
+        (["set", "platform", "--stdin"], True),
+        (["patch", "platform", "--add-ref-kind", "heads"], False),
+        (["patch", "platform", "--clear-path"], True),
+        (["set", "platform", "--stdin", "--match", "acme/*"], False),
         (["remove", "platform", "--yes"], False),
     ],
 )
@@ -354,7 +464,7 @@ def test_source_changes_clear_its_cached_data_only_when_the_definition_changes(
     seed(tmp_path, "source:platform", make_edge())
     use_config(tmp_path, monkeypatch, PLATFORM)
 
-    result = run("source", *args)
+    result = run("source", *args, input=_selector("--repo", "acme/site"))
 
     assert result.exit_code == 0, result.output
     assert (open_index(tmp_path).status("source:platform") is not None) is kept
@@ -367,8 +477,8 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
         monkeypatch,
         {
             "sources": [
-                {"name": "unindexed", "repos": ["acme/site"]},
-                {"name": "stale", "repos": ["acme/base"]},
+                github_source("unindexed", repos=["acme/site"]),
+                github_source("stale", repos=["acme/base"]),
             ]
         },
     )
@@ -388,7 +498,7 @@ def test_source_status_classifies_sources_with_utc_timestamps(tmp_path: Path, mo
     assert "source not found: 'missing'" in missing.output
 
 
-def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monkeypatch) -> None:
+def test_source_refresh_wires_aliases_and_defaults(tmp_path: Path, monkeypatch) -> None:
     # An invalid theme degrades the refresh's stderr lines instead of failing
     # an otherwise-valid refresh.
     use_config(
@@ -404,7 +514,6 @@ def test_source_refresh_wires_protocol_aliases_and_defaults(tmp_path: Path, monk
 
     assert result.exit_code == 0, result.output
     assert "refreshed source prod: 1 repo, 1 ref, 0 edges" in result.stderr
-    assert captured["clone_protocol"] == "https"
     assert captured["aliases"] == {"common": "acme/common"}
     assert captured["concurrency"] == 8
 
@@ -711,7 +820,7 @@ def test_source_refresh_progress_and_spent_budget_warning_on_stderr(
     assert result.stdout == ""
     shown = [d for d in result.diagnostics if isinstance(d, Progress)]
     assert [(d.phase, d.done, d.total, d.state) for d in shown] == [
-        ("expanding source", 1, 1, "running"),
+        ("selecting repos", 1, 1, "running"),
         ("probing refs", 1, 1, "running"),
         ("fetching changes", 1, 1, "running"),
         (None, None, None, "done"),
@@ -754,7 +863,10 @@ def test_source_remove_clears_a_damaged_row_and_is_not_stopped_by_one(
     tmp_path: Path, monkeypatch
 ) -> None:
     # A row failing its model is what the damaged error tells the user to remove.
-    sources = [{"name": "good", "repos": ["acme/site"]}, {"name": "bad", "repos": ["not a repo"]}]
+    sources = [
+        github_source("good", repos=["acme/site"]),
+        {"name": "bad", "orgs": ["acme"]},  # an older shape: no source, no selector
+    ]
     use_config(tmp_path, monkeypatch, {"sources": sources})
 
     good = run("source", "remove", "good", "--yes", "--format", "json")

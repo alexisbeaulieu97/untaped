@@ -16,7 +16,7 @@ import httpx
 import pytest
 import respx
 
-from ansible_test_support import Result, running
+from ansible_test_support import Result, github_source, running
 from untaped.sdk.storage import Filled, ProgressHandle
 from untaped.sdk.testing import cache_clock
 from untaped_ansible import refresh
@@ -31,7 +31,7 @@ REQS = "roles/requirements.yml"
 
 def index_path(tmp_path: Path) -> Path:
     """The index file under the test's ``ansible.index_dir``."""
-    return tmp_path / "index.v6.sqlite3"
+    return tmp_path / "index.v7.sqlite3"
 
 
 def open_index(tmp_path: Path) -> SqliteDependencyIndex:
@@ -133,7 +133,6 @@ def scan(
         source_ref=source_ref,
         source_sha=sha or f"sha-{source_ref}",
         clone_url=f"https://github.com/{source_repo}.git",
-        clone_protocol="https",
         dependency_paths_fingerprint="paths-a",
         checked_at=now,
         indexed_at=now,
@@ -178,7 +177,7 @@ def mock_dependency_file(
 TEMPLATED = "---\ngalaxy_info:\n  role_name: {@ role_slug @}\n"
 
 #: One saved source, ``platform``, selecting ``acme/site``.
-PLATFORM = {"sources": [{"name": "platform", "repos": ["acme/site"]}]}
+PLATFORM = {"sources": [github_source("platform", repos=["acme/site"])]}
 
 #: GitHub's answer once the REST rate limit is spent.
 RATE_LIMIT_EXCEEDED = httpx.Response(
@@ -189,7 +188,7 @@ BAD_CREDENTIALS = httpx.Response(401, json={"message": "Bad credentials"})
 
 def prod(*repos: str) -> dict[str, object]:
     """State with one saved source, ``prod``, selecting ``repos`` (``acme/site`` by default)."""
-    return {"sources": [{"name": "prod", "repos": list(repos or ["acme/site"])}]}
+    return {"sources": [github_source("prod", repos=list(repos or ["acme/site"]))]}
 
 
 def seed(

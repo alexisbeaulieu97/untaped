@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from ansible_test_support import run, write_state
+from ansible_test_support import github_source, run, write_state
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,7 @@ def test_pipe_output_tags_envelope_with_kind(
     value: str,
 ) -> None:
     write_state(
-        {"aliases": {"common": "acme/common"}, "sources": [{"name": "prod", "repos": ["a/b"]}]}
+        {"aliases": {"common": "acme/common"}, "sources": [github_source("prod", repos=["a/b"])]}
     )
 
     result = run(*args, "--format", "pipe")

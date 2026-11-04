@@ -140,22 +140,13 @@ cli untaped ansible deps --format choice=raw
 cli untaped ansible deps --format choice=table
 cli untaped ansible deps --format choice=yaml
 cli untaped ansible deps --live switch default=unset
-cli untaped ansible deps --org VALUE... default=unset
 cli untaped ansible deps --parallel VALUE default=unset
 cli untaped ansible deps --parallel alias=-j
-cli untaped ansible deps --path VALUE... default=unset
 cli untaped ansible deps --ref VALUE default=unset
-cli untaped ansible deps --ref-kind VALUE... default=unset
-cli untaped ansible deps --ref-pattern VALUE... default=unset
-cli untaped ansible deps --ref-scan-default VALUE default=unset
-cli untaped ansible deps --ref-scan-default choice=all
-cli untaped ansible deps --ref-scan-default choice=default_branch
 cli untaped ansible deps --refresh negative=--cached
 cli untaped ansible deps --refresh switch default=unset
-cli untaped ansible deps --repo VALUE... default=unset
 cli untaped ansible deps --source VALUE... default=unset
 cli untaped ansible deps --target-repo VALUE default=unset
-cli untaped ansible deps --team VALUE... default=unset
 cli untaped ansible deps ROLE
 cli untaped ansible find --all-refs switch default=unset
 cli untaped ansible find --columns VALUE... default=unset
@@ -169,22 +160,13 @@ cli untaped ansible find --format choice=raw
 cli untaped ansible find --format choice=table
 cli untaped ansible find --format choice=yaml
 cli untaped ansible find --live switch default=unset
-cli untaped ansible find --org VALUE... default=unset
 cli untaped ansible find --parallel VALUE default=unset
 cli untaped ansible find --parallel alias=-j
-cli untaped ansible find --path VALUE... default=unset
-cli untaped ansible find --ref-kind VALUE... default=unset
-cli untaped ansible find --ref-pattern VALUE... default=unset
-cli untaped ansible find --ref-scan-default VALUE default=unset
-cli untaped ansible find --ref-scan-default choice=all
-cli untaped ansible find --ref-scan-default choice=default_branch
 cli untaped ansible find --refresh negative=--cached
 cli untaped ansible find --refresh switch default=unset
-cli untaped ansible find --repo VALUE... default=unset
 cli untaped ansible find --root VALUE... default=unset
 cli untaped ansible find --source VALUE... default=unset
 cli untaped ansible find --stdin switch default=unset
-cli untaped ansible find --team VALUE... default=unset
 cli untaped ansible find TARGET...
 cli untaped ansible graph --all-refs switch default=unset
 cli untaped ansible graph --columns VALUE... default=unset
@@ -200,24 +182,15 @@ cli untaped ansible graph --format choice=json
 cli untaped ansible graph --format choice=mermaid
 cli untaped ansible graph --format choice=tree
 cli untaped ansible graph --live switch default=unset
-cli untaped ansible graph --org VALUE... default=unset
 cli untaped ansible graph --out VALUE default=unset
 cli untaped ansible graph --out alias=-o
 cli untaped ansible graph --parallel VALUE default=unset
 cli untaped ansible graph --parallel alias=-j
-cli untaped ansible graph --path VALUE... default=unset
 cli untaped ansible graph --ref VALUE default=unset
-cli untaped ansible graph --ref-kind VALUE... default=unset
-cli untaped ansible graph --ref-pattern VALUE... default=unset
-cli untaped ansible graph --ref-scan-default VALUE default=unset
-cli untaped ansible graph --ref-scan-default choice=all
-cli untaped ansible graph --ref-scan-default choice=default_branch
 cli untaped ansible graph --refresh negative=--cached
 cli untaped ansible graph --refresh switch default=unset
-cli untaped ansible graph --repo VALUE... default=unset
 cli untaped ansible graph --source VALUE... default=unset
 cli untaped ansible graph --target-repo VALUE default=unset
-cli untaped ansible graph --team VALUE... default=unset
 cli untaped ansible graph TARGET
 cli untaped ansible impact --columns VALUE... default=unset
 cli untaped ansible impact --columns alias=-c
@@ -229,22 +202,13 @@ cli untaped ansible impact --format choice=pipe
 cli untaped ansible impact --format choice=raw
 cli untaped ansible impact --format choice=table
 cli untaped ansible impact --format choice=yaml
-cli untaped ansible impact --org VALUE... default=unset
 cli untaped ansible impact --parallel VALUE default=unset
 cli untaped ansible impact --parallel alias=-j
-cli untaped ansible impact --path VALUE... default=unset
 cli untaped ansible impact --ref VALUE default=unset
-cli untaped ansible impact --ref-kind VALUE... default=unset
-cli untaped ansible impact --ref-pattern VALUE... default=unset
-cli untaped ansible impact --ref-scan-default VALUE default=unset
-cli untaped ansible impact --ref-scan-default choice=all
-cli untaped ansible impact --ref-scan-default choice=default_branch
 cli untaped ansible impact --refresh negative=--cached
 cli untaped ansible impact --refresh switch default=unset
-cli untaped ansible impact --repo VALUE... default=unset
 cli untaped ansible impact --source VALUE... default=unset
 cli untaped ansible impact --target-repo VALUE default=unset
-cli untaped ansible impact --team VALUE... default=unset
 cli untaped ansible impact ROLE
 cli untaped ansible impact checkouts --columns VALUE... default=unset
 cli untaped ansible impact checkouts --columns alias=-c
@@ -256,22 +220,13 @@ cli untaped ansible impact checkouts --format choice=pipe
 cli untaped ansible impact checkouts --format choice=raw
 cli untaped ansible impact checkouts --format choice=table
 cli untaped ansible impact checkouts --format choice=yaml
-cli untaped ansible impact checkouts --org VALUE... default=unset
 cli untaped ansible impact checkouts --parallel VALUE default=unset
 cli untaped ansible impact checkouts --parallel alias=-j
-cli untaped ansible impact checkouts --path VALUE... default=unset
 cli untaped ansible impact checkouts --ref VALUE default=unset
-cli untaped ansible impact checkouts --ref-kind VALUE... default=unset
-cli untaped ansible impact checkouts --ref-pattern VALUE... default=unset
-cli untaped ansible impact checkouts --ref-scan-default VALUE default=unset
-cli untaped ansible impact checkouts --ref-scan-default choice=all
-cli untaped ansible impact checkouts --ref-scan-default choice=default_branch
 cli untaped ansible impact checkouts --refresh negative=--cached
 cli untaped ansible impact checkouts --refresh switch default=unset
-cli untaped ansible impact checkouts --repo VALUE... default=unset
 cli untaped ansible impact checkouts --source VALUE... default=unset
 cli untaped ansible impact checkouts --target-repo VALUE default=unset
-cli untaped ansible impact checkouts --team VALUE... default=unset
 cli untaped ansible impact checkouts ROLE
 cli untaped ansible impact uses --columns VALUE... default=unset
 cli untaped ansible impact uses --columns alias=-c
@@ -283,57 +238,42 @@ cli untaped ansible impact uses --format choice=pipe
 cli untaped ansible impact uses --format choice=raw
 cli untaped ansible impact uses --format choice=table
 cli untaped ansible impact uses --format choice=yaml
-cli untaped ansible impact uses --org VALUE... default=unset
 cli untaped ansible impact uses --parallel VALUE default=unset
 cli untaped ansible impact uses --parallel alias=-j
-cli untaped ansible impact uses --path VALUE... default=unset
 cli untaped ansible impact uses --ref VALUE default=unset
-cli untaped ansible impact uses --ref-kind VALUE... default=unset
-cli untaped ansible impact uses --ref-pattern VALUE... default=unset
-cli untaped ansible impact uses --ref-scan-default VALUE default=unset
-cli untaped ansible impact uses --ref-scan-default choice=all
-cli untaped ansible impact uses --ref-scan-default choice=default_branch
 cli untaped ansible impact uses --refresh negative=--cached
 cli untaped ansible impact uses --refresh switch default=unset
-cli untaped ansible impact uses --repo VALUE... default=unset
 cli untaped ansible impact uses --source VALUE... default=unset
 cli untaped ansible impact uses --target-repo VALUE default=unset
-cli untaped ansible impact uses --team VALUE... default=unset
 cli untaped ansible impact uses ROLE NAME...
 cli untaped ansible source
-cli untaped ansible source get --columns VALUE... default=unset
-cli untaped ansible source get --columns alias=-c
-cli untaped ansible source get --format VALUE default=table
-cli untaped ansible source get --format alias=-f
-cli untaped ansible source get --format choice=json
-cli untaped ansible source get --format choice=pipe
-cli untaped ansible source get --format choice=raw
-cli untaped ansible source get --format choice=table
-cli untaped ansible source get --format choice=yaml
-cli untaped ansible source get NAME
-cli untaped ansible source list
-cli untaped ansible source list --columns VALUE... default=unset
-cli untaped ansible source list --columns alias=-c
-cli untaped ansible source list --format VALUE default=table
-cli untaped ansible source list --format alias=-f
-cli untaped ansible source list --format choice=json
-cli untaped ansible source list --format choice=pipe
-cli untaped ansible source list --format choice=raw
-cli untaped ansible source list --format choice=table
-cli untaped ansible source list --format choice=yaml
-cli untaped ansible source patch --add-org VALUE... default=unset
+cli untaped ansible source get --columns VALUE... default=unset  [experimental]
+cli untaped ansible source get --columns alias=-c  [experimental]
+cli untaped ansible source get --format VALUE default=table  [experimental]
+cli untaped ansible source get --format alias=-f  [experimental]
+cli untaped ansible source get --format choice=json  [experimental]
+cli untaped ansible source get --format choice=pipe  [experimental]
+cli untaped ansible source get --format choice=raw  [experimental]
+cli untaped ansible source get --format choice=table  [experimental]
+cli untaped ansible source get --format choice=yaml  [experimental]
+cli untaped ansible source get NAME  [experimental]
+cli untaped ansible source list  [experimental]
+cli untaped ansible source list --columns VALUE... default=unset  [experimental]
+cli untaped ansible source list --columns alias=-c  [experimental]
+cli untaped ansible source list --format VALUE default=table  [experimental]
+cli untaped ansible source list --format alias=-f  [experimental]
+cli untaped ansible source list --format choice=json  [experimental]
+cli untaped ansible source list --format choice=pipe  [experimental]
+cli untaped ansible source list --format choice=raw  [experimental]
+cli untaped ansible source list --format choice=table  [experimental]
+cli untaped ansible source list --format choice=yaml  [experimental]
 cli untaped ansible source patch --add-path VALUE... default=unset
 cli untaped ansible source patch --add-ref-kind VALUE... default=unset
 cli untaped ansible source patch --add-ref-pattern VALUE... default=unset
-cli untaped ansible source patch --add-repo VALUE... default=unset
-cli untaped ansible source patch --add-team VALUE... default=unset
-cli untaped ansible source patch --clear-org switch default=unset
 cli untaped ansible source patch --clear-path switch default=unset
 cli untaped ansible source patch --clear-ref-kind switch default=unset
 cli untaped ansible source patch --clear-ref-pattern switch default=unset
 cli untaped ansible source patch --clear-ref-scan-default switch default=unset
-cli untaped ansible source patch --clear-repo switch default=unset
-cli untaped ansible source patch --clear-team switch default=unset
 cli untaped ansible source patch --columns VALUE... default=unset
 cli untaped ansible source patch --columns alias=-c
 cli untaped ansible source patch --format VALUE default=table
@@ -346,12 +286,9 @@ cli untaped ansible source patch --format choice=yaml
 cli untaped ansible source patch --ref-scan-default VALUE default=unset
 cli untaped ansible source patch --ref-scan-default choice=all
 cli untaped ansible source patch --ref-scan-default choice=default_branch
-cli untaped ansible source patch --remove-org VALUE... default=unset
 cli untaped ansible source patch --remove-path VALUE... default=unset
 cli untaped ansible source patch --remove-ref-kind VALUE... default=unset
 cli untaped ansible source patch --remove-ref-pattern VALUE... default=unset
-cli untaped ansible source patch --remove-repo VALUE... default=unset
-cli untaped ansible source patch --remove-team VALUE... default=unset
 cli untaped ansible source patch NAME
 cli untaped ansible source refresh --parallel VALUE default=unset
 cli untaped ansible source refresh --parallel alias=-j
@@ -369,25 +306,25 @@ cli untaped ansible source remove --format choice=yaml
 cli untaped ansible source remove --yes alias=-y
 cli untaped ansible source remove --yes switch default=unset
 cli untaped ansible source remove NAME
-cli untaped ansible source set --columns VALUE... default=unset
-cli untaped ansible source set --columns alias=-c
-cli untaped ansible source set --format VALUE default=table
-cli untaped ansible source set --format alias=-f
-cli untaped ansible source set --format choice=json
-cli untaped ansible source set --format choice=pipe
-cli untaped ansible source set --format choice=raw
-cli untaped ansible source set --format choice=table
-cli untaped ansible source set --format choice=yaml
-cli untaped ansible source set --org VALUE... default=unset
-cli untaped ansible source set --path VALUE... default=unset
-cli untaped ansible source set --ref-kind VALUE... default=unset
-cli untaped ansible source set --ref-pattern VALUE... default=unset
-cli untaped ansible source set --ref-scan-default VALUE default=unset
-cli untaped ansible source set --ref-scan-default choice=all
-cli untaped ansible source set --ref-scan-default choice=default_branch
-cli untaped ansible source set --repo VALUE... default=unset
-cli untaped ansible source set --team VALUE... default=unset
-cli untaped ansible source set NAME
+cli untaped ansible source set --columns VALUE... default=unset  [experimental]
+cli untaped ansible source set --columns alias=-c  [experimental]
+cli untaped ansible source set --format VALUE default=table  [experimental]
+cli untaped ansible source set --format alias=-f  [experimental]
+cli untaped ansible source set --format choice=json  [experimental]
+cli untaped ansible source set --format choice=pipe  [experimental]
+cli untaped ansible source set --format choice=raw  [experimental]
+cli untaped ansible source set --format choice=table  [experimental]
+cli untaped ansible source set --format choice=yaml  [experimental]
+cli untaped ansible source set --from VALUE default=unset  [experimental]
+cli untaped ansible source set --match VALUE... default=unset  [experimental]
+cli untaped ansible source set --path VALUE... default=unset  [experimental]
+cli untaped ansible source set --ref-kind VALUE... default=unset  [experimental]
+cli untaped ansible source set --ref-pattern VALUE... default=unset  [experimental]
+cli untaped ansible source set --ref-scan-default VALUE default=unset  [experimental]
+cli untaped ansible source set --ref-scan-default choice=all  [experimental]
+cli untaped ansible source set --ref-scan-default choice=default_branch  [experimental]
+cli untaped ansible source set --stdin switch default=unset  [experimental]
+cli untaped ansible source set NAME  [experimental]
 cli untaped ansible source status
 cli untaped ansible source status --columns VALUE... default=unset
 cli untaped ansible source status --columns alias=-c
@@ -4406,17 +4343,17 @@ record ansible.graph_document.header string
 record ansible.graph_document.nodes GraphNode[]
 record ansible.graph_document.target_id string
 record ansible.graph_document.warnings string[]
-record ansible.source
-record ansible.source.dependency_paths string[]
-record ansible.source.name string
-record ansible.source.orgs string[]
-record ansible.source.ref_kinds string[]
-record ansible.source.ref_patterns string[]
-record ansible.source.ref_scan_default choice=all
-record ansible.source.ref_scan_default choice=default_branch
-record ansible.source.ref_scan_default string?
-record ansible.source.repos string[]
-record ansible.source.teams string[]
+record ansible.source  [experimental]
+record ansible.source.dependency_paths string[]  [experimental]
+record ansible.source.name string  [experimental]
+record ansible.source.ref_kinds string[]  [experimental]
+record ansible.source.ref_patterns string[]  [experimental]
+record ansible.source.ref_scan_default choice=all  [experimental]
+record ansible.source.ref_scan_default choice=default_branch  [experimental]
+record ansible.source.ref_scan_default string?  [experimental]
+record ansible.source.selector RepoSelector  [experimental]
+record ansible.source.selects string  [experimental]
+record ansible.source.source string  [experimental]
 record ansible.source_alias
 record ansible.source_alias.alias string
 record ansible.source_alias.repo string
@@ -5373,8 +5310,11 @@ record git.repo.source Source?  [experimental]
 record git.repo.source default=None  [experimental]
 record git.repo.url string  [experimental]
 record git.repo_selector  [experimental]
+record git.repo_selector()  [experimental]
+record git.repo_selector.match default=[]  [experimental]
 record git.repo_selector.match string[]  [experimental]
 record git.repo_selector.source Source?  [experimental]
+record git.repo_selector.source default=None  [experimental]
 record git.store_report
 record git.store_report.exclusive_bytes object
 record git.store_report.filter_ignored object
@@ -5489,8 +5429,12 @@ record github.repo.stargazers_count integer?
 record github.repo.updated_at default=None
 record github.repo.updated_at string?
 record github.repo_selector
+record github.repo_selector()
+record github.repo_selector.orgs default=[]
 record github.repo_selector.orgs string(pattern=^[^/\s]+$)[]
+record github.repo_selector.repos default=[]
 record github.repo_selector.repos string(pattern=^[^/\s]+/[^/\s]+$)[]
+record github.repo_selector.teams default=[]
 record github.repo_selector.teams string(pattern=^[^/\s]+/[^/\s]+$)[]
 record github.sweep_file
 record github.sweep_file.hits integer
@@ -8912,14 +8856,13 @@ state ansible.aliases.repo string
 state ansible.sources SourceDefinition[]
 state ansible.sources.dependency_paths string[] default=[]
 state ansible.sources.name string
-state ansible.sources.orgs string[] default=[]
 state ansible.sources.ref_kinds string[] default=[]
 state ansible.sources.ref_patterns string[] default=[]
 state ansible.sources.ref_scan_default choice=all
 state ansible.sources.ref_scan_default choice=default_branch
 state ansible.sources.ref_scan_default string? default=None
-state ansible.sources.repos string[] default=[]
-state ansible.sources.teams string[] default=[]
+state ansible.sources.selector RepoSelector
+state ansible.sources.source string
 state dotfiles.cloned CloneRecord[]  [experimental]
 state dotfiles.cloned.folder string  [experimental]
 state dotfiles.cloned.given string  [experimental]

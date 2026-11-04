@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ansible_test_support import read_state, run, use_config
+from ansible_test_support import github_source, read_state, run, use_config
 
 
 def test_source_alias_set_list_remove_updates_state(tmp_path: Path, monkeypatch) -> None:
@@ -23,7 +23,7 @@ def test_source_alias_set_list_remove_updates_state(tmp_path: Path, monkeypatch)
 def test_source_alias_set_warns_that_saved_sources_need_refresh(
     tmp_path: Path, monkeypatch
 ) -> None:
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "prod", "orgs": ["acme"]}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("prod", orgs=["acme"])]})
 
     result = run("source-alias", "set", "common", "acme/common")
 
@@ -34,7 +34,7 @@ def test_source_alias_set_warns_that_saved_sources_need_refresh(
 def test_the_refresh_hint_quotes_a_source_name_a_shell_would_split(
     tmp_path: Path, monkeypatch
 ) -> None:
-    use_config(tmp_path, monkeypatch, {"sources": [{"name": "my prod", "orgs": ["acme"]}]})
+    use_config(tmp_path, monkeypatch, {"sources": [github_source("my prod", orgs=["acme"])]})
 
     result = run("source-alias", "set", "common", "acme/common")
 

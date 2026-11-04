@@ -15,19 +15,21 @@ from untaped.sdk.storage import FreshnessRecord
 from untaped_ansible.checkouts import Checkout
 from untaped_ansible.domain.graph import StopReason
 from untaped_ansible.domain.variable_models import How
+from untaped_git.api import RepoSelector
 
 
 class Source(Record):
-    """A saved source (``source list``, ``source get``): the GitHub scope a refresh scans.
+    """A saved source (``source list``, ``source get``): the repos its plugin selects.
 
-    ``ref_scan_default`` is ``null`` when the source leaves it to the setting
-    of the same name.
+    ``source`` is the plugin asked for them and ``selector`` what it is asked
+    with; ``selects`` says it in words, field by field. ``ref_scan_default``
+    is ``null`` when the source leaves it to the setting of the same name.
     """
 
     name: Annotated[str, Column]
-    orgs: Annotated[list[str], Column]
-    teams: Annotated[list[str], Column]
-    repos: Annotated[list[str], Column]
+    source: Annotated[str, Column]
+    selects: Annotated[str, Column]
+    selector: RepoSelector
     dependency_paths: Annotated[list[str], Column]
     ref_kinds: Annotated[list[str], Column]
     ref_patterns: Annotated[list[str], Column]

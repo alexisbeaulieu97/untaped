@@ -4,8 +4,8 @@ The remotes answer at ``https://github.com/acme/<name>.git`` (rewritten to
 local paths), the store root is a temp ``git.store_dir``, and github fills
 ``GitHost`` with the profile's token, so the refresh runs as the CLI wires it
 for a host whose plugin has no batch ref probe: refs come from ``git
-ls-remote`` with that plugin's credentials. GitHub's REST inventory is the
-only fake.
+ls-remote`` with that plugin's credentials. The source's plugin answers
+with those repos.
 """
 
 from __future__ import annotations
@@ -20,18 +20,19 @@ from typing import Any
 import pytest
 
 from ansible_index_support import index_path
-from ansible_test_support import configure, run, running, write_state
+from ansible_test_support import configure, github_source, run, running, write_state
 from untaped.sdk import ErrorCategory, plugin_of
 from untaped_ansible.application.refresh_git_index import RefreshGitSourceIndex, RefreshResult
 from untaped_ansible.domain.payloads import GitRef
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure import GitSourceStore, SqliteDependencyIndex
-from untaped_ansible.settings import AnsibleSettings, SourceDefinition
+from untaped_ansible.settings import AnsibleSettings
+from untaped_ansible.sources import SourceDefinition
 from untaped_git import remote as remote_module
 from untaped_git import store_git as store_module
-from untaped_git.api import GitResult, Released, RepoStore, store_key
+from untaped_git.api import GitResult, Released, RepoSelector, RepoStore, Selection, store_key
 from untaped_git.host_auth import basic_header
-from untaped_git.testing import GitRemote, git_remote
+from untaped_git.testing import GitRemote, git_remote, listing, make_repo
 from untaped_github.providers.git import GithubHost
 
 _REQS = "roles/requirements.yml"
@@ -39,19 +40,6 @@ _META = "meta/main.yml"
 _PATHS = [_REQS, "requirements.yml", _META]
 _TOKEN = "ghp_ansible_test"
 _NAMESPACE = "refs/untaped/ansible/"
-
-
-class FakeGitHub:
-    """GitHub's REST inventory for ``repos=`` sources: every repo is on ``github.com``."""
-
-    def get_repository(self, owner: str, repo: str) -> dict[str, object]:
-        full_name = f"{owner}/{repo}"
-        return {
-            "full_name": full_name,
-            "default_branch": "main",
-            "clone_url": f"https://github.com/{full_name}.git",
-            "ssh_url": f"git@github.com:{full_name}.git",
-        }
 
 
 #: One network git call the store or ``ls_remote`` ran: argv and the secret it carried.
@@ -105,15 +93,17 @@ def _refresh(
     tmp_path: Path, *repos: str, source_key: str = "source:prod", **source: Any
 ) -> RefreshResult:
     git = _store()
+    selected = tuple(make_repo(f"acme/{name}", default_branch="main") for name in repos)
     refresh = RefreshGitSourceIndex(
-        github=FakeGitHub(),
+        select=lambda _: Selection(selected),
         git=git,
         index=SqliteDependencyIndex(index_path(tmp_path)),
         aliases={},
         default_dependency_paths=_PATHS,
-        clone_protocol="https",
     )
-    definition = SourceDefinition(name=source_key, repos=[f"acme/{r}" for r in repos], **source)
+    definition = SourceDefinition(
+        name=source_key, source="github", selector=RepoSelector(), **source
+    )
     return refresh(definition, source_key=source_key)
 
 
@@ -301,7 +291,7 @@ def test_the_names_the_store_holds(store_root: Path) -> None:
 
 def _save_sources(*names: str, repo: str = "acme/site") -> None:
     """Save sources ``names``, each selecting ``repo``."""
-    write_state({"sources": [{"name": name, "repos": [repo]} for name in names]})
+    write_state({"sources": [github_source(name, repos=[repo]) for name in names]})
 
 
 def _remove(name: str, *flags: str) -> list[str]:
@@ -479,3 +469,27 @@ def test_a_refresh_stores_the_variable_facts_of_each_ref_from_the_store(
         ("group_vars/all.yml", "sets"),
         ("templates/app.conf", "reads"),
     ]
+
+
+def test_a_source_from_a_plugin_without_select_takes_its_listing_by_match(
+    tmp_path: Path, store_root: Path, calls: list[Call]
+) -> None:
+    """S10: a plugin listing only ``repos()``, narrowed by match; refs read with ls-remote."""
+    api = git_remote(tmp_path, "infra/api", host="gitlab.example")
+    api.commit(_REQS, "- src: https://gitlab.example/infra/base\n")
+    git_remote(tmp_path, "data/lake", host="gitlab.example")
+    gitlab = {"gitlab": (listing(*(make_repo(name, "gitlab.example") for name in _GITLAB)),)}
+
+    saved = run("source", "set", "infra", "--from", "gitlab", "--match", "infra/*")
+    refreshed = run("source", "refresh", "infra", providers=gitlab)
+
+    assert saved.exit_code == 0, saved.output
+    assert refreshed.exit_code == 0, refreshed.output
+    assert "refreshed source infra: 1 repo, 1 ref, 1 edge" in refreshed.stderr
+    assert "warning" not in refreshed.stderr  # a match-only selector asks for the listing
+    remotes = {arg for argv, _ in calls if argv[0] == "ls-remote" for arg in argv if "://" in arg}
+    assert remotes == {api.url}  # data/lake didn't match
+    assert _dependents(tmp_path, "infra/base", source_key="source:infra") == {"infra/api@main"}
+
+
+_GITLAB = ("infra/api", "data/lake")

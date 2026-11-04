@@ -50,9 +50,9 @@ def replace_ref_scans(db: sqlite3.Connection, scans: tuple[RefScan, ...]) -> Non
         """
         insert into source_ref_scans(
             source_key, source_repo, source_repo_key, ref_kind, source_ref, source_sha,
-            clone_url, clone_protocol, dependency_paths_fingerprint,
+            clone_url, dependency_paths_fingerprint,
             aliases_fingerprint, checked_at, indexed_at, snapshot_id
-        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -63,7 +63,6 @@ def replace_ref_scans(db: sqlite3.Connection, scans: tuple[RefScan, ...]) -> Non
                 scan.source_ref,
                 scan.source_sha,
                 scan.clone_url,
-                scan.clone_protocol,
                 scan.dependency_paths_fingerprint,
                 scan.aliases_fingerprint,
                 dump_dt(scan.checked_at),

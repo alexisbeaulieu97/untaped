@@ -7,7 +7,8 @@ from typing import Any
 import pytest
 
 from untaped_ansible.application.source_refs import source_ref_selections
-from untaped_ansible.settings import SourceDefinition
+from untaped_ansible.sources import SourceDefinition
+from untaped_git.api import RepoSelector
 
 
 @pytest.mark.parametrize(
@@ -33,7 +34,7 @@ def test_source_ref_selections(
     source: dict[str, Any], scan_default: Any, expected: list[tuple[Any, ...]]
 ) -> None:
     selections = source_ref_selections(
-        SourceDefinition(name="prod", repos=["acme/site"], **source),
+        SourceDefinition(name="prod", source="forge", selector=RepoSelector(), **source),
         default_branch="master",
         ref_scan_default=scan_default,
     )

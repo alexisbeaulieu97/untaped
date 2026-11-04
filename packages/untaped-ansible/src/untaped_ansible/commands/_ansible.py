@@ -2,29 +2,19 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import shlex
 from typing import Literal
 
-from pydantic import ValidationError
-
-from untaped.sdk import Command, UsageError, command_line, first_validation_error, not_found
+from untaped.sdk import Command, command_line, not_found
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
 from untaped_ansible.refresh import RefreshWiring
-from untaped_ansible.settings import SOURCES, AnsibleSettings, SourceDefinition, alias_map
+from untaped_ansible.settings import AnsibleSettings, alias_map
+from untaped_ansible.sources import SOURCES, SourceDefinition
 from untaped_github.api import GithubSettings, github_settings, github_web_host
 
-#: How many hex characters of an inline source's definition hash name its key.
-_FINGERPRINT_HEX_CHARS = 16
-
-#: How ``--ref-scan-default`` reads in help, on ``source set`` and the inline selectors.
+#: How ``--ref-scan-default`` reads in help, on ``source set`` and ``source patch``.
 REF_SCAN_DEFAULT = "Scan strategy: all refs or only each repo's default branch."
-TEAM = (
-    "GitHub team as ORG/SLUG; a bare SLUG is allowed when exactly one --org is given "
-    "and normalizes to ORG/SLUG."
-)
 
 RefScanDefault = Literal["all", "default_branch"]
 
@@ -48,7 +38,6 @@ class AnsibleCommand(Command[AnsibleSettings]):
             index=index,
             aliases=alias_map(),
             settings=self.settings,
-            github_settings=self.github,
             plugin=self.ctx.plugin,
             warn=self.ctx.diag.warning,
             concurrency=parallel,
@@ -80,40 +69,6 @@ def unknown_source(name: str) -> str:
     return not_found("source", name, known=sorted(SOURCES.keys()))
 
 
-def source_definition(
-    *,
-    name: str,
-    orgs: list[str],
-    teams: list[str],
-    repos: list[str],
-    paths: list[str],
-    ref_kinds: list[str],
-    ref_patterns: list[str],
-    ref_scan_default: RefScanDefault | None = None,
-) -> SourceDefinition:
-    """The source the selector flags describe; an invalid one exits 2 with the first problem."""
-    try:
-        return SourceDefinition(
-            name=name,
-            orgs=orgs,
-            teams=teams,
-            repos=repos,
-            dependency_paths=paths,
-            ref_kinds=ref_kinds,
-            ref_patterns=ref_patterns,
-            ref_scan_default=ref_scan_default,
-        )
-    except ValidationError as exc:
-        raise UsageError(first_validation_error(exc)) from exc
-
-
 def saved_source_key(name: str) -> str:
     """The index's key of the saved source ``name``."""
     return f"source:{name}"
-
-
-def inline_source_key(source: SourceDefinition) -> str:
-    """The index's key of inline selectors: a hash of the definition, so a rerun reuses it."""
-    payload = source.model_dump(exclude={"name"}, exclude_none=True)
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
-    return f"inline:{hashlib.sha256(encoded).hexdigest()[:_FINGERPRINT_HEX_CHARS]}"

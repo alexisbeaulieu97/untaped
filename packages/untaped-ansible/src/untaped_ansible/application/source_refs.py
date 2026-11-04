@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import Literal
 
-from untaped_ansible.settings import SourceDefinition
+from untaped_ansible.sources import SourceDefinition
 
 RefScanDefault = Literal["all", "default_branch"]
 

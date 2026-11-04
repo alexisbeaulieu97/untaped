@@ -74,6 +74,10 @@ command) is marked with `@experimental` in the code and listed here, not in a
   declares, `untaped_awx.api` (the snapshot models, the document views, the
   rule constants, `target_of` and `location_of`; `Resource` and `Metadata`
   excepted) and `untaped_awx.testing`.
+- `ansible source set`: its `--stdin` and `--from` and the source it saves,
+  which holds the git plugin's experimental `RepoSelector`.
+- `ansible source list`: its `ansible.source` rows, which carry that selector.
+- `ansible source get`: the same row for one source.
 - `workspace`: its commands, record kinds, the `workspace.*` settings, and the
   `UNTAPED_*` variables `workspace run` sets.
 - `dotfiles`: its commands, the package file format (`.untaped/dotfiles/*.yml`,

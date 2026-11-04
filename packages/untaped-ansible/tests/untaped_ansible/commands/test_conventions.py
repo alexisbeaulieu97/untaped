@@ -13,10 +13,10 @@ from typing import Any
 
 import pytest
 
-from ansible_test_support import read_state, run, write_state
+from ansible_test_support import github_source, read_state, run, write_state
 from untaped.sdk.testing import ScriptedTerminal
 
-_SOURCES = {"sources": [{"name": "prod", "repos": ["acme/site"]}]}
+_SOURCES = {"sources": [github_source("prod", repos=["acme/site"])]}
 _ALIASES = {"aliases": {"common": "acme/common"}}
 
 
@@ -155,9 +155,9 @@ def test_unknown_names_list_the_known_ones(
 def test_source_set_emits_created_then_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    first = run("source", "set", "prod", "--repo", "acme/site", "-f", "json")
-    again = run("source", "set", "prod", "--repo", "acme/site", "-f", "json")
-    changed = run("source", "set", "prod", "--repo", "acme/api", "-f", "pipe")
+    first = run("source", "set", "prod", "--from", "forge", "--match", "infra/*", "-f", "json")
+    again = run("source", "set", "prod", "--from", "forge", "--match", "infra/*", "-f", "json")
+    changed = run("source", "set", "prod", "--from", "forge", "--match", "data/*", "-f", "pipe")
 
     assert first.exit_code == 0, first.output
     assert _json(first.stdout) == {"action": "created", "name": "prod", "changes": []}
@@ -172,14 +172,14 @@ def test_source_patch_emits_changes_as_a_list(
 ) -> None:
     write_state(_SOURCES)
 
-    result = run("source", "patch", "prod", "--add-repo", "acme/api", "-f", "json")
-    noop = run("source", "patch", "prod", "--add-repo", "acme/api", "-f", "json")
+    result = run("source", "patch", "prod", "--add-path", "meta/main.yml", "-f", "json")
+    noop = run("source", "patch", "prod", "--add-path", "meta/main.yml", "-f", "json")
 
     assert result.exit_code == 0, result.output
     assert _json(result.stdout) == {
         "action": "updated",
         "name": "prod",
-        "changes": ["added repo acme/api"],
+        "changes": ["added path meta/main.yml"],
     }
     assert _json(noop.stdout) == {"action": "unchanged", "name": "prod", "changes": []}
 
@@ -208,8 +208,8 @@ def test_source_patch_flag_problems_are_usage_errors(
 @pytest.mark.parametrize(
     ("args", "state", "exit_code"),
     [
-        (["set", "prod", "--repo", "not-a-repo"], None, 2),
-        (["patch", "prod", "--add-repo", "not-a-repo"], _SOURCES, 2),
+        (["set", "prod", "--from", "forge", "--ref-kind", "branches"], None, 2),
+        (["patch", "prod", "--add-ref-kind", "branches"], _SOURCES, 2),
     ],
 )
 def test_source_validation_errors_print_one_readable_line(
@@ -225,7 +225,7 @@ def test_source_validation_errors_print_one_readable_line(
     result = run("source", *args)
 
     assert result.exit_code == exit_code
-    assert "error: repo must be owner/name: 'not-a-repo'" in result.stderr
+    assert "error: ref-kind must be heads or tags" in result.stderr
     assert "pydantic" not in result.stderr
     assert "validation error" not in result.stderr
 

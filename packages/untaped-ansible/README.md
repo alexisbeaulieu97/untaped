@@ -9,23 +9,27 @@ on, what depends on it, which projects reach a repository, and the whole
 graph. It is for anyone about to change a shared role.
 
 Downstream works from live GitHub reads. Upstream needs a *source*: a saved
-set of orgs, teams or repos whose dependency files `untaped` scans and caches.
+selection of the repos a plugin lists, whose dependency files `untaped` scans
+and caches.
 
 ## Set up
 
 `untaped ansible` reads GitHub through the `github` settings, so set a GitHub
-token first. Then save a source, refresh it once, and make it the default so
-you can leave out `--source`:
+token first. Then save a source from the selector a plugin prints, refresh it
+once, and make it the default so you can leave out `--source`:
 
 ```bash
 untaped auth login github
-untaped ansible source set platform --org acme --team acme/platform
+untaped github repos selector --org acme --team acme/platform --format pipe \
+  | untaped ansible source set platform --stdin
 untaped ansible source refresh platform
 untaped config set ansible.default_source platform
 ```
 
-Private repos also need Git access over HTTPS with that token, or over SSH
-with `github.git_protocol: ssh`. The repos live in the git plugin's repo store
+`source set --from PLUGIN --match 'infra/*'` takes the repos a plugin lists
+whose full name matches instead. Each refresh asks the source's plugin for its
+repos again. Private repos also need Git access over HTTPS with that token, or
+over SSH with `github.git_protocol: ssh`. The repos live in the git plugin's repo store
 (`git.store_dir`). Scanned files, the index location and refresh tuning are in the
 [configuration reference](https://github.com/alexisbeaulieu97/untaped/blob/main/docs/reference/config.md#ansible).
 
@@ -45,15 +49,14 @@ GitHub instead.
 
 ```bash
 untaped ansible impact acme/base-role
-untaped ansible impact acme/base-role --org acme
+untaped ansible impact acme/base-role --source platform
 untaped ansible impact acme/base-role --cached
 ```
 
 `impact` lists the repos in the source that depend on the role, at any ref,
 from cached data, and marks where the walk stopped. A source older than
 `ansible.caches.source_data.max_age_seconds` (one day) is refreshed first;
-`--cached` reads only what is cached. Inline selectors such as
-`--org` answer a one-off question without saving a source.
+`--cached` reads only what is cached.
 
 ## Find which dependents use a variable
 
@@ -107,14 +110,15 @@ diagram, or a JSON graph. Without a source it shows only the downstream half.
 ## Manage sources
 
 ```bash
-untaped ansible source patch platform --add-repo acme/legacy-app
+untaped ansible source patch platform --add-path meta/main.yml
 untaped ansible source-alias set acme.base acme/ansible-role-base
 untaped ansible source refresh platform
 untaped ansible source remove platform --dry-run
 ```
 
-Patch a source rather than replacing it, and map Galaxy role names to their
-repos with source aliases. A patch drops the source's cached data, and an
+Patch what a source scans rather than replacing it (pipe a new selector to
+`source set` to change its repos), and map Galaxy role names to their repos
+with source aliases. A patch drops the source's cached data, and an
 alias applies only at the next scan, so run `source refresh` after either.
 `source remove` and `source-alias remove` preview and ask first. Removing a
 source also frees the repos only it used from the repo store; a repo another

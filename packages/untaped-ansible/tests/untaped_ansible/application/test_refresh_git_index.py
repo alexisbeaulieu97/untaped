@@ -19,12 +19,12 @@ from untaped_ansible.application import refresh_git_index
 from untaped_ansible.application.refresh_git_index import (
     RefreshGitSourceIndex,
     RefreshResult,
-    repo_candidate,
     source_refresh_fingerprint,
 )
 from untaped_ansible.domain.payloads import (
     CachedRef,
     GitRef,
+    ProbeTarget,
     RefScan,
     SkippedRef,
     SourceRepoMetadata,
@@ -32,8 +32,9 @@ from untaped_ansible.domain.payloads import (
 from untaped_ansible.domain.variables import analyse
 from untaped_ansible.errors import RepoStoreError
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
-from untaped_ansible.settings import SourceDefinition
-from untaped_git.api import HostBudget, ProbedRepo, ProbeResult
+from untaped_ansible.sources import SourceDefinition
+from untaped_git.api import HostBudget, ProbedRepo, ProbeResult, RepoSelector, Selection
+from untaped_git.testing import make_repo
 
 _REQS = "roles/requirements.yml"
 _OVERLAP_TIMEOUT = 5.0
@@ -45,37 +46,34 @@ def _base(version: str | None = None, repo: str = "acme/base") -> str:
     return f"- src: https://github.com/{repo}{pin}\n"
 
 
-class FakeGitHub:
-    """Repository expansion only: any REST ref/tree/content read is an AttributeError."""
+class FakeSelect:
+    """The source's plugin: each ``match`` pattern names a repo, ``ORG/*`` the org's listing."""
 
     def __init__(self) -> None:
-        self.repository_calls: list[tuple[str, str]] = []
-        self.repo_default_branches: dict[str, str | None] = {}
+        self.asked: list[list[str]] = []
+        self.default_branches: dict[str, str | None] = {}
         self.org_repos: dict[str, list[str]] = {}
-        self.team_repos: dict[str, list[str]] = {}
-        self.org_error: Exception | None = None
+        self.error: Exception | None = None
+        self.note: str | None = None
 
-    def get_repository(self, owner: str, repo: str) -> dict[str, object]:
-        self.repository_calls.append((owner, repo))
-        full_name = f"{owner}/{repo}"
-        return self._row(full_name, self.repo_default_branches.get(full_name, "main"))
-
-    def list_org_repos(self, org: str) -> list[dict[str, object]]:
-        if self.org_error is not None:
-            raise self.org_error
-        names = self.org_repos.get(org, [f"{org}/site"])
-        return [self._row(name, self.repo_default_branches.get(name, "main")) for name in names]
-
-    def list_team_repos(self, org: str, team_slug: str) -> list[dict[str, object]]:
-        return [self._row(name) for name in self.team_repos.get(f"{org}/{team_slug}", [])]
-
-    def _row(self, full_name: str, default_branch: str | None = "main") -> dict[str, object]:
-        return {
-            "full_name": full_name,
-            "default_branch": default_branch,
-            "clone_url": f"https://github.com/{full_name}.git",
-            "ssh_url": f"git@github.com:{full_name}.git",
-        }
+    def __call__(self, source: SourceDefinition) -> Selection:
+        self.asked.append(source.selector.match)
+        if self.error is not None:
+            raise self.error
+        names = [
+            name
+            for pattern in source.selector.match
+            for name in (
+                self.org_repos.get(pattern[:-2], [f"{pattern[:-2]}/site"])
+                if pattern.endswith("/*")
+                else [pattern]
+            )
+        ]
+        repos = (
+            make_repo(name, default_branch=self.default_branches.get(name, "main"))
+            for name in names
+        )
+        return Selection(tuple(repos), self.note)
 
 
 class FakeRefProbe:
@@ -273,7 +271,7 @@ class Harness:
 
     def __init__(self, tmp_path: Path, *, index: SqliteDependencyIndex | None = None) -> None:
         self.tmp_path = tmp_path
-        self.github = FakeGitHub()
+        self.select = FakeSelect()
         self.git = FakeGitCache()
         self.probe = FakeRefProbe()
         self.index = index or SqliteDependencyIndex(tmp_path / "index.sqlite3")
@@ -295,13 +293,12 @@ class Harness:
 
     def use_case(self, **overrides: Any) -> RefreshGitSourceIndex:
         kwargs: dict[str, Any] = {
-            "github": self.github,
+            "select": self.select,
             "git": self.git,
             "probe": self.probe,
             "index": self.index,
             "aliases": {},
             "default_dependency_paths": [_REQS],
-            "clone_protocol": "https",
         }
         return RefreshGitSourceIndex(**(kwargs | overrides))
 
@@ -327,11 +324,12 @@ class Harness:
 
 
 def _repos(*repos: str) -> SourceDefinition:
-    return SourceDefinition(name="prod", repos=list(repos))
+    return SourceDefinition(name="prod", source="forge", selector=RepoSelector(match=list(repos)))
 
 
-def _org(**kwargs: Any) -> SourceDefinition:
-    return SourceDefinition(name="prod", orgs=["acme"], **kwargs)
+def _org(*also: str, **kwargs: Any) -> SourceDefinition:
+    selector = RepoSelector(match=["acme/*", *also])
+    return SourceDefinition(name="prod", source="forge", selector=selector, **kwargs)
 
 
 def _failures(result: RefreshResult) -> list[tuple[str, str]]:
@@ -441,7 +439,7 @@ def test_empty_source_refresh_still_commits(h: Harness) -> None:
     """Zero repos expanded is a successful (empty) refresh, not a failure."""
     h.set_refs("acme/site", ("main", "sha-main", _base()))
     h.run()
-    h.github.org_repos["acme"] = []
+    h.select.org_repos["acme"] = []
 
     result = h.run()
 
@@ -451,8 +449,8 @@ def test_empty_source_refresh_still_commits(h: Harness) -> None:
     assert not h.dependents("acme/base")
 
 
-def test_expansion_failures_stay_fatal(h: Harness) -> None:
-    h.github.org_error = UntapedError("org not found: acme")
+def test_selection_failures_stay_fatal(h: Harness) -> None:
+    h.select.error = UntapedError("org not found: acme")
 
     with pytest.raises(UntapedError, match="org not found"):
         h.run()
@@ -517,7 +515,7 @@ def test_default_branch_comes_from_probe_with_expansion_fallback(h: Harness) -> 
     h.probe.default_branches["acme/site"] = "trunk"
     h.set_refs("acme/old", ("main", "sha-old"))
     h.probe.default_branches["acme/old"] = None
-    h.github.org_repos["acme"] = ["acme/site", "acme/old"]
+    h.select.org_repos["acme"] = ["acme/site", "acme/old"]
 
     h.run()
 
@@ -534,8 +532,8 @@ def test_the_probe_gets_each_repo_s_url_and_the_default_branches_the_listing_kno
     """A repo listed without a default branch (``HEAD``) leaves the probe to ask its remote."""
     h.set_refs("acme/site", ("trunk", "sha-trunk"))
     h.set_refs("acme/bare", ("main", "sha-bare"))
-    h.github.org_repos["acme"] = ["acme/site", "acme/bare"]
-    h.github.repo_default_branches.update({"acme/site": "trunk", "acme/bare": None})
+    h.select.org_repos["acme"] = ["acme/site", "acme/bare"]
+    h.select.default_branches.update({"acme/site": "trunk", "acme/bare": None})
 
     h.run()
 
@@ -561,50 +559,62 @@ def test_a_spent_budget_after_the_last_batch_completes_the_refresh(h: Harness) -
     assert [budget.exhausted for budget in result.budgets] == [True]
 
 
-def test_expansion_dedupes_overlapping_selectors_with_explicit_repo_precedence(
-    h: Harness,
-) -> None:
-    h.github.repo_default_branches["acme/site"] = "trunk"
-    h.github.org_repos["acme"] = ["acme/site", "acme/lib"]
-    h.github.team_repos["acme/platform"] = ["acme/lib", "acme/tool"]
+def test_a_repo_the_plugin_selects_twice_is_scanned_once(h: Harness) -> None:
+    h.select.default_branches["acme/site"] = "trunk"
+    h.select.org_repos["acme"] = ["acme/lib", "acme/site"]
     for repo in ("acme/site", "acme/lib", "acme/tool"):
         h.set_refs(repo, ("main", f"sha-{repo}"))
     h.probe.default_branches["acme/site"] = None
 
-    result = h.run(_org(repos=["acme/site"], teams=["platform"]))
+    result = h.run(_repos("acme/site", "acme/*", "acme/tool", "acme/lib"))
 
     assert result.repos == 3
-    assert h.probe.calls[0][0] == ("acme/lib", "acme/site", "acme/tool")
-    # explicit repo expansion metadata wins over the org listing
+    assert h.probe.calls[0][0] == ("acme/site", "acme/lib", "acme/tool")
     assert h.metadata("acme/site") == {CachedRef(name="main", kind="heads", default_branch="trunk")}
 
 
-def test_repo_candidate_does_not_guess_main_when_default_branch_is_missing() -> None:
-    assert repo_candidate({"full_name": "acme/site"}).default_branch == "HEAD"
+def test_a_repo_listed_without_a_default_branch_does_not_guess_main(h: Harness) -> None:
+    h.select.default_branches["acme/site"] = None
+    h.set_refs("acme/site", ("trunk", "sha-trunk"))
+    h.probe.default_branches["acme/site"] = None
+
+    h.run()
+
+    assert h.probe.known == [{}]
 
 
-@pytest.mark.parametrize(
-    ("row", "web_host", "url"),
-    [
-        ({"clone_url": "https://ghe.example.com/acme/site.git"}, None, "ghe.example.com"),
-        ({"html_url": "https://ghe.example.com/acme/site/"}, None, "ghe.example.com"),
-        ({}, "ghe.example.com", "ghe.example.com"),
-        ({}, None, "github.com"),
-    ],
-)
-def test_a_repo_s_url_is_its_clone_url(row: dict[str, str], web_host: str | None, url: str) -> None:
-    candidate = repo_candidate({"full_name": "acme/site", **row}, web_host=web_host)
+def test_a_repo_is_probed_and_fetched_at_its_plugin_s_url(h: Harness) -> None:
+    h.select.org_repos["acme"] = ["acme/site"]
+    h.set_refs("acme/site", ("main", "sha-main", _base()))
 
-    assert candidate.url == f"https://{url}/acme/site.git"
+    h.run()
+
+    assert h.probe.known == [{"https://github.com/acme/site.git": "main"}]
+    assert h.index.ref_scans("source:prod", "acme/site", [("heads", "main")])[
+        ("heads", "main")
+    ].clone_url == ("https://github.com/acme/site.git")
+
+
+def test_the_plugin_s_note_rides_on_the_result(h: Harness) -> None:
+    h.select.note = "forge doesn't fill RepoSource.select: took every repo it lists"
+    h.set_refs("acme/site", ("main", "sha-main"))
+
+    assert h.run().selection_note == h.select.note
 
 
 def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
-    repos = [repo_candidate({"full_name": f"acme/{name}"}) for name in "ab"]
+    repos = [
+        ProbeTarget(
+            full_name=f"acme/{name}",
+            url=f"https://github.com/acme/{name}.git",
+            default_branch="main",
+        )
+        for name in "ab"
+    ]
     options: dict[str, Any] = {
         "paths_fingerprint": "paths",
         "aliases_fingerprint": "aliases",
         "ref_scan_default": "all",
-        "clone_protocol": "https",
     }
 
     assert source_refresh_fingerprint(_org(), repos=repos, **options) == (
@@ -615,7 +625,6 @@ def test_source_refresh_fingerprint_is_order_invariant_for_repos() -> None:
 @pytest.mark.parametrize(
     ("overrides", "message"),
     [
-        ({"clone_protocol": "git"}, "clone_protocol"),
         ({"repo_batch_size": 0}, "repo_batch_size"),
     ],
 )
@@ -640,7 +649,7 @@ def test_refresh_reports_progress_events_and_the_probe_budget(h: Harness) -> Non
     [budget] = result.budgets
     assert (budget.host, budget.remaining, budget.exhausted) == ("github.com", 2400, False)
     phases = [(phase, done, total) for _, phase, done, total in progress.updates]
-    assert phases[0] == ("expanding source", 2, 2)
+    assert phases[0] == ("selecting repos", 2, 2)
     assert ("probing refs", 2, 2) in phases
     fetching = [update for update in progress.updates if update[1] == "fetching changes"]
     assert [done for _, _, done, _ in fetching] == [1, 2]
@@ -753,7 +762,6 @@ def test_partial_refresh_commit_persists_progress_in_same_adapter_call(tmp_path:
         source_ref="main",
         source_sha="sha-a",
         clone_url="https://github.com/acme/a.git",
-        clone_protocol="https",
         dependency_paths_fingerprint="paths",
         aliases_fingerprint="aliases",
         checked_at=checked_at,
@@ -819,7 +827,7 @@ def test_git_refresh_processes_repositories_concurrently_and_reports_change_coun
     assert (first.changed_refs, first.unchanged_refs) == (2, 0)
     assert (second.changed_refs, second.unchanged_refs, second.edges) == (0, 2, 2)
     assert h.git.max_active_fetches > 1
-    assert sorted(h.github.repository_calls) == [("acme", "a")] * 2 + [("acme", "b")] * 2
+    assert h.select.asked == [["acme/a", "acme/b", "acme/a"]] * 2
     assert sorted(fetch[0] for fetch in h.git.fetches) == ["a", "b"]
     assert h.git.reads == []
 
@@ -1006,7 +1014,6 @@ def test_git_refresh_reindexes_moved_tags_and_prunes_unselected_refs(h: Harness)
         ("tags/v1", "sha-v1", _base()),
         ("tags/v-old", "sha-old", _base(repo="acme/old")),
     )
-    h.configure(clone_protocol="ssh")
     source = _org(ref_kinds=["tags"], ref_patterns=["v*"])
     h.run(source)
     h.set_refs("acme/site", ("tags/v1", "sha-v2", _base("v2")))
@@ -1014,7 +1021,7 @@ def test_git_refresh_reindexes_moved_tags_and_prunes_unselected_refs(h: Harness)
     h.run(source)
 
     assert h.git.fetches[0] == ("site", ("tags/v-old", "tags/v1"))
-    assert h.git.urls[0] == "git@github.com:acme/site.git"
+    assert h.git.urls[0] == "https://github.com/acme/site.git"
     assert h.dependents("acme/base", "v2")
     assert not h.dependents("acme/base", "v1")
     assert not h.dependents("acme/old")
