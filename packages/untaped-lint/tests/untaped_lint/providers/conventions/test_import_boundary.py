@@ -110,13 +110,16 @@ def test_the_screens_kit_is_allowed_and_the_rest_of_screen_is_not(check: Check) 
     source = (
         "from untaped.screen.core import Cmd, Screen\n"
         "from untaped.screen.components.lists import Tree\n"
+        "from untaped.screen.components import layout\n"
         "from untaped.screen.terminal import run_terminal_screen\n"
         "from untaped.screen.components._private import x\n"
+        "import untaped.screen.core.inner\n"
     )
     assert check({"screen.py": source}) == [
-        "demo/screen.py:3::import-boundary::imports untaped.screen.terminal; use untaped.sdk",
-        "demo/screen.py:4::import-boundary::imports untaped.screen.components._private; "
+        "demo/screen.py:4::import-boundary::imports untaped.screen.terminal; use untaped.sdk",
+        "demo/screen.py:5::import-boundary::imports untaped.screen.components._private; "
         "use untaped.sdk",
+        "demo/screen.py:6::import-boundary::imports untaped.screen.core.inner; use untaped.sdk",
     ]
 
 

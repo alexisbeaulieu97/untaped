@@ -30,17 +30,21 @@ def _view(refused: str | None = None) -> PackageView:
 
 
 def _drive(
-    keys: list[str], choice: PackageChoice | None = None, *, refused: str | None = None
+    keys: list[str],
+    choice: PackageChoice | None = None,
+    *,
+    refused: str | None = None,
+    size: tuple[int, int] = (110, 24),
 ) -> tuple[ShowResult | None, list[Choices], str]:
     saved: list[Choices] = []
     screen = show_screen(
         [_view(refused)],
         {AT: choice},
-        save=saved.append,
+        save=lambda result: saved.append(result.changes),
         command="untaped dotfiles show",
         alternative="untaped dotfiles show --format json",
     )
-    ran = drive_screen(screen, keys, size=(110, 24))
+    ran = drive_screen(screen, keys, size=size)
     return ran.result, saved, ran.frame
 
 
@@ -107,3 +111,44 @@ def test_a_package_that_does_not_apply_stays_off() -> None:
 def test_nothing_changed_saves_nothing() -> None:
     result, saved, _ = _drive(["down", " ", " ", "ctrl-s"])
     assert saved == [] and result == ShowResult()
+
+
+def test_an_item_policy_chosen_then_turned_off_is_still_said() -> None:
+    off = PackageChoice(items={"ignore": ItemChoice(enabled=False)})
+    ignore = ["down", "right", *["down"] * 4]
+    result, saved, _ = _drive([*ignore, " ", "p", " ", "ctrl-s"], off)
+    assert saved == [
+        {AT: PackageChoice(items={"ignore": ItemChoice(enabled=False, policy=Policy.SYNC)})}
+    ]
+    assert result is not None and result.lines == ("policy of git/ignore: sync",)
+    result, _, _ = _drive([*ignore, " ", "p", "p", "p", "p", "ctrl-s"], off)
+    assert result is not None and result.lines == ("turned on git/ignore",)
+
+
+def test_turned_off_is_listed_for_the_command_to_say_what_stays() -> None:
+    on = PackageChoice()
+    result, _, _ = _drive(["down", "right", *["down"] * 4, " ", "ctrl-s"], on)
+    assert result is not None and result.turned_off == ((*AT, "ignore"),)
+    result, _, _ = _drive(["down", " ", "ctrl-s"], on)
+    assert result is not None and result.turned_off == (AT,)
+
+
+def test_keys_while_saving_wait_for_the_write() -> None:
+    saved: list[ShowResult] = []
+    screen = show_screen(
+        [_view()],
+        {AT: None},
+        save=saved.append,
+        command="untaped dotfiles show",
+        alternative="untaped dotfiles show --format json",
+    )
+    ran = drive_screen(screen, ["down", " ", "ctrl-s", "esc", "ctrl-c"], commands={"save": None})
+    assert ran.result is None and "saving; it closes when done" in ran.frame
+
+
+def test_a_narrow_terminal_still_shows_the_input_being_edited() -> None:
+    keys = ["down", " ", "right", "down", "e", *"abc"]
+    _, _, frame = _drive(keys, size=(80, 24))
+    assert "abc" in frame
+    _, _, frame = _drive(["down", " "], refused="macos only", size=(80, 24))
+    assert "can't be turned on here: macos only" in frame

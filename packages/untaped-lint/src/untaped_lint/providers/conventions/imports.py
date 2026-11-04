@@ -56,11 +56,12 @@ SCREEN_COMPONENTS = "untaped.screen.components"
 
 
 def is_screen_kit(target: str) -> bool:
-    """Whether ``target`` is the screens kit: ``untaped.screen.core`` or a component module."""
-    if target == SCREEN_CORE or target.startswith(f"{SCREEN_CORE}."):
+    """Whether ``target`` is the screens kit: ``untaped.screen.core``, or
+    ``untaped.screen.components`` and its modules, with no private (``_``) part."""
+    if target in (SCREEN_CORE, SCREEN_COMPONENTS):
         return True
     rest = target.removeprefix(f"{SCREEN_COMPONENTS}.")
-    return rest != target and not rest.startswith("_")
+    return rest != target and not any(part.startswith("_") for part in rest.split("."))
 
 
 def _targets(

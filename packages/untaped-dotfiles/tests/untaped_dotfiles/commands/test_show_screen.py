@@ -52,3 +52,20 @@ def test_rows_with_a_format_or_without_a_terminal(
     terminal.present()
     assert [r["name"] for r in as_json(["show"])] == ["starship"]  # --format json: rows
     assert terminal.ran == []
+
+
+def test_turning_off_on_the_screen_leaves_what_was_placed_and_says_so(
+    make_remote: MakeRemote, terminal: ScriptedTerminal
+) -> None:
+    _starship(make_remote)
+    assert run(["add", "starship"]).exit_code == 0
+    assert run(["apply", "--yes"]).exit_code == 0
+    terminal.screens(ScreenKeys("down", " ", "ctrl-s"))
+    result = run(["show"])
+    assert result.exit_code == 0, result.output
+    assert "turned off dotfiles/starship" in result.stderr
+    assert "what dotfiles/starship placed stays" in result.stderr
+    assert "untaped dotfiles remove dotfiles/starship" in result.stderr
+    assert "untaped dotfiles apply" not in result.stderr
+    [row] = as_json(["show", "starship"])
+    assert row["on"] is False

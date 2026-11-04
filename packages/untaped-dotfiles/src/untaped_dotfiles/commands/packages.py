@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, cast
 
 from pydantic import BaseModel, Field
@@ -22,6 +22,7 @@ from untaped.sdk import (
 from untaped_dotfiles.catalog import Offer, Selection, gone_error
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.inventory import input_values
+from untaped_dotfiles.models import PlacedRecord
 from untaped_dotfiles.package import Item
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import (
@@ -296,8 +297,9 @@ class Show(DotfilesCommand):
     instead: `space` turns a package or item on or off, `p` cycles its policy,
     `e` answers a plain input, and `ctrl-s` saves every change to
     `config.yml` at once (esc closes saving nothing); each change is said
-    after it closes. It places nothing: `apply` does. `--format json`, or no
-    terminal, prints the rows.
+    after it closes. It places nothing, and turning something off there
+    takes nothing back: `apply` places, `remove` takes back. `--format json`,
+    or no terminal, prints the rows.
     """
 
     selector: Positional[str | None] = Field(
@@ -331,7 +333,11 @@ class Show(DotfilesCommand):
 
     def _screen(self, svc: Services) -> Iterator[PackageDetail]:
         """Run the screen, then say what it saved and refresh the status files."""
-        from untaped_dotfiles.screen import PackageView, show_screen  # noqa: PLC0415 - Rich
+        from untaped_dotfiles.screen import (  # noqa: PLC0415 - Rich
+            PackageView,
+            ShowResult,
+            show_screen,
+        )
 
         command = command_line(Show.spelled())
         alternative = command_line(Show.spelled("--format", "json"))
@@ -349,28 +355,45 @@ class Show(DotfilesCommand):
         ]
         choices = {(o.source.name, o.name): o.choice for o in offers}
 
-        def save(changes: Mapping[tuple[str, str], PackageChoice | None]) -> None:
+        def save(result: ShowResult) -> None:
+            """Write the changes, then forget and refresh as ``add`` does, under the lock."""
             keyed: dict[Any, BaseModel | None] = {
                 key(DotfilesSettings).sources[source].packages[package]: choice
-                for (source, package), choice in changes.items()
+                for (source, package), choice in result.changes.items()
             }
-            self.ctx.plugin.plan_settings(keyed).write()
+            with svc.store.locked():
+                self.ctx.plugin.plan_settings(keyed).write()
+                for owner in result.turned_on:
+                    svc.store.forget_applied(owner)
+                self.services(_with_choices(self.settings, result.changes)).refresh_status()
 
         screen = show_screen(views, choices, save=save, command=command, alternative=alternative)
         result = self.ctx.terminal.run(screen)
         if not result.changes:
             self.ctx.diag.info("nothing saved")
             return iter([])
-        with svc.store.locked():
-            for owner in result.turned_on:
-                svc.store.forget_applied(owner)
-            self.services(_with_choices(self.settings, result.changes)).refresh_status()
         for line in result.lines:
             self.ctx.diag.success(line)
-        from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
+        placed = svc.store.placed()
+        for owner in result.turned_off:
+            if any(_placed_by(record, owner) for record in placed):
+                spelled = _spelled(offers, owner)
+                take_back = run_hint(Remove.spelled(spelled))
+                self.ctx.diag.info(f"what {spelled} placed stays; to take it back, {take_back}")
+        if any(not line.startswith("turned off ") for line in result.lines):
+            from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
 
-        self.ctx.diag.hint(run_hint(Apply.spelled()))
+            self.ctx.diag.hint(run_hint(Apply.spelled()))
         return iter([])
+
+
+def _placed_by(record: PlacedRecord, owner: tuple[str, ...]) -> bool:
+    return (record.source, record.package, record.item)[: len(owner)] == owner
+
+
+def _spelled(offers: Sequence[Offer], owner: tuple[str, ...]) -> str:
+    offer = next(o for o in offers if (o.source.name, o.name) == owner[:2])
+    return "/".join((offer.spelled, *owner[2:]))
 
 
 def _refused(svc: Services, offer: Offer) -> str | None:

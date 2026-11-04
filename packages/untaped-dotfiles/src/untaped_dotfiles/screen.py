@@ -18,7 +18,6 @@ from typing import cast
 from rich.console import Group, RenderableType
 from rich.text import Text
 
-from untaped.sdk import plural
 from untaped.screen.components.inputs import TextInput
 from untaped.screen.components.layout import Panes
 from untaped.screen.components.lists import Tree, TreeRow
@@ -28,11 +27,13 @@ from untaped.screen.core import (
     Cmd,
     CmdError,
     Frame,
+    Interrupt,
     KeyPress,
     Quit,
     Screen,
     Submit,
 )
+from untaped.sdk import plural
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import ItemDetail, PackageDetail
 from untaped_dotfiles.settings import InputValue, ItemChoice, PackageChoice
@@ -42,6 +43,8 @@ type At = tuple[str, str]
 """A package: ``(source, package)``."""
 type Choices = Mapping[At, PackageChoice | None]
 
+#: The rows an input being edited takes under the panes: its box and its help line.
+_FIELD_ROWS = 4
 #: The policies ``p`` steps through; ``None`` is the author's suggestion.
 CYCLE: tuple[Policy | None, ...] = (None, Policy.SYNC, Policy.ONCE, Policy.MANUAL)
 
@@ -66,6 +69,8 @@ class PackageView:
 class Saved:
     """The write finished."""
 
+    result: ShowResult
+
 
 @dataclass(frozen=True)
 class ShowResult:
@@ -75,6 +80,8 @@ class ShowResult:
     lines: tuple[str, ...] = ()
     turned_on: tuple[tuple[str, ...], ...] = ()
     """The packages or items turned on again: their entries are asked for, not new."""
+    turned_off: tuple[tuple[str, ...], ...] = ()
+    """The packages or items turned off: what they placed stays until ``remove``."""
 
 
 @dataclass(frozen=True)
@@ -103,12 +110,12 @@ def show_screen(
     packages: Sequence[PackageView],
     choices: Choices,
     *,
-    save: Callable[[Choices], None],
+    save: Callable[[ShowResult], None],
     command: str,
     alternative: str,
 ) -> Screen[Model, ShowResult]:
     """The screen over ``packages``, starting from this machine's ``choices``; ``save``
-    writes the changed ones (inside a ``Cmd(write=True)``, so a quit can't cut it)."""
+    writes what changed (inside a ``Cmd(write=True)``, so no key can cut it short)."""
     sources = {p.detail.source for p in packages}
     start = Model(
         packages=tuple(packages),
@@ -138,7 +145,7 @@ def show_screen(
         shared_labels={
             "ctrl-s": "save",
             "esc": lambda m: "cancel edit" if editing(m) else "quit",
-            "enter": lambda m: "keep" if editing(m) else None,
+            "enter": lambda m: "keep" if editing(m) else "open",
         },
     )
 
@@ -147,13 +154,15 @@ def show_screen(
 
 
 def _update(
-    model: Model, message: object, save: Callable[[Choices], None]
+    model: Model, message: object, save: Callable[[ShowResult], None]
 ) -> tuple[Model, list[Cmd]]:
     if isinstance(message, Saved):
-        return model, [Cmd.send(Quit(_result(model)))]
+        return model, [Cmd.send(Quit(message.result))]
     if isinstance(message, CmdError):
         return replace(model, saving=False, note=f"not saved: {message.error}"), []
-    if model.saving:
+    if model.saving:  # every key waits: the screen closes once the write is done
+        if isinstance(message, KeyPress | Back | Interrupt):
+            return replace(model, note="saving; it closes when done"), []
         return model, []
     if model.editing is not None:
         return _edit(model, model.editing, message, save)
@@ -163,21 +172,26 @@ def _update(
         return model, [Cmd.send(Quit(ShowResult()))]
     if not isinstance(message, KeyPress):
         return model, []
+    return _key(model, message), []
+
+
+def _key(model: Model, message: KeyPress) -> Model:
+    """A key on the tree: an action on the row under the cursor, or a move."""
     match message.name:
         case " ":
-            return _toggled(model), []
+            return _toggled(model)
         case "p":
-            return _cycled(model), []
+            return _cycled(model)
         case "e":
-            return _editing(model), []
+            return _editing(model)
     tree, _ = _tree(model).update(message)
     if tree.cursor == model.cursor and tree.expanded == model.expanded:
-        return model, []
-    return replace(model, cursor=tree.cursor, expanded=tree.expanded, note=""), []
+        return model
+    return replace(model, cursor=tree.cursor, expanded=tree.expanded, note="")
 
 
 def _edit(
-    model: Model, editing: Editing, message: object, save: Callable[[Choices], None]
+    model: Model, editing: Editing, message: object, save: Callable[[ShowResult], None]
 ) -> tuple[Model, list[Cmd]]:
     if isinstance(message, KeyPress) and message.name == "esc":
         return replace(model, editing=None, note=""), []
@@ -197,28 +211,30 @@ def _kept(model: Model, editing: Editing) -> Model:
     view = model.view_of(editing.at)
     choice = model.choices.get(editing.at)
     assert choice is not None  # only an input of a package that is on is edited
-    text = editing.field.value.strip()
+    text = editing.field.value
     inputs = dict(choice.inputs)
-    if not text:
+    if not text.strip():  # an empty answer: the default again, or no value
         inputs.pop(editing.name, None)
     else:
         try:
             value = coerce(view.inputs[editing.name], text, name=editing.name)
         except InputError as exc:
-            return replace(model, editing=replace(editing, field=editing.field.with_error(str(exc))))
+            return replace(
+                model, editing=replace(editing, field=editing.field.with_error(str(exc)))
+            )
         inputs[editing.name] = cast("InputValue", value)
     updated = choice.model_copy(update={"inputs": inputs})
     return replace(model, choices={**model.choices, editing.at: updated}, editing=None, note="")
 
 
-def _save(model: Model, save: Callable[[Choices], None]) -> tuple[Model, list[Cmd]]:
-    changes = _changes(model)
-    if not changes:
+def _save(model: Model, save: Callable[[ShowResult], None]) -> tuple[Model, list[Cmd]]:
+    result = _result(model)
+    if not result.changes:
         return model, [Cmd.send(Quit(ShowResult()))]
 
     def write() -> Saved:
-        save(changes)
-        return Saved()
+        save(result)
+        return Saved(result)
 
     return replace(model, saving=True, note="saving"), [Cmd(write, write=True, name="save")]
 
@@ -240,7 +256,9 @@ def _toggled(model: Model) -> Model:
         if view.refused is not None or item.excluded is not None:
             reason = view.refused or item.excluded
             return replace(model, note=f"{view.spelled}/{row.name} can't be turned on: {reason}")
-        others = {i.name: ItemChoice(enabled=False) for i in view.detail.items if i.name != row.name}
+        others = {
+            i.name: ItemChoice(enabled=False) for i in view.detail.items if i.name != row.name
+        }
         return _with(model, row.at, PackageChoice(items=others))
     own = choice.items.get(row.name, ItemChoice())
     if not own.enabled and item.excluded is not None:
@@ -272,8 +290,8 @@ def _editing(model: Model) -> Model:
     choice = model.choices.get(row.at)
     if choice is None:
         return replace(model, note=f"turn {view.spelled} on to answer its inputs")
-    spec = view.inputs.get(row.name)
-    if spec is None or spec.secret:
+    spec = view.inputs[row.name]
+    if spec.secret:
         return replace(model, note=f"{row.name} is a secret: it is never kept in config.yml")
     current = choice.inputs.get(row.name)
     shown = "" if current is None else _text(current)
@@ -312,23 +330,21 @@ def _next(policy: Policy | None) -> Policy | None:
 
 
 def _changes(model: Model) -> dict[At, PackageChoice | None]:
-    return {
-        at: choice
-        for at, choice in model.choices.items()
-        if choice != model.original.get(at)
-    }
+    return {at: choice for at, choice in model.choices.items() if choice != model.original.get(at)}
 
 
 def _result(model: Model) -> ShowResult:
     changes = _changes(model)
     lines: list[str] = []
     turned: list[tuple[str, ...]] = []
+    off: list[tuple[str, ...]] = []
     for at, choice in changes.items():
         view = model.view_of(at)
         name = view.spelled
         before = model.original.get(at)
         if choice is None:
             lines.append(f"turned off {name}")
+            off.append(at)
             continue
         if before is None:
             lines.append(f"turned on {name}" + _policy_note(choice.policy))
@@ -341,23 +357,26 @@ def _result(model: Model) -> ShowResult:
             now = choice.items.get(item.name, ItemChoice())
             if now.enabled != was.enabled:
                 lines.append(f"turned {'on' if now.enabled else 'off'} {name}/{item.name}")
-                if now.enabled:
-                    turned.append((*at, item.name))
-            elif now.policy != was.policy and now.enabled:
-                lines.append(f"policy of {name}/{item.name}: {_policy_name(now.policy)}")
+                (turned if now.enabled else off).append((*at, item.name))
+            if now.policy != was.policy:
+                lines.append(f"policy of {name}/{item.name}: {_policy_name(now.policy, item=True)}")
         for input_name in view.inputs:
             if choice.inputs.get(input_name) != before.inputs.get(input_name):
                 verb = "set" if input_name in choice.inputs else "cleared"
                 lines.append(f"{verb} {name} input {input_name}")
-    return ShowResult(changes=changes, lines=tuple(lines), turned_on=tuple(turned))
+    return ShowResult(
+        changes=changes, lines=tuple(lines), turned_on=tuple(turned), turned_off=tuple(off)
+    )
 
 
 def _policy_note(policy: Policy | None) -> str:
     return f" ({policy})" if policy is not None else ""
 
 
-def _policy_name(policy: Policy | None) -> str:
-    return str(policy) if policy is not None else "the author's"
+def _policy_name(policy: Policy | None, *, item: bool = False) -> str:
+    if policy is not None:
+        return str(policy)
+    return "the package's" if item else "the author's"
 
 
 # -- the tree ----------------------------------------------------------------
@@ -392,7 +411,6 @@ def _tree(model: Model, frame: Frame | None = None) -> Tree:
         rows=_rows(model, frame),
         expanded=model.expanded,
         cursor=model.cursor,
-        window_rows=None if frame is None else max(3, frame.height - 2),
     )
 
 
@@ -408,7 +426,7 @@ def _rows(model: Model, frame: Frame | None) -> tuple[TreeRow, ...]:
         ident = f"{detail.source}\t{detail.name}"
         children: list[TreeRow] = []
         for name, spec in view.inputs.items():
-            value = "***" if spec.secret else _input_value(view, choice, name)
+            value = _mask(frame) if spec.secret else _input_value(view, choice, name)
             children.append(TreeRow(f"input\t{ident}\t{name}", f"{name} = {value}", "input"))
         for item in detail.items:
             own = choice.items.get(item.name, ItemChoice()) if choice is not None else None
@@ -443,6 +461,10 @@ def _input_value(view: PackageView, choice: PackageChoice | None, name: str) -> 
     return _text(spec.default) if spec.default is not None else "(no value)"
 
 
+def _mask(frame: Frame | None) -> str:
+    return frame.symbol("mask") * 3 if frame is not None else ""
+
+
 def _text(value: object) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
@@ -466,15 +488,20 @@ def _view(model: Model, frame: Frame) -> RenderableType:
     def detail(pane: Frame, focused: bool) -> RenderableType:
         return _detail(model, at, pane)
 
+    below: list[RenderableType] = []  # under the panes, so a narrow terminal still shows them
+    if model.editing is not None:
+        below.append(model.editing.field.view(frame, focused=True, width=frame.width))
+    below.append(Text(model.note, style=frame.style("screen.muted")))
+    used = (_FIELD_ROWS if model.editing is not None else 0) + 1
+    rest = replace(frame, height=max(6, frame.height - used))
     panes = Panes(
-        left=_tree(model, replace(frame, height=frame.height - 1)),
+        left=_tree(model, rest),
         right=detail,
         left_title="Sources",
         right_title=title,
         split=0.4,
     )
-    note = Text(model.note, style=frame.style("screen.muted"))
-    return Group(panes.view(replace(frame, height=frame.height - 1), focused=True), note)
+    return Group(panes.view(rest, focused=True), *below)
 
 
 def _detail(model: Model, at: At | None, frame: Frame) -> RenderableType:
@@ -485,18 +512,18 @@ def _detail(model: Model, at: At | None, frame: Frame) -> RenderableType:
     detail = view.detail
     choice = model.choices.get(at)
     lines: list[RenderableType] = []
-    if model.editing is not None and model.editing.at == at:
-        lines.append(model.editing.field.view(frame, focused=True, width=frame.width))
     if detail.description:
         lines.append(Text(detail.description, style=value))
     if detail.error is not None:
-        lines.append(Text(f"doesn't load: {detail.error.message}", style=frame.style("screen.error")))
+        lines.append(
+            Text(f"doesn't load: {detail.error.message}", style=frame.style("screen.error"))
+        )
         return Group(*lines)
     lines.append(Text(f"policy   {_policy_line(view, choice)}", style=value))
     if view.refused is not None:
         lines.append(Text(f"not here: {view.refused}", style=muted))
     for name, spec in view.inputs.items():
-        shown = "*** (secret)" if spec.secret else _input_value(view, choice, name)
+        shown = f"{_mask(frame)} (secret)" if spec.secret else _input_value(view, choice, name)
         lines.append(Text(f"input    {name}  {shown}", style=value))
     for item in detail.items:
         own = choice.items.get(item.name, ItemChoice()) if choice is not None else None
