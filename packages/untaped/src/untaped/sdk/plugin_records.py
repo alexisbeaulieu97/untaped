@@ -66,6 +66,13 @@ class InstalledPlugin(Record):
             "installed into untaped."
         ),
     )
+    reason: str | None = Field(
+        default=None, description="Why it is quarantined: a quarantined row's reason id."
+    )
+    detail: str | None = Field(
+        default=None,
+        description="What a quarantined row's reason found, ending with the fix when there is one.",
+    )
 
 
 def plugin_records(
@@ -96,6 +103,8 @@ def plugin_records(
                 distribution=record.distribution,
                 version=version,
                 package=None if candidate is None else _entry_package(candidate),
+                reason=record.reason,
+                detail=record.detail,
             )
         )
     return sorted(rows, key=lambda row: (row.name, row.distribution))

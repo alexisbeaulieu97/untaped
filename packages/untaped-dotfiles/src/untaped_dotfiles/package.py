@@ -370,10 +370,13 @@ class PackageFile(Where):
     A step has a `check` (exactly one of `command`, with an optional exact
     `prints`, `path` or `program`), and a `run` (an argv, no shell), a
     `script` in the source with `args`, or a `fix` for a person. `run` and
-    `script` exclude each other. `kind` with `with` names a step kind a
-    plugin provides. An argument (of `run`, `args` or a check's `command`)
-    that starts with `~/` names the home folder, and a check's `path` is
-    `~/...` or absolute once its inputs are filled in.
+    `script` exclude each other. `kind` (`PLUGIN.NAME`) with `with` names a
+    step kind a plugin provides instead: that plugin checks and runs it, so
+    the step has no `check`, `run`, `script`, `args` or `fix`, and `with`'s
+    placeholders name the package's inputs, not the step's own. An argument
+    (of `run`, `args` or a check's `command`) that starts with `~/` names the
+    home folder, and a check's `path` is `~/...` or absolute once its inputs
+    are filled in.
 
     ## Example
 

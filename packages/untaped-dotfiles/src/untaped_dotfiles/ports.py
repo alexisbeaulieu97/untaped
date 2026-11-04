@@ -116,10 +116,16 @@ class DotfilesStore(Protocol):
 
 
 class Installed(Protocol):
-    """An installed plugin as ``ctx.plugins`` lists it: its name and whether it is ready."""
+    """An installed plugin as ``ctx.plugins`` lists it: its name, if it is ready, and why not."""
 
     @property
     def name(self) -> str: ...
 
     @property
     def status(self) -> str: ...
+
+    @property
+    def reason(self) -> str | None: ...
+
+    @property
+    def detail(self) -> str | None: ...

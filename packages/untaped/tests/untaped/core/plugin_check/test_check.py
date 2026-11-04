@@ -37,9 +37,9 @@ def _bin() -> type:
 def test_a_provider_that_fills_its_contract_passes_every_check(contract_plugins_site: Path) -> None:
     assert _rows(_check()) == [
         ("conventions", "conventions", "pass", "no violations"),
-        ("conformance", "rack.item_source", "pass", "rack's conformance checks pass"),
-        ("live", "rack.item_source.items", "pass", "2 items"),
-        ("live", "rack.item_source.named", "pass", "skipped: it needs arguments"),
+        ("conformance", "rack.item_source (bin.box)", "pass", "rack's conformance checks pass"),
+        ("live", "rack.item_source.items (bin.box)", "pass", "2 items"),
+        ("live", "rack.item_source.named (bin.box)", "pass", "skipped: it needs arguments"),
     ]
 
 
@@ -62,8 +62,13 @@ def test_failures_are_reported(contract_plugins_site: Path) -> None:
     _bin().nonconforming = True
     _bin().broken = True
     rows = _rows(_check())
-    assert ("conformance", "rack.item_source", "fail", "items must be sorted") in rows
-    assert ("live", "rack.item_source.items", "fail", "RuntimeError: the bin is locked") in rows
+    assert ("conformance", "rack.item_source (bin.box)", "fail", "items must be sorted") in rows
+    assert (
+        "live",
+        "rack.item_source.items (bin.box)",
+        "fail",
+        "RuntimeError: the bin is locked",
+    ) in rows
     assert not [row for row in rows if row[0] in {"fills", "schema"}]
 
 
@@ -103,8 +108,8 @@ def test_a_provider_that_is_not_ready_skips_the_calls(contract_plugins_site: Pat
     _bin().waiting = True
     rows = _rows(_check())
     waiting = "skipped: not ready: no bins yet (set bin.bins)"
-    assert ("conformance", "rack.item_source", "pass", waiting) in rows
-    assert ("live", "rack.item_source.items", "pass", waiting) in rows
+    assert ("conformance", "rack.item_source (bin.box)", "pass", waiting) in rows
+    assert ("live", "rack.item_source.items (bin.box)", "pass", waiting) in rows
 
 
 def test_a_convention_violation_is_a_failed_row(contract_plugins_site: Path) -> None:

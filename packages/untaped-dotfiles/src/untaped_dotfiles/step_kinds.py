@@ -98,44 +98,55 @@ class StepKinds:
         return providers(StepKind)
 
     @cached_property
-    def _kinds(self) -> dict[str, ProviderOffer]:
-        """Each kind and the offer issuing it: one, since a kind names its plugin, and core
-        refuses two providers of one record in a plugin."""
-        return {offer.kind: offer for offer in self._offers if offer.kind is not None}
+    def _kinds(self) -> dict[str, list[ProviderOffer]]:
+        """Each kind and the offers issuing it: one, unless two plugins issue one record (a
+        plugin's own two are refused by core)."""
+        found: dict[str, list[ProviderOffer]] = {}
+        for offer in self._offers:
+            if offer.refused is None and offer.kind is not None:
+                found.setdefault(offer.kind, []).append(offer)
+        return found
 
     def unavailable(self, kind: str) -> str:
         """Why no provider can be asked for ``kind``; ``""`` when one can."""
-        if kind in self._kinds:
+        issuing = self._kinds.get(kind, [])
+        if len(issuing) == 1:
             return ""
+        if issuing:
+            return f"kind {kind}: {_clash(issuing)}"
         plugin = kind.split(".", 1)[0]
-        refused = [o for o in self._offers if o.plugin == plugin and o.refused is not None]
-        if refused:
-            first = refused[0]
-            fix = f"; {first.fix}" if first.fix else ""
-            return (
-                f"kind {kind}: the plugin {plugin} has a step kind untaped refused "
-                f"({first.refused}): {first.detail}{fix}"
-            )
-        state = self._plugin_state(plugin)
-        if state == "quarantined":
-            return f"kind {kind}: the plugin {plugin} is disabled; `untaped doctor` says why"
-        if state == "ready":
-            offered = sorted(k for k in self._kinds if k.startswith(f"{plugin}."))
+        mine = [o for o in self._offers if o.refused is not None and o.kind == kind]
+        if mine:
+            return f"kind {kind}: untaped refused {mine[0].plugin}'s provider of it {_why(mine[0])}"
+        unknown = [o for o in self._offers if o.refused is not None and o.plugin == plugin]
+        refused = f"; untaped refused one of its step kinds {_why(unknown[0])}" if unknown else ""
+        installed = self._installed_plugin(plugin)
+        if installed is not None and installed.status == "quarantined":
+            why = f" ({installed.reason}): {installed.detail}" if installed.reason else ""
+            return f"kind {kind}: the plugin {plugin} is disabled{why}"
+        offered = sorted(k for k in self._kinds if k.startswith(f"{plugin}."))
+        if installed is not None or offered or unknown:
             listed = f"; it provides {', '.join(offered)}" if offered else ""
-            return f"kind {kind}: the plugin {plugin} provides no such step kind{listed}"
+            return f"kind {kind}: the plugin {plugin} provides no such step kind{listed}{refused}"
         return f"kind {kind}: no installed plugin provides it; install the plugin {plugin}"
 
-    def _plugin_state(self, plugin: str) -> str | None:
+    def _installed_plugin(self, plugin: str) -> Installed | None:
         if self._installed is None:
             return None
-        return next((p.status for p in self._installed() if p.name == plugin), None)
+        return next((p for p in self._installed() if p.name == plugin), None)
+
+    def clashes(self) -> list[str]:
+        """Each kind two plugins provide, which neither is asked for, said as doctor says it."""
+        return [
+            f"{kind}: {_clash(offers)}" for kind, offers in self._kinds.items() if len(offers) > 1
+        ]
 
     def provider(self, kind: str) -> KindProvider:
         """The one provider of ``kind``; raises :class:`ConfigError` (exit 4) when there is none."""
         why = self.unavailable(kind)
         if why:
             raise ConfigError(why)
-        offer = self._kinds[kind]
+        [offer] = self._kinds[kind]
         assert offer.provider is not None and offer.record is not None  # a kind is a taken offer
         return KindProvider(offer.provider, offer.record, offer.plugin)
 
@@ -175,6 +186,16 @@ class StepKinds:
         raise ConfigError(f"{found.plugin} can't run this step: {answer.detail}")
 
 
+def _clash(offers: Sequence[ProviderOffer]) -> str:
+    plugins = " and ".join(sorted(offer.plugin for offer in offers))
+    return f"{plugins} each provide it, so neither is asked; uninstall one"
+
+
+def _why(offer: ProviderOffer) -> str:
+    fix = f"; {offer.fix}" if offer.fix else ""
+    return f"({offer.refused}): {offer.detail}{fix}"
+
+
 def _rendered(value: JsonValue, text: Callable[[str, str], str], at: str) -> JsonValue:
     """``value`` with every string rendered, keeping its shape."""
     if isinstance(value, str):
@@ -187,8 +208,8 @@ def _rendered(value: JsonValue, text: Callable[[str, str], str], at: str) -> Jso
 
 
 def step_kinds_check(_ctx: PluginContext) -> DoctorResult:
-    """``dotfiles.step-kinds``: warns about a provider that adds no kind (core's own rows say
-    which offers it refused)."""
+    """``dotfiles.step-kinds``: warns about a provider that adds no kind and a kind two plugins
+    provide (core's own rows say which offers it refused)."""
     kinds = StepKinds()
     problems = [
         f"{offer.plugin}'s {getattr(offer.provider, '__qualname__', 'provider')} keeps "
@@ -196,6 +217,7 @@ def step_kinds_check(_ctx: PluginContext) -> DoctorResult:
         "(StepKind[YourRecord])"
         for offer in kinds.unclaimed()
     ]
+    problems += kinds.clashes()
     if problems:
         return DoctorResult(ok=True, warn=True, detail="; ".join(problems))
     found = len(kinds.names())

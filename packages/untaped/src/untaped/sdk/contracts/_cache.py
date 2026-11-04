@@ -83,14 +83,14 @@ def _typing(binding: Binding, hint: Any) -> ValueTyping:
 
 
 def entry_key(binding: Binding, digest: str) -> str:
-    """The entry's key in the owner's cache: ``<provider>:<arguments hash>``.
+    """The entry's key in the owner's cache: ``<plugin>:<arguments hash>``.
 
-    A provider issuing its own record is named by that record's kind, which
-    names its plugin too: one plugin's providers of a contract each issue
-    their own (:func:`~untaped.sdk.contracts.providers`).
+    A provider issuing its own record adds that record's kind
+    (``<plugin>:<kind>:<hash>``): one plugin's providers of a contract each
+    issue their own, and two plugins may issue one record.
     """
     issues = "" if binding.owns_item else binding.item_kind
-    return f"{issues or binding.plugin}:{digest}"
+    return f"{binding.plugin}:{issues}:{digest}" if issues else f"{binding.plugin}:{digest}"
 
 
 def argument_key(function: Callable[..., Any], provider: object, args: Any, kwargs: Any) -> str:

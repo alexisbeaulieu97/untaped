@@ -149,8 +149,10 @@ def test_with_renders_inputs_before_it_is_validated(make_remote: MakeRemote) -> 
         "with: {domain: com.apple.dock, key: '{{ key }}', type: string, value: x}}"
     )
     _subscribe(make_remote, _package(step, inputs="  key: {description: Which key}\n"))
-    assert "needs a value" in str(_status()["dock"]["detail"]) or _status()["dock"]["state"] in (
+    waiting = _status()["dock"]
+    assert (waiting["state"], waiting["detail"]) == (
         "pending",
+        "input 'key' has no value: run `untaped dotfiles add dotfiles/mac --var key=VALUE`",
     )
     code, rows = _apply("--var", "key=tilesize")
     assert code == 0, rows
@@ -266,7 +268,7 @@ def test_a_refused_provider_is_reported_with_core_s_reason(make_remote: MakeRemo
     row = _status()["dock"]
     assert row["state"] == "unmet"
     assert str(row["detail"]).startswith(
-        "kind macos.defaults: the plugin macos has a step kind untaped refused (bad-provider): "
+        "kind macos.defaults: untaped refused macos's provider of it (bad-provider): "
         "macos provides StepKind twice with the record Defaults"
     )
     code, rows = _apply()
@@ -304,3 +306,63 @@ def test_a_provider_that_is_not_ready_fails_its_row_as_setup(make_remote: MakeRe
     )
     assert "remote.host" in str(rows["host"]["detail"])
     assert code == ExitCode.ENVIRONMENT
+
+
+class OtherDefaults(StepKind[Defaults], Provider):
+    """Another plugin issuing the record macos issues: neither is asked for it."""
+
+    def check(self, step: Defaults) -> StepResult:
+        raise AssertionError("never asked")
+
+    def run(self, step: Defaults) -> StepResult:
+        raise AssertionError("never asked")
+
+
+def test_a_kind_two_plugins_provide_is_asked_of_neither(make_remote: MakeRemote) -> None:
+    installed({"macos": (DefaultsStep,), "tweaks": (OtherDefaults,)})
+    _subscribe(make_remote, _package(DOCK))
+    row = _status()["dock"]
+    assert row["state"] == "unmet"
+    assert row["detail"] == (
+        "kind macos.defaults: macos and tweaks each provide it, so neither is asked; uninstall one"
+    )
+    assert Machine.calls == []
+    ran = installed().cli(["doctor", "--format", "json"])
+    rows = {str(each["check"]): each for each in json.loads(ran.stdout)}
+    assert "macos.defaults: macos and tweaks each provide it" in str(
+        rows["dotfiles.step-kinds"]["detail"]
+    )
+
+
+class Echoes(StepKind[Token], Provider):
+    """Says the secret it got, in its detail or its error."""
+
+    raises: ClassVar[bool] = False
+
+    def check(self, step: Token) -> StepResult:
+        return StepResult(passes=False)
+
+    def run(self, step: Token, secret: SecretStr | None = None) -> StepResult:
+        said = f"login rejected for {secret.get_secret_value() if secret else '?'}"
+        if Echoes.raises:
+            raise UntapedError(said, category="config")
+        return StepResult(passes=False, detail=said)
+
+
+@pytest.mark.parametrize("raises", [False, True])
+def test_a_secret_a_provider_says_back_is_masked(
+    make_remote: MakeRemote, terminal: ScriptedTerminal, raises: bool
+) -> None:
+    Echoes.raises = raises
+    installed({"tools": (Echoes,)})
+    step = "{name: token, kind: tools.token, with: {name: gh}, stdin: token}"
+    token = "  token: {description: A token, secret: true}\n"
+    _subscribe(make_remote, _package(step, inputs=token))
+    terminal.types("sentinel-secret").answers(True)
+    try:
+        done = run(["apply", "--format", "json"])
+    finally:
+        terminal.absent()
+    assert done.exit_code != 0
+    assert "login rejected for ***" in done.output
+    assert "sentinel-secret" not in done.output

@@ -79,6 +79,8 @@ class Quarantined:
     fix: str = ""
     #: The provider class refused; ``None`` when the registry never got to one.
     provider: type[Contract] | None = None
+    #: The kind of its own record, when the registry got that far: what it would issue.
+    issues: str = ""
 
     @property
     def described(self) -> str:
@@ -275,20 +277,19 @@ def _load(
     return tuple(entries)
 
 
-def _provider_of(entry: BoundProvider | Quarantined) -> type[Contract] | None:
-    return type(entry.instance) if isinstance(entry, BoundProvider) else entry.provider
-
-
 def _refused(entry: BoundProvider | Quarantined, detail: str) -> Quarantined:
     """``entry`` refused as a duplicate provider (``bad-provider``) saying ``detail``."""
-    contract = entry.binding.contract.cls if isinstance(entry, BoundProvider) else entry.contract
+    if isinstance(entry, Quarantined):
+        return replace(entry, reason=Reason.bad_provider, detail=detail, fix="")
+    binding = entry.binding
     return Quarantined(
         entry.plugin,
-        entry.binding.owner if isinstance(entry, BoundProvider) else entry.owner,
+        binding.owner,
         Reason.bad_provider,
         detail,
-        contract,
-        provider=_provider_of(entry),
+        binding.contract.cls,
+        provider=type(entry.instance),
+        issues="" if binding.owns_item else binding.item_kind,
     )
 
 
@@ -312,10 +313,15 @@ def _check(
     owner_distribution: str,
 ) -> BoundProvider | Quarantined:
     def quarantined(
-        reason: QuarantineReason, detail: str, contract: type[Contract] | None = None
+        reason: QuarantineReason,
+        detail: str,
+        contract: type[Contract] | None = None,
+        issues: str = "",
     ) -> Quarantined:
         provider = type(value) if isinstance(value, Contract) else None
-        return Quarantined(plugin.name, owner, reason, detail, contract, provider=provider)
+        return Quarantined(
+            plugin.name, owner, reason, detail, contract, provider=provider, issues=issues
+        )
 
     info = contract_of(type(value)) if isinstance(value, Contract) else None
     if info is None or not isinstance(value, Contract) or type(value) is info.cls:
@@ -356,6 +362,7 @@ def _check(
             "so a piped record can't find its way back to it",
             info.cls,
         )
+    issues = "" if binding.owns_item else binding.item_kind
     if not binding.owns_item:
         missing = [
             name
@@ -368,6 +375,7 @@ def _check(
                 f"{provider.__qualname__} issues {item.__qualname__ if item else '?'} records, "
                 f"so it must fill {', '.join(missing)}",
                 info.cls,
+                issues,
             )
     wanted = settings_type(provider)
     if wanted is not None and wanted is not plugin.settings:
@@ -376,6 +384,7 @@ def _check(
             f"{provider.__qualname__} reads Provider[{wanted.__qualname__}], but "
             f"{plugin.name}'s settings model is {plugin.settings.__qualname__}",
             info.cls,
+            issues,
         )
     bind(value, binding)
     return BoundProvider(value, binding)
@@ -443,11 +452,11 @@ def method_providers(contract: ContractInfo, method: str, order: Sequence[str]) 
 
     Ranked plugins come first, in ``order``, then the rest by name.
     """
-    names = [
+    names = {  # once each: a plugin's providers of one contract share its rank
         entry.plugin
         for entry in offers(contract)
         if isinstance(entry, BoundProvider) and fills(type(entry.instance), contract, method)
-    ]
+    }
     return sorted(
         names, key=lambda name: (name not in order, order.index(name) if name in order else 0, name)
     )

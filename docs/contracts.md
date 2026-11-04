@@ -200,7 +200,7 @@ Each ask goes to every provider that fills the method. One not configured in
 the profile is skipped silently; with none ready, and no plugin named in
 `plugins` answering `not-filled`, `gather` raises
 `NoProviderReady` (exit 4), whose `not_ready` maps each plugin to why it
-isn't ready and `quarantined` each refused offer to its reason (both empty:
+isn't ready and `quarantined` each plugin to its first refused offer's reason (both empty:
 no composed plugin fills it; a plugin quarantined at composition offers
 nothing and is only in `composition().quarantine`), so an owner can turn it
 into its own error (git's repo finder reports a repo name nobody could look up as not found, naming the

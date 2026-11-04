@@ -332,7 +332,7 @@ def test_the_answer_cache_serves_within_its_max_age_and_refresh_directs_it() -> 
     assert [row["title"] for row in _value(path)] == ["Dune", "Emma"]
     stamp = _stamp(path)
     assert stamp["file"] == 1
-    assert stamp["key"].startswith("library.volume:")  # its record's kind names it
+    assert stamp["key"].startswith("library:library.volume:")  # its record's kind names it
     assert stamp["refreshed_at"] is not None
 
 

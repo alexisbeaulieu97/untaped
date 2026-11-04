@@ -180,13 +180,13 @@ def _bound(cls: type) -> BoundProvider:
                 else "isn't composed; compose it too: compose_with(owner, plugin)"
             )
         )
-    for entry in entries:
-        wanted = (None, getattr(contract, "cls", None))
-        if (
-            not isinstance(entry, BoundProvider)
-            and entry.contract in wanted
-            and entry.owner == owner
-        ):
+    refused = [entry for entry in entries if not isinstance(entry, BoundProvider)]
+    wanted = (None, getattr(contract, "cls", None))
+    # its own refusal first; else one the registry couldn't tie to a class
+    for entry in sorted(refused, key=lambda each: each.provider is not cls):
+        if entry.provider not in (None, cls):
+            continue
+        if entry.contract in wanted and entry.owner == owner:
             raise AssertionError(
                 f"{entry.plugin}'s offer to {entry.owner} is quarantined ({entry.reason}): "
                 f"{entry.described}"

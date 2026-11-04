@@ -103,12 +103,13 @@ type Answer[R] = Ok[R] | Errored | Skipped
 class NoProviderReady(ConfigError):
     """No provider of the method could be asked (exit 4); ``not_ready`` says why, per plugin.
 
-    ``not_ready`` holds each composed provider that isn't ready in the
-    profile, ``quarantined`` each provider offer the registry refused and its
-    reason; both empty means no composed plugin fills the method. A plugin
-    quarantined at composition offers nothing, so it is in neither: it is in
-    ``composition().quarantine``. An owner may turn this into its own error
-    (a name nobody could look up is not found).
+    ``not_ready`` holds, by plugin, its first provider that isn't ready in
+    the profile, ``quarantined`` its first offer the registry refused and that
+    offer's reason (the message names every one); both empty means no
+    composed plugin fills the method. A plugin quarantined at composition
+    offers nothing, so it is in neither: it is in ``composition().quarantine``.
+    An owner may turn this into its own error (a name nobody could look up is
+    not found).
     """
 
     def __init__(
@@ -126,8 +127,8 @@ class NoProviderReady(ConfigError):
 class Answers[R](Sequence[Answer[R]]):
     """Every provider's answer to one method call, in rank order.
 
-    ``pending`` holds, by plugin, the ``untaped.stale`` lines of the answers
-    served stale; they are said once, the first time the answers are
+    ``pending`` holds, by position in ``items``, the ``untaped.stale`` lines
+    of the answers served stale; they are said once, the first time the answers are
     iterated or indexed (``len`` and :meth:`rank_command` say nothing).
     """
 
@@ -138,13 +139,13 @@ class Answers[R](Sequence[Answer[R]]):
         owner: str,
         contract: str,
         method: str,
-        pending: Mapping[str, Sequence[Stale]] | None = None,
+        pending: Mapping[int, Sequence[Stale]] | None = None,
     ) -> None:
         self._items = tuple(items)
         self.owner = owner
         self.contract = contract
         self.method = method
-        self._pending = {plugin: tuple(lines) for plugin, lines in (pending or {}).items() if lines}
+        self._pending = {at: tuple(lines) for at, lines in (pending or {}).items() if lines}
         self._lock = threading.Lock()
 
     @overload
@@ -195,10 +196,19 @@ class Answers[R](Sequence[Answer[R]]):
         """The answers, their stale lines left pending (``select_one`` says them per answer)."""
         return self._items
 
-    def _take(self, plugin: str) -> tuple[Stale, ...]:
-        """``plugin``'s pending stale lines, which nothing says afterwards."""
+    def _take(self, answer: Answer[R]) -> tuple[Stale, ...]:
+        """``answer``'s pending stale lines (``answer`` may be a stale ``Ok``'s ``stale``),
+        which nothing says afterwards."""
+        at = next(
+            (
+                n
+                for n, each in enumerate(self._items)
+                if each is answer or (isinstance(each, Ok) and each.stale is answer)
+            ),
+            None,
+        )
         with self._lock:
-            return self._pending.pop(plugin, ())
+            return () if at is None else self._pending.pop(at, ())
 
     def __repr__(self) -> str:
         return f"Answers({self.owner}.{self.contract}.{self.method}, {list(self._items)!r})"
@@ -206,6 +216,7 @@ class Answers[R](Sequence[Answer[R]]):
     def rank_command(self, plugins: Sequence[str] | None = None) -> str:
         """The ``untaped plugin rank`` line ordering ``plugins`` (default: every answer's)."""
         named = [answer.plugin for answer in self._items] if plugins is None else plugins
+        named = list(dict.fromkeys(named))  # one plugin's providers share its rank
         args = " ".join([f"{self.owner}.{self.contract}", self.method, *named])
         return command_line(f"plugin rank {args}")
 
@@ -219,7 +230,7 @@ class ProviderOffer:
     alone, and its own ``record`` with that record's ``kind`` when it issues
     one (both ``None`` when it keeps the owner's model). A refused offer has
     ``refused`` (the quarantine reason), ``detail`` and ``fix`` instead, and
-    its ``provider`` when the registry got as far as its class.
+    its ``provider`` and ``kind`` when the registry got as far as them.
     """
 
     plugin: str
@@ -253,6 +264,7 @@ def providers(contract: type[Contract], /) -> list[ProviderOffer]:
                 ProviderOffer(
                     entry.plugin,
                     provider=entry.provider,
+                    kind=entry.issues or None,
                     refused=entry.reason,
                     detail=entry.detail,
                     fix=entry.fix,
@@ -330,7 +342,7 @@ def gather[C: Contract, **P, R](
                     described=entry.described,
                 )
                 reasons.append(f"{entry.plugin}: quarantined ({entry.reason}): {entry.described}")
-                quarantined[entry.plugin] = entry.reason
+                quarantined.setdefault(entry.plugin, entry.reason)  # its first refused offer
                 continue
             if not fills(type(entry.instance), info, wanted.name):
                 if plugins is not None:  # named, so the caller's fallback has a reason to say
@@ -344,7 +356,7 @@ def gather[C: Contract, **P, R](
             ready = ready_of(entry)
             if ready is not None:
                 answers[at] = Skipped(entry.plugin, Reason.not_configured, ready.reason, rank)
-                not_ready[entry.plugin] = ready
+                not_ready.setdefault(entry.plugin, ready)
                 setting = f" (set {ready.spelled})" if ready.spelled else ""
                 reasons.append(f"{entry.plugin}: {ready.reason}{setting}")
                 continue
@@ -386,15 +398,13 @@ def gather[C: Contract, **P, R](
 
 def _ordered[R](
     answers: Mapping[int, Answer[R]], stale: Mapping[int, list[Stale]]
-) -> tuple[list[Answer[R]], dict[str, list[Stale]]]:
-    """The answers (by offer) in rank order, and their stale lines by plugin."""
+) -> tuple[list[Answer[R]], dict[int, list[Stale]]]:
+    """The answers (by offer) in rank order, and their stale lines by that order."""
     placed = sorted(
         answers.items(),
         key=lambda each: (each[1].rank is None, each[1].rank or 0, each[1].plugin, each[0]),
     )
-    pending: dict[str, list[Stale]] = {}
-    for at, answer in placed:
-        pending.setdefault(answer.plugin, []).extend(stale.get(at, []))
+    pending = {n: stale.get(at, []) for n, (at, _) in enumerate(placed)}
     return [answer for _, answer in placed], pending
 
 

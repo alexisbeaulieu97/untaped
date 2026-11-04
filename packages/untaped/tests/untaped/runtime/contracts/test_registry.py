@@ -26,7 +26,7 @@ from untaped.runtime import bootstrap
 from untaped.runtime.contracts.registry import Quarantined, doctor_rows, every_offer, offers, reset
 from untaped.runtime.registry import PluginCandidate
 from untaped.sdk import Record
-from untaped.sdk.contracts import Errored, Ok, Provider, Skipped, gather
+from untaped.sdk.contracts import Ambiguous, Errored, Ok, Provider, Skipped, gather, select_one
 from untaped.sdk.contracts._declare import contract_of
 from untaped.sdk.errors import ConfigError, ExitCode
 from untaped.sdk.plugin import Plugin
@@ -333,3 +333,46 @@ def test_a_refused_provider_is_asked_by_its_class_alone() -> None:
         _Maps,
         _MoreMaps,
     ]
+
+
+class _SameTitle(_Pamphlets):
+    def books(self) -> list[Book]:
+        return [self.to_book(Pamphlet(title="Harbour"))]
+
+
+@pytest.mark.parametrize("ranked", [False, True])
+def test_matches_from_two_providers_of_one_plugin_are_ambiguous(
+    monkeypatch: pytest.MonkeyPatch, ranked: bool
+) -> None:
+    """One plugin's providers share its rank, so no ranking tells them apart."""
+    atlas = plugin(
+        "atlas", fills=(_SameTitle, _Maps), records=(Pamphlet, MapSheet), module=__name__
+    )
+    compose(shelf_plugin(), atlas)
+    if ranked:
+        monkeypatch.setattr("untaped.sdk.contracts._gather.ranking", lambda *_: ("atlas",))
+    answers = gather(BookSource.books)()
+    with pytest.raises(Ambiguous, match=r"2 providers \(atlas\) each have a match") as raised:
+        select_one(answers, lambda book: book.title == "Harbour")
+    assert raised.value.hint is None  # no rank command can settle it
+    assert answers.rank_command() == "untaped plugin rank shelf.book_source books atlas"
+
+
+class _SharedPamphlets(_Pamphlets):
+    """A second plugin issuing atlas's record."""
+
+    def books(self) -> list[Book]:
+        return [self.to_book(Pamphlet(title="Ferry times"))]
+
+
+def test_two_plugins_issuing_one_record_keep_their_cache_entries_apart() -> None:
+    atlas = plugin("atlas", fills=(_Pamphlets,), records=(Pamphlet,), module=__name__)
+    other = plugin("bureau", fills=(_SharedPamphlets,), module=__name__)
+    compose(shelf_plugin(), atlas, other)
+    kinds = [entry.binding.item_kind for entry in offers(_info())]  # type: ignore[union-attr]
+    assert kinds == ["atlas.pamphlet", "atlas.pamphlet"]
+    first = gather(BookSource.books)()
+    cached = gather(BookSource.books, refresh=False)()
+    for answers in (first, cached):
+        titles = {a.plugin: [b.title for b in a.value] for a in answers.ok}
+        assert titles == {"atlas": ["Tide tables"], "bureau": ["Ferry times"]}

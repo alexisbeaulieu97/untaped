@@ -71,26 +71,48 @@ def select_one[I](answers: Answers[list[I]], matches: Callable[[I], bool]) -> I:
         above = [(ok, hits) for ok, hits in found if _rank_key(ok.rank) < lowest]
         if not above:
             for each in failed:
-                answers._take(each.plugin)  # the raise says it
+                answers._take(each)  # the raise says it
             raise failed[0].error
         for each in failed:
             _warn(f"{each.plugin} failed ({each.error}); using a match ranked above it")
-        return _use(min(above, key=lambda pair: _rank_key(pair[0].rank)), answers)
+        return _use(_best(above, answers), answers)
     if not found:
         unasked = [f"{skip.plugin} ({skip.reason})" for skip in skipped]
         tail = f"; not asked: {', '.join(unasked)}" if unasked else ""
         raise NotFound(f"no provider of {answers.owner}.{answers.contract} matched{tail}")
     ranked = [pair for pair in found if pair[0].rank is not None]
     if ranked:
-        return _use(min(ranked, key=lambda pair: _rank_key(pair[0].rank)), answers)
+        return _use(_best(ranked, answers), answers)
     if len(found) > 1:
         matched = [ok.plugin for ok, _ in found]
+        if len(set(matched)) < len(matched):  # one plugin's providers share its rank
+            raise _tied(found, answers)
         raise Ambiguous(
             f"{', '.join(matched)} each have a match; rank them to choose",
             hint=f"run `{answers.rank_command(matched)}`",
             details={"providers": [ok.plugin for ok, _ in found]},
         )
     return _use(found[0], answers)
+
+
+def _best[I](
+    pairs: list[tuple[Ok[list[I]], list[I]]], answers: Answers[list[I]]
+) -> tuple[Ok[list[I]], list[I]]:
+    """The match ranked highest; two at that rank are one plugin's providers, so ambiguous."""
+    top = min(_rank_key(ok.rank) for ok, _ in pairs)
+    best = [pair for pair in pairs if _rank_key(pair[0].rank) == top]
+    if len(best) > 1:
+        raise _tied(best, answers)
+    return best[0]
+
+
+def _tied[I](pairs: list[tuple[Ok[list[I]], list[I]]], answers: Answers[list[I]]) -> Ambiguous:
+    """Matches from several providers of one plugin: no ranking tells them apart."""
+    plugins = list(dict.fromkeys(ok.plugin for ok, _ in pairs))
+    return Ambiguous(
+        f"{len(pairs)} providers ({', '.join(plugins)}) each have a match; be more specific",
+        details={"providers": plugins, "contract": f"{answers.owner}.{answers.contract}"},
+    )
 
 
 def _sorted[I](
@@ -126,7 +148,7 @@ def _sorted[I](
 def _use[I](pair: tuple[Ok[list[I]], list[I]], answers: Answers[list[I]]) -> I:
     """The one item of ``pair``, its answer's stale line said now that it is used."""
     item = _one(pair, answers)
-    for line in answers._take(pair[0].plugin):
+    for line in answers._take(pair[0]):
         Diagnostics().emit(line)
     return item
 

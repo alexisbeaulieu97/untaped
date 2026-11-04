@@ -6082,10 +6082,12 @@ record untaped.hold_outcome.holder string  [experimental]
 record untaped.hold_outcome.item string  [experimental]
 record untaped.hold_outcome.plugin string  [experimental]
 record untaped.installed_plugin
+record untaped.installed_plugin.detail string?
 record untaped.installed_plugin.distribution string
 record untaped.installed_plugin.fills string[]
 record untaped.installed_plugin.name string
 record untaped.installed_plugin.package string?
+record untaped.installed_plugin.reason string?
 record untaped.installed_plugin.requires string[]
 record untaped.installed_plugin.root boolean
 record untaped.installed_plugin.source_dir string(format=path)?
@@ -6685,16 +6687,20 @@ sdk untaped.sdk.HttpTransportError.retryable
 sdk untaped.sdk.HttpTransportError.system class
 sdk untaped.sdk.InstalledPlugin extra=forbid
 sdk untaped.sdk.InstalledPlugin(*, name, status, distribution, version)
+sdk untaped.sdk.InstalledPlugin(detail=) default=None
 sdk untaped.sdk.InstalledPlugin(fills=) default=[]
 sdk untaped.sdk.InstalledPlugin(package=) default=None
+sdk untaped.sdk.InstalledPlugin(reason=) default=None
 sdk untaped.sdk.InstalledPlugin(requires=) default=[]
 sdk untaped.sdk.InstalledPlugin(root=) default=false
 sdk untaped.sdk.InstalledPlugin(source_dir=) default=None
 sdk untaped.sdk.InstalledPlugin(tests_dir=) default=None
+sdk untaped.sdk.InstalledPlugin.detail
 sdk untaped.sdk.InstalledPlugin.distribution
 sdk untaped.sdk.InstalledPlugin.fills
 sdk untaped.sdk.InstalledPlugin.name
 sdk untaped.sdk.InstalledPlugin.package
+sdk untaped.sdk.InstalledPlugin.reason
 sdk untaped.sdk.InstalledPlugin.requires
 sdk untaped.sdk.InstalledPlugin.root
 sdk untaped.sdk.InstalledPlugin.source_dir
@@ -8657,16 +8663,20 @@ sdk untaped_lint.api.Findings.strict  [experimental]
 sdk untaped_lint.api.InstalledPlugin base=untaped.sdk.Record  [experimental]
 sdk untaped_lint.api.InstalledPlugin extra=forbid  [experimental]
 sdk untaped_lint.api.InstalledPlugin(*, name, status, distribution, version)  [experimental]
+sdk untaped_lint.api.InstalledPlugin(detail=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin(fills=) default=[]  [experimental]
 sdk untaped_lint.api.InstalledPlugin(package=) default=None  [experimental]
+sdk untaped_lint.api.InstalledPlugin(reason=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin(requires=) default=[]  [experimental]
 sdk untaped_lint.api.InstalledPlugin(root=) default=false  [experimental]
 sdk untaped_lint.api.InstalledPlugin(source_dir=) default=None  [experimental]
 sdk untaped_lint.api.InstalledPlugin(tests_dir=) default=None  [experimental]
+sdk untaped_lint.api.InstalledPlugin.detail  [experimental]
 sdk untaped_lint.api.InstalledPlugin.distribution  [experimental]
 sdk untaped_lint.api.InstalledPlugin.fills  [experimental]
 sdk untaped_lint.api.InstalledPlugin.name  [experimental]
 sdk untaped_lint.api.InstalledPlugin.package  [experimental]
+sdk untaped_lint.api.InstalledPlugin.reason  [experimental]
 sdk untaped_lint.api.InstalledPlugin.requires  [experimental]
 sdk untaped_lint.api.InstalledPlugin.root  [experimental]
 sdk untaped_lint.api.InstalledPlugin.source_dir  [experimental]

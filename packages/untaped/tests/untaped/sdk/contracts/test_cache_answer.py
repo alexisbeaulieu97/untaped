@@ -290,7 +290,10 @@ def test_the_line_names_the_provider_the_owners_cache_and_the_entry(clock: Cache
     assert line.plugin == "library"
     assert line.cache == "shelf.book_source_books"
     assert line.key == _stamp(entry)["key"]
-    assert line.key.startswith("library.volume:") and len(line.key) == len("library.volume:") + 64
+    assert (
+        line.key.startswith("library:library.volume:")  # its plugin, then its record's kind
+        and len(line.key) == len("library:library.volume:") + 64
+    )
 
 
 def test_11_0s_entry_and_1cs_path_are_misses() -> None:
@@ -311,7 +314,7 @@ def test_11_0s_entry_and_1cs_path_are_misses() -> None:
     )
     old = home / "library/cache/shelf.book_source.books/default"
     old.mkdir(parents=True)
-    (old / f"{key.removeprefix('library.volume:')}.json").write_text(
+    (old / f"{key.removeprefix('library:library.volume:')}.json").write_text(
         json.dumps({"untaped": "1", "key": key, "value": []})
     )
     entry.unlink()

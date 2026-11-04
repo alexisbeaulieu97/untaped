@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import SecretStr
 
-from untaped.sdk import Record, q
+from untaped.sdk import Record, UntapedError, q
 from untaped.sdk.process import ProcessResult, run_process
 from untaped_dotfiles.errors import DotfilesError
 from untaped_values.api import InputError, render
@@ -179,9 +179,21 @@ class StepRunner:
         if kind is not None:
             provider = self.kinds.provider(kind)
             secret = None if stdin is None else SecretStr(stdin.decode("utf-8"))
-            result = self.kinds.run(provider, self._fields(approved, provider.record), secret)
+            try:
+                result = self.kinds.run(provider, self._fields(approved, provider.record), secret)
+            except UntapedError as exc:  # what it says is shown as a run's output is: masked
+                said = f"{exc} {exc.hint or ''}"
+                if not any(secret and secret in said for secret in secrets):
+                    raise
+                raise UntapedError(
+                    _masked(str(exc), secrets),
+                    category=exc.category,
+                    system=exc.system,
+                    hint=None if exc.hint is None else _masked(exc.hint, secrets),
+                    details=exc.details,
+                ) from None
             if not result.passes:
-                detail = result.detail or "it says it didn't pass"
+                detail = _masked(result.detail, secrets) or "it says it didn't pass"
                 raise DotfilesError(f"the {kind} run failed: {detail}")
             return
         assert approved.argv is not None  # report-only steps never run
@@ -213,10 +225,7 @@ class StepRunner:
         if self._relay is None:
             return
         for stream in (ended.stdout, ended.stderr):
-            text = stream.decode("utf-8", "replace")
-            for secret in secrets:
-                if secret:
-                    text = text.replace(secret, "***")
+            text = _masked(stream.decode("utf-8", "replace"), secrets)
             for line in text.splitlines():
                 self._relay(line)
 
@@ -231,6 +240,14 @@ class StepRunner:
     def _home_text(self, text: str) -> str:
         """An argv element: one that starts with ``~/`` (or is ``~``) names the home folder."""
         return str(self._home_path(text)) if text == "~" or text.startswith("~/") else text
+
+
+def _masked(text: str, secrets: Sequence[str]) -> str:
+    """``text`` with every secret value of the run masked."""
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
 
 
 def _shown(argv: Sequence[str]) -> str:
