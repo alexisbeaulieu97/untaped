@@ -60,9 +60,6 @@ class List(GithubCommand):
 
     def run(self) -> Iterator[Repo]:
         orgs = self.orgs(self.scope, scoped=bool(self.scope.team))
-        for org in orgs:
-            if not org or "/" in org or any(char.isspace() for char in org):
-                raise UsageError(f"--org must be an org name, not {org!r}")
         teams = team_scopes(self.scope.team, orgs=orgs)
         if not orgs and not teams:
             raise UsageError("repos list requires --org or --team, or a github.default_org setting")

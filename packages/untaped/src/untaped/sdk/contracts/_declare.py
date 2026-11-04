@@ -91,15 +91,15 @@ class NotReady:
     would make it ready, as ``key(GithubSettings).default_org``. Core spells
     it in full for doctor and the ``config set`` hint (``spelled``,
     ``github.default_org``) when it reads ``ready()``; a provider never sets
-    ``spelled``. ``methods`` names the contract methods it can't answer;
-    empty means every one. A provider that can answer ``select`` but not
-    ``repos`` without an inventory scope returns
-    ``NotReady("no inventory scope", key(S).default_org, methods=("repos",))``.
+    ``spelled``. ``methods`` holds the contract methods it can't answer, as
+    references (``RepoSource.repos``); empty means every one. A provider
+    that can answer ``select`` but not ``repos`` without an inventory scope
+    returns ``NotReady("no scope", key(S).default_org, methods=(RepoSource.repos,))``.
     """
 
     reason: str
     setting: SettingKey | None = None
-    methods: tuple[str, ...] = ()
+    methods: tuple[Callable[..., Any], ...] = ()
     spelled: str | None = field(default=None, init=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -107,6 +107,13 @@ class NotReady:
             raise TypeError(
                 f"NotReady takes the setting as key(Settings).field, not {self.setting!r}"
             )
+        for method in self.methods:
+            method_contract(method)  # a misspelt or removed method fails here, not at an ask
+
+    @property
+    def method_names(self) -> tuple[str, ...]:
+        """The names of :attr:`methods` (a renamed method's current name)."""
+        return tuple(method_contract(method)[1].name for method in self.methods)
 
 
 @dataclass(frozen=True)

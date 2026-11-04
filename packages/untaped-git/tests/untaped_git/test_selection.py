@@ -154,6 +154,15 @@ def test_selections_are_kept_per_selector(clock: ManualClock) -> None:
     assert Groups.asked == [["infra"], ["data"], ["infra"]]
 
 
+def test_match_does_not_key_the_kept_selection() -> None:
+    with composed({"gitlab": (Groups,)}):
+        api = select_repos("gitlab", selector("infra", match=["*/api"]))
+        web = select_repos("gitlab", selector("infra", match=["*/web"]))
+
+    assert (names(api.repos), names(web.repos)) == (["infra/api"], ["infra/web"])
+    assert Groups.asked == [["infra"]]
+
+
 def test_a_refresh_asks_live_and_a_failed_live_call_raises(clock: ManualClock) -> None:
     with composed({"gitlab": (Groups,)}):
         select_repos("gitlab", selector("infra"))

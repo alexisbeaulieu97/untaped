@@ -45,7 +45,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
         if unready is not None:
             return unready
         if TOKEN.answer(self.settings.server) is None:
-            return NotReady(f"no token; {_login()}", methods=("repos", "select"))
+            return NotReady(f"no token; {_login()}", methods=(RepoSource.repos, RepoSource.select))
         try:
             inventory_scope(self.settings)
         except GithubError as exc:
@@ -53,7 +53,7 @@ class GithubRepos(RepoSource[Repo], Provider[GithubSettings]):
             return NotReady(
                 "github.inventory.teams needs ORG/SLUG entries" if teams else "no inventory scope",
                 key(GithubSettings).inventory.teams if teams else key(GithubSettings).default_org,
-                methods=("repos",),
+                methods=(RepoSource.repos,),
             )
         return None
 

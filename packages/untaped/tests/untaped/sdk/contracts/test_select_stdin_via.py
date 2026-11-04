@@ -260,7 +260,7 @@ def test_an_unready_provider_whose_row_arrived_exits_4(install: Installer) -> No
 def test_a_provider_waiting_only_for_other_methods_reads_rows(
     install: Installer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(Loans, "ready", lambda self: NotReady("no catalog", methods=("cards",)))
+    monkeypatch.setattr(Loans, "ready", lambda self: NotReady("no catalog", methods=(Cards.cards,)))
     piped = _line(LOAN, shelf_mark="A1", name="Dune")
     ran = _counter(install).cli("counter show --stdin -f json", input=piped)
     assert ran.exit == 0, ran.stderr

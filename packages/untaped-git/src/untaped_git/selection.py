@@ -45,7 +45,8 @@ def select_repos(plugin: str, selector: RepoSelector, *, refresh: bool | None = 
     note = None
     if issued is not None:
         asked = gather(RepoSource.select, plugins={plugin}, refresh=refresh)
-        selected = _one(asked(selector), live=refresh is True)
+        # match narrows the answer afterwards, so it doesn't key the provider's cached answer
+        selected = _one(asked(selector.model_copy(update={"match": []})), live=refresh is True)
         if not isinstance(selected, Skipped):
             return Selection(_matching(selected, selector.match))
         note = f"{selected.detail}: took every repo it lists" + _matched(selector.match)

@@ -260,7 +260,7 @@ def _provider(
 
 def _waiting(ready: NotReady | None, method: str | None = None) -> str | None:
     """Why a row is skipped: the provider can't answer ``method`` (any method, when ``None``)."""
-    if ready is None or (method is not None and ready.methods and method not in ready.methods):
+    if ready is None or (method is not None and ready.methods and method not in ready.method_names):
         return None
     setting = f" (set {ready.spelled})" if ready.spelled else ""
     return f"skipped: not ready: {ready.reason}{setting}"

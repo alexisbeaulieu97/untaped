@@ -271,22 +271,14 @@ def conformance(provider: object) -> None:
     """
     if not isinstance(provider, RepoSource):
         return
-    if _fills(type(provider), "to_selector"):
-        assert _fills(type(provider), "select"), (
+    cls = type(provider)
+    if cls.to_selector is not RepoSource.to_selector:
+        assert cls.select is not RepoSource.select, (
             "a provider issuing selectors (to_selector) fills select to read them back"
         )
     names = [repo.name.lower() for repo in provider.repos()]
     duplicates = sorted({name for name in names if names.count(name) > 1})
     assert not duplicates, f"repos share a name: {', '.join(duplicates)}"
-
-
-def _fills(cls: type, method: str) -> bool:
-    """Whether a class between ``cls`` and ``RepoSource`` defines ``method``."""
-    return any(
-        method in vars(klass)
-        for klass in cls.__mro__
-        if klass is not RepoSource and issubclass(klass, RepoSource)
-    )
 
 
 @experimental

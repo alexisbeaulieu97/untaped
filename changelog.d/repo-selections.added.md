@@ -6,6 +6,6 @@ plugin for its repos through the optional `RepoSource.select` (experimental;
 answers cached by `git.caches.repo_source_select`). A selector with only
 `match` patterns, or one whose plugin doesn't fill `select`, takes the
 plugin's `repos()` instead, and `match` narrows either answer.
-`NotReady(methods=)` lets a provider name the contract methods
-it can't answer yet; `gather`, `Stdin(via=)` and `untaped plugin check` ask it
-for the others, and doctor names the waiting methods.
+`NotReady(methods=(Contract.method, ...))` lets a provider name the contract
+methods it can't answer yet; `gather`, `Stdin(via=)` and `untaped plugin
+check` ask it for the others, and doctor names the waiting methods.
