@@ -15,8 +15,8 @@ import pytest
 import respx
 
 from ansible_index_support import (
+    BAD_CREDENTIALS,
     PLATFORM,
-    RATE_LIMIT_EXCEEDED,
     REQS,
     TEMPLATED,
     capture_git_refresh,
@@ -40,6 +40,7 @@ from untaped_ansible.domain.payloads import (
     RepoFailure,
     SourceRepoMetadata,
 )
+from untaped_git.api import HostBudget
 
 _TWO_SOURCES = {
     "sources": [
@@ -132,7 +133,6 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
         ),
         (["--refresh"], "--refresh needs a source; select one with --source NAME"),
         (["--cached"], "--cached needs a source; select one with --source NAME"),
-        (["--backend", "git"], "--backend needs a source; select one with --source NAME"),
         (["--refresh", "--path", REQS], "--refresh needs a source"),
         (["--refresh", "--ref-kind", "heads"], "--refresh needs a source"),
         (["--refresh", "--ref-pattern", "v*"], "--refresh needs a source"),
@@ -141,10 +141,6 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
         (
             ["--source", "platform", "--ref-scan-default", "default_branch"],
             "--ref-scan-default",
-        ),
-        (
-            ["--source", "platform", "--cached", "--backend", "git"],
-            "--backend needs a refresh; drop --cached",
         ),
         (["--source", "platform", "--refresh", "--depth", "abc"], "--depth"),
         (["--source", "platform", "--refresh", "--depth=-1"], "--depth must be >= 0"),
@@ -701,18 +697,26 @@ def test_graph_refresh_budget_pause_serves_cached_data_or_exits(
         result=RefreshResult(
             source_key="",
             completed=False,
-            pause_reason="GitHub GraphQL rate limit is low: 200 points remaining",
+            pause_reason="the ref probe budget is spent on github.com (200 left)",
             repos=2,
             refs=1,
             edges=1,
-            rate_limit_reset_at=reset,
+            budgets=(
+                HostBudget(
+                    plugin="github",
+                    host="github.com",
+                    remaining=200,
+                    reset_at=reset,
+                    exhausted=True,
+                ),
+            ),
         ),
     )
 
     result = run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     if cached:
-        # Paused at the rate-limit floor over cached data: served with a warning.
+        # Paused once the probe budget was spent, over cached data: served with a warning.
         assert result.exit_code == 0, result.output
         assert _tree(result.stdout) == ["acme/site@main"]
         [stale] = [d for d in result.diagnostics if isinstance(d, Stale)]
@@ -722,10 +726,10 @@ def test_graph_refresh_budget_pause_serves_cached_data_or_exits(
     else:
         assert result.exit_code == 5  # nothing cached to serve: retry later
         assert result.stdout == ""
-        assert "GitHub GraphQL rate limit is low: 200 points remaining" in result.stderr
+        assert "the ref probe budget is spent on github.com (200 left)" in result.stderr
 
 
-def test_graph_refresh_global_graphql_error_serves_cached_data_with_a_warning(
+def test_graph_refresh_refused_probe_serves_cached_data_with_a_warning(
     tmp_path: Path, monkeypatch
 ) -> None:
     seed(tmp_path, "source:platform", make_edge(), scanned_at=datetime(2026, 1, 1, tzinfo=UTC))
@@ -733,18 +737,15 @@ def test_graph_refresh_global_graphql_error_serves_cached_data_with_a_warning(
 
     with respx.mock(base_url="https://api.github.com") as mock:
         mock_expansion(mock, ["acme/site"])
-        mock.post("/graphql").mock(return_value=RATE_LIMIT_EXCEEDED)
-        result = run(
-            "graph", "acme/base", "--source", "platform", "--direction=up", "--refresh",
-            "--backend", "graphql",
-        )  # fmt: skip
+        mock.post("/graphql").mock(return_value=BAD_CREDENTIALS)
+        result = run("graph", "acme/base", "--source", "platform", "--direction=up", "--refresh")
 
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main"]
     [stale] = [d for d in result.diagnostics if isinstance(d, Stale)]
     assert stale.error is not None
-    assert stale.error.category == "unavailable"
-    assert result.stderr.count("github graphql rate limit exceeded") == 1
+    assert stale.error.category == "auth"
+    assert result.stderr.count("Bad credentials") == 1
 
 
 @requires_git
@@ -931,7 +932,6 @@ def test_graph_local_target_without_source_never_mixes_in_cached_edges(
     ("args", "key", "value", "exit_code"),
     [
         (["source", "refresh", "prod", "--parallel", "5"], "concurrency", 5, 0),
-        (["source", "refresh", "prod", "--backend", "git"], "backend", "git", 0),
         # The fake refresh stores nothing: the graph reads an empty source.
         (
             [
@@ -941,15 +941,15 @@ def test_graph_local_target_without_source_never_mixes_in_cached_edges(
                 "prod",
                 "--direction=up",
                 "--refresh",
-                "--backend",
-                "git",
+                "--parallel",
+                "3",
             ],
-            "backend",
-            "git",
+            "concurrency",
+            3,
             0,
         ),
-        # --backend applies to the refresh auto runs too (a never-refreshed source).
-        (["impact", "acme/base", "--source", "prod", "--backend", "git"], "backend", "git", 0),
+        # --parallel applies to the refresh auto runs too (a never-refreshed source).
+        (["impact", "acme/base", "--source", "prod", "--parallel", "4"], "concurrency", 4, 0),
     ],
 )
 def test_refresh_overrides_reach_the_git_refresh(
@@ -962,7 +962,7 @@ def test_refresh_overrides_reach_the_git_refresh(
 
     assert result.exit_code == exit_code, result.output
     assert captured[key] == value
-    if "--parallel" in args:
+    if args[:2] == ["source", "refresh"]:
         assert "1 changed, 0 unchanged" in result.stderr
 
 

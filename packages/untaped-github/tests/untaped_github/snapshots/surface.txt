@@ -8,6 +8,7 @@ cfg github.git_protocol choice=ssh
 cfg github.git_protocol string default=https
 cfg github.inventory.orgs string[] default=[]
 cfg github.inventory.teams string[] default=[]
+cfg github.ref_probe.rate_limit_floor integer(minimum=0) default=500
 cfg github.server.url string(format=uri,maxLength=2083,minLength=1) default=<computed>
 cfg github.server.verify_tls boolean|string(format=path) default=true
 cfg github.server_version string? default=unset
@@ -612,6 +613,7 @@ sdk untaped_github.api.GithubSettings()
 sdk untaped_github.api.GithubSettings(default_org=) default=None
 sdk untaped_github.api.GithubSettings(git_protocol=) default=https
 sdk untaped_github.api.GithubSettings(inventory=) default=<computed>
+sdk untaped_github.api.GithubSettings(ref_probe=) default=<computed>
 sdk untaped_github.api.GithubSettings(server=) default=<computed>
 sdk untaped_github.api.GithubSettings(server_version=) default=None
 sdk untaped_github.api.GithubSettings(sweep=) default=<computed>
@@ -619,6 +621,7 @@ sdk untaped_github.api.GithubSettings.api_url
 sdk untaped_github.api.GithubSettings.default_org
 sdk untaped_github.api.GithubSettings.git_protocol
 sdk untaped_github.api.GithubSettings.inventory
+sdk untaped_github.api.GithubSettings.ref_probe
 sdk untaped_github.api.GithubSettings.retired_keys class
 sdk untaped_github.api.GithubSettings.server
 sdk untaped_github.api.GithubSettings.server_version

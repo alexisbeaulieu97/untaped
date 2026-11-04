@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from untaped_ansible.domain import payloads, variable_models
 
 if TYPE_CHECKING:
-    from untaped_github.api import BatchRepoRefsResult
+    from untaped_git.api import ProbeResult
 
 
 class DependencyIndex(Protocol):
@@ -139,17 +139,18 @@ class IncrementalDependencyIndexWriter(Protocol):
         ...
 
 
-class RefProbe(Protocol):
-    """Batched remote ref freshness probe for many repositories."""
+class ProbeRefs(Protocol):
+    """git's :func:`~untaped_git.api.probe_refs`: each URL's refs, by its host or ``ls-remote``."""
 
-    def probe(
+    def __call__(
         self,
-        repos: Sequence[payloads.ProbeTarget],
+        urls: Sequence[str],
         *,
         kinds: Sequence[str],
-        mode: Literal["all", "default_branch"] = "all",
-        on_progress: Callable[[int, int], None] | None = None,
-    ) -> payloads.ProbeReport: ...
+        default_branch_only: bool,
+        default_branches: Mapping[str, str] | None,
+        on_progress: Callable[[int, int], None] | None,
+    ) -> ProbeResult: ...
 
 
 class GitHubDependencyReader(Protocol):
@@ -212,36 +213,3 @@ class GitCache(Protocol):
     def read_blobs(self, url: str, blobs: Sequence[str]) -> dict[str, str]:
         """``blob → content`` of ``blobs``, fetched by id into ``url``'s store repo first."""
         ...
-
-
-class LsRemoteGit(Protocol):
-    """The ``git ls-remote`` call the Git ref probe needs."""
-
-    def ls_remote(self, url: str, *, patterns: list[str]) -> dict[str, str]:
-        """``ref → commit`` (annotated tags peeled) of ``url``'s refs matching ``patterns``."""
-        ...
-
-    def default_branch(self, url: str) -> str | None:
-        """The branch ``url``'s ``HEAD`` points at, or ``None``."""
-        ...
-
-
-class BatchRepoRefsClient(Protocol):
-    """The slice of ``untaped_github.api.GithubApi`` the probe needs."""
-
-    def batch_repo_refs(
-        self,
-        repos: Sequence[str],
-        *,
-        kinds: Sequence[str] = ("heads", "tags"),
-        concurrency: int = 1,
-        on_progress: Callable[[int, int], None] | None = None,
-    ) -> BatchRepoRefsResult: ...
-
-    def batch_default_branch_refs(
-        self,
-        repos: Sequence[str],
-        *,
-        concurrency: int = 1,
-        on_progress: Callable[[int, int], None] | None = None,
-    ) -> BatchRepoRefsResult: ...

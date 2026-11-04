@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from untaped.sdk import Command, UsageError, command_line, first_validation_error, not_found
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex
-from untaped_ansible.refresh import Backend, RefreshWiring
+from untaped_ansible.refresh import RefreshWiring
 from untaped_ansible.settings import SOURCES, AnsibleSettings, SourceDefinition, alias_map
 from untaped_github.api import GithubSettings, github_settings, github_web_host
 
@@ -21,7 +21,6 @@ _FINGERPRINT_HEX_CHARS = 16
 
 #: How ``--ref-scan-default`` reads in help, on ``source set`` and the inline selectors.
 REF_SCAN_DEFAULT = "Scan strategy: all refs or only each repo's default branch."
-BACKEND = "Ref probe backend for this refresh: auto, graphql, or git."
 TEAM = (
     "GitHub team as ORG/SLUG; a bare SLUG is allowed when exactly one --org is given "
     "and normalizes to ORG/SLUG."
@@ -43,9 +42,7 @@ class AnsibleCommand(Command[AnsibleSettings]):
         """The Git host of ``github.server.url``: the host a repo URL is read against."""
         return github_web_host(self.github.api_url)
 
-    def wiring(
-        self, index: SqliteDependencyIndex, *, parallel: int, backend: Backend | None
-    ) -> RefreshWiring:
+    def wiring(self, index: SqliteDependencyIndex, *, parallel: int) -> RefreshWiring:
         """What refreshing any selected source needs, with ``parallel`` Git fetches."""
         return RefreshWiring(
             index=index,
@@ -55,7 +52,6 @@ class AnsibleCommand(Command[AnsibleSettings]):
             plugin=self.ctx.plugin,
             warn=self.ctx.diag.warning,
             concurrency=parallel,
-            backend=backend,
         )
 
     def saved(self, name: str) -> SourceDefinition:

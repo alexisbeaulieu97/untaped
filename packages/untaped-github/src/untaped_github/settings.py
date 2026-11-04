@@ -59,6 +59,21 @@ class InventorySettings(BaseModel):
     )
 
 
+class RefProbeSettings(BaseModel):
+    """How github probes many repositories' refs at once (git's ``GitHost.probe_refs``)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    rate_limit_floor: int = Field(
+        default=500,
+        ge=0,
+        description=(
+            "Say the ref probe budget is spent once GitHub's GraphQL budget drops "
+            "below this, so the caller asks GitHub nothing more until it resets."
+        ),
+    )
+
+
 _TOKEN_NOTE = "deleted in 12.0; store the token with `untaped auth login github`"
 
 
@@ -125,6 +140,7 @@ class GithubSettings(BaseModel):
     )
     sweep: SweepSettings = Field(default_factory=SweepSettings)
     inventory: InventorySettings = Field(default_factory=InventorySettings)
+    ref_probe: RefProbeSettings = Field(default_factory=RefProbeSettings)
 
     @property
     def api_url(self) -> str:
