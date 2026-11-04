@@ -46,9 +46,10 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from untaped.runtime.progress_stack import Mode, hold_screen, open_task, release_screen, write
 from untaped.runtime.redaction import redact_url_password
-from untaped.runtime.render import MessageKind, render_message, should_colorize, stream_is_tty
+from untaped.runtime.render import MessageKind, render_message, should_colorize
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._run import OutputPolicy, recorder
+from untaped.sdk._streams import stream_is_tty
 from untaped.sdk.diagnostic import (
     Debug,
     Deprecation,

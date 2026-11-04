@@ -210,7 +210,7 @@ def _someone_can_answer() -> bool:
     controlling terminal (and inherit ``GPG_TTY``), so ``/dev/tty``, which a
     confirmation may reach, is no sign here.
     """
-    from untaped.runtime.render import stream_is_tty  # noqa: PLC0415 - keep auth imports light
+    from untaped.sdk._streams import stream_is_tty  # noqa: PLC0415 - keep auth imports light
 
     return stream_is_tty(sys.stdin) or stream_is_tty(sys.stderr)
 

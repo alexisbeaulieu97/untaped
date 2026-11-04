@@ -53,11 +53,8 @@ class Docs(Command[CoreSettings]):
         # command pays for the pages.
         from untaped.core.docs import page, search  # noqa: PLC0415
         from untaped.runtime.bootstrap import composition, root_app  # noqa: PLC0415
-        from untaped.runtime.render import (  # noqa: PLC0415
-            render_markdown,
-            should_colorize,
-            stream_is_tty,
-        )
+        from untaped.runtime.render import render_markdown, should_colorize  # noqa: PLC0415
+        from untaped.sdk._streams import stream_is_tty  # noqa: PLC0415
 
         if self.search is not None:
             if not self.search.strip():

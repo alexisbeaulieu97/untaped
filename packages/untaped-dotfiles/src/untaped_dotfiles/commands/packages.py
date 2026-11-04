@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any, cast
 
 from pydantic import BaseModel, Field
@@ -13,6 +13,7 @@ from untaped.sdk import (
     Output,
     Positional,
     UsageError,
+    command_line,
     key,
     plural,
     q,
@@ -21,6 +22,7 @@ from untaped.sdk import (
 from untaped_dotfiles.catalog import Offer, Selection, gone_error
 from untaped_dotfiles.commands._dotfiles import DotfilesCommand, Services, package_row
 from untaped_dotfiles.inventory import input_values
+from untaped_dotfiles.models import PlacedRecord
 from untaped_dotfiles.package import Item
 from untaped_dotfiles.policy import Policy
 from untaped_dotfiles.records import (
@@ -290,6 +292,15 @@ class Show(DotfilesCommand):
     Each row is a package with its inputs (a secret's value is never shown),
     items, entries and their state here; nothing shown runs a command from a
     source. A package file that doesn't load is a row with `error` (exit 1).
+
+    With no SELECTOR, at a terminal, it opens a screen instead: `space` turns
+    a package or item on or off, `p` cycles its policy, `e` answers a plain
+    input, and `ctrl-s` saves every change to `config.yml` at once (esc
+    closes saving nothing); each change is said after it closes. It places
+    nothing, and turning something off there takes nothing back: `apply`
+    places, `remove` takes back. A named format (`--format`,
+    `UNTAPED_FORMAT` or `untaped.ui.format`), `--columns`, or a stdout or
+    stdin that isn't a terminal (`show | grep starship`) prints the rows.
     """
 
     selector: Positional[str | None] = Field(
@@ -299,6 +310,8 @@ class Show(DotfilesCommand):
 
     def run(self) -> Iterator[PackageDetail]:
         svc = self.services()
+        if self._screen_wanted():
+            return self._screen(svc)
         if self.selector is None:
             selections = [Selection(offer) for offer in svc.catalog.offers()]
         else:
@@ -310,6 +323,89 @@ class Show(DotfilesCommand):
                 self.ctx.diag.failure(row.error, item=f"{row.source}/{row.name}")
         self.output.empty("No packages: subscribe a source first.")
         return iter(rows)
+
+    def _screen_wanted(self) -> bool:
+        """Whether the run wants the screen: as a pager, only when it would draw on a terminal."""
+        return (
+            self.selector is None
+            and not self.output.format_chosen
+            and self.output.requested is None
+            and self.output.to_terminal
+            and self.ctx.terminal.can_prompt
+        )
+
+    def _screen(self, svc: Services) -> Iterator[PackageDetail]:
+        """Run the screen, then say what it saved and refresh the status files."""
+        from untaped_dotfiles.screen import (  # noqa: PLC0415 - Rich
+            PackageView,
+            ShowResult,
+            show_screen,
+        )
+
+        command = command_line(Show.spelled())
+        alternative = command_line(Show.spelled("--format", "json"))
+        self.ctx.terminal.require_screen_terminal(command=command, alternative=alternative)
+        offers = svc.catalog.offers()
+        self.report_sources(svc.catalog)
+        views = [
+            PackageView(
+                detail=_detail(svc, Selection(offer)),
+                spelled=offer.spelled,
+                refused=_refused(svc, offer),
+                inputs=dict(offer.package.inputs) if offer.package is not None else {},
+            )
+            for offer in offers
+        ]
+        choices = {(o.source.name, o.name): o.choice for o in offers}
+
+        def save(result: ShowResult) -> None:
+            """Write the changes, then forget and refresh as ``add`` does, under the lock."""
+            keyed: dict[Any, BaseModel | None] = {
+                key(DotfilesSettings).sources[source].packages[package]: choice
+                for (source, package), choice in result.changes.items()
+            }
+            with svc.store.locked():
+                self.ctx.plugin.plan_settings(keyed).write()
+                for owner in result.turned_on:
+                    svc.store.forget_applied(owner)
+                self.services(_with_choices(self.settings, result.changes)).refresh_status()
+
+        screen = show_screen(views, choices, save=save, command=command, alternative=alternative)
+        result = self.ctx.terminal.run(screen)
+        if not result.changes:
+            self.ctx.diag.info("nothing saved")
+            return iter([])
+        for line in result.lines:
+            self.ctx.diag.success(line)
+        placed = svc.store.placed()
+        for owner in result.turned_off:
+            if any(_placed_by(record, owner) for record in placed):
+                spelled = _spelled(offers, owner)
+                take_back = run_hint(Remove.spelled(spelled))
+                self.ctx.diag.info(f"what {spelled} placed stays; to take it back, {take_back}")
+        if any(not line.startswith("turned off ") for line in result.lines):
+            from untaped_dotfiles.commands.apply import Apply  # noqa: PLC0415 - a cycle
+
+            self.ctx.diag.hint(run_hint(Apply.spelled()))
+        return iter([])
+
+
+def _placed_by(record: PlacedRecord, owner: tuple[str, ...]) -> bool:
+    return (record.source, record.package, record.item)[: len(owner)] == owner
+
+
+def _spelled(offers: Sequence[Offer], owner: tuple[str, ...]) -> str:
+    offer = next(o for o in offers if (o.source.name, o.name) == owner[:2])
+    return "/".join((offer.spelled, *owner[2:]))
+
+
+def _refused(svc: Services, offer: Offer) -> str | None:
+    """Why ``offer`` can't be turned on here, as ``add`` would refuse it; ``None`` if it can."""
+    if offer.error is not None:
+        return str(offer.error)
+    if offer.gone:
+        return str(gone_error(offer))
+    return offer.exclusion(svc.inventory.machine, None)
 
 
 def _usable(svc: Services, selection: Selection) -> None:

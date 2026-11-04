@@ -489,7 +489,7 @@ def test_piped_pages_are_raw_markdown_and_a_terminal_gets_them_rendered(
 ) -> None:
     _, piped, _ = _docs(acme, "acme")
     assert piped.startswith("# acme\n")
-    monkeypatch.setattr("untaped.runtime.render.stream_is_tty", lambda _stream: True)
+    monkeypatch.setattr("untaped.sdk._streams.stream_is_tty", lambda _stream: True)
     _, shown, _ = _docs(acme, "acme")
     assert not shown.startswith("# ")
     assert "Manage widgets on racks." in shown
