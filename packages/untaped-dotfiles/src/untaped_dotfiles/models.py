@@ -73,6 +73,23 @@ class PlacedRecord(BaseModel):
     applied_at: UtcTimestamp
 
 
+class RepoRecord(BaseModel):
+    """A working copy untaped cloned for a ``repos:`` entry; the copy is the person's."""
+
+    model_config = ConfigDict(frozen=True)
+
+    target: Annotated[str, Key]
+    """The working copy's absolute path: the row's key."""
+    item: str
+    """``SOURCE/PKG/ITEM``: the item whose ``repos:`` entry it is."""
+    given: str
+    """The entry's ``url`` as the package writes it: a URL, or a repo name."""
+    url: str
+    """The URL cloned (a repo name resolved to its URL)."""
+    branch: str | None = None
+    cloned_at: UtcTimestamp
+
+
 class StepRecord(BaseModel):
     """One step as last applied here: what ``status`` checks, and what a changed step differs
     from. It holds no secret, not even hashed."""

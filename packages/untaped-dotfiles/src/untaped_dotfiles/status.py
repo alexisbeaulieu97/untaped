@@ -232,7 +232,8 @@ class Reading:
     actions: list[Action]
 
     def joined(self, rows: Sequence[EntryStatus], actions: Sequence[Action]) -> Reading:
-        """This reading with more rows (a step's), each package's rows kept together."""
+        """This reading with more rows (steps', working copies'), each package's rows kept
+        together."""
         pairs = sorted(
             zip([*self.rows, *rows], [*self.actions, *actions], strict=True),
             key=lambda pair: (pair[0].source, pair[0].package, pair[0].item),

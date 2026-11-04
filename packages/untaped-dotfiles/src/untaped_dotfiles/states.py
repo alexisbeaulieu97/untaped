@@ -107,8 +107,13 @@ StepState = Literal[
 known without running anything; ``applied``, ``drifted`` and ``unmet`` come from running
 the check as last applied."""
 
-EntryState = FileState | StepState
-"""The state of a file or a step."""
+RepoState = Literal["pending", "applied", "foreign", "orphan", "off", "excluded", "error"]
+"""A working copy's state: ``pending`` (absent: cloned), ``applied`` (a checkout of its URL),
+``foreign`` (something else there: never touched), ``orphan`` (cloned for an entry the
+package dropped), ``off``, ``excluded`` or ``error``."""
+
+EntryState = FileState | StepState | RepoState
+"""The state of a file, a step or a working copy."""
 
 #: How a table draws an :data:`EntryState`: waiting, or in trouble.
 ENTRY_STATE_ROLES = Status(
@@ -220,3 +225,15 @@ def _modified_detail(mode: Mode, target: TargetInfo) -> str:
     if target.kind != "file":
         return f"the target is now a {target.kind}"
     return "edited on this machine" if mode == "copy" else "managed keys edited on this machine"
+
+
+def decide_repo(state: RepoState) -> Action:
+    """What ``apply`` does with a working copy, whatever the policy: cloned once, never moved;
+    a row untaped kept for an entry the package dropped is forgotten (the copy stays)."""
+    if state == "pending":
+        return "apply"
+    if state == "orphan":
+        return "remove"
+    if state in ("foreign", "off", "error"):
+        return "report"
+    return "skip"

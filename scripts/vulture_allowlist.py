@@ -36,6 +36,7 @@ PlacedRecord.source_commit
 PlacedRecord.applied_at
 ItemRecord.first_applied_at
 StatusSummary.drifted  # dotfiles status.json, read by prompts
+RepoRecord.cloned_at  # dotfiles state
 IssueResult.user_login  # github.issue
 IssueResult.is_pull_request
 User.email_address  # jira rows

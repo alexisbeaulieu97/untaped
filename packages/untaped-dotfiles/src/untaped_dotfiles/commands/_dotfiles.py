@@ -15,6 +15,7 @@ from untaped_dotfiles.inventory import Inventory, Placement
 from untaped_dotfiles.models import Machine
 from untaped_dotfiles.placer import FilesystemPlacer
 from untaped_dotfiles.records import ApplyOutcome, Package
+from untaped_dotfiles.repos import Repos
 from untaped_dotfiles.settings import CLONES, KEPT, PROMPT, DotfilesSettings, Os
 from untaped_dotfiles.sources import Clones, Sources
 from untaped_dotfiles.status import Evaluator, Reading, StatusReader
@@ -58,6 +59,7 @@ class Services:
     reader: StatusReader
     applier: Applier
     steps: Steps
+    repos: Repos
 
     def reading(
         self,
@@ -66,15 +68,21 @@ class Services:
         *,
         include_excluded: bool = False,
     ) -> Reading:
-        """The status rows of ``placements`` and of the steps of ``selections`` (every package
-        that is on when ``None``); a step's stored check runs here."""
+        """The status rows of ``placements`` and of the steps and working copies of
+        ``selections`` (every package that is on when ``None``); a step's stored check runs
+        here."""
         files = self.reader.read(placements)
         steps = [
             entry
             for entry in self.steps.entries(selections)
             if include_excluded or entry.excluded is None
         ]
-        return files.joined(*self.steps.status_rows(steps))
+        repos = [
+            entry
+            for entry in self.repos.entries(selections, placements=placements)
+            if include_excluded or entry.excluded is None
+        ]
+        return files.joined(*self.steps.status_rows(steps)).joined(*self.repos.status_rows(repos))
 
     def refresh_status(self) -> None:
         """Rewrite status.json and attention after a change, so a prompt segment is current."""
@@ -116,6 +124,7 @@ class DotfilesCommand(Command[DotfilesSettings]):
             reader=StatusReader(evaluator, now=utc_now),
             applier=Applier(store, placer, inventory, evaluator, now=utc_now),
             steps=Steps(inventory, store, StepRunner(home=home), now=utc_now),
+            repos=Repos(inventory, store, now=utc_now),
         )
 
     def report(self, problems: Sequence[tuple[str, UntapedError]]) -> None:
