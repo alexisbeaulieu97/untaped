@@ -383,7 +383,8 @@ def test_uncached_transitive_ref_warns_and_stops_with_optional_refresh_hint(
     ]
     assert graph.warnings == (
         "not expanding acme/b@v1 from cached source data: ref is not cached "
-        f"(available refs: main). Scan the matching ref/tag or use --live for downstream.{suffix}",
+        "(available refs: main). Scan the matching ref/tag, or drop the source to read "
+        f"downstream live.{suffix}",
     )
 
 
@@ -408,7 +409,7 @@ def test_cached_ref_warning_uses_branch_and_semver_display_order() -> None:
     assert graph.warnings == (
         "not expanding acme/site@missing from cached source data: ref is not cached "
         "(available refs: trunk, feature/2, v2.0.0, v1.0.0, docs). Scan the matching "
-        "ref/tag or use --live for downstream.",
+        "ref/tag, or drop the source to read downstream live.",
     )
 
 
@@ -448,7 +449,8 @@ def test_both_direction_warns_when_target_downstream_ref_is_not_cached() -> None
     assert _edges(graph) == [("acme/site@main", "acme/base@v1", "impacts")]
     assert graph.warnings == (
         "not expanding acme/base@v1 from cached source data: repo/ref is not cached. "
-        "Add it to the source, scan the matching ref/tag, or use --live for downstream.",
+        "Add it to the source, scan the matching ref/tag, or drop the source to read "
+        "downstream live.",
     )
 
 

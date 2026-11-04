@@ -595,11 +595,7 @@ sdk untaped_github.api.GithubApi.batch_repo_refs(concurrency=) default=1
 sdk untaped_github.api.GithubApi.batch_repo_refs(kinds=) default=["heads","tags"]
 sdk untaped_github.api.GithubApi.batch_repo_refs(on_progress=) default=None callback(2)
 sdk untaped_github.api.GithubApi.batch_repo_refs(repos)
-sdk untaped_github.api.GithubApi.get_raw_content(owner, repo, path, *, ref)
 sdk untaped_github.api.GithubApi.get_repository(owner, repo)
-sdk untaped_github.api.GithubApi.get_tree(owner, repo, tree_sha)
-sdk untaped_github.api.GithubApi.get_tree(recursive=) default=false
-sdk untaped_github.api.GithubApi.list_matching_refs(owner, repo, namespace)
 sdk untaped_github.api.GithubApi.list_org_repos(org)
 sdk untaped_github.api.GithubApi.list_team_repos(org, team_slug)
 sdk untaped_github.api.GithubApi.me()

@@ -32,7 +32,7 @@ from untaped_git import remote as remote_module
 from untaped_git import store_git as store_module
 from untaped_git.api import GitResult, Released, RepoSelector, RepoStore, Selection, store_key
 from untaped_git.host_auth import basic_header
-from untaped_git.testing import GitRemote, git_remote, listing, make_repo
+from untaped_git.testing import GitRemote, git_remote, host, listing, make_repo
 from untaped_github.providers.git import GithubHost
 
 _REQS = "roles/requirements.yml"
@@ -493,3 +493,29 @@ def test_a_source_from_a_plugin_without_select_takes_its_listing_by_match(
 
 
 _GITLAB = ("infra/api", "data/lake")
+
+
+def test_deps_without_a_source_reads_through_the_store_and_fetches_once(
+    tmp_path: Path, store_root: Path, calls: list[Call]
+) -> None:
+    """S15: each repo where its plugin lists it, fetched into ansible's namespace once."""
+    site = git_remote(tmp_path, "infra/site", host="gitlab.example")
+    site.commit(_REQS, "- src: https://gitlab.example/infra/base\n")
+    base = git_remote(tmp_path, "infra/base", host="gitlab.example")
+    base.commit(_REQS, "- src: https://gitlab.example/infra/gone\n  version: v1\n")
+    listed = (make_repo("infra/site", "gitlab.example"), make_repo("infra/base", "gitlab.example"))
+    gitlab = {"gitlab": (listing(*listed), host("gitlab.example"))}
+
+    first = run("deps", "infra/site", "-f", "json", providers=gitlab)
+    fetched = _fetches(calls, stdin=False)
+    calls.clear()
+    second = run("deps", "infra/site", "-f", "json", providers=gitlab)
+
+    assert first.exit_code == 0, first.output
+    rows = [(row["repo"], row["ref"], row["stopped"]) for row in json.loads(first.stdout)]
+    assert rows == [("infra/base", "main", None), ("infra/gone", "v1", None)]
+    # A repo no plugin lists stays unread, with a warning.
+    assert "could not read infra/gone@v1 live: repo not found: 'infra/gone'" in first.stderr
+    assert [argv[-1] for argv in fetched] == [f"+refs/heads/main:{_NAMESPACE}heads/main"] * 2
+    assert second.stdout == first.stdout
+    assert _fetches(calls, stdin=False) == _fetches(calls, stdin=True) == []

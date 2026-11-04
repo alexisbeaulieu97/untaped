@@ -1,4 +1,4 @@
-"""``untaped ansible source-alias``: map role or Galaxy names to the GitHub repos they are."""
+"""``untaped ansible source-alias``: map role or Galaxy names to the repos they are."""
 
 from __future__ import annotations
 
@@ -104,6 +104,6 @@ class Remove(AnsibleCommand):
 
 
 class SourceAliasGroup(Group):
-    """Map role or Galaxy names in requirements files to GitHub repos."""
+    """Map role or Galaxy names in requirements files to repos."""
 
     commands = (Set, List, Remove)

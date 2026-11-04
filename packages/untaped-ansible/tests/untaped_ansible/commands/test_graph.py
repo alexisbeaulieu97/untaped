@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 
-import httpx
 import pytest
 import respx
 
@@ -22,8 +21,8 @@ from ansible_index_support import (
     capture_git_refresh,
     commit_scans,
     fake_refresh,
+    live_repos,
     make_edge,
-    mock_dependency_file,
     mock_expansion,
     open_index,
     prod,
@@ -127,11 +126,7 @@ def test_config_loaded_source_uses_same_validation(tmp_path: Path, monkeypatch) 
     ("args", "message"),
     [
         (["--source", "platform", "--refresh", "--cached"], "--cached specified multiple times"),
-        (["--source", "platform", "--cached", "--live"], "--live reads GitHub live; drop --cached"),
-        (
-            ["--source", "platform", "--refresh", "--live"],
-            "--live reads GitHub live; drop --refresh",
-        ),
+        (["--source", "platform", "--live"], "--live"),
         (["--refresh"], "--refresh needs a source; select one with --source NAME"),
         (["--cached"], "--cached needs a source; select one with --source NAME"),
         (["--source", "platform", "--org", "acme"], "--org"),
@@ -172,11 +167,10 @@ def test_graph_bare_invocation_requires_target() -> None:
 def test_graph_reads_downstream_live_without_source(
     tmp_path: Path, monkeypatch, direction: str
 ) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/base\n"})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        result = run("graph", "acme/site", direction, "--depth", "1")
+    result = run("graph", "acme/site", direction, "--depth", "1")
 
     assert result.exit_code == 0, result.output
     assert _tree(result.stdout) == ["acme/site@main", "  acme/base"]
@@ -187,17 +181,11 @@ def test_graph_reads_downstream_live_without_source(
 def test_graph_live_transitive_parse_warnings_keep_repo_ref_context(
     tmp_path: Path, monkeypatch
 ) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    site = "- src: https://github.com/acme/one\n- src: https://github.com/acme/two\n"
+    live_repos(monkeypatch, {"acme/site": site, "acme/one": TEMPLATED, "acme/two": TEMPLATED})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(
-            mock,
-            "acme/site",
-            content="- src: https://github.com/acme/one\n- src: https://github.com/acme/two\n",
-        )
-        mock_dependency_file(mock, "acme/one", content=TEMPLATED)
-        mock_dependency_file(mock, "acme/two", content=TEMPLATED)
-        result = run("graph", "acme/site", "--direction=down", "--depth", "2")
+    result = run("graph", "acme/site", "--direction=down", "--depth", "2")
 
     assert result.exit_code == 0, result.output
     for repo in ("acme/one", "acme/two"):
@@ -210,14 +198,13 @@ def test_graph_output_writes_data_to_file_and_keeps_stdout_clean(
     tmp_path: Path, monkeypatch
 ) -> None:
     output = tmp_path / "deps.mmd"
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/base\n"})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        result = run(
-            "graph", "acme/site", "--direction=down", "--format", "mermaid", "--depth", "1",
-            "--out", str(output),
-        )  # fmt: skip
+    result = run(
+        "graph", "acme/site", "--direction=down", "--format", "mermaid", "--depth", "1",
+        "--out", str(output),
+    )  # fmt: skip
 
     assert result.exit_code == 0, result.output
     assert result.stdout == ""
@@ -284,63 +271,26 @@ def test_graph_tree_out_file_is_plain_text(tmp_path: Path, monkeypatch) -> None:
     assert text.endswith("1 repo · 1 edge · 1 stopped")
 
 
-@pytest.mark.parametrize("cached", [True, False])
-def test_graph_downstream_with_source_live_flag_reads_remote_dependencies(
-    tmp_path: Path, monkeypatch, cached: bool
-) -> None:
-    # Regression: --live must also work before the source's first refresh.
-    if cached:
-        seed(tmp_path, "source:platform", make_edge(dependency_repo="acme/cached"))
-    use_config(tmp_path, monkeypatch, PLATFORM, token=True)
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
-        result = run(
-            "graph",
-            "acme/site",
-            "--source",
-            "platform",
-            "--direction=down",
-            "--depth",
-            "1",
-            "--live",
-        )
-
-    assert result.exit_code == 0, result.output
-    # Only downstream, read live: the source is not read at all.
-    assert result.stdout.startswith("acme/site  live reads · depth 1\n")
-    assert "  acme/live" in _tree(result.stdout)
-    assert "acme/cached" not in result.stdout
-
-
 @pytest.mark.parametrize(
-    ("cached", "direction", "header"),
+    ("args", "header"),
     [
-        (True, "--direction=up", "acme/site  source platform · depth 1"),
-        (True, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
-        # Never refreshed: the upstream half refreshes the source first.
-        (False, "--direction=both", "acme/site  source platform, downstream live · depth 1"),
-        # Downstream only: the source is never read, so only live reads remain.
-        (False, "--direction=down", "acme/site  live reads · depth 1"),
+        (["--source", "platform", "--direction=up"], "acme/site  source platform · depth 1"),
+        (["--source", "platform", "--direction=both"], "acme/site  source platform · depth 1"),
+        # No source: downstream is read live, and upstream is left out.
+        (["--direction=both"], "acme/site  live reads · depth 1"),
     ],
 )
 def test_graph_header_names_what_the_build_read(
-    tmp_path: Path, monkeypatch, cached: bool, direction: str, header: str
+    tmp_path: Path, monkeypatch, args: list[str], header: str
 ) -> None:
-    use_config(tmp_path, monkeypatch, PLATFORM, token=True)
-    if cached:
-        seed(tmp_path, "source:platform", make_edge("acme/app", "acme/site"))
-    refreshed = fake_refresh(monkeypatch)
+    use_config(tmp_path, monkeypatch, PLATFORM)
+    seed(tmp_path, "source:platform", make_edge("acme/app", "acme/site"), make_edge())
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/live\n"})
 
-    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
-        mock_dependency_file(mock, "acme/site", content="- src: https://github.com/acme/live\n")
-        result = run(
-            "graph", "acme/site", "--source", "platform", direction, "--live", "--depth", "1"
-        )
+    result = run("graph", "acme/site", *args, "--depth", "1")
 
     assert result.exit_code == 0, result.output
     assert result.stdout.splitlines()[0] == header
-    assert len(refreshed) == (not cached and direction == "--direction=both")
 
 
 def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monkeypatch) -> None:
@@ -356,16 +306,16 @@ def test_graph_tree_truncates_lines_wider_than_the_terminal(tmp_path: Path, monk
 
 
 @pytest.mark.parametrize(
-    ("args", "live_hint"),
+    "args",
     [
-        (["acme/base", "--source", "platform", "--direction=up"], False),
-        (["acme/base", "--source", "platform", "--direction=down"], True),
-        (["acme/base", "--source", "platform", "--direction=both"], False),
-        (["acme/base", "--source", "ops", "--source", "platform", "--direction=up"], False),
+        ["acme/base", "--source", "platform", "--direction=up"],
+        ["acme/base", "--source", "platform", "--direction=down"],
+        ["acme/base", "--source", "platform", "--direction=both"],
+        ["acme/base", "--source", "ops", "--source", "platform", "--direction=up"],
     ],
 )
 def test_graph_cached_on_a_never_refreshed_source_fails_naming_it(
-    tmp_path: Path, monkeypatch, args: list[str], live_hint: bool
+    tmp_path: Path, monkeypatch, args: list[str]
 ) -> None:
     seed(tmp_path, "source:ops", make_edge("acme/deploy"))
     use_config(tmp_path, monkeypatch, _TWO_SOURCES)
@@ -379,7 +329,7 @@ def test_graph_cached_on_a_never_refreshed_source_fails_naming_it(
     [failure] = [d for d in result.diagnostics if isinstance(d, Failure)]
     assert failure.details == {"cache": "ansible.source_data", "key": "source:platform"}
     assert "no cached source data for source platform" in failure.message
-    assert ("--live" in (failure.hint or "")) is live_hint
+    assert "--live" not in (failure.hint or "")
 
 
 @pytest.mark.parametrize(
@@ -685,9 +635,11 @@ def test_graph_target_repo_overrides_local_identity(tmp_path: Path, monkeypatch)
     result = run("graph", str(target), "--target-repo", "acme/base", "--direction=down")
 
     assert result.exit_code == 0, result.output
-    # No GitHub token: only the checkout's own declarations were read.
-    assert result.stdout.startswith("acme/base  local checkout · unlimited depth\n")
+    # No plugin is ready to list acme/users: only the checkout's own declarations were read.
+    assert result.stdout.startswith("acme/base  local checkout, live reads · unlimited depth\n")
     assert _tree(result.stdout) == ["acme/users"]
+    assert "could not read acme/users live: repo not found" in result.stderr
+    assert "untaped auth login github" in result.stderr
 
 
 @requires_git
@@ -828,32 +780,26 @@ def test_graph_empty_local_dependency_result_explains_paths_without_cache_fallba
     assert "checked configured dependency paths" in result.stderr
 
 
-@pytest.mark.parametrize("token", [True, False])
+@pytest.mark.parametrize("listed", [True, False])
 def test_graph_local_target_without_source_never_mixes_in_cached_edges(
-    tmp_path: Path, monkeypatch, token: bool
+    tmp_path: Path, monkeypatch, listed: bool
 ) -> None:
     seed(tmp_path, "source:other", make_edge("acme/users", "acme/from-other-source"))
     target = _role(tmp_path, "- src: acme/users\n  version: main\n")
-    use_config(tmp_path, monkeypatch, token=token)
+    use_config(tmp_path, monkeypatch)
+    live_repos(monkeypatch, {"acme/users": "- src: acme/from-live\n"} if listed else {})
 
-    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
-        mock.get("/repos/acme/users/git/matching-refs/heads/main").mock(
-            return_value=httpx.Response(
-                200, json=[{"ref": "refs/heads/main", "object": {"sha": "sha-users"}}]
-            )
-        )
-        mock_dependency_file(mock, "acme/users", sha="sha-users", content="- src: acme/from-live\n")
-        result = run(
-            "graph", str(target), "--target-repo", "acme/role", "--direction=down", "--depth", "2"
-        )
-        assert mock.calls.called is token
+    result = run(
+        "graph", str(target), "--target-repo", "acme/role", "--direction=down", "--depth", "2"
+    )
 
     assert result.exit_code == 0, result.output
     assert "acme/users@main" in result.stdout
     assert "acme/from-other-source" not in result.stdout
-    # Without a token the graph stays offline instead of reading live.
-    assert ("acme/from-live" in result.stdout) is token
-    assert ("transitive dependencies were not expanded" in result.stderr) is not token
+    # A repo no plugin lists stays unread, with a warning.
+    assert ("acme/from-live" in result.stdout) is listed
+    unread = "could not read acme/users@main live: repo not found: 'acme/users'"
+    assert (unread in result.stderr) is not listed
 
 
 @pytest.mark.parametrize(
@@ -1009,14 +955,16 @@ def test_find_follows_unpinned_hops_through_the_default_branch(tmp_path: Path, m
 
 
 def test_find_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    live_repos(
+        monkeypatch,
+        {
+            "acme/app": "- src: https://github.com/acme/lib\n",
+            "acme/lib": "- src: https://github.com/acme/target\n  version: v1\n",
+        },
+    )
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/lib\n")
-        mock_dependency_file(
-            mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
-        )
-        result = run("find", "acme/target", "--root", "acme/app", "--depth", "2", "-f", "json")
+    result = run("find", "acme/target", "--root", "acme/app", "--depth", "2", "-f", "json")
 
     assert _match_rows(result) == [
         ("acme/app", "main", "v1", ["acme/app@main", "acme/lib@main", "acme/target@v1"])
@@ -1025,28 +973,26 @@ def test_find_follows_unpinned_hops_in_live_reads(tmp_path: Path, monkeypatch) -
 
 
 def test_find_reads_a_shared_dependency_live_once_across_roots(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    hub = live_repos(
+        monkeypatch,
+        {
+            "acme/one": "- src: https://github.com/acme/lib\n",
+            "acme/two": "- src: https://github.com/acme/lib\n",
+            "acme/lib": "- src: https://github.com/acme/target\n  version: v1\n",
+        },
+    )
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        for root in ("acme/one", "acme/two"):
-            mock_dependency_file(mock, root, content="- src: https://github.com/acme/lib\n")
-        mock_dependency_file(
-            mock, "acme/lib", content="- src: https://github.com/acme/target\n  version: v1\n"
-        )
-        result = run(
-            "find",
-            "acme/target",
-            "--stdin",
-            "--depth",
-            "2",
-            "-f",
-            "json",
-            input="acme/one\nacme/two\n",
-        )
-        lib_paths = [call.request.url.path for call in mock.calls if "acme/lib" in str(call)]
+    result = run(
+        "find", "acme/target", "--stdin", "--depth", "2", "-f", "json",
+        input="acme/one\nacme/two\n",
+    )  # fmt: skip
 
     assert [row[0] for row in _match_rows(result)] == ["acme/one", "acme/two"]
-    assert len(lib_paths) == len(set(lib_paths))
+    assert [call for call in hub.calls if "acme/lib" in call] == [
+        ("locate", "acme/lib"),
+        ("fetch", "acme/lib", "heads/main"),
+    ]
 
 
 def test_graph_depth_defaults_to_unlimited(tmp_path: Path, monkeypatch) -> None:
@@ -1160,7 +1106,8 @@ def test_task_command_usage_errors(args: list[str], message: str) -> None:
 
 
 def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    live_repos(monkeypatch, {"acme/app": ""})
     spellings = [
         "https://github.com/acme/app.git",
         "https://github.com/acme/app",
@@ -1172,9 +1119,7 @@ def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) ->
         for index, url in enumerate(spellings, start=1)
     )  # fmt: skip
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/app", content="")
-        result = run("find", "acme/target", "--stdin", input=stdin, also=(Awx,))
+    result = run("find", "acme/target", "--stdin", input=stdin, also=(Awx,))
 
     assert result.exit_code == 0, result.output + result.stderr
     # Each graph build reports its own empty-graph warning: one build, one line.
@@ -1182,14 +1127,11 @@ def test_find_builds_one_graph_per_resolved_root(tmp_path: Path, monkeypatch) ->
 
 
 def test_find_collapses_repeated_roots(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    target = "- src: https://github.com/acme/target\n"
+    live_repos(monkeypatch, {"acme/app": target, "acme/target": ""})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/app", content="- src: https://github.com/acme/target\n")
-        mock_dependency_file(mock, "acme/target", content="")
-        result = run(
-            "find", "acme/target", "--root", "acme/app", "--root", "acme/app", "-f", "json"
-        )
+    result = run("find", "acme/target", "--root", "acme/app", "--root", "acme/app", "-f", "json")
 
     assert [row[:2] for row in _match_rows(result)] == [("acme/app", "main")]
 
@@ -1318,52 +1260,12 @@ def test_deps_pipe_rows_report_unresolved_dependencies(tmp_path: Path, monkeypat
 
 
 def test_deps_reads_live_without_a_source(tmp_path: Path, monkeypatch) -> None:
-    use_config(tmp_path, monkeypatch, token=True)
+    use_config(tmp_path, monkeypatch)
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/base\n", "acme/base": ""})
 
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        mock_dependency_file(mock, "acme/base", content="")
-        result = run("deps", "acme/site", "-f", "json")
+    result = run("deps", "acme/site", "-f", "json")
 
     assert [row[:2] for row in _rows(result)] == [("acme/base", "main")]
-
-
-def test_deps_live_unpinned_hop_follows_the_current_default_branch(
-    tmp_path: Path, monkeypatch
-) -> None:
-    # Scanned while acme/base defaulted to main; it now defaults to trunk.
-    seed(
-        tmp_path,
-        "source:platform",
-        make_edge(),
-        make_edge("acme/base", "acme/wrong"),
-        repo_metadata=(
-            SourceRepoMetadata(
-                source_key="source:platform",
-                source_repo="acme/base",
-                default_branch="main",
-                url="https://github.com/acme/base.git",
-            ),
-        ),
-    )
-    use_config(tmp_path, monkeypatch, PLATFORM, token=True)
-
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        mock.get("/repos/acme/base").mock(
-            return_value=httpx.Response(200, json={"default_branch": "trunk"})
-        )
-        mock.get("/repos/acme/base/git/trees/trunk").mock(
-            return_value=httpx.Response(200, json={"tree": [{"path": REQS, "type": "blob"}]})
-        )
-        mock.get(f"/repos/acme/base/contents/{REQS}", params={"ref": "trunk"}).mock(
-            return_value=httpx.Response(200, text="- src: https://github.com/acme/right\n")
-        )
-        result = run(
-            "deps", "acme/site", "--source", "platform", "--live", "--depth", "2", "-f", "json"
-        )
-
-    assert [row[:2] for row in _rows(result)] == [("acme/base", "trunk"), ("acme/right", None)]
 
 
 def test_impact_lists_every_dependent_with_its_path_to_the_role(
@@ -1453,21 +1355,14 @@ def test_default_source_stands_in_for_source(tmp_path: Path, monkeypatch) -> Non
     assert "upstream omitted" not in graph.stderr
 
 
-def test_default_source_without_cache_fails_deps_cached_until_live(
-    tmp_path: Path, monkeypatch
-) -> None:
-    use_config(tmp_path, monkeypatch, PLATFORM, token=True, ansible={"default_source": "platform"})
+def test_default_source_without_cache_fails_deps_cached(tmp_path: Path, monkeypatch) -> None:
+    use_config(tmp_path, monkeypatch, PLATFORM, ansible={"default_source": "platform"})
 
     cached = run("deps", "acme/site", "--cached")
-    with respx.mock(base_url="https://api.github.com") as mock:
-        mock_dependency_file(mock, "acme/site")
-        mock_dependency_file(mock, "acme/base", content="")
-        live = run("deps", "acme/site", "--live", "-f", "json")
 
     assert cached.exit_code == 1
     assert "no cached source data for source platform; drop --cached" in cached.stderr
-    assert "--live" in cached.stderr
-    assert [row[:2] for row in _rows(live)] == [("acme/base", "main")]
+    assert "--live" not in cached.stderr
 
 
 def test_explicit_selection_overrides_default_source(tmp_path: Path, monkeypatch) -> None:
@@ -1574,30 +1469,22 @@ def test_all_refs_with_ref_is_a_usage_error(command: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("command", "source_args"),
-    [
-        (["deps", "acme/site"], ["--source", "platform", "--live"]),
-        (["find", "acme/base", "--root", "acme/site"], ["--source", "platform", "--live"]),
-        (["graph", "acme/site", "--direction", "down"], ["--source", "platform", "--live"]),
-        (["deps", "acme/site"], []),
-        (["graph", "acme/site"], []),
-        (["find", "acme/base", "--root", "acme/site"], []),
-    ],
+    "command",
+    [["deps", "acme/site"], ["graph", "acme/site"], ["find", "acme/base", "--root", "acme/site"]],
 )
-def test_all_refs_with_live_reads_is_a_usage_error(
-    tmp_path: Path, monkeypatch, command: list[str], source_args: list[str]
+def test_all_refs_without_a_source_is_a_usage_error(
+    tmp_path: Path, monkeypatch, command: list[str]
 ) -> None:
     # Live reads resolve only the default branch, so --all-refs cannot apply.
     _seed_two_refs(tmp_path)
-    use_config(tmp_path, monkeypatch, PLATFORM, token=True)
+    use_config(tmp_path, monkeypatch, PLATFORM)
+    hub = live_repos(monkeypatch, {})
 
-    with respx.mock(base_url="https://api.github.com", assert_all_called=False) as mock:
-        result = run(*command, *source_args, "--all-refs")
-        assert not mock.calls.called
+    result = run(*command, "--all-refs")
 
     assert result.exit_code == 2, result.output + result.stderr
-    fix = "drop --live" if source_args else "select one with --source NAME"
-    assert f"--all-refs reads cached source data; {fix}" in result.stderr
+    assert "--all-refs reads cached source data; select one with --source NAME" in result.stderr
+    assert hub.calls == []
 
 
 def test_all_refs_reads_the_default_source(tmp_path: Path, monkeypatch) -> None:

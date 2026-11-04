@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class SourceData(BaseModel):
     """Read before trusting a deps, impact, find or graph answer: which data answered it
-    (GitHub or a source's cache), when a source refreshes, and how a stale, partial or
+    (a live read or a source's cache), when a source refreshes, and how a stale, partial or
     paused refresh shows.
 
     A *source* is a saved selection of a plugin's repos (`source set`) whose
@@ -20,12 +20,13 @@ class SourceData(BaseModel):
     Downstream is `deps`, `find` and `graph` down; upstream is `impact` and
     `graph` up.
 
-    - No source selected: downstream reads GitHub live; upstream has none, so
-      `impact` fails and `graph` leaves it out with a warning.
+    - No source selected: downstream reads each repo live from the plugin
+      that lists it (`untaped plugin list` shows which fill git's
+      `RepoSource`), fetched into the repo store and fetched again only when
+      its ref moved; a repo no plugin lists warns and stays unread. Upstream
+      has none, so `impact` fails and `graph` leaves it out with a warning.
     - A source selected: both read the source's cache; a target outside it warns
       "not cached" and gives no rows.
-    - `--live` with a source: downstream reads GitHub live, upstream the source's
-      cache.
 
     A source is selected by `--source`, or by `ansible.default_source` when
     none is given; an unknown name there fails naming the setting. Repeated
@@ -38,8 +39,7 @@ class SourceData(BaseModel):
     `--refresh` refreshes it now; `--cached` reads only what is cached, never
     asks the source's plugin, and fails with "no cached source data" for a source with no
     cached data (never refreshed, or changed by `source set` or `source patch`
-    since). `deps --live` never reads or refreshes the source; `graph --live
-    --direction both` refreshes it for the upstream half.
+    since).
 
     A refresh that fails over cached data serves that data with one
     `untaped.stale` line on stderr: `error` says why, and `retry_at` when the

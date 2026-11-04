@@ -5,7 +5,8 @@ same way (:meth:`GraphCommand.env`): the selected sources, or
 ``ansible.default_source``; nothing is refreshed until
 :meth:`GraphCommand.answer` reads, so arguments are checked first. Each
 root's graph is built by :meth:`GraphCommand.target_graph`, overlaying a local
-checkout and reading downstream GitHub live when the source can't answer.
+checkout and reading downstream live from each repo's provider when no source
+is selected.
 Which source a command reads lives in
 :mod:`untaped_ansible.commands._graph_source`, and how one root's graph is
 built in :mod:`untaped_ansible.commands._graph_build`.
@@ -21,12 +22,11 @@ from typing import Literal, NamedTuple
 from pydantic import Field
 
 from untaped.sdk import Parallel, Refresh, UsageError, key, plural, q
-from untaped.sdk.storage import NeverRefreshed
+from untaped.sdk.contracts import NoProviderReady, Ok, gather
 from untaped_ansible.application.graph import GraphDirection, GraphRequest
 from untaped_ansible.application.ports import DependencyIndex
 from untaped_ansible.commands._ansible import AnsibleCommand
 from untaped_ansible.commands._graph_build import (
-    LiveReads,
     LocalDependencies,
     empty_graph_warnings,
     graph_for_target,
@@ -47,9 +47,10 @@ from untaped_ansible.domain.graph import DependencyGraph
 from untaped_ansible.domain.identity import IdentityResolver
 from untaped_ansible.errors import AnsibleError
 from untaped_ansible.infrastructure import SqliteDependencyIndex, open_index
+from untaped_ansible.live_reads import LiveReads
 from untaped_ansible.refresh import GIT_PARALLEL_CAP, serve_sources
 from untaped_ansible.settings import SOURCE_DATA, AnsibleSettings, alias_map
-from untaped_github.api import GithubSettings, github_api
+from untaped_git.api import GitHost
 
 CommandName = Literal["graph", "deps", "impact", "find"]
 
@@ -61,16 +62,12 @@ TARGET_REPO = (
 DEPTH = "Traversal depth, or 'unlimited' (default)."
 ALL_REFS = (
     "With no --ref, read what every cached ref depends on, not only the default branch. "
-    "Needs a source; not with --live."
-)
-LIVE = (
-    "Read downstream dependencies live from GitHub even when a source is selected; "
-    "not with --refresh or --cached."
+    "Needs a source."
 )
 
 
 class GraphCommand(AnsibleCommand):
-    """A command that reads Ansible dependency graphs from a source's data or GitHub."""
+    """A command that reads Ansible dependency graphs from a source's data or live."""
 
     data: SourceData
     refresh: Refresh = Refresh(SOURCE_DATA)
@@ -81,7 +78,7 @@ class GraphCommand(AnsibleCommand):
 
     # -- the source -------------------------------------------------------------
 
-    def env(self, *, command: CommandName, live: bool, all_refs: bool) -> GraphEnv:
+    def env(self, *, command: CommandName, all_refs: bool) -> GraphEnv:
         """Resolve settings and the selected source into what every root's build shares.
 
         Nothing is refreshed yet (see :meth:`answer`), so arguments can be
@@ -89,9 +86,6 @@ class GraphCommand(AnsibleCommand):
         """
         settings = self.settings
         data = self.data
-        if live and self.refresh.directive is not None:
-            flag = "--refresh" if self.refresh.directive else "--cached"
-            raise UsageError(f"--live reads GitHub live; drop {flag}")
         has_source = bool(data.source or settings.default_source)
         flags = [
             flag
@@ -107,12 +101,8 @@ class GraphCommand(AnsibleCommand):
                 "(or set ansible.default_source)"
             )
         aliases = alias_map()
-        github = self.github
-        github_host = self.github_host
         graph_source = graph_source_of(data, default_source=settings.default_source)
         # Live reads resolve only the default branch; every ref exists only in a source's cache.
-        if all_refs and live:
-            raise UsageError("--all-refs reads cached source data; drop --live")
         if all_refs and not graph_source.selections:
             raise UsageError(
                 "--all-refs reads cached source data; select one with --source NAME "
@@ -120,22 +110,19 @@ class GraphCommand(AnsibleCommand):
             )
         sqlite_index = open_index()
         index = dependency_index_for_graph_source(sqlite_index, graph_source)
-        resolvers = GraphResolvers(sqlite_index, aliases=aliases, github_host=github_host)
+        resolvers = GraphResolvers(sqlite_index, aliases=aliases)
         return GraphEnv(
             command=command,
             settings=settings,
             aliases=aliases,
-            github_settings=github,
-            github_host=github_host,
             index=index,
             sqlite_index=sqlite_index,
             graph_source=graph_source,
-            live=live,
             depth=parse_depth(self.depth),
             all_refs=all_refs,
             resolvers=resolvers,
             live_reads=LiveReads(
-                lambda: github_api(github),
+                plugin=self.ctx.plugin,
                 wrapped=index,
                 resolver=resolvers.get,
                 settings=settings,
@@ -152,10 +139,9 @@ class GraphCommand(AnsibleCommand):
     ) -> T:
         """``read()``, over the selected sources, refreshed first when ``--refresh`` or age asks.
 
-        A command that reads no source's data (none selected, or ``--live``
-        reading downstream only) just reads.
+        A command that reads no source's data (none selected) just reads.
         """
-        if not _reads_source(env, direction):
+        if not env.graph_source.selections:
             return read()
         wiring = self.wiring(env.sqlite_index, parallel=self.parallel.value)
 
@@ -163,20 +149,13 @@ class GraphCommand(AnsibleCommand):
             env.resolvers.forget()  # a refresh may have stored repositories on new hosts
             return read()
 
-        try:
-            served = serve_sources(
-                env.graph_source.selections,
-                refresh=self.refresh.directive,
-                read=served_read,
-                empty=empty,
-                wiring=wiring,
-            )
-        except NeverRefreshed as exc:
-            if direction == "deps":
-                exc.hint = (
-                    "or pass --live to read downstream dependencies from GitHub without cached data"
-                )
-            raise
+        served = serve_sources(
+            env.graph_source.selections,
+            refresh=self.refresh.directive,
+            read=served_read,
+            empty=empty,
+            wiring=wiring,
+        )
         return served.value
 
     # -- one root's graph ---------------------------------------------------------
@@ -221,9 +200,7 @@ class GraphCommand(AnsibleCommand):
                 refresh_hint=refresh_hint(graph_source),
             ),
             local=local,
-            use_live=should_use_live_dependencies(
-                direction=direction, source_key=graph_source.key, live=env.live
-            ),
+            use_live=should_use_live_dependencies(direction=direction, source_key=graph_source.key),
             live_reads=env.live_reads,
         )
         parse_warnings.extend(read_warnings)
@@ -244,7 +221,7 @@ class GraphCommand(AnsibleCommand):
         if reads.source and graph_source.header:
             parts.append(graph_source.header)
         if reads.live:
-            parts.append("downstream live" if reads.source else "live reads")
+            parts.append("live reads")
         return BuiltGraph(graph, ", ".join(parts))
 
     # -- what it says on stderr ---------------------------------------------------
@@ -275,13 +252,9 @@ class GraphEnv:
     command: CommandName
     settings: AnsibleSettings
     aliases: dict[str, str]
-    github_settings: GithubSettings
-    github_host: str | None
-    """GitHub's Git host, where live reads go."""
     index: DependencyIndex
     sqlite_index: SqliteDependencyIndex
     graph_source: GraphSource
-    live: bool
     depth: int | None
     all_refs: bool
     live_reads: LiveReads
@@ -297,22 +270,20 @@ class GraphResolvers:
     """One command's resolver: by the aliases, or by a URL on a host repositories live on.
 
     The hosts are those of every source's stored repository URLs, as a
-    refresh resolves them, and GitHub's, where live reads go. It is read once
-    and again after the selected sources were served (:meth:`forget`), so a
-    refresh's new hosts count.
+    refresh resolves them, and those the installed plugins serve (git's
+    ``GitHost``), where live reads go. It is read once and again after the
+    selected sources were served (:meth:`forget`), so a refresh's new hosts
+    count.
     """
 
-    def __init__(
-        self, index: SqliteDependencyIndex, *, aliases: dict[str, str], github_host: str | None
-    ) -> None:
+    def __init__(self, index: SqliteDependencyIndex, *, aliases: dict[str, str]) -> None:
         self._index = index
         self._aliases = aliases
-        self._github_host = github_host
         self._resolver: IdentityResolver | None = None
 
     def get(self) -> IdentityResolver:
         if self._resolver is None:
-            hosts = {*self._index.repo_hosts(), *([self._github_host] if self._github_host else [])}
+            hosts = {*self._index.repo_hosts(), *served_hosts()}
             self._resolver = IdentityResolver(self._aliases, hosts=hosts)
         return self._resolver
 
@@ -323,7 +294,7 @@ class GraphResolvers:
 class BuiltGraph(NamedTuple):
     graph: DependencyGraph
     data_source: str
-    """What the build read, for the tree header: ``source prod, downstream live``."""
+    """What the build read, for the tree header: ``source prod`` or ``live reads``."""
 
 
 def parse_depth(value: str | None) -> int | None:
@@ -364,12 +335,12 @@ def require_repo(env: GraphEnv, target: str, *, target_repo: str | None = None) 
     raise AnsibleError(message, category="not_found")
 
 
-def _reads_source(env: GraphEnv, direction: GraphDirection) -> bool:
-    """Whether a build in ``direction`` reads the selected sources' data.
-
-    Only ``deps --live`` reads nothing of them: ``graph --live`` still reads
-    its upstream half (``impact``) from the index.
-    """
-    if not env.graph_source.selections:
-        return False
-    return not (env.live and direction == "deps")
+def served_hosts() -> frozenset[str]:
+    """The Git hosts the installed plugins serve (each ready ``GitHost.home``), lowercased."""
+    try:
+        homes = gather(GitHost.home)()
+    except NoProviderReady:
+        return frozenset()
+    return frozenset(
+        answer.value.lower() for answer in homes if isinstance(answer, Ok) and answer.value
+    )

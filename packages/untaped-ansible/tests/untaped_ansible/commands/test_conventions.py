@@ -246,9 +246,8 @@ def test_graph_help_lists_current_flags_only() -> None:
     output = " ".join(result.output.replace("│", " ").split())
 
     assert result.exit_code == 0, result.output
-    shown = "--direction --all-refs --source --refresh --cached --live --target-repo"
-    shown += " --parallel --out"
-    hidden = "--concurrency --output --kind --cache-backend --scope --contains --stdin"
+    shown = "--direction --all-refs --source --refresh --cached --target-repo --parallel --out"
+    hidden = "--concurrency --output --kind --cache-backend --scope --contains --stdin --live"
     assert [flag for flag in shown.split() if flag not in output] == []
     assert [flag for flag in hidden.split() if flag in output] == []
 

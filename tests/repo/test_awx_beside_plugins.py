@@ -10,7 +10,7 @@ import pytest
 import respx
 import yaml
 
-from ansible_index_support import mock_dependency_file
+from ansible_index_support import live_repos
 from untaped.sdk.testing import Home, install
 from untaped_ansible.plugin import Ansible
 from untaped_awx.plugin import Awx
@@ -26,7 +26,10 @@ def test_awx_job_templates_pipe_into_ansible_find(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setenv("CONTROLLER_OAUTH_TOKEN", "secret")
     monkeypatch.setenv("GH_TOKEN", "token")
     both = install(
-        Awx, Ansible, settings=AwxSettings(server=AwxServer(url=_AWX), server_version=_AWX_24)
+        Awx,
+        Ansible,
+        Github,
+        settings=AwxSettings(server=AwxServer(url=_AWX), server_version=_AWX_24),
     )
     template = {"id": 7, "name": "deploy", "type": "job_template", "project": 3}
     project = {"id": 3, "name": "site", "scm_url": "https://github.com/acme/site", "scm_branch": ""}
@@ -42,10 +45,8 @@ def test_awx_job_templates_pipe_into_ansible_find(monkeypatch: pytest.MonkeyPatc
         listed = both.cli("awx job-templates list --all --with-scm -f pipe")
     assert listed.exit == 0, listed.stderr
 
-    with respx.mock(base_url="https://api.github.com") as github:
-        mock_dependency_file(github, "acme/site", content="- src: https://github.com/acme/base\n")
-        mock_dependency_file(github, "acme/base", content="")
-        found = both.cli("ansible find acme/base --stdin -f json", input=listed.stdout)
+    live_repos(monkeypatch, {"acme/site": "- src: https://github.com/acme/base\n", "acme/base": ""})
+    found = both.cli("ansible find acme/base --stdin -f json", input=listed.stdout)
 
     assert found.exit == 0, found.stderr
     (match,) = json.loads(found.stdout)

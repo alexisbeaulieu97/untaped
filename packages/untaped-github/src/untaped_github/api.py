@@ -1,10 +1,10 @@
 """GitHub's declared public module: the only github code other plugins import.
 
-Ansible uses it for repository inventory, github's port (the GitHub API,
-served for the server's version), reference probing, settings, and
-result/error types. Repo names reach other plugins through the git plugin's
-``RepoSource`` contract, which github fills (``providers/repos.py``), never
-through this module. The closed :data:`__all__` keeps the boundary explicit;
+It offers repository inventory, github's port (the GitHub API, served for
+the server's version), reference probing, settings, and result/error types.
+Repo names reach other plugins through the git plugin's ``RepoSource``
+contract, which github fills (``providers/repos.py``), never through this
+module. The closed :data:`__all__` keeps the boundary explicit;
 everything else under ``untaped_github`` is private to GitHub.
 """
 
@@ -55,8 +55,8 @@ __all__ = [
 def github_settings() -> GithubSettings:
     """The run's ``github`` settings (server, default org, sweep).
 
-    Ansible calls this instead of reading the ``github`` config section itself,
-    so the GitHub plugin stays the only reader of its section.
+    Another plugin calls this instead of reading the ``github`` config section
+    itself, so the GitHub plugin stays the only reader of its section.
     """
     return settings_of(GithubSettings)
 
@@ -64,6 +64,6 @@ def github_settings() -> GithubSettings:
 def github_token_found() -> bool:
     """Whether a GitHub token is set for the configured server; nothing is read or run.
 
-    Ansible asks this before live GitHub reads instead of reading the token.
+    Another plugin asks this before reading GitHub instead of reading the token.
     """
     return TOKEN.answer(github_settings().server) is not None

@@ -82,32 +82,6 @@ class Rest2022(ApiAdapter[GithubSettings, GithubVersion], GithubApi):
     def list_team_repos(self, org: str, team_slug: str) -> Iterator[dict[str, Any]]:
         return self._pages(f"/orgs/{org}/teams/{team_slug}/repos")
 
-    def list_matching_refs(self, owner: str, repo: str, namespace: str) -> Iterator[dict[str, Any]]:
-        return self._pages(f"/repos/{owner}/{repo}/git/matching-refs/{namespace}")
-
-    def get_tree(
-        self,
-        owner: str,
-        repo: str,
-        tree_sha: str,
-        *,
-        recursive: bool = False,
-    ) -> dict[str, Any]:
-        params = {"recursive": "1"} if recursive else None
-        with _watch():
-            return self._client().get_json_dict(
-                f"/repos/{owner}/{repo}/git/trees/{tree_sha}", params=params
-            )
-
-    def get_raw_content(self, owner: str, repo: str, path: str, *, ref: str) -> str:
-        with _watch():
-            response = self._client().get(
-                f"/repos/{owner}/{repo}/contents/{path}",
-                params={"ref": ref},
-                headers={"Accept": "application/vnd.github.raw"},
-            )
-        return response.text
-
     def search_repositories(
         self, q: str, *, sort: str | None = None, limit: int | None = None
     ) -> Iterator[dict[str, Any]]:

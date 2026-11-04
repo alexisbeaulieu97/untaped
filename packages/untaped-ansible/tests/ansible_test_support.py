@@ -24,6 +24,7 @@ from untaped.sdk.testing import Home, Install, Ran, Running, install
 from untaped_ansible.plugin import Ansible
 from untaped_ansible.settings import AnsibleSettings
 from untaped_git.settings import GitSettings
+from untaped_github.plugin import Github
 from untaped_github.settings import GithubSettings
 
 #: The token a test that reads GitHub runs with, from the GitHub CLI's variable.
@@ -169,11 +170,13 @@ def github_source(
 def installed(
     *also: type[Plugin], providers: Mapping[str, Sequence[type]] | None = None
 ) -> Install:
-    """ansible (with github and git) installed with the test's sections, ``also`` and
-    ``providers`` (a test's provider classes, composed as one plugin per key)."""
+    """ansible (with git) and github, which lists the tests' repos, installed with the
+    test's sections, ``also`` and ``providers`` (a test's provider classes, composed as one
+    plugin per key)."""
     current = sections()
     return install(
         Ansible,
+        Github,
         *also,
         settings=[
             AnsibleSettings(**current.ansible),
