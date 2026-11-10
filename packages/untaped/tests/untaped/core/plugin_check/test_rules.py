@@ -107,16 +107,9 @@ def test_unknown_plugin_raises() -> None:
     assert str(raised.value) == "no installed plugin named 'no-such-plugin'"
 
 
-def test_untaped_itself_is_not_an_installed_plugin_to_check() -> None:
-    """The root plugin (core) is composed, but the plugin rules don't read it yet.
-
-    Read as an installed plugin, core breaks rules written for one: its
-    package is ``untaped``, its commands import the runtime, and its words
-    mount at the root. Checking it needs root rules of their own first.
-    """
-    with pytest.raises(LookupError) as raised:
-        plugin_violations("untaped", candidates=[])
-    assert str(raised.value) == "no installed plugin named 'untaped'"
+def test_untaped_itself_is_checked_as_the_root_plugin() -> None:
+    """Core follows the plugin conventions, read for the root: its package is ``untaped``."""
+    assert plugin_violations("untaped", candidates=[]) == []
 
 
 class _BrokenRenames(BaseModel):

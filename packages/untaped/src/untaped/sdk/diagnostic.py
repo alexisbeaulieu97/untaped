@@ -195,6 +195,17 @@ def dumped_names(model: type[BaseModel]) -> dict[str, str]:
     }
 
 
+def written_fields(model: type[BaseModel]) -> tuple[str, ...]:
+    """``model``'s dumped keys in the order its rows are written: the one home of that order.
+
+    A record (a :class:`WireModel`) writes its own fields first, then the
+    ones it inherits; any other model follows pydantic's order.
+    """
+    if issubclass(model, WireModel):
+        return _field_order(model)
+    return tuple(dumped_names(model).values())
+
+
 @cache
 def _field_order(model: type[WireModel]) -> tuple[str, ...]:
     """Dumped keys by declaring class, most derived first, then the model's own reordering.

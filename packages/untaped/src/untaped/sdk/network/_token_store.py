@@ -256,8 +256,7 @@ def _gpg_round_trip() -> None:
                 hint=f"{_OWN_COMMAND_HINT} command",
             ) from None
         except OSError as exc:
-            message = f"gpg could not run: {exc.strerror}"
-            raise ConfigError(message, category="unavailable") from None
+            raise ConfigError(f"gpg could not run: {exc.strerror}") from None
         if completed.returncode != 0:
             stderr = completed.stderr.decode(errors="replace")
             # Only decrypting needs the passphrase.
@@ -308,7 +307,8 @@ def pick_store(name: StoreName | None = None) -> TokenStore | None:
             message = problem or f"{name} is not usable on this machine"
             if problem and not problem.startswith(name):
                 message = f"{name}: {problem}"
-            raise ConfigError(message, category="unavailable")
+            # a store this machine lacks or can't run: retrying won't bring it (exit 4)
+            raise ConfigError(message)
         return store
     return next((store for store in STORES if store.usable()), None)
 

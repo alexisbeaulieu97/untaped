@@ -15,6 +15,7 @@ from untaped.runtime.config_file import (
     write_config_dict,
 )
 from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.storage._fs import write_lock_path
 
 
 def test_read_returns_empty_when_file_absent(
@@ -235,13 +236,34 @@ def test_mutate_config_lock_blocks_concurrent_mutation(
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
     write_config_dict({"format_version": 2, "log_level": "INFO"})
 
-    held = FileLock(str(cfg) + ".lock")
+    held = FileLock(str(write_lock_path(cfg)))
     held.acquire()
     try:
         with pytest.raises(ConfigError, match="lock"):
             mutate_config(lambda data: None)
     finally:
         held.release()
+
+
+def test_writes_through_a_symlink_and_the_real_path_take_one_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another process writing the real file blocks a write through the symlinked home."""
+    from filelock import FileLock
+
+    real = tmp_path / "dotfiles" / "config.yml"
+    real.parent.mkdir()
+    real.write_text("format_version: 2\n")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yml").symlink_to(real)
+    monkeypatch.setenv("UNTAPED_HOME", str(home))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
+
+    assert write_lock_path(home / "config.yml") == write_lock_path(real)
+    with FileLock(str(write_lock_path(real))), pytest.raises(ConfigError, match="lock"):
+        mutate_config(lambda data: data.update({"a": 1}))
+    assert sorted(path.name for path in real.parent.iterdir()) == ["config.yml"]  # none beside
 
 
 def test_mutate_config_releases_lock_on_exception(
@@ -445,3 +467,12 @@ def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(
     later.start()
     later.join()
     assert read_config_dict(cfg) == {"format_version": 2, "a": 1, "b": 2}
+
+
+def test_spellings_differing_in_case_take_one_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a case-insensitive filesystem ``Config.yml`` and ``config.yml`` are one file."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "home"))
+    assert write_lock_path(tmp_path / "Config.yml") == write_lock_path(tmp_path / "config.yml")
+    assert write_lock_path(tmp_path / "config.yml") != write_lock_path(tmp_path / "other.yml")

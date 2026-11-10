@@ -265,6 +265,7 @@ sdk untaped_git.api.RepoStore.for_url(plain_clone=) default=false
 sdk untaped_git.api.RepoStore.for_url(url, *, plugin, error)
 sdk untaped_git.api.RepoStore.has_part()
 sdk untaped_git.api.RepoStore.lock_worktree(worktree, *, reason)
+sdk untaped_git.api.RepoStore.locked()  [experimental]
 sdk untaped_git.api.RepoStore.ls_tree(paths@2=) default=[]
 sdk untaped_git.api.RepoStore.ls_tree(tree)
 sdk untaped_git.api.RepoStore.owned_by(map_error=) default=None callback(1)

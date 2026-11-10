@@ -53,7 +53,8 @@ class AnsibleSettings(BaseModel):
         description=(
             "Folder of the SQLite index of refreshed source data, an absolute path; the "
             "file in it is `index.v<layout>.sqlite3`, one per layout. Unset: "
-            "`plugins/ansible/index/` under the untaped home."
+            "`plugins/ansible/index/` under the untaped home. Keep it on a local disk: the "
+            "index uses SQLite's WAL mode."
         ),
     )
     default_source: str | None = Field(

@@ -24,6 +24,7 @@ from core_test_support.runtime.plugin_uses_site import Site, installed_site
 from untaped.core import run_uses
 from untaped.runtime import bootstrap, run_output
 from untaped.runtime.registry import PluginCandidate
+from untaped.sdk.storage._fs import write_lock_path
 from untaped.sdk.testing import CliInvoker
 
 _SHELF = {
@@ -211,7 +212,9 @@ def test_a_lock_another_process_holds_neither_fails_nor_delays_the_command(site:
     state = _state(site)
     state.parent.mkdir(parents=True)
     holder = subprocess.Popen(
-        [sys.executable, "-c", _HOLD, f"{state}.lock"], stdout=subprocess.PIPE, text=True
+        [sys.executable, "-c", _HOLD, str(write_lock_path(state))],
+        stdout=subprocess.PIPE,
+        text=True,
     )
     try:
         assert holder.stdout is not None

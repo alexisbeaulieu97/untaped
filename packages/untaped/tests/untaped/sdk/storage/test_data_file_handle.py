@@ -15,6 +15,7 @@ from core_test_support.runtime.run import run_owning
 from untaped.sdk import ConfigError, UntapedError
 from untaped.sdk._run import run_scope
 from untaped.sdk.storage import Absent, DataFile, Found, OtherVersion, Unreadable, data_file
+from untaped.sdk.storage._fs import write_lock_path
 
 
 class Mark(BaseModel):
@@ -201,7 +202,7 @@ def test_a_write_waits_for_another_writer_then_says_it_is_busy(
     path = tmp_path / "mark.json"
     monkeypatch.setattr(data_file, "_WRITE_WAIT", 0)
     busy = r"mark\.json is busy \(another untaped process\)"
-    with FileLock(str(data_file._lock_path(path))), pytest.raises(ConfigError, match=busy):
+    with FileLock(str(write_lock_path(path))), pytest.raises(ConfigError, match=busy):
         DataFile[Mark].at(path).write(Mark(name="ada"))
     assert not path.exists()
     assert [each.name for each in tmp_path.iterdir()] == ["home"]  # no lock file beside it
@@ -211,9 +212,8 @@ def test_a_write_inside_a_write_to_the_same_file_is_refused(tmp_path: Path) -> N
     from untaped.sdk.storage._fs import locked_write
 
     path = tmp_path / "mark.json"
-    lock = data_file._lock_path(path)
     with (
-        locked_write(path, timeout=0, busy="busy", lock=lock),
+        locked_write(path, timeout=0, busy="busy"),
         pytest.raises(UntapedError, match="inside another write"),
     ):
         DataFile[Mark].at(path).write(Mark(name="ada"))

@@ -538,6 +538,7 @@ class CommandWalk:
                     choices=choices,
                     negative=option.negative,
                     short=option.short,
+                    allow_hyphen=option.allow_hyphen,
                     help=refresh_help
                     or default._option_help(option),  # Refresh's one flag pair, about its caches
                     panel=block.panel,

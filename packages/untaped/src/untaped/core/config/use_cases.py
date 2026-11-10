@@ -34,7 +34,13 @@ from untaped.sdk._replacement import replacement_text
 from untaped.sdk._run import current_run
 from untaped.sdk._schema import FieldDescriptor
 from untaped.sdk._settings_plan import SettingsWritten
-from untaped.sdk.errors import ConfigError, UsageError, first_validation_error
+from untaped.sdk.errors import (
+    ConfigError,
+    System,
+    UntapedError,
+    UsageError,
+    first_validation_error,
+)
 from untaped.sdk.health.deprecated_keys import rename_keys
 from untaped.sdk.marks import Deprecated, owner, removal_text, stability_name
 from untaped.sdk.network.credentials import is_folder_source
@@ -448,7 +454,7 @@ class RankProviders:
             nonlocal changed, had
             had = _rank_of(current, name, method) is not None
             if not plugins and current is not None and _holds_nothing(current, name, method):
-                raise _NothingStored(target)
+                raise _NothingStoredError(target)
             extensions = _ranked(_mapping(current), name, method, plugins)
             changed = True  # unless the writer says the file is as it was
             return json.dumps(extensions) if extensions else None
@@ -460,7 +466,7 @@ class RankProviders:
             target = self._repo.update_values(
                 {key: update}, profile=profile, dry_run=dry_run, on_unchanged=untouched.append
             )
-        except _NothingStored as kept:
+        except _NothingStoredError as kept:
             target, changed = kept.target, False
         changed = changed and not untouched
         if not changed:
@@ -479,8 +485,10 @@ class RankProviders:
         return SettingChange(SettingOutcome(key=key, profile=target, action=action), tuple(notes))
 
 
-class _NothingStored(Exception):
+class _NothingStoredError(UntapedError):
     """Raised inside a ranking's removal to write nothing: ``target`` stores nothing there."""
+
+    system = System.UNTAPED
 
     def __init__(self, target: str) -> None:
         super().__init__(target)

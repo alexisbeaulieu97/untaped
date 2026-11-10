@@ -21,7 +21,8 @@ and release (:mod:`~untaped_git.store_release`).
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
@@ -282,6 +283,20 @@ class RepoStore:
 
     def exists(self) -> bool:
         return self._repo.exists()
+
+    @experimental
+    @contextmanager
+    def locked(self) -> Iterator[None]:
+        """Hold the repo's lock across several calls, so they act as one step.
+
+        The writers take the same lock and re-enter it in this thread, so a
+        read of :meth:`read_private`, a :meth:`fetch` and a
+        :meth:`write_private` inside one block see no other process's write
+        between them. Another process holding it is waited for, then an
+        ``unavailable`` error. A lock of the plugin's own is taken before this one.
+        """
+        with self._repo.locked():
+            yield
 
     def has_part(self) -> bool:
         """Whether this plugin has a part in the repo, so :meth:`release` has work to do.

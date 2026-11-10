@@ -35,9 +35,11 @@ class _GithubSettings(BaseModel):
 
 @pytest.fixture
 def app(_isolated_config: Path):
+    root = _root()
+    # after composing: a composition registers its own plugins' sections only
     register_profile_settings("github", _GithubSettings)
     get_settings.cache_clear()
-    return _root()
+    return root
 
 
 def _seed(cfg: Path) -> None:
