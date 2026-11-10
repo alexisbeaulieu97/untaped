@@ -233,7 +233,7 @@ def test_a_malformed_ignore_is_a_usage_error_even_with_nothing_to_lint(
 
 def test_piped_plugin_list_checks_each_plugin() -> None:
     """``untaped plugin list -f pipe | untaped lint --stdin``, the list cut to two plugins
-    and untaped's own row, which lint skips."""
+    and untaped's own row, which lint checks as the root plugin."""
     listed = install(LintPlugin, Git).cli(["plugin", "list", "-f", "pipe"]).stdout.splitlines()
     wanted = ("git", "lint", "untaped")
     piped = [line for line in listed if json.loads(line)["record"]["name"] in wanted]
@@ -246,8 +246,8 @@ def test_piped_plugin_list_checks_each_plugin() -> None:
         plugins=[Git],
     )
     assert result.exit_code == 0, result.stderr
-    assert sorted(plugin.name for plugin in PluginReader.read) == ["git", "lint"]
-    assert _rules(result) == ["acme.seen", "acme.seen"]
+    assert sorted(plugin.name for plugin in PluginReader.read) == ["git", "lint", "untaped"]
+    assert _rules(result) == ["acme.seen", "acme.seen", "acme.seen"]
 
 
 def test_an_invalid_plugin_record_stops_the_read_before_any_plugin_is_checked() -> None:

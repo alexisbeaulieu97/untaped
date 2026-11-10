@@ -47,12 +47,14 @@ from typing import Any, get_args, get_origin
 from cyclopts import App
 from pydantic import BaseModel
 
+from untaped.core.errors import SurfaceError
 from untaped.core.surface._lines import DEPRECATED, DeprecatedMark, Line, LineMark
 from untaped.core.surface._lists import HOOKS, IMPLEMENTERS
 from untaped.core.surface._types import default_text, factory_default, literal_values, named_token
 from untaped.sdk._lazy import old_names_of, peek
 from untaped.sdk._parameter_marks import parameter_marks
 from untaped.sdk._replacement import replacement_text, sdk_replacement_text
+from untaped.sdk.errors import System, UntapedError
 from untaped.sdk.marks import (
     Deprecated,
     Experimental,
@@ -61,10 +63,6 @@ from untaped.sdk.marks import (
     descriptor_function,
     function_mark,
 )
-
-
-class SurfaceError(Exception):
-    """Something the walker can't classify: generation stops rather than skip it."""
 
 
 @dataclass
@@ -514,7 +512,7 @@ class _Walker:
             return None
         try:
             return _arity(hints[parameter.name], module, scope)
-        except _Unresolved as exc:
+        except _UnresolvedError as exc:
             raise SurfaceError(
                 f"{subject}({parameter.name}): its annotation {exc} can't be resolved, so "
                 "the walker can't tell whether it is a callback"
@@ -684,8 +682,10 @@ def _choice(value: object) -> str:
 # --- callbacks ----------------------------------------------------------------
 
 
-class _Unresolved(Exception):
+class _UnresolvedError(UntapedError):
     """An annotation the walker can't resolve far enough to tell whether it is a callback."""
+
+    system = System.UNTAPED
 
 
 def _arity(annotation: object, module: types.ModuleType, scope: Mapping[str, object]) -> str | None:
@@ -730,7 +730,7 @@ def _arity(annotation: object, module: types.ModuleType, scope: Mapping[str, obj
         if each is not None
     }
     if len(found) > 1:
-        raise _Unresolved(f"{annotation!r} (callables of different arities)")
+        raise _UnresolvedError(f"{annotation!r} (callables of different arities)")
     return found.pop() if found else None
 
 
@@ -762,7 +762,7 @@ def _shape(tree: ast.expr, text: str, namespace: Mapping[str, object]) -> object
         left = _shape(tree.left, text, namespace)
         right = _shape(tree.right, text, namespace)
         return _first_callable(left, right)
-    raise _Unresolved(repr(text))
+    raise _UnresolvedError(repr(text))
 
 
 def _first_callable(*options: object) -> object:

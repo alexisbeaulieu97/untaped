@@ -41,6 +41,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from untaped.core.errors import SurfaceError
 from untaped.core.surface._guard import removed
 from untaped.core.surface._lines import (
     FORMAT,
@@ -51,7 +52,6 @@ from untaped.core.surface._lines import (
     render,
     upgrade,
 )
-from untaped.core.surface._sdk import SurfaceError
 from untaped.core.surface._window import broken
 from untaped.sdk._modules import SDK_MODULES
 
