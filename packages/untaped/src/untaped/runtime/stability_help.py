@@ -59,18 +59,16 @@ _SELECTED_COMMAND: ContextVar[tuple[App, App, tuple[str, ...]] | None] = Context
 
 
 @contextmanager
-def command_selection() -> Iterator[None]:
-    """The scope of one invocation's :func:`select_command`; the selection ends with it."""
-    token = _SELECTED_COMMAND.set(None)
+def command_selection(root: App, command: App, path: tuple[str, ...]) -> Iterator[None]:
+    """``command`` (at ``path``, ``("untaped", "awx", ...)``) is this invocation's inside the block.
+
+    The only way to select one, so a selection never outlives its invocation.
+    """
+    token = _SELECTED_COMMAND.set((root, command, path))
     try:
         yield
     finally:
         _SELECTED_COMMAND.reset(token)
-
-
-def select_command(root: App, command: App, path: tuple[str, ...]) -> None:
-    """Record ``command`` (at ``path``, ``("untaped", "awx", ...)``) as this invocation's."""
-    _SELECTED_COMMAND.set((root, command, path))
 
 
 def _deprecated_options_help(console: Any, options: Any, panel: Any) -> None:

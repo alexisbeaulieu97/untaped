@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 import signal
-import threading
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -121,11 +122,14 @@ def test_a_stalled_repack_is_a_warning(
 
 @pytest.mark.skipif(
     signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
-    reason="SIGINT is ignored here (a background job), so it never interrupts",
+    reason="SIGINT is ignored here (a background job), and the child inherits that",
 )
 def test_interrupting_maintenance_kills_its_children(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # The fetch runs in a child Python with untaped's handlers, as the CLI runs it: the
+    # interrupt reaches every group untaped started, wherever it lands in the parent,
+    # and what a stop leaves behind is stopped at exit.
     store = store_for("github")
     store.fetch(branches=["main"])
     marker = tmp_path / "stall"
@@ -133,15 +137,27 @@ def test_interrupting_maintenance_kills_its_children(
     git_shim(tmp_path / "bin", monkeypatch, stall_maintenance=marker)
     pidfile = Path(f"{marker}.pid")
     remote.commit("x.txt", "x\n")
-
-    def interrupt() -> None:
+    code = (
+        "from pathlib import Path\nfrom untaped.sdk import _process_groups\n"
+        "from untaped.sdk.testing import install\nfrom untaped_git.errors import GitError\n"
+        "from untaped_git.plugin import Git\nfrom untaped_git.store import RepoStore\n"
+        "_process_groups.install()\n"
+        f"store = RepoStore._open(Path({str(store.path)!r}), url={remote.url!r}, "
+        "plugin='github', error=GitError, warn=print)\n"
+        "try:\n    with install(Git).running():\n        store.fetch(branches=['main'])\n"
+        "except KeyboardInterrupt:\n    print('interrupted', flush=True)\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
         deadline = time.monotonic() + 20
-        while not pidfile.exists() and time.monotonic() < deadline:
+        while not pidfile.exists() and child.poll() is None and time.monotonic() < deadline:
             time.sleep(0.05)
-        os.kill(os.getpid(), signal.SIGINT)
+        child.send_signal(signal.SIGINT)
+        out, err = child.communicate(timeout=30)
+    finally:
+        child.kill()
 
-    threading.Thread(target=interrupt, daemon=True).start()
-    with pytest.raises(KeyboardInterrupt):
-        store.fetch(branches=["main"])
-
+    assert "interrupted" in out, err
     assert _wait_dead(int(pidfile.read_text()))

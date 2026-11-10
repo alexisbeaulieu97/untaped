@@ -20,8 +20,9 @@ from pathlib import Path
 import pytest
 
 from untaped.sdk import _process_groups
+from untaped.sdk import process as process_module
 from untaped.sdk.errors import ErrorCategory, UntapedError
-from untaped.sdk.process import ProcessResult, run_process, start_process
+from untaped.sdk.process import ProcessResult, RunningProcess, run_process, start_process
 
 _NEEDS_SIGINT = pytest.mark.skipif(
     signal.getsignal(signal.SIGINT) == signal.SIG_IGN,
@@ -246,6 +247,24 @@ def test_an_exception_in_the_calling_thread_stops_the_group(tmp_path: Path) -> N
     assert _wait_gone(_pid(Path(f"{pid_file}.grandchild")))
 
 
+def test_an_interrupt_before_the_run_waits_on_the_child_still_stops_the_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A loaded machine can hold the main thread between the start and the wait (#820).
+    pid_file = tmp_path / "child.pid"
+
+    def interrupted(_run: object, _input: bytes | None) -> ProcessResult:
+        _pid(Path(f"{pid_file}.grandchild"))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(process_module._Run, "collect", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        run_process(_stubborn(pid_file), timeout=60)
+
+    assert _wait_gone(_pid(pid_file))
+    assert _wait_gone(_pid(Path(f"{pid_file}.grandchild")))
+
+
 def test_a_run_returns_in_bounded_time_against_an_escapee_holding_the_output(
     tmp_path: Path,
 ) -> None:
@@ -280,6 +299,23 @@ def test_a_long_lived_child_answers_and_close_ends_it() -> None:
     assert child.close() == 0  # closing stdin ended it; idempotent
     child.stdout.close()
     child.stderr.close()
+
+
+def test_an_interrupt_before_the_caller_holds_a_long_lived_child_stops_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pid_file = tmp_path / "child.pid"
+
+    def interrupted(_process: subprocess.Popen[bytes]) -> RunningProcess:
+        _pid(Path(f"{pid_file}.grandchild"))
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(RunningProcess, "_of", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        start_process(_stubborn(pid_file))
+
+    assert _wait_gone(_pid(pid_file))
+    assert _wait_gone(_pid(Path(f"{pid_file}.grandchild")))
 
 
 def test_close_stops_a_child_that_ignores_end_of_file_from_two_threads(tmp_path: Path) -> None:

@@ -82,15 +82,21 @@ def run_process(
     started = time.monotonic()
     if stop is not None and stop.is_set():
         return _result("stopped", None, b"", b"", started)
-    process = groups.spawn(
-        argv,
-        cwd=cwd,
-        env=env,
-        stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
-    )
-    if process is None:
-        return _result("stopped", None, b"", b"", started)
-    return _Run(process, timeout=timeout, stop=stop, started=started).collect(input)
+    process: subprocess.Popen[bytes] | None = None
+    try:  # from the moment the group exists: an interrupt before collect() stops it too
+        process = groups.spawn(
+            argv,
+            cwd=cwd,
+            env=env,
+            stdin=subprocess.PIPE if input is not None else subprocess.DEVNULL,
+        )
+        if process is None:
+            return _result("stopped", None, b"", b"", started)
+        return _Run(process, timeout=timeout, stop=stop, started=started).collect(input)
+    except BaseException:
+        if process is not None:
+            groups.abandon(process)
+        raise
 
 
 class _Run:
@@ -113,28 +119,24 @@ class _Run:
         self.output: tuple[bytes | None, bytes | None] = (None, None)
 
     def collect(self, input: bytes | None) -> ProcessResult:
+        """Wait for the child and read its output; :func:`run_process` stops it on an exception."""
         process, pgid = self.process, self.process.pid
-        try:
-            done = self._pump(input, groups.POLL_S)
-            while not done:
-                self._decide()
-                age = groups.clock_age(pgid)
-                if age is not None and age >= groups.GRACE_S:
-                    groups.stop(process)  # past the grace: SIGKILL what is left
-                    self._drain()
-                    break
-                done = self._pump(None, groups.POLL_S)
+        done = self._pump(input, groups.POLL_S)
+        while not done:
+            self._decide()
+            age = groups.clock_age(pgid)
+            if age is not None and age >= groups.GRACE_S:
+                groups.stop(process)  # past the grace: SIGKILL what is left
+                self._drain()
+                break
+            done = self._pump(None, groups.POLL_S)
+        else:
+            if self.reason is None and groups.clock_age(pgid) is not None:
+                self.reason = "stopped"  # it exited of untaped's forwarded signal
+            if self.reason is None:
+                groups.forget(pgid)  # what it left holds no pipe: it runs on, as after `cmd &`
             else:
-                if self.reason is None and groups.clock_age(pgid) is not None:
-                    self.reason = "stopped"  # it exited of untaped's forwarded signal
-                if self.reason is None:
-                    groups.forget(pgid)  # what it left holds no pipe: it runs on, as after `cmd &`
-                else:
-                    groups.stop(process)  # finish the stop sequence it started
-        except BaseException:
-            groups.stop(process)
-            groups.close_pipes(process)
-            raise
+                groups.stop(process)  # finish the stop sequence it started
         out, err = self.output
         if self.reason in (None, "leftover"):
             return _result("exited", process.returncode, out, err, self.started)
@@ -296,4 +298,8 @@ def start_process(
     process = groups.spawn(argv, cwd=cwd, env=env, stdin=subprocess.PIPE)
     if process is None:
         raise UntapedError("untaped is stopping; not started", category=ErrorCategory.INTERRUPTED)
-    return RunningProcess._of(process)
+    try:  # an interrupt before the caller holds it would leave the group running
+        return RunningProcess._of(process)
+    except BaseException:
+        groups.abandon(process)
+        raise

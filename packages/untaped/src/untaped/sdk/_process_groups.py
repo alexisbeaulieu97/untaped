@@ -244,13 +244,22 @@ def spawn(
         closing = _S.closing
         if not main and closing is not None:  # started before the signal: give it the signal too
             soft_signal(process.pid, closing[0] or signal.SIGTERM)
+        _exit_net_registered()  # a call: an interrupt can land in it, so inside the try
     except BaseException:
         if process is not None:
-            stop(process)
-            close_pipes(process)
+            abandon(process)
         raise
-    _exit_net_registered()
     return process
+
+
+def abandon(process: subprocess.Popen[bytes]) -> None:
+    """Stop ``process``'s group and close its pipes: an exception cut its run short.
+
+    The caller's ``try`` opens before any call after the group exists, so an
+    interrupt cannot land between them (a call is where Python raises one).
+    """
+    stop(process)
+    close_pipes(process)
 
 
 def close_pipes(process: subprocess.Popen[bytes]) -> None:

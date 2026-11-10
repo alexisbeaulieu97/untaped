@@ -71,6 +71,11 @@ def everything_composed() -> Iterator[Composition]:
     finally:
         for source in sources:
             sys.path.remove(source)
+        # Unload the examples too: a later test installing its own ``untaped_shelf`` would
+        # otherwise import this one from sys.modules.
+        packages = {path.name for source in sources for path in Path(source).iterdir()}
+        for module in [each for each in sys.modules if each.partition(".")[0] in packages]:
+            del sys.modules[module]
 
 
 def markdown_files() -> list[Path]:

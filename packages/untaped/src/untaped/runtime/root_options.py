@@ -41,7 +41,6 @@ from untaped.runtime.stability_help import (
     mark_of,
     marked_options,
     option_name,
-    select_command,
 )
 from untaped.runtime.stability_marks import Alias, deprecated_aliases
 from untaped.runtime.verbose import enable as _enable_verbose
@@ -741,8 +740,9 @@ def dispatch_line(app: App, line: RootLine) -> object:
     The line holds no root option any more (:meth:`RootLine.read`), so it
     parses once.
     """
-    with command_selection():
-        return _parsed(app, canonical_command_tokens(app, line.tokens))
+    tokens, command, path = canonical_command(app, line.tokens)
+    with command_selection(app, command, path):
+        return _parsed(app, tokens)
 
 
 def _parsed(app: App, tokens: list[str]) -> object:
@@ -757,8 +757,8 @@ def _call(app: App, tokens: list[str]) -> object:
     return app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
 
 
-def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
-    """Rewrite leading command tokens to their registered spelling.
+def canonical_command(app: App, tokens: Sequence[str]) -> tuple[list[str], App, tuple[str, ...]]:
+    """Rewrite leading command tokens to their registered spelling; also the command they name.
 
     Cyclopts resolves a command token loosely (``job_templates`` or
     ``JobTemplates`` for ``job-templates``) but keeps the raw token in the
@@ -769,7 +769,7 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
     Exact names, cyclopts aliases and ambiguous spellings are left for
     cyclopts to handle. Command names registered with
     :func:`untaped.runtime.stability_marks.deprecated_alias` along the chain are rewritten
-    too, with a warning.
+    too, with a warning. The command comes with its path (``("untaped", "awx", ...)``).
     """
     rewritten = list(tokens)
     current = app
@@ -792,12 +792,11 @@ def canonical_command_tokens(app: App, tokens: Sequence[str]) -> list[str]:
         current = current[token]
         chain.append(((*path, token), current))
     path = ("untaped", *(chain[-1][0] if chain else ()))
-    select_command(app, current, path)
     if not any(token in _HELP_OR_VERSION for token in _before_separator(rewritten)):
         _warn_deprecated_command(app, chain)
         if not consumed:
             _warn_deprecated_options(app, current, path, rewritten[index:])
-    return rewritten
+    return rewritten, current, path
 
 
 def _warn_deprecated_options(
