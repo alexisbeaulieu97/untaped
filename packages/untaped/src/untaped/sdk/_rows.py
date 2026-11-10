@@ -8,7 +8,7 @@ from typing import get_args
 
 from pydantic import BaseModel
 
-from untaped.sdk.diagnostic import dumped_names
+from untaped.sdk.diagnostic import WireModel, _field_order, dumped_names
 from untaped.sdk.records import OutcomeRecord, TableGlyph, check_data_kind, kind_of
 
 
@@ -69,8 +69,13 @@ def _model_schema(
 
 
 def _model_fields(model: type[BaseModel]) -> list[str]:
-    """The columns ``model`` rows have: their dumped field names, then computed fields."""
-    return [*dumped_names(model).values(), *model.model_computed_fields]
+    """The columns ``model`` rows have: their dumped field names, then computed fields.
+
+    A record's fields come in the order its rows are written: own fields
+    first, then those it inherits (an outcome's ``action`` and ``error``).
+    """
+    fields = _field_order(model) if issubclass(model, WireModel) else dumped_names(model).values()
+    return [*fields, *model.model_computed_fields]
 
 
 def _record_table_columns(items: Sequence[BaseModel | Mapping[str, object]]) -> list[str] | None:
