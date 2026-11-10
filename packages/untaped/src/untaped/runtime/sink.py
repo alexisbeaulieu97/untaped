@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from untaped.runtime.progress_stack import Mode, hold_screen, open_task, release_screen, write
 from untaped.runtime.redaction import redact_url_password
-from untaped.runtime.render import MessageKind, render_message, should_colorize
+from untaped.runtime.render import MessageKind, printable, render_message, should_colorize
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._run import OutputPolicy, recorder
 from untaped.sdk._streams import stream_is_tty
@@ -87,11 +87,13 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
     An ``info``, ``success`` or ``warning`` message and a deprecation render
     through the theme (``theme``: the policy's, else the default); its
     ``hint:`` line, a failure, a debug line and a stale-data line do not.
+    Control characters in any of them show escaped (:func:`printable`).
     """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):
-        return f"DEBUG {diagnostic.logger}: {diagnostic.message}"
+        return printable(f"DEBUG {diagnostic.logger}: {diagnostic.message}")
     message = diagnostic.message
+    hint = None if diagnostic.hint is None else printable(diagnostic.hint)
     themed = _themed_level(diagnostic)
     if themed is not None:
         line = render_message(
@@ -100,12 +102,13 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
             theme=theme or BUILTIN_THEMES["default"],
             colorize=color,
         )
-        return line if diagnostic.hint is None else f"{line}\n{HINT_PREFIX}{diagnostic.hint}"
+        return line if hint is None else f"{line}\n{HINT_PREFIX}{hint}"
     if isinstance(diagnostic, Failure) and diagnostic.item is not None:
         message = f"{diagnostic.item}: {message}"
+    message = printable(message)
     line = f"{level}: {message}" if level in ("error", "warning", "hint") else message
-    if diagnostic.hint is not None:
-        line += f"\n{HINT_PREFIX}{diagnostic.hint}"
+    if hint is not None:
+        line += f"\n{HINT_PREFIX}{hint}"
     return line
 
 
@@ -156,6 +159,8 @@ class Sink(Protocol):
 
     def relay(self, text: str, *, end: str = "\n") -> None:
         """Print another tool's output line as is: never parsed, never counted, never muted.
+
+        Colour sequences stay; any other control character shows escaped.
 
         Under JSON diagnostics it is an ``info`` line, whatever prefix it has
         (a hook that prints ``error: …`` and succeeds is not a failure).
@@ -261,7 +266,8 @@ class RunSink:
                 self._out(text + end)
             return
         message = Message(level="info", message=redact_url_password(text).strip())
-        self._emit(message, text, unmuted=True, end=end)
+        # Its colours stay; any other control sequence shows escaped.
+        self._emit(message, printable(text, colors=True), unmuted=True, end=end)
 
     def passthrough(self, text: str) -> None:
         self._out(text)

@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, NoReturn, TextIO, cast
 
 from pydantic import BaseModel
 
-from untaped.runtime.render import render_styled
+from untaped.runtime.render import printable, render_styled
 from untaped.runtime.sink import HINT_PREFIX, RunSink, Sink, default_policy
 from untaped.sdk._run import OutputPolicy, run_or_none
 from untaped.sdk.diagnostic import (
@@ -404,7 +404,10 @@ def derived_exit_code(code: str | int | None) -> str | int | None:
 
 
 def failure_text(error: UntapedError | Failure, *, item: str | None = None) -> str:
-    """A failure's text line: ``error: [<item>: ]<message>``, then its ``hint:`` line."""
+    """A failure's text line: ``error: [<item>: ]<message>``, then its ``hint:`` line.
+
+    Control characters show escaped (:func:`~untaped.runtime.render.printable`).
+    """
     prefix = "" if item is None else f"{item}: "
     if isinstance(error, UntapedError):
         body = format_error(error)
@@ -412,7 +415,7 @@ def failure_text(error: UntapedError | Failure, *, item: str | None = None) -> s
         body = (
             error.message if error.hint is None else f"{error.message}\n{HINT_PREFIX}{error.hint}"
         )
-    return f"error: {prefix}{body}"
+    return printable(f"error: {prefix}{body}")
 
 
 class Diagnostics:
@@ -460,7 +463,7 @@ class Diagnostics:
         if isinstance(text, Sequence):  # records: a Text is no sequence
             self._records(cast("Sequence[BaseModel]", text), hint=hint, unmuted=unmuted)
             return
-        tail = "" if hint is None else f"\n{HINT_PREFIX}{hint}"
+        tail = "" if hint is None else f"\n{HINT_PREFIX}{printable(hint)}"
 
         def styled(color: bool) -> str:
             return render_styled(text, colorize=color) + tail
@@ -475,7 +478,7 @@ class Diagnostics:
 
         if not records:
             return
-        tail = "" if hint is None else f"\n{HINT_PREFIX}{hint}"
+        tail = "" if hint is None else f"\n{HINT_PREFIX}{printable(hint)}"
         plain = stderr_table(records, colorize=False, plain=True)  # what JSON diagnostics carry
         self._sink().emit(
             Message(level="info", message=plain, hint=hint),

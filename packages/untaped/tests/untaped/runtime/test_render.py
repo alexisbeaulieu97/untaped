@@ -331,6 +331,30 @@ def test_wide_table_cells_end_in_an_ellipsis_instead_of_wrapping(
     assert "…" in out
 
 
+#: An OSC title change, a colour and a C1 CSI: a value someone else wrote.
+_ESCAPES = "a\x1b]0;title\x07\x1b[31mred\x9b2J"
+
+
+@pytest.mark.parametrize("view", ["table", "list"])
+def test_human_views_show_control_characters_escaped(view: str) -> None:
+    theme = BUILTIN_THEMES["default"].model_copy(update={"collection_view": view})
+    out = collection(Ui(theme=theme), [{"name": _ESCAPES}], fmt="table")
+    assert "\x1b" not in out and "\x07" not in out and "\x9b" not in out
+    assert "a\\x1b]0;title\\x07\\x1b[31mred\\x9b2J" in out
+
+
+def test_detail_view_shows_control_characters_escaped() -> None:
+    out = detail(Ui(), {"summary": _ESCAPES, "body": "line\r\nnext"}, fmt="table")
+    assert "\x1b" not in out and "\r" not in out
+    assert "summary: a\\x1b]0;" in out
+
+
+def test_structured_and_raw_formats_keep_control_characters() -> None:
+    rows = [{"name": _ESCAPES}]
+    assert json.loads(_render(rows, fmt="json")) == rows
+    assert _render(rows, fmt="raw") == _ESCAPES
+
+
 def test_table_header_is_not_rich_markup() -> None:
     out = _table([{"[bold]x": 1}])
     assert "[bold]x" in out
@@ -480,3 +504,27 @@ def test_screen_tokens_do_not_change_tables(name: str, tty: bool, view: str) -> 
         return collection(ui, records, fmt="table"), detail(ui, records[0], fmt="table")
 
     assert render(full) == render(bare)
+
+
+def test_a_styled_text_shows_control_characters_escaped_and_keeps_its_styles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rich.text import Text
+
+    from untaped.runtime.render import render_styled
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    text = Text.assemble(("ok ", "green"), ("a\x1b]52;c;eA==\x1b\\b", "red"), " end")
+    out = render_styled(text, colorize=True)
+    assert "\x1b]" not in out and "\x1b\\" not in out
+    assert "\x1b[32mok \x1b[0m\x1b[31ma\\x1b]52;c;eA==\\x1b\\b\x1b[0m end" in out
+
+
+def test_headers_and_list_keys_show_control_characters_escaped() -> None:
+    row = {"k\x1b]0;x\x07": 1}
+    assert "\x1b" not in _table([row])
+    assert "k\\x1b]0;x\\x07: 1" in detail(Ui(), row, fmt="table")
+
+
+def test_a_table_cell_still_collapses_whitespace_controls_to_a_space() -> None:
+    assert "a b c" in _table([{"body": "a\rb\x0cc"}])

@@ -21,6 +21,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from untaped.runtime.redaction import redact_credentials
+from untaped.runtime.render import printable
 from untaped.runtime.run_output import current_sink
 from untaped.sdk._run import is_verbose
 from untaped.sdk.diagnostic import Debug
@@ -56,7 +57,7 @@ class _SinkHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             debug = Debug(logger=record.name, message=redact_credentials(record.getMessage()))
-            current_sink().emit(debug, rendered=redact_credentials(self.format(record)))
+            current_sink().emit(debug, rendered=printable(redact_credentials(self.format(record))))
         except Exception:
             self.handleError(record)
 

@@ -472,3 +472,38 @@ def test_an_anchor_that_cannot_be_listed_counts_as_live(
     monkeypatch.setattr(os, "scandir", scandir)
     assert _prune(store) == []
     assert held.exists()
+
+
+def test_an_opener_waiting_on_a_pruner_that_moves_the_lock_aside_takes_the_new_one(
+    base: Path,
+) -> None:
+    """A pruner holds ``.inuse``, moves it aside and lets go: the waiting opener retries.
+
+    filelock refuses a lock database replaced during the wait; the retry takes the new one.
+    """
+    target = base / "layout.sqlite3"
+    base.mkdir(parents=True)
+    target.write_bytes(b"x")
+    inuse = Path(f"{target}.inuse")
+    code = textwrap.dedent(
+        f"""
+        import os, sys, time
+        from filelock import ReadWriteLock
+        lock = ReadWriteLock({str(inuse)!r}, is_singleton=False)
+        lock.acquire_write()
+        print("held", flush=True)
+        time.sleep(0.5)
+        os.rename({str(inuse)!r}, {str(inuse)!r} + ".removing-x")
+        lock.release()
+        """
+    )
+    pruner = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, text=True)
+    try:
+        assert pruner.stdout is not None
+        assert pruner.stdout.readline().strip() == "held"
+        opener = _SqliteInUse(target)
+        opener.hold()
+        assert opener._held
+        opener.release()
+    finally:
+        pruner.wait(timeout=30)

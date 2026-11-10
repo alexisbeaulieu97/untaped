@@ -26,7 +26,7 @@ from rich.console import Console
 from rich.errors import StyleSyntaxError
 from rich.style import Style
 from rich.table import Table
-from rich.text import Text
+from rich.text import Span, Text
 
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
@@ -116,7 +116,7 @@ def render_message(
     symbol = theme.symbols.get(kind, DEFAULT_SYMBOLS[kind])
     prefix = f"{symbol} " if symbol else ""
     label = f"{kind}: " if kind in {"warning", "error"} else ""
-    rendered = f"{prefix}{label}{text}"
+    rendered = f"{prefix}{label}{printable(text)}"
     style = _role_style(theme, kind, colorize=colorize)
     if style is None:
         return rendered
@@ -239,7 +239,10 @@ def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> s
         # line; an explanation (why a row failed) wraps instead, to be read whole.
         wrap = col in _WRAPPED_COLUMNS
         table.add_column(
-            Text(col), width=width, no_wrap=not wrap, overflow="fold" if wrap else "ellipsis"
+            Text(printable(col)),
+            width=width,
+            no_wrap=not wrap,
+            overflow="fold" if wrap else "ellipsis",
         )
     value_style = _role_style(theme, "value", colorize=colorize)
     for row, texts in zip(rows, cells, strict=True):
@@ -340,7 +343,7 @@ def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: 
     )
     rendered_value = _flat(value)
     if key_style is None and value_style is None:
-        return f"{key}: {rendered_value}"
+        return f"{printable(key)}: {rendered_value}"
     line = Text()
     line.append(key, style=key_style)
     line.append(": ")
@@ -393,7 +396,7 @@ def _table_cell(value: Any) -> str:
     """
     if isinstance(value, float):
         return f"{value:.2f}".rstrip("0").rstrip(".")
-    text = " ".join(_flat(value).split())
+    text = printable(" ".join(_flat_text(value).split()))
     return Roled(text, value.role) if isinstance(value, Roled) else text
 
 
@@ -402,7 +405,15 @@ _UTC_FRACTION_RE = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0
 
 
 def _flat(value: Any) -> str:
-    """A value as table or list-view text: flat, with timestamps to the second."""
+    """A value as table or list-view text: flat, with timestamps to the second.
+
+    Control characters show escaped (:func:`printable`): a value someone else
+    wrote, such as a ticket summary, never drives the terminal.
+    """
+    return printable(_flat_text(value))
+
+
+def _flat_text(value: Any) -> str:
     if isinstance(value, datetime):
         value = _utc(value)
     if isinstance(value, str) and (match := _UTC_FRACTION_RE.fullmatch(value)):
@@ -411,7 +422,7 @@ def _flat(value: Any) -> str:
         return ", ".join(f"{key}={text}" for key, text in _flat_pairs(value, prefix=""))
     if isinstance(value, list | tuple):
         separator = "; " if any(isinstance(item, Mapping) for item in value) else ", "
-        return separator.join(text for item in value if (text := _flat(item)))
+        return separator.join(text for item in value if (text := _flat_text(item)))
     return _render_cell(value)
 
 
@@ -419,7 +430,7 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
     for key, value in mapping.items():
         if isinstance(value, Mapping):
             yield from _flat_pairs(value, prefix=f"{prefix}{key}.")
-        elif text := _flat(value):
+        elif text := _flat_text(value):
             yield f"{prefix}{key}", text
 
 
@@ -472,8 +483,49 @@ def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -
     newline.
     """
     return _render_rich(
-        text if isinstance(text, Text) else Text(text), colorize=colorize, truncate=truncate
+        printable_text(text) if isinstance(text, Text) else Text(printable(text)),
+        colorize=colorize,
+        truncate=truncate,
     )
+
+
+#: C0 controls but tab and newline, DEL and C1 controls: what can drive a terminal.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+#: The same, but a colour or text-style sequence (SGR) is kept whole.
+_CONTROL_BUT_SGR_RE = re.compile(r"(\x1b\[[0-9;:]*m)|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def printable(text: str, *, colors: bool = False) -> str:
+    """``text`` with every control character but tab and newline shown escaped (``\\x1b``).
+
+    Human output (tables, list views, messages) passes server and repository
+    text through it, so an escape sequence in a value is shown, never run by
+    the terminal. Structured and raw output keep values verbatim. ``colors``
+    keeps colour and text-style sequences, for a relayed log that has them.
+    """
+    text = text.replace("\r\n", "\n")
+    if not colors:
+        return _CONTROL_RE.sub(_escaped, text)
+    return _CONTROL_BUT_SGR_RE.sub(lambda match: match[1] or _escaped(match), text)
+
+
+def _escaped(match: re.Match[str]) -> str:
+    return f"\\x{ord(match[0]):02x}"
+
+
+def printable_text(text: Text) -> Text:
+    """A Rich ``text`` with :func:`printable`'s escaping, every span's style kept."""
+    if not _CONTROL_RE.search(text.plain):
+        return text
+    cuts = sorted({span.start for span in text.spans} | {span.end for span in text.spans})
+    escaped = text.blank_copy()
+    for part in text.divide(cuts):
+        # Cut at every span edge, each part's spans cover it whole.
+        piece = printable(part.plain)
+        escaped.append_text(
+            Text(piece, style=part.style, spans=[Span(0, len(piece), s.style) for s in part.spans])
+        )
+    return escaped
 
 
 def _styled_text(value: str, style: str | None) -> Text:

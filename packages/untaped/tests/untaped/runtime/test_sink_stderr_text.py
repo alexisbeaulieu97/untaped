@@ -248,3 +248,18 @@ def test_a_role_rich_cannot_parse_styles_nothing(monkeypatch: pytest.MonkeyPatch
             Diagnostics().info("plain")
 
     assert _capture(case, _TtyStringIO()) == "plain\n"
+
+
+def test_a_relayed_log_keeps_its_colours_and_shows_other_controls_escaped() -> None:
+    line = "\x1b[31mfailed\x1b[0m: \x1b]52;c;ZXZpbA==\x07 done"
+    out = _capture(lambda: Diagnostics().relay(line))
+    assert out == "\x1b[31mfailed\x1b[0m: \\x1b]52;c;ZXZpbA==\\x07 done\n"
+
+
+def test_styled_info_and_its_hint_show_control_characters_escaped() -> None:
+    from rich.text import Text
+
+    text = Text.assemble(("TASK [", "bold"), ("a\x1b]0;x\x1b\\b", "red"), ("]", "bold"))
+    out = _capture(lambda: Diagnostics().info(text, hint="see \x1b]0;y\x07"))
+    assert "\x1b" not in out and "\x07" not in out
+    assert out == "TASK [a\\x1b]0;x\\x1b\\b]\nhint: see \\x1b]0;y\\x07\n"
