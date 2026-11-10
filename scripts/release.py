@@ -633,7 +633,30 @@ def release_notes(changelog: Path, version: str) -> str:
     body = "\n".join(lines[start:end]).strip()
     if not body:
         raise ReleaseError(f'{changelog.name}\'s "{heading}" section is empty')
-    return pin_links(body, version)
+    return _fitted(pin_links(body, version), version)
+
+
+#: GitHub refuses a release body longer than this many characters.
+NOTES_LIMIT = 125_000
+
+
+def _fitted(body: str, version: str) -> str:
+    """``body``, or as many of its leading ``###`` subsections as fit under
+    :data:`NOTES_LIMIT`, followed by a link to the whole section at the tag."""
+    if len(body) <= NOTES_LIMIT:
+        return body
+    anchor = version.replace(".", "")
+    link = (
+        f"The full notes for {version} are too long for this page: see "
+        f"[CHANGELOG.md]({REPO_URL}/blob/v{version}/CHANGELOG.md#{anchor})."
+    )
+    parts = re.split(r"(?m)^(?=### )", body)
+    kept = ""
+    for part in parts:
+        if len(kept) + len(part) + len(link) + 2 > NOTES_LIMIT:
+            break
+        kept += part
+    return f"{kept.rstrip()}\n\n{link}".lstrip()
 
 
 # --- smoke ------------------------------------------------------------------

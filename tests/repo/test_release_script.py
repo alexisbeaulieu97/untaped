@@ -626,6 +626,24 @@ def test_release_notes_keep_subsections(tmp_path: Path) -> None:
     )
 
 
+def test_release_notes_too_long_for_github_keep_whole_subsections_and_link(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(release, "NOTES_LIMIT", 200)
+    _write(
+        tmp_path / "CHANGELOG.md",
+        "# Changelog\n\n## 12.0.0\n\n### Upgrading\n\n- u\n\n### Added\n\n"
+        + "- a long line\n" * 20
+        + "\n## 11.1.0\n\n- old\n",
+    )
+    notes = release.release_notes(tmp_path / "CHANGELOG.md", "12.0.0")
+    assert notes == (
+        "### Upgrading\n\n- u\n\nThe full notes for 12.0.0 are too long for this page: see "
+        f"[CHANGELOG.md]({release.REPO_URL}/blob/v12.0.0/CHANGELOG.md#1200)."
+    )
+    assert len(notes) <= 200
+
+
 @pytest.mark.parametrize(
     ("text", "message"),
     [
