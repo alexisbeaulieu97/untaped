@@ -99,7 +99,7 @@ class Output[R: BaseModel](FieldBlock):
             "--columns",
             "list[str]",
             "Table columns, comma-separated or repeated; +NAME adds to and -NAME drops "
-            "from the default columns (? lists them).",
+            "from the default columns ('?' lists them).",
             short="-c",
             allow_hyphen=True,
         ),

@@ -363,7 +363,7 @@ def test_columns_picks_what_the_table_shows() -> None:
 
 def test_columns_help_names_its_edits_and_a_minus_name_drops_a_default() -> None:
     page = " ".join(_run("hello", "say", "--help").stdout.replace("│", " ").split())
-    assert "-NAME drops from the default columns (? lists them)" in page
+    assert "-NAME drops from the default columns ('?' lists them)" in page
     result = _run("hello", "say", "ada", "-c", "-text")
     assert result.exit_code == 0, result.stderr
     header = result.stdout.splitlines()[1]

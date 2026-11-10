@@ -417,8 +417,9 @@ def test_gpg_that_cannot_run_is_reported_with_no_entry_left(
     stores: FakeStores, tmp_path: Path
 ) -> None:
     (tmp_path / "fake-bin" / "gpg").chmod(0o644)
-    with pytest.raises(ConfigError, match="gpg could not run"):
+    with pytest.raises(ConfigError, match="gpg could not run") as raised:
         token_store.TokenStore("pass").preflight()
+    assert raised.value.exit_code == 4, "a tool that can't run won't on a retry"
     assert stores.entries() == {}
 
 

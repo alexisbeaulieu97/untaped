@@ -101,8 +101,8 @@ def _register_sections(result: CompositionResult) -> None:
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
     remembered composition (:func:`_reregister`). The sections an earlier
-    composition registered go first, so a plugin of the same name with
-    other settings never meets them. Each plugin's distribution
+    composition registered are dropped first, so a plugin of the same name
+    with other settings never meets them. Each plugin's distribution
     is bound as the owner its deprecations name (the root's none: its
     removals name untaped's own major), and its listed behaviours as its own
     (read only when one of them first warns). The root's behaviours are the

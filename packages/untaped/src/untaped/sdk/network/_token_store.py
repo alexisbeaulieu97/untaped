@@ -256,8 +256,7 @@ def _gpg_round_trip() -> None:
                 hint=f"{_OWN_COMMAND_HINT} command",
             ) from None
         except OSError as exc:
-            message = f"gpg could not run: {exc.strerror}"
-            raise ConfigError(message, category="unavailable") from None
+            raise ConfigError(f"gpg could not run: {exc.strerror}") from None
         if completed.returncode != 0:
             stderr = completed.stderr.decode(errors="replace")
             # Only decrypting needs the passphrase.

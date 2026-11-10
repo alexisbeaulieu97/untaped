@@ -18,7 +18,7 @@ Read first: `untaped docs acme guides selection`.
 
 ### Output
 - `--format`, `-f`: The output format. One of `table`, `json`, `yaml`, `pipe`, `raw`.
-- `--columns`, `-c`: Table columns, comma-separated or repeated; +NAME adds to and -NAME drops from the default columns (? lists them).
+- `--columns`, `-c`: Table columns, comma-separated or repeated; +NAME adds to and -NAME drops from the default columns ('?' lists them).
 
 ## Outputs
 Rows of `acme.widget` (`untaped docs acme outputs widget`): One widget on a rack.

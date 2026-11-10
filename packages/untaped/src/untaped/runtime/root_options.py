@@ -433,10 +433,11 @@ class _LineWalk:
             if not width:
                 if not value and self.take():
                     continue
-                if argument is not None and token not in _HELP_OR_VERSION:
+                if token not in _HELP_OR_VERSION:
+                    # an argument, or one too many, which moves with the rest so the error names it
                     self.arguments.append(len(self.left))
                     self.hyphened = self.hyphened or (value and _is_cluster(token))
-                    if not argument.token.startswith("list["):
+                    if argument is not None and not argument.token.startswith("list["):
                         slot += 1  # the next token fills the next argument
                 width = 1
             else:
@@ -474,7 +475,7 @@ class _LineWalk:
         value: the rest of the token, or the tokens after it.
         """
         if isinstance(given, _Cluster):
-            if len(spellings) < 2:  # no short to spell in a cluster
+            if len(spellings) < 2 or not given.kept:  # no short to spell, or root letters only
                 return
             short, last = spellings[1], given.kept[-1]
             if given.kept[-2:-1] == [short]:

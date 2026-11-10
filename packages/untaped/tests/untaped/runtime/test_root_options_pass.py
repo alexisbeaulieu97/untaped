@@ -462,6 +462,9 @@ def _outcome(
         (["hello", "run", "ls", "-la", "--", "-x"], "ls -la -x"),
         (["hello", "sh", "-xv"], "-xv None times=1"),
         (["hello", "sh", "here", "-vq", "--times", "2"], "here -vq times=2"),
+        # a cluster of root letters only, on a command with a `-f`
+        (["hello", "greet", "--names", "Ada", "-vv"], "Ada verbose=True deprecated=False"),
+        (["hello", "greet", "-vq"], None),
         (["hello", "greet", "--help", "--deprecated"], None),
         (["hello", "grep", "-p"], None),
         # the conflict comes first, whether the leading run was applied apart or not
@@ -480,6 +483,18 @@ def test_a_line_means_the_same_with_or_without_a_kept_declaration(
     assert cold == kept
     if out is not None:
         assert kept == (0, out, "")
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+def test_an_argument_too_many_beside_a_cluster_is_the_one_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["hello", "sh", "ws", "-la", "--times", "2", "extra"]
+
+    code, _, err = _outcome(argv, kept=True, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert code == 2
+    assert "'extra'" in err, err
 
 
 @pytest.mark.usefixtures("fresh_composition", "_isolated_config")
