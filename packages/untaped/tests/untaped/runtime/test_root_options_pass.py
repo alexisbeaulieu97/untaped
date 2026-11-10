@@ -468,13 +468,13 @@ def test_a_line_means_the_same_with_or_without_a_kept_declaration(
 def test_a_value_taking_short_ending_a_cluster_reads_the_next_token_as_cyclopts_does(
     kept: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # -y, then -c reading `-v`: cyclopts refuses it as a value, so the line fails
+    # -y, then -c reading `-v` (a column to drop), so `name` is one argument too many
     argv = ["doctor", "fix", "-yc", "-v", "name"]
 
     code, _, err = _outcome(argv, kept=kept, monkeypatch=monkeypatch, capsys=capsys)
 
     assert code == 2
-    assert "-c requires an argument" in err
+    assert "unexpected argument: 'name'" in err
 
 
 @pytest.mark.usefixtures("fresh_composition", "_isolated_config")

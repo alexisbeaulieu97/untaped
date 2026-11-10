@@ -96,7 +96,12 @@ class Output[R: BaseModel](FieldBlock):
     options = (
         FieldOption("--format", "str", "The output format.", short="-f"),
         FieldOption(
-            "--columns", "list[str]", "Table columns: a list, or +NAME to add.", short="-c"
+            "--columns",
+            "list[str]",
+            "Table columns, comma-separated or repeated; +NAME adds to and -NAME drops "
+            "from the default columns (? lists them).",
+            short="-c",
+            allow_hyphen=True,
         ),
     )
 

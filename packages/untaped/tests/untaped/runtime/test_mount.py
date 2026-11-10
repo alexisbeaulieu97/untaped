@@ -361,6 +361,15 @@ def test_columns_picks_what_the_table_shows() -> None:
     assert "text" in header and "name" not in header
 
 
+def test_columns_help_names_its_edits_and_a_minus_name_drops_a_default() -> None:
+    page = " ".join(_run("hello", "say", "--help").stdout.replace("│", " ").split())
+    assert "-NAME drops from the default columns (? lists them)" in page
+    result = _run("hello", "say", "ada", "-c", "-text")
+    assert result.exit_code == 0, result.stderr
+    header = result.stdout.splitlines()[1]
+    assert "name" in header and "text" not in header
+
+
 def test_groups_and_marks_come_from_the_declaration() -> None:
     assert _run("hello", "friends", "whoami").stdout == "ada\n"
     renamed = _run("hello", "friends", "me")
