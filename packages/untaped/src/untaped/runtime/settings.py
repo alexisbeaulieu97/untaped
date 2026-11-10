@@ -22,6 +22,7 @@ from typing import Annotated, Any, Literal, cast, overload
 from pydantic import (
     BaseModel,
     BeforeValidator,
+    ConfigDict,
     Field,
     SecretStr,
     ValidationError,
@@ -65,6 +66,8 @@ def plugins_root() -> Path:
 class HttpSettings(BaseModel):
     """Cross-cutting HTTP behaviour for a plugin's HTTP client (per-profile)."""
 
+    model_config = ConfigDict(frozen=True)
+
     ca_bundle_path: Path | None = Field(
         default=None,
         description="PEM file of extra CA certificates to trust instead of the OS trust store.",
@@ -84,6 +87,8 @@ class HttpSettings(BaseModel):
 
 class SkillsSettings(BaseModel):
     """What every run does about agent skills an older untaped wrote (per-profile)."""
+
+    model_config = ConfigDict(frozen=True)
 
     updates: Literal["warn", "auto", "off"] = Field(
         default="auto",

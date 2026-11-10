@@ -115,8 +115,10 @@ def plugin_lines(candidate: PluginCandidate) -> list[Line]:
     Its commands, its ``cfg`` and ``state`` keys, the contracts it owns with
     their payload models, its record kinds, and its ``api`` and ``testing``
     modules when it has them: the lines :func:`generate` takes from every
-    composed plugin.
+    composed plugin. A candidate for untaped itself, the root plugin, reads
+    core composed alone: every composition holds it already.
     """
+    from untaped.core.settings import NAME  # noqa: PLC0415
     from untaped.core.surface._settings import check_quarantine  # noqa: PLC0415
     from untaped.runtime.bootstrap import (  # noqa: PLC0415
         build_root_app,
@@ -125,7 +127,7 @@ def plugin_lines(candidate: PluginCandidate) -> list[Line]:
     )
 
     with kept_composition():
-        root = build_root_app(candidates=[candidate])
+        root = build_root_app(candidates=[] if candidate.name == NAME else [candidate])
         result = composition()
         check_quarantine(result)
         plugin = next(each for each in result.plugins if each.name == candidate.name)
