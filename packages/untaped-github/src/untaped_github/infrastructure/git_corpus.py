@@ -185,12 +185,13 @@ class GitCorpusCache:
     def touch_repo(self, repo: CorpusRepoTarget) -> datetime:
         """Mark a stored copy current without fetching (GitHub reports no new push)."""
         store = self._existing(repo)
-        read = self._read(store)
-        if read is None:
-            raise GitCorpusError(f"no stored copy of {repo.full_name} to mark current")
-        fetched = datetime.now(UTC)
-        meta = read[0].model_copy(update={"archived": repo.archived, "pushed_at": repo.pushed_at})
-        store.write_private(meta, refreshed_at=fetched)
+        with store.locked():  # as sync_repo: no sweep's pruning between read and write
+            read = self._read(store)
+            if read is None:
+                raise GitCorpusError(f"no stored copy of {repo.full_name} to mark current")
+            fetched = datetime.now(UTC)
+            update = {"archived": repo.archived, "pushed_at": repo.pushed_at}
+            store.write_private(read[0].model_copy(update=update), refreshed_at=fetched)
         return fetched
 
     def local_refs(self, repo: CorpusRepoTarget, *, selector: RefSelector) -> tuple[LocalRef, ...]:

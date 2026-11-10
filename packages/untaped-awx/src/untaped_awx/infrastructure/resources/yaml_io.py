@@ -103,7 +103,8 @@ def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Re
     """Each document of YAML ``text`` by its position: a :class:`Resource` or an error message.
 
     ``index`` counts every document from 1, empty ones included (they yield
-    nothing), so ``3`` is the third ``---`` section. A document that is not a
+    nothing), so ``3`` is the third ``---`` section; each item of a list of
+    documents counts as one. A document that is not a
     mapping or not a valid resource yields its message and reading goes on; a
     YAML syntax error yields its message and ends the text, since nothing past
     it can be read. Documents are read one at a time, as they are asked for.

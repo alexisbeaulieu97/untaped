@@ -628,8 +628,13 @@ class SqliteDependencyIndex:
         db = sqlite3.connect(self._path, timeout=BUSY_TIMEOUT)
         db.row_factory = sqlite3.Row
         # WAL lets readers go on while one refresh writes; the mode is kept in
-        # the file, so this only changes a database that is not WAL yet.
-        db.execute("pragma journal_mode=wal")
+        # the file, so this only changes a database that is not WAL yet. Like
+        # any WAL database, the index belongs on a local disk.
+        try:
+            db.execute("pragma journal_mode=wal")
+        except BaseException:
+            db.close()
+            raise
         return db
 
     def _ensure_schema(self, db: sqlite3.Connection) -> None:
@@ -661,8 +666,7 @@ class SqliteDependencyIndex:
         if code is None or code & 0xFF not in _BUSY_CODES:  # extended codes keep the primary low
             return DependencyIndexError(message)
         return DependencyIndexError(
-            f"index {self._path} is busy: another untaped process held it for over "
-            f"{BUSY_TIMEOUT:g}s",
+            f"index {self._path} is busy: another untaped process is using it",
             category="unavailable",
             hint="retry once the other refresh or query finishes",
         )

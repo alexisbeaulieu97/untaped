@@ -254,20 +254,16 @@ def test_writes_through_a_symlink_and_the_real_path_take_one_lock(
     real = tmp_path / "dotfiles" / "config.yml"
     real.parent.mkdir()
     real.write_text("format_version: 2\n")
-    real.parent.chmod(0o555)  # a read-only checkout: no lock file goes beside the file
     home = tmp_path / "home"
     home.mkdir()
     (home / "config.yml").symlink_to(real)
     monkeypatch.setenv("UNTAPED_HOME", str(home))
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
 
-    try:
-        assert write_lock_path(home / "config.yml") == write_lock_path(real)
-        with FileLock(str(write_lock_path(real))), pytest.raises(ConfigError, match="lock"):
-            mutate_config(lambda data: data.update({"a": 1}))
-        assert sorted(path.name for path in real.parent.iterdir()) == ["config.yml"]
-    finally:
-        real.parent.chmod(0o755)
+    assert write_lock_path(home / "config.yml") == write_lock_path(real)
+    with FileLock(str(write_lock_path(real))), pytest.raises(ConfigError, match="lock"):
+        mutate_config(lambda data: data.update({"a": 1}))
+    assert sorted(path.name for path in real.parent.iterdir()) == ["config.yml"]  # none beside
 
 
 def test_mutate_config_releases_lock_on_exception(
@@ -471,3 +467,12 @@ def test_the_nested_write_guard_ends_with_the_outer_write_in_copied_contexts(
     later.start()
     later.join()
     assert read_config_dict(cfg) == {"format_version": 2, "a": 1, "b": 2}
+
+
+def test_spellings_differing_in_case_take_one_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a case-insensitive filesystem ``Config.yml`` and ``config.yml`` are one file."""
+    monkeypatch.setenv("UNTAPED_HOME", str(tmp_path / "home"))
+    assert write_lock_path(tmp_path / "Config.yml") == write_lock_path(tmp_path / "config.yml")
+    assert write_lock_path(tmp_path / "config.yml") != write_lock_path(tmp_path / "other.yml")

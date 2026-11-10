@@ -265,16 +265,26 @@ def write_lock_path(path: Path) -> Path:
     """Where ``path``'s write lock lives: ``<home>/locks/``, keyed by its real path.
 
     Keyed by the real path, so a write through a symlink and one through the
-    file itself exclude each other. Never beside the file, whose folder
-    another owner may keep (a dotfiles checkout, a project, a backup) and
-    which may be read-only. Two machines writing one file on a share exclude
+    file itself exclude each other: by its folder's filesystem identity and
+    its case-folded name, so spellings that differ in case on a
+    case-insensitive filesystem do too (two names differing only in case on
+    a case-sensitive one share a lock, which only serialises them). Never
+    beside the file, whose folder another owner may keep (a dotfiles
+    checkout, a project, a backup). Two machines writing one file on a share exclude
     each other only when they share the home too. The home is the run's;
     outside a run (core writing its config), the one ``UNTAPED_HOME`` names.
     """
     from untaped.sdk._home import home  # noqa: PLC0415 - the run imports the SDK
     from untaped.sdk._run import run_or_none  # noqa: PLC0415
 
-    key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
+    real = os.path.realpath(path)
+    folder_of, name = os.path.split(real)
+    try:
+        stat_of = os.stat(folder_of)
+        identity = f"{stat_of.st_dev}:{stat_of.st_ino}/{name.casefold()}"
+    except OSError:  # no folder yet: nothing else can be writing in it either
+        identity = real
+    key = hashlib.sha256(identity.encode()).hexdigest()[:32]
     run = run_or_none()
     folder = (run.home if run is not None else home().expanduser()) / "locks"
     try:
