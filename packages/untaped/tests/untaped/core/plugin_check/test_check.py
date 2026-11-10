@@ -46,7 +46,7 @@ def test_a_provider_that_fills_its_contract_passes_every_check(contract_plugins_
 
 def test_without_a_name_every_installed_plugin_is_checked(contract_plugins_site: Path) -> None:
     rows = _check(None)
-    assert sorted({row.plugin for row in rows}) == ["bin", "rack"]
+    assert sorted({row.plugin for row in rows}) == ["bin", "rack", "untaped"]
     assert ("contracts", "rack", "pass", "declares item_source") in _rows(
         [row for row in rows if row.plugin == "rack"]
     )

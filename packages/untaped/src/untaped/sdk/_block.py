@@ -255,6 +255,8 @@ class FieldOption(NamedTuple):
     help: str
     short: str | None = None
     negative: str | None = None
+    #: Its value may start with ``-`` (``--columns -name``).
+    allow_hyphen: bool = False
 
 
 @dataclass(frozen=True)

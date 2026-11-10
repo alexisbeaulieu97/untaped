@@ -143,3 +143,14 @@ def test_profile_scoped_plugin_setting_resolves(
     get_settings.cache_clear()
     stdout = _invoke(candidates["jira"], "config", "get", "jira.server.url")
     assert stdout.strip() == "https://jira.example.com/"
+
+
+def test_untaped_itself_follows_the_plugin_conventions() -> None:
+    """Core is the root plugin: ``untaped lint`` reads it as any plugin, its package ``untaped``.
+
+    Run here because a repository's ``untaped lint`` checks the plugins its
+    ``pyproject.toml`` declares, and no entry point declares the root.
+    """
+    from untaped_lint.testing import assert_clean
+
+    assert_clean("untaped")

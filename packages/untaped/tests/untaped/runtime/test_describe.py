@@ -18,6 +18,7 @@ from untaped.runtime.describe import (
     noun,
     type_text,
 )
+from untaped.sdk import OutcomeRecord
 
 type Tree = dict[str, Tree] | str
 type RepoName = Annotated[str, "owner/name"]
@@ -118,3 +119,11 @@ def test_a_method_is_spelled_as_code_without_module_paths() -> None:
     method = method_decl("lookup", lookup, hints)
     assert method.signature == "lookup(name: str, limit: int) -> list[Widget] | None"
     assert (method.summary, method.required) == ("The widgets called ``name``.", False)
+
+
+def test_a_record_s_fields_come_in_the_order_its_rows_are_written() -> None:
+    class Tagged(OutcomeRecord):
+        tag: str
+        note: str = ""
+
+    assert [field.name for field in fields_of(Tagged)] == ["tag", "action", "note", "error"]

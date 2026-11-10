@@ -8,9 +8,10 @@ from typing import Annotated, Literal
 import pytest
 from cyclopts import App, Parameter
 
-from untaped.core.surface import DeprecatedMark
+from untaped.core.surface import DeprecatedMark, plugin_lines
 from untaped.core.surface._cli import root_plugin_lines, subtree_lines
 from untaped.runtime.bootstrap import build_root_app, kept_composition
+from untaped.runtime.registry import PluginCandidate
 from untaped.runtime.stability_help import DEPRECATED_OPTIONS, apply_marks
 from untaped.runtime.stability_marks import deprecated_alias
 from untaped.sdk.marks import deprecated, experimental
@@ -177,3 +178,10 @@ def test_the_root_plugin_has_only_the_commands_its_words_spell() -> None:
     assert not [
         line for line in lines if line.startswith(("cli untaped stray", "cli untaped doctor"))
     ]
+
+
+def test_untaped_itself_reads_as_core_composed_alone() -> None:
+    """The root plugin's candidate composes no second core beside the one every root holds."""
+    with kept_composition():
+        lines = {str(line) for line in plugin_lines(PluginCandidate("untaped", "untaped", ""))}
+    assert any(line.startswith("cli untaped config ") for line in lines)

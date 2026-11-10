@@ -138,11 +138,14 @@ def import_boundary_violations(
 
     ``plugins`` are every installed plugin's records: their packages are the
     plugins another import may reach. Paths are relative to ``source_dir``'s
-    parent. A plugin whose record names no package has nothing to check.
+    parent. A plugin whose record names no package has nothing to check. The
+    root plugin, untaped itself, is the host: all of ``untaped`` is its own,
+    and only other plugins are beyond its boundary.
     """
     package = plugin.package
     if package is None:
         return []
+    own = "untaped" if plugin.root else package
     plugin_packages = {
         each.package: _canonical(each.distribution) for each in plugins if each.package is not None
     }
@@ -156,13 +159,13 @@ def import_boundary_violations(
         for node in ast.walk(source.tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
-            star = _star(node, package, roots)
+            star = _star(node, own, roots)
             if star is not None:
                 if not allows(source.lines, node.lineno, RULE):
                     found.append(f"{rel}:{node.lineno}::{RULE}::{star}")
                 continue
             for target in _targets(node, module_package, roots):
-                detail = _detail(target, package, plugin_packages, declared)
+                detail = _detail(target, own, plugin_packages, declared)
                 if detail is not None and not allows(source.lines, node.lineno, RULE):
                     found.append(f"{rel}:{node.lineno}::{RULE}::{detail}")
     return found

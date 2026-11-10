@@ -11,7 +11,7 @@ importing a plugin class, which imports every command. Its files are under
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from untaped.runtime.declaration import KeptDeclaration
 from untaped.runtime.settings import HttpSettings, SkillsSettings
@@ -37,6 +37,8 @@ DECLARATION = Cache(
 
 class CoreSettings(BaseModel):
     """untaped's own settings (the ``untaped`` section)."""
+
+    model_config = ConfigDict(frozen=True)
 
     http: HttpSettings = Field(
         default_factory=HttpSettings, description="How untaped reaches the network."

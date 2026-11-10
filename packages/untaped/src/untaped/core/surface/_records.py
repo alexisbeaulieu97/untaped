@@ -27,9 +27,10 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from untaped.core.errors import SurfaceError
 from untaped.core.surface._contracts import _closure, _model_mark, model_fields
 from untaped.core.surface._lines import Line, LineMark, decl_mark
-from untaped.core.surface._sdk import SurfaceError, sdk_line_mark
+from untaped.core.surface._sdk import sdk_line_mark
 from untaped.core.surface._types import choice_text
 from untaped.sdk.marks import Experimental, class_mark
 

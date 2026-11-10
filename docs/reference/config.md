@@ -46,7 +46,7 @@ Kept in `~/.untaped/plugins/untaped/state.yml`.
 
 | Key | Type | Default | Environment | Description |
 |---|---|---|---|---|
-| `ansible.index_dir` | path (optional) | unset | `UNTAPED_ANSIBLE__INDEX_DIR` | Folder of the SQLite index of refreshed source data, an absolute path; the file in it is `index.v<layout>.sqlite3`, one per layout. Unset: `plugins/ansible/index/` under the untaped home. |
+| `ansible.index_dir` | path (optional) | unset | `UNTAPED_ANSIBLE__INDEX_DIR` | Folder of the SQLite index of refreshed source data, an absolute path; the file in it is `index.v<layout>.sqlite3`, one per layout. Unset: `plugins/ansible/index/` under the untaped home. Keep it on a local disk: the index uses SQLite's WAL mode. |
 | `ansible.default_source` | string (optional) | unset | `UNTAPED_ANSIBLE__DEFAULT_SOURCE` | Saved source `deps`, `impact`, `find` and `graph` use when no `--source` is given. |
 | `ansible.ref_scan_default` | `all` \| `default_branch` | `all` | `UNTAPED_ANSIBLE__REF_SCAN_DEFAULT` | Refs a source scans: `all` refs or each repo's default branch. |
 | `ansible.git_fetch_parallel` | integer | `8` | `UNTAPED_ANSIBLE__GIT_FETCH_PARALLEL` | Default `--parallel` of a source refresh. 1 to 32. |

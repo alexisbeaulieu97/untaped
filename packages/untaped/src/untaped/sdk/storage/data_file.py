@@ -345,7 +345,7 @@ class DataFile[M: BaseModel]:
         from untaped.sdk.storage._write_back import write_back  # noqa: PLC0415 - writes only
 
         busy = f"{self.path} is busy (another untaped process)"
-        with locked_write(self.path, timeout=_WRITE_WAIT, busy=busy, lock=_lock_path(self.path)):
+        with locked_write(self.path, timeout=_WRITE_WAIT, busy=busy):
             stored = self._stored()
             if exclusive and stored is not None:
                 return False
@@ -402,27 +402,6 @@ class DataFile[M: BaseModel]:
 
 #: How a read that found nothing to copy says so.
 _NOT_FOUND = {Absent: "does not exist", OtherVersion: "was written by a newer untaped"}
-
-
-def _lock_path(path: Path) -> Path:
-    """Where a data file's write lock lives: ``<home>/locks/``, keyed by its real path.
-
-    Never beside the file, whose folder another owner keeps (a skill folder, a
-    project, a backup) and which may be read-only. Two machines writing one
-    file on a share exclude each other only when they share the home too.
-    """
-    from untaped.sdk._run import current_run  # noqa: PLC0415 - the run imports the SDK
-
-    key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
-    folder = current_run().home / "locks"
-    try:
-        folder.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise ConfigError(
-            f"could not lock {path}: cannot create {folder} ({exc.strerror or exc})",
-            details={"path": str(path)},
-        ) from exc
-    return folder / f"{key}.lock"
 
 
 class _FileAlias(typing._GenericAlias, _root=True):  # type: ignore[call-arg,name-defined,misc]

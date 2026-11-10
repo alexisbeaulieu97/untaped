@@ -112,6 +112,8 @@ command) is marked with `@experimental` in the code and listed here, not in a
   `-` the command tells from a value itself.
 - `RepoStore.read_private` and `RepoStore.write_private` in `untaped_git.api`:
   a plugin's typed private file in a store repo.
+- `RepoStore.locked` in `untaped_git.api`: one hold of a store repo's lock
+  across several calls.
 - The fixtures in `untaped_git.testing`, for testing a plugin against the
   repo store, and its fake providers of git's contracts.
 - The upstream budget: `capped` and `succeeded` in `untaped.sdk.network`,

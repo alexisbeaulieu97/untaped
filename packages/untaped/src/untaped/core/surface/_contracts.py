@@ -28,8 +28,9 @@ from typing import TYPE_CHECKING, Any, get_args
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
+from untaped.core.errors import SurfaceError
 from untaped.core.surface._lines import DeprecatedMark, Line, LineMark
-from untaped.core.surface._sdk import SurfaceError, line_mark
+from untaped.core.surface._sdk import line_mark
 from untaped.core.surface._types import (
     TypeToken,
     choice_text,

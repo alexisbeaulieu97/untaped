@@ -9,7 +9,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from untaped.core import skill_stubs
@@ -18,19 +18,8 @@ from untaped.sdk.errors import ConfigError, UsageError
 from untaped.sdk.projects import checkout_root
 from untaped.sdk.storage._fs import atomic_write, is_write_temp
 
-
-class InstallableSkill(Protocol):
-    """A packaged agent skill the install machinery can list and install: a stub.
-
-    Structural type implemented by :class:`~untaped.runtime.registry.SkillAsset` (a frozen
-    dataclass). The members are read-only properties because the concrete type
-    is frozen; a plain attribute Protocol would (wrongly) demand settability.
-    """
-
-    @property
-    def name(self) -> str: ...
-    @property
-    def description(self) -> str: ...
+if TYPE_CHECKING:
+    from untaped.core.ports import InstallableSkill
 
 
 @dataclass(frozen=True)

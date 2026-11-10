@@ -6,7 +6,8 @@ import json
 import re
 import shutil
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -178,6 +179,41 @@ def test_sync_widens_the_stored_profile_and_never_narrows_it(
     assert freshness is not None and freshness.profile == "branches"
     assert env.has_ref("refs/heads/main")
     assert env.has_ref("refs/heads/release/1")
+
+
+def test_sync_reads_fetches_and_writes_under_one_hold_of_the_repo_lock(
+    corpus: Callable[..., _Corpus], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent sweep can't prune refs between this one's read and its metadata write."""
+    env = corpus({"README.md": "hello\n"})
+    env.sync()
+    holds: list[None] = []
+    calls: list[tuple[str, int]] = []
+    locked = RepoStore.locked
+
+    @contextmanager
+    def counted(store: RepoStore) -> Iterator[None]:
+        with locked(store):
+            holds.append(None)
+            yield
+
+    def spied(name: str) -> Callable[..., Any]:
+        method = getattr(RepoStore, name)
+
+        def call(store: RepoStore, *args: Any, **kwargs: Any) -> Any:
+            calls.append((name, len(holds)))
+            return method(store, *args, **kwargs)
+
+        return call
+
+    monkeypatch.setattr(RepoStore, "locked", counted)
+    for name in ("read_private", "fetch", "write_private"):
+        monkeypatch.setattr(RepoStore, name, spied(name))
+
+    env.sync(RefSelector(profile="branches"))
+
+    assert [name for name, _ in calls] == ["read_private", "fetch", "write_private"]
+    assert {hold for _, hold in calls} == {1}  # all inside the one hold
 
 
 def test_ref_glob_fetches_matching_refs_only(

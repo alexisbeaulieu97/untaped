@@ -20,12 +20,15 @@ import types
 import typing
 from dataclasses import dataclass
 from pathlib import Path, PurePath
-from typing import Any, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Any, Literal, get_args, get_origin
 
 from pydantic import BaseModel, JsonValue, SecretStr
 from pydantic_core import PydanticUndefined, to_jsonable_python
 
 from untaped.runtime.declaration import FieldDecl, MethodDecl
+
+if TYPE_CHECKING:
+    from pydantic.fields import FieldInfo
 
 _WORDS = re.compile(r"[A-Z]+(?=[A-Z][a-z0-9])|[A-Z]?[a-z0-9]+|[A-Z]+")
 _LISTS = frozenset({list, tuple, set, frozenset, collections.abc.Sequence, collections.abc.Set})
@@ -142,6 +145,15 @@ def _named(annotation: object) -> str | None:
         return None
 
 
+def _written(model: type[BaseModel]) -> list[tuple[str, FieldInfo]]:
+    """``model``'s fields in the order its rows are written (a record's own first)."""
+    from untaped.sdk.diagnostic import dumped_names, written_fields  # noqa: PLC0415
+
+    at = {key: index for index, key in enumerate(written_fields(model))}
+    keys = dumped_names(model)
+    return sorted(model.model_fields.items(), key=lambda item: at[keys[item[0]]])
+
+
 def fields_of(model: type[BaseModel], seen: frozenset[type] = frozenset()) -> tuple[FieldDecl, ...]:
     """Every field of ``model`` with the fields of the models it holds, a level each.
 
@@ -150,7 +162,7 @@ def fields_of(model: type[BaseModel], seen: frozenset[type] = frozenset()) -> tu
     """
     seen = seen | {model}
     found: list[FieldDecl] = []
-    for name, info in model.model_fields.items():
+    for name, info in _written(model):
         held, holds = _held(info.annotation)
         default = None
         if not info.is_required() and info.default is not PydanticUndefined:
