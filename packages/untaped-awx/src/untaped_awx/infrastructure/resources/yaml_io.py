@@ -1,6 +1,7 @@
 """Serialise / deserialise :class:`Resource` envelopes from YAML files.
 
-Single-doc and multi-doc YAML are both supported. ``read_resource_files``
+Single-doc and multi-doc YAML are supported, and so is a list of documents
+(the JSON array ``export -f json`` prints). ``read_resource_files``
 also accepts a directory and walks every ``*.yml`` / ``*.yaml`` it finds
 (``resource_paths``); ``read_resource_files_at`` does the same at a git commit,
 and ``read_resource_text`` parses documents already read (piped on stdin).
@@ -22,6 +23,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any, Literal, TypeGuard
 
 import yaml
 
@@ -112,27 +114,41 @@ def read_resource_documents(text: str, *, source: str) -> Iterator[tuple[int, Re
 
 
 def _documents(text: str, *, source: str) -> Iterator[tuple[int, Resource | ConfigError]]:
-    """:func:`read_resource_documents` with each error as the ``invalid`` error it raises."""
-    documents = yaml.safe_load_all(text)
-    for index in itertools.count(1):
+    """:func:`read_resource_documents` with each error as the ``invalid`` error it raises.
+
+    A list of mappings (the JSON array ``export -f json`` prints) holds one
+    document per item, each counted as its own document; any other list is
+    one document that is not a mapping.
+    """
+    loaded = yaml.safe_load_all(text)
+    counter = itertools.count(1)
+    while True:
         try:
-            doc = next(documents)
+            doc = next(loaded)
         except StopIteration:
             return
         except yaml.YAMLError as exc:
-            yield index, _invalid(f"invalid YAML in {source}: {exc}", cause=exc)
+            yield next(counter), _invalid(f"invalid YAML in {source}: {exc}", cause=exc)
             return
-        if doc is None:
-            continue
-        if not isinstance(doc, dict):
-            yield index, _invalid(f"{source}: each YAML doc must be a mapping")
-            continue
-        try:
-            resource = Resource.model_validate(doc)
-        except Exception as exc:
-            yield index, _invalid(f"{source}: {exc}", cause=exc)
-        else:
-            yield index, resource
+        documents = doc if _is_document_list(doc) else [doc]
+        for item in documents:
+            index = next(counter)
+            if item is None:
+                continue
+            yield index, _resource(item, source=source)
+
+
+def _is_document_list(doc: object) -> TypeGuard[list[object]]:
+    return isinstance(doc, list) and all(isinstance(item, dict) for item in doc)
+
+
+def _resource(doc: object, *, source: str) -> Resource | ConfigError:
+    if not isinstance(doc, dict):
+        return _invalid(f"{source}: each YAML doc must be a mapping")
+    try:
+        return Resource.model_validate(doc)
+    except Exception as exc:
+        return _invalid(f"{source}: {exc}", cause=exc)
 
 
 def _invalid(message: str, *, cause: Exception | None = None) -> ConfigError:
@@ -161,6 +177,25 @@ def _represent_str(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
 _DocumentDumper.add_representer(str, _represent_str)
 
 
+def resource_payload(
+    resource: Resource, *, mode: Literal["python", "json"] = "python"
+) -> dict[str, Any]:
+    """``resource`` as the mapping a document is written from, in every format.
+
+    Unset fields are left out, but an explicit ``metadata.organization: null``
+    (an org-less record) stays: ``apply`` reads it as that record, and its
+    absence as "scope by the default organization".
+    """
+    payload = resource.model_dump(mode=mode, exclude_none=True)
+    if resource.metadata.organization is None and "organization" in (
+        resource.metadata.model_fields_set
+    ):
+        payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
+            "metadata"
+        ]
+    return payload
+
+
 def dump_resource(
     resource: Resource, *, header_comment: str | None = None, comment: str | None = None
 ) -> str:
@@ -169,16 +204,8 @@ def dump_resource(
     ``header_comment`` is one ``#`` line; ``comment`` follows it, one ``#``
     line per line of text.
     """
-    payload = resource.model_dump(exclude_none=True)
-    if resource.metadata.organization is None and "organization" in (
-        resource.metadata.model_fields_set
-    ):
-        # Explicit null identity (org-less record) survives the round trip.
-        payload["metadata"] = {"name": resource.metadata.name, "organization": None} | payload[
-            "metadata"
-        ]
     body = yaml.dump(
-        payload,
+        resource_payload(resource),
         Dumper=_DocumentDumper,
         sort_keys=False,
         default_flow_style=False,

@@ -52,6 +52,11 @@ from untaped_ansible.settings import INDEX_DIR
 
 _diag = Diagnostics()
 
+#: Seconds a connection waits for another process's write to the index (one
+#: refresh commits per ref, so its writes are short) before reporting it busy.
+BUSY_TIMEOUT = 60.0
+_BUSY_CODES = frozenset({sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED})
+
 
 def open_index() -> SqliteDependencyIndex:
     """The dependency index of the active settings: the one way the plugin opens it.
@@ -620,8 +625,11 @@ class SqliteDependencyIndex:
                     f"cannot create index directory {self._path.parent}: {exc}"
                 ) from exc
             self._parent_ready = True
-        db = sqlite3.connect(self._path)
+        db = sqlite3.connect(self._path, timeout=BUSY_TIMEOUT)
         db.row_factory = sqlite3.Row
+        # WAL lets readers go on while one refresh writes; the mode is kept in
+        # the file, so this only changes a database that is not WAL yet.
+        db.execute("pragma journal_mode=wal")
         return db
 
     def _ensure_schema(self, db: sqlite3.Connection) -> None:
@@ -637,15 +645,27 @@ class SqliteDependencyIndex:
         try:
             db = self._connect()
         except sqlite3.Error as exc:
-            raise DependencyIndexError(f"cannot open index {self._path}: {exc}") from exc
+            raise self._error(f"cannot open index {self._path}: {exc}", exc) from exc
         try:
             with db:
                 self._ensure_schema(db)
                 yield db
         except sqlite3.Error as exc:
-            raise DependencyIndexError(f"index {self._path} failed: {exc}") from exc
+            raise self._error(f"index {self._path} failed: {exc}", exc) from exc
         finally:
             db.close()
+
+    def _error(self, message: str, exc: sqlite3.Error) -> DependencyIndexError:
+        """``exc`` as the plugin's error: a lock held past the wait can be retried."""
+        code = getattr(exc, "sqlite_errorcode", None)
+        if code is None or code & 0xFF not in _BUSY_CODES:  # extended codes keep the primary low
+            return DependencyIndexError(message)
+        return DependencyIndexError(
+            f"index {self._path} is busy: another untaped process held it for over "
+            f"{BUSY_TIMEOUT:g}s",
+            category="unavailable",
+            hint="retry once the other refresh or query finishes",
+        )
 
 
 def _optional_str(value: object) -> str | None:

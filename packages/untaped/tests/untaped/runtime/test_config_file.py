@@ -15,6 +15,7 @@ from untaped.runtime.config_file import (
     write_config_dict,
 )
 from untaped.sdk.errors import ConfigError, UntapedError
+from untaped.sdk.storage._fs import write_lock_path
 
 
 def test_read_returns_empty_when_file_absent(
@@ -235,13 +236,38 @@ def test_mutate_config_lock_blocks_concurrent_mutation(
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
     write_config_dict({"format_version": 2, "log_level": "INFO"})
 
-    held = FileLock(str(cfg) + ".lock")
+    held = FileLock(str(write_lock_path(cfg)))
     held.acquire()
     try:
         with pytest.raises(ConfigError, match="lock"):
             mutate_config(lambda data: None)
     finally:
         held.release()
+
+
+def test_writes_through_a_symlink_and_the_real_path_take_one_lock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Another process writing the real file blocks a write through the symlinked home."""
+    from filelock import FileLock
+
+    real = tmp_path / "dotfiles" / "config.yml"
+    real.parent.mkdir()
+    real.write_text("format_version: 2\n")
+    real.parent.chmod(0o555)  # a read-only checkout: no lock file goes beside the file
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.yml").symlink_to(real)
+    monkeypatch.setenv("UNTAPED_HOME", str(home))
+    monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
+
+    try:
+        assert write_lock_path(home / "config.yml") == write_lock_path(real)
+        with FileLock(str(write_lock_path(real))), pytest.raises(ConfigError, match="lock"):
+            mutate_config(lambda data: data.update({"a": 1}))
+        assert sorted(path.name for path in real.parent.iterdir()) == ["config.yml"]
+    finally:
+        real.parent.chmod(0o755)
 
 
 def test_mutate_config_releases_lock_on_exception(

@@ -99,10 +99,27 @@ class GitCorpusCache:
         selector: RefSelector,
         progress: ProgressHandle = NO_PROGRESS,
     ) -> CorpusRepo:
-        """Fetch the requested ref profile, widened by what was fetched before, into the store."""
+        """Fetch the requested ref profile, widened by what was fetched before, into the store.
+
+        The read of what was fetched before, the fetch and the metadata write
+        hold the repo's lock once, so a concurrent sweep of the same repo
+        (another ``--refs``) never records a profile whose refs this one pruned.
+        """
         url = self._remote_url(repo)
-        branch = _default_branch(repo)
         store = self._store(url)
+        with store.locked():
+            return self._sync_locked(repo, store, url, selector=selector, progress=progress)
+
+    def _sync_locked(
+        self,
+        repo: CorpusRepoTarget,
+        store: RepoStore,
+        url: str,
+        *,
+        selector: RefSelector,
+        progress: ProgressHandle,
+    ) -> CorpusRepo:
+        branch = _default_branch(repo)
         read = self._read(store, warn=False)  # this fetch rewrites a file it can't read
         stored = read[0] if read else None
         profile = profile_join(stored.profile, selector.profile) if stored else selector.profile

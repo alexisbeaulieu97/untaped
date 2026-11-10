@@ -261,20 +261,44 @@ def read_structured_file(path: Path, *, flag: str | None = None) -> dict[str, An
     return raw
 
 
+def write_lock_path(path: Path) -> Path:
+    """Where ``path``'s write lock lives: ``<home>/locks/``, keyed by its real path.
+
+    Keyed by the real path, so a write through a symlink and one through the
+    file itself exclude each other. Never beside the file, whose folder
+    another owner may keep (a dotfiles checkout, a project, a backup) and
+    which may be read-only. Two machines writing one file on a share exclude
+    each other only when they share the home too. The home is the run's;
+    outside a run (core writing its config), the one ``UNTAPED_HOME`` names.
+    """
+    from untaped.sdk._home import home  # noqa: PLC0415 - the run imports the SDK
+    from untaped.sdk._run import run_or_none  # noqa: PLC0415
+
+    key = hashlib.sha256(os.path.realpath(path).encode()).hexdigest()[:32]
+    run = run_or_none()
+    folder = (run.home if run is not None else home().expanduser()) / "locks"
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise ConfigError(
+            f"could not lock {path}: cannot create {folder} ({exc.strerror or exc})",
+            details={"path": str(path)},
+        ) from exc
+    return folder / f"{key}.lock"
+
+
 #: The files each thread is writing (real paths), per thread like ``file_lock``'s
 #: re-entrance: a write nested in another to the same file would be saved over
-#: when the outer one saves. Keyed on the file, not its lock, which follows the
-#: spelling the caller used.
+#: when the outer one saves.
 _WRITING = threading.local()
 
 
 @contextmanager
-def locked_write(
-    target: Path, *, timeout: float, busy: str, lock: Path | None = None
-) -> Iterator[None]:
-    """Hold the advisory ``<target>.lock`` (creating the parent directory) to write ``target``.
+def locked_write(target: Path, *, timeout: float, busy: str) -> Iterator[None]:
+    """Hold ``target``'s write lock (creating its parent directory) to write it.
 
-    ``lock`` puts the lock file elsewhere, for a file whose folder is another's.
+    The lock is :func:`write_lock_path`'s, so every spelling of the file
+    (a symlink, its real path) takes the same one.
 
     Waits up to ``timeout`` seconds for another process, then raises
     :class:`ConfigError` saying ``busy``. A write to ``target`` started inside
@@ -297,7 +321,7 @@ def locked_write(
             f"could not create the directory for {target}: {exc.strerror or exc}"
         ) from exc
     with file_lock(
-        Path(f"{target}.lock") if lock is None else lock,
+        write_lock_path(target),
         timeout=timeout,
         error=ConfigError,
         busy=busy,

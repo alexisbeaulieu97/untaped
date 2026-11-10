@@ -123,11 +123,11 @@ Things that surprise people:
   anything else, or an unreadable file, is a configuration error naming the
   file. An empty entry (`prod:` with nothing under it) is an empty profile.
 
-Config and state files are written atomically, owner-only (`0600`) and under a
-lock: `config.yml` waits for it as long as `UNTAPED_CONFIG_LOCK_TIMEOUT` says
-([Environment variables](./reference/environment.md)), a plugin's `state.yml`
-up to 10 seconds. A symlinked file stays a symlink. Writes rewrite only the keys they change and keep your comments, key
-order, quoting and indentation.
+Config and state files are written atomically, owner-only (`0600`), under a
+lock in the home's `locks/` keyed by the real path, so a symlink (which stays
+one) shares its target's: `config.yml` waits as `UNTAPED_CONFIG_LOCK_TIMEOUT`
+says ([Environment variables](./reference/environment.md)), `state.yml` 10 s.
+Writes touch only their keys; comments, order, quoting and indentation stay.
 
 A setting's value comes from the first of these that has it: its
 `UNTAPED_<SECTION>__<FIELD>` variable (for example `UNTAPED_AWX__SERVER__URL`),
