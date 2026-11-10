@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -21,6 +23,7 @@ from untaped_ansible.domain.payloads import (
 )
 from untaped_ansible.domain.variable_models import CommitListing
 from untaped_ansible.errors import DependencyIndexError
+from untaped_ansible.infrastructure import sqlite_index
 from untaped_ansible.infrastructure.sqlite_index import SqliteDependencyIndex
 from untaped_ansible.infrastructure.sqlite_schema import ADDITIVE_SINCE, SCHEMA_VERSION
 
@@ -807,3 +810,49 @@ def test_a_listing_naming_a_file_no_refresh_analysed_is_an_index_error(tmp_path:
         )
 
     assert index.variable_facts({("acme/site", "sha-main")}, {"x"}).unanalysed
+
+
+def test_two_refreshes_of_one_index_wait_for_each_other(tmp_path: Path) -> None:
+    """Two writers on one index file both land while a third holds its write lock."""
+    path = tmp_path / "index.sqlite3"
+    prod, dev = SqliteDependencyIndex(path), SqliteDependencyIndex(path)
+    prod.clear("source:prod")  # creates the file and its tables
+    holder = sqlite3.connect(path, isolation_level=None, check_same_thread=False)
+    holder.execute("begin immediate")
+    release = threading.Timer(0.5, holder.execute, ("commit",))
+    release.start()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            writes = [
+                pool.submit(_commit, index, source_key=key, scans=(_scan(source_key=key),))
+                for index, key in ((prod, "source:prod"), (dev, "source:dev"))
+            ]
+            for write in writes:
+                write.result()
+    finally:
+        release.join()
+        holder.close()
+
+    assert prod.status("source:prod") is not None
+    assert dev.status("source:dev") is not None
+    with closing(sqlite3.connect(path)) as db:
+        assert db.execute("pragma journal_mode").fetchone()[0] == "wal"
+
+
+def test_a_lock_held_past_the_wait_is_retryable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "index.sqlite3"
+    index = SqliteDependencyIndex(path)
+    index.clear("source:prod")
+    monkeypatch.setattr(sqlite_index, "BUSY_TIMEOUT", 0.05)
+    with closing(sqlite3.connect(path, isolation_level=None)) as holder:
+        holder.execute("begin immediate")
+        with pytest.raises(DependencyIndexError) as raised:
+            index.clear("source:prod")
+        assert index.status("source:prod") is None  # a reader is not blocked by the writer
+        holder.execute("rollback")
+
+    assert raised.value.category == "unavailable"
+    assert raised.value.exit_code == 5
+    assert "busy" in str(raised.value) and raised.value.hint

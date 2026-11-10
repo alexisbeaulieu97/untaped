@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from collections.abc import Callable, Iterator
 
 from untaped.sdk import ConfigError, UsageError
+from untaped.sdk.storage import safe_path_segment
 from untaped_awx.application.resources.ports import (
     Catalog,
     FkResolver,
@@ -16,8 +16,6 @@ from untaped_awx.application.resources.ports import (
 )
 from untaped_awx.application.resources.save_resource import SaveResource
 from untaped_awx.domain import IdentityRef, Metadata, ResourceSpec, SaveOutcome
-
-_UNSAFE_FILENAME_CHARS = re.compile(r"[/\\\x00-\x1f]")
 
 
 class SaveResources:
@@ -150,14 +148,6 @@ def _metadata_matches_org(metadata: Metadata, organization: str) -> bool:
     return False
 
 
-def _safe_filename_segment(name: str) -> str:
-    """Return a filesystem-safe segment derived from an AWX resource name."""
-    if not name:
-        return "unnamed"
-    cleaned = _UNSAFE_FILENAME_CHARS.sub("_", name).strip(". ")
-    return cleaned or "unnamed"
-
-
 def _unique_filename(kind: str, metadata: Metadata, used: set[str]) -> str:
     """Keep the readable name; suffix a digest of the exact identity on collision."""
     filename = resource_filename(kind, metadata)
@@ -172,7 +162,12 @@ def _unique_filename(kind: str, metadata: Metadata, used: set[str]) -> str:
 
 
 def resource_filename(kind: str, metadata: Metadata) -> str:
-    """Encode the identity tuple in the filename so same-named records do not collide."""
+    """Encode the identity tuple in the filename so same-named records do not collide.
+
+    The name is one portable path segment of at most 128 bytes: a long one
+    keeps a prefix and a hash of the whole identity, so it stays stable and
+    apart from others. ``apply`` reads the documents, never the file names.
+    """
     parts: list[str] = [kind]
     if metadata.parent is not None:
         parent: IdentityRef | None = metadata.parent
@@ -185,4 +180,4 @@ def resource_filename(kind: str, metadata: Metadata) -> str:
     elif metadata.organization is not None:
         parts.append(metadata.organization)
     parts.append(metadata.name)
-    return "__".join(_safe_filename_segment(p) for p in parts) + ".yml"
+    return safe_path_segment("__".join(parts)) + ".yml"

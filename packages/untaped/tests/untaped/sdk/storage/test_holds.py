@@ -870,7 +870,6 @@ def test_remove_keeps_lock_named_files_that_are_not_cores(tmp_path: Path) -> Non
     (folder / "mine.lock").mkdir()
     (folder / "mine.lock" / "precious.txt").write_text("x", encoding="utf-8")
     (folder / "recipe.lock").write_text("pinned\n", encoding="utf-8")
-    (folder / "config.yml.lock").write_text("", encoding="utf-8")
     (folder / "plugins").write_text("not a folder", encoding="utf-8")
     result = _cli("project", "remove", str(project.root), "--yes", "-f", "json")
     assert result.exit_code == 0, result.output

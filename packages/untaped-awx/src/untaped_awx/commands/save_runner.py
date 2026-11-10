@@ -14,12 +14,12 @@ from untaped_awx.commands.context import AwxContext
 from untaped_awx.document import Document
 from untaped_awx.domain import Resource, ResourceSpec
 from untaped_awx.errors import AwxApiError
-from untaped_awx.infrastructure.resources.yaml_io import dump_resource
+from untaped_awx.infrastructure.resources.yaml_io import dump_resource, resource_payload
 
 
 def document_row(resource: Resource, text: str, *, path: Path | None = None) -> Document:
     """``resource`` as the row an export prints, carrying the YAML it was written as."""
-    row = Document.model_validate(resource.model_dump(mode="json", exclude_none=True))
+    row = Document.model_validate(resource_payload(resource, mode="json"))
     row._text = text
     row._path = path
     return row
