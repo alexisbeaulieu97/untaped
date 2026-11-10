@@ -95,8 +95,7 @@ def run_process(
         return _Run(process, timeout=timeout, stop=stop, started=started).collect(input)
     except BaseException:
         if process is not None:
-            groups.stop(process)
-            groups.close_pipes(process)
+            groups.abandon(process)
         raise
 
 
@@ -302,6 +301,5 @@ def start_process(
     try:  # an interrupt before the caller holds it would leave the group running
         return RunningProcess._of(process)
     except BaseException:
-        groups.stop(process)
-        groups.close_pipes(process)
+        groups.abandon(process)
         raise

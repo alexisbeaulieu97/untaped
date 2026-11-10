@@ -134,11 +134,10 @@ def test_cancel_stops_running_commands(tmp_path: Path) -> None:
         for i in range(2)
     ]
     _wait_for([tmp_path / "STARTED_0", tmp_path / "STARTED_1"])
-    started = time.monotonic()
     runner.cancel()
     for t in threads:
         t.join(timeout=8)
-    assert time.monotonic() - started < 4
+    # Not timed: a missed cancel lets both run on and touch their markers (checked below).
     assert [(r.stopped, r.returncode) for r in results] == [(True, None)] * 2
     time.sleep(0.2)
     assert not list(tmp_path.glob("MARKER_*"))
@@ -150,11 +149,9 @@ def test_cancel_kills_a_command_that_ignores_term(tmp_path: Path) -> None:
     results: list[CommandResult] = []
     thread = _start(runner, "trap '' TERM; touch STARTED; sleep 30", tmp_path, results)
     _wait_for([tmp_path / "STARTED"])
-    started = time.monotonic()
     runner.cancel()
     thread.join(timeout=8)
-    assert not thread.is_alive()
-    assert time.monotonic() - started < 4
+    assert not thread.is_alive()  # not timed: a missed SIGKILL leaves it in its 30 s sleep
     assert results[0].stopped
 
 

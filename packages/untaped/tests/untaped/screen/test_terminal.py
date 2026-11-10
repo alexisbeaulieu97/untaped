@@ -59,7 +59,6 @@ class Typing:
         self, *, layout: str = "full", extra: Callable[[Model, object], object] | None = None
     ) -> None:
         self.seen: list[object] = []
-        self.seen_at: list[float] = []
         self.threads: list[str] = []
         self._extra = extra
         self.screen: Screen[Model, str] = Screen(
@@ -74,7 +73,6 @@ class Typing:
 
     def _update(self, model: Model, message: object) -> tuple[Model, Sequence[Cmd]]:
         self.seen.append(message)
-        self.seen_at.append(time.monotonic())
         self.threads.append(threading.current_thread().name)
         if self._extra is not None:
             handled = self._extra(model, message)

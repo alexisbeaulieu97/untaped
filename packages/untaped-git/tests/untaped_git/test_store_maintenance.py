@@ -127,8 +127,9 @@ def test_a_stalled_repack_is_a_warning(
 def test_interrupting_maintenance_kills_its_children(
     remote: GitRemote, store_for: StoreFor, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The fetch runs in a child Python with untaped's handlers, as the CLI runs it: an
-    # interrupt that lands while git is starting is then held until git's group exists.
+    # The fetch runs in a child Python with untaped's handlers, as the CLI runs it: the
+    # interrupt reaches every group untaped started, wherever it lands in the parent,
+    # and what a stop leaves behind is stopped at exit.
     store = store_for("github")
     store.fetch(branches=["main"])
     marker = tmp_path / "stall"
