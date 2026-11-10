@@ -308,7 +308,8 @@ def pick_store(name: StoreName | None = None) -> TokenStore | None:
             message = problem or f"{name} is not usable on this machine"
             if problem and not problem.startswith(name):
                 message = f"{name}: {problem}"
-            raise ConfigError(message, category="unavailable")
+            # a store this machine lacks or can't run: retrying won't bring it (exit 4)
+            raise ConfigError(message)
         return store
     return next((store for store in STORES if store.usable()), None)
 
