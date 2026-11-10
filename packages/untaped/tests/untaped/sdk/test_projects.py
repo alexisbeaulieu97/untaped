@@ -165,7 +165,6 @@ def test_init_writes_the_marker_the_gitignore_and_the_reference(tmp_path: Path) 
         "/.gitignore",
         "/project.json",
         "/plugins/",
-        "/config.yml.lock",
     ]
     ref = _reference(done.project)
     assert ref.anchor == root and ref.anchor_id == AnchorId.of(root) and ref.targets == ()
@@ -183,12 +182,11 @@ def test_init_adds_its_lines_to_a_gitignore_already_there(tmp_path: Path) -> Non
         "notes/",
         "/project.json",
         "/plugins/",
-        "/config.yml.lock",
     ]
     assert (folder / "lint.yml").read_text(encoding="utf-8") == "version: 1\n"
 
 
-def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -> None:
+def test_the_gitignore_ignores_cores_files_and_no_plugins(tmp_path: Path) -> None:
     root = tmp_path / "PROJ"
     init(root)
     subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -196,10 +194,10 @@ def test_the_gitignore_ignores_cores_lock_files_and_no_plugins(tmp_path: Path) -
         ".gitignore",
         "project.json",
         "plugins/x.json",
-        "config.yml.lock",
     ]
     plugins = [  # a plugin's committed files, at any depth
         "recipe.lock",
+        "config.yml.lock",
         "notes/state.yml.lock",
         "lint/state.yml",
         "lint/project.json",

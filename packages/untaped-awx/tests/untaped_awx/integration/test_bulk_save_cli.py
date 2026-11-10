@@ -43,6 +43,27 @@ def test_save_all_rejects_traversal_in_resource_names(
     assert "evil/../escape" in target.read_text()
 
 
+def test_save_all_writes_long_and_odd_names_and_applies_them_back(
+    seeded_default_org: Any, tmp_path: Path
+) -> None:
+    """A name past the file-name limit is still exported, and the directory applies back."""
+    long_a, long_b = "a" * 300 + "-one", "a" * 300 + "-two"
+    for record_id, name in ((10, long_a), (11, long_b), (12, 'odd:*?"<>| name')):
+        seeded_default_org.seed("projects", id=record_id, name=name, organization=1, scm_type="git")
+    out_dir = tmp_path / "backup"
+
+    result = run(["export", "--kind", "projects", "--out-dir", str(out_dir)])
+
+    assert result.exit_code == 0, result.output + (result.stderr or "")
+    names = sorted(path.name for path in out_dir.iterdir())
+    assert len(names) == 3
+    assert all(len(name.encode()) <= 128 + len(".yml") for name in names), names
+    assert "Project__Default__odd________name.yml" in names
+    applied = run(["apply", str(out_dir), "--dry-run"])
+    assert applied.exit_code == 0, applied.output + (applied.stderr or "")
+    assert applied.stdout.count("unchanged") == 3, applied.stdout
+
+
 def test_save_all_filter_scopes_org_kinds_server_side(
     seeded_default_org: Any, tmp_path: Path
 ) -> None:

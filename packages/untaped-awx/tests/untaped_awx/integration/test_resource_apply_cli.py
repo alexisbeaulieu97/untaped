@@ -488,6 +488,25 @@ def test_apply_dash_reads_documents_from_stdin(fake_aap: Any) -> None:
     assert fake_aap.get_record("job_templates", 30)["description"] == "piped"
 
 
+def test_json_export_of_an_org_less_record_applies_to_it(fake_aap: Any) -> None:
+    """``export -f json | apply -`` keeps ``organization: null``, as the YAML form does.
+
+    Without it, the document would be scoped by the default organization.
+    """
+    fake_aap.seed("organizations", id=1, name="Default")
+    fake_aap.seed("job_templates", id=102, name="orphan", organization=None, playbook="a.yml")
+    exported = run(["job-templates", "export", "orphan", "-f", "json"])
+    assert exported.exit_code == 0, exported.output
+    assert json.loads(exported.stdout)[0]["metadata"] == {"name": "orphan", "organization": None}
+
+    planned = run(["apply", "-", "--dry-run", "-f", "json"], input=exported.stdout)
+
+    assert planned.exit_code == 0, planned.output + (planned.stderr or "")
+    [row] = json.loads(planned.stdout)
+    assert (row["id"], row["action"]) == (102, "unchanged")
+    assert row["identity"]["organization"] is None
+
+
 def test_apply_dash_with_nothing_piped_is_an_error(fake_aap: Any) -> None:
     _seed_basic(fake_aap)
     result = run(["apply", "-", "--yes"], input="")

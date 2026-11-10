@@ -85,16 +85,10 @@ if TYPE_CHECKING:
 DIRECTORY = ".untaped"
 #: The file that makes a folder a project.
 MARKER = "project.json"
-#: The lock file core's locked writes leave beside the config file.
-CORE_LOCKS = ("config.yml.lock",)
 #: What ``init`` keeps out of version control: the id and machine records, never config.
-#: Each is anchored at ``.untaped/``'s top level and named (core's lock files too), so a
-#: plugin's committed files (``recipe.lock``, ``awx/plugins/``) stay tracked.
-GITIGNORE = (
-    "/project.json",
-    f"/{PLUGINS_FOLDER}/",
-    *(f"/{name}" for name in CORE_LOCKS),
-)
+#: Each is anchored at ``.untaped/``'s top level and named, so a plugin's committed
+#: files (``recipe.lock``, ``awx/plugins/``) stay tracked.
+GITIGNORE = ("/project.json", f"/{PLUGINS_FOLDER}/")
 #: The whole ``.gitignore`` ``init`` creates: those lines and itself.
 GITIGNORE_TEXT = "\n".join(("/.gitignore", *GITIGNORE)) + "\n"
 
@@ -891,7 +885,7 @@ def core_files(root: Path) -> tuple[list[str], list[str]]:
     deletes, keeps = [], []
     for name in names:
         path = folder / name
-        core_file = name in _CORE_FILES or name in CORE_LOCKS or name == ".gitignore"
+        core_file = name in _CORE_FILES or name == ".gitignore"
         if name == PLUGINS_FOLDER and path.is_dir() and not path.is_symlink():
             deletes.append(f"{name}/")
         elif core_file and path.is_file() and (name != ".gitignore" or _untouched(folder)):

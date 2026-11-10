@@ -47,7 +47,8 @@ class Apply(AwxCommand):
     A directory contributes every `*.yml`/`*.yaml` under it, so keep other
     YAML out of it. A file that cannot be read or parsed, an unknown kind, or
     stdin with no documents fails the apply, naming the file (`<stdin>` for
-    `apply -`). --check exits 0 when nothing would change (rows show
+    `apply -`). A JSON list of documents, as `export -f json` prints, reads
+    as those documents. --check exits 0 when nothing would change (rows show
     `planned` or `unchanged`).
 
     Examples
@@ -107,6 +108,9 @@ class Export(AwxCommand):
     organizations don't collide: `<Kind>[__<org>]__<name>.yml`, or, for a
     resource with a parent (such as a Host or Schedule),
     `<Kind>__<parent_kind>__[<parent_org>__]<parent_name>__<name>.yml`.
+    Characters other than letters, digits and `._-` become `_`, and a name
+    over 128 bytes keeps its start and ends in a hash of the whole identity;
+    `apply` reads the documents, not the file names.
     Read-only kinds (such as Credential and Organization) are skipped with
     a one-line note.
 

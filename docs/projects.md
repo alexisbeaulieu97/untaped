@@ -22,8 +22,8 @@ a project:
 - `.untaped/project.json` holds its id, twelve hex digits chosen at random.
   It is created only if it doesn't exist, so two `init`s at once make one
   project.
-- `.untaped/.gitignore` keeps `project.json`, `plugins/` and
-  core's own lock file at `.untaped/`'s top level out of git, and itself
+- `.untaped/.gitignore` keeps `project.json` and `plugins/` at
+  `.untaped/`'s top level out of git, and itself
   when `init` creates it; a plugin's committed files, such as `recipe.lock`,
   stay tracked. A repository can share its own `.untaped/` files, such as
   `lint.yml`, never a project's id.

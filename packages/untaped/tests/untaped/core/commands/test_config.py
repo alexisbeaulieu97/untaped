@@ -24,6 +24,7 @@ from core_test_support.commands.support import (
 from untaped.runtime.config_file import read_config_dict
 from untaped.runtime.config_read import FORMAT_VERSION
 from untaped.runtime.settings import get_settings
+from untaped.sdk.storage._fs import write_lock_path
 from untaped.sdk.testing import CliInvoker
 
 pytestmark = pytest.mark.usefixtures("_isolated_config")
@@ -416,7 +417,7 @@ def test_config_edit_saves_under_the_config_lock(
     write_config(_isolated_config, "format_version: 2\n")
     monkeypatch.setenv("UNTAPED_CONFIG_LOCK_TIMEOUT", "0.05")
     _scripted_editor(tmp_path, monkeypatch, "format_version: 2\njira: {timeout: 12}")
-    held = FileLock(f"{_isolated_config}.lock")
+    held = FileLock(str(write_lock_path(_isolated_config)))
     held.acquire()
     try:
         result = CliInvoker().invoke(_config_app(), ["edit"])
