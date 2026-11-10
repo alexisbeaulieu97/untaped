@@ -236,7 +236,7 @@ def test_the_pass_writes_the_profile_pick_onto_the_started_run_and_it_ends_with_
 def test_a_cluster_of_root_letters_is_the_root_s_unless_it_is_a_value() -> None:
     assert _line("hello", "-v", "greet") == (["hello", "greet"], True, True)
     assert _line("-vh") == (["-h"], True, True)
-    assert _line("hello", "run", "-vq") == (["hello", "run", "-vq"], True, False)
+    assert _line("hello", "run", "-vq") == (["hello", "run", "--", "-vq"], True, False)
     with pytest.raises(SystemExit) as exit_info, started_line(["-vq"]):
         pass
     assert exit_info.value.code == 2
@@ -270,7 +270,7 @@ def test_root_options_between_words_are_the_root_s_only_before_another_word(
         (["hello", "run", "-v", "ls"], ["hello", "run", "-v", "ls"]),
         (["hello", "apply", "-v"], ["hello", "apply", "-v"]),
         # it reads a cluster with an unknown letter as its value too
-        (["hello", "run", "-vz"], ["hello", "run", "-vz"]),
+        (["hello", "run", "-vz"], ["hello", "run", "--", "-vz"]),
     ],
 )
 def test_an_argument_taking_a_leading_hyphen_keeps_a_root_option_s_spelling(
@@ -363,6 +363,17 @@ class Run(Command):
         return " ".join(self.cmd)
 
 
+class Sh(Command):
+    """Print where it would run the command, and the command."""
+
+    where: Annotated[Positional[str], AllowHyphen] = Field(description="Where, or the command.")
+    cmd: Annotated[Positional[str | None], AllowHyphen] = Field(None, description="The command.")
+    times: int = Field(1, description="How many times.")
+
+    def run(self) -> str:
+        return f"{self.where} {self.cmd} times={self.times}"
+
+
 class Grep(Command):
     """Print what it was given, and whether the root went verbose."""
 
@@ -379,7 +390,7 @@ class Hello(Plugin):
     """Greet."""
 
     settings = HelloSettings
-    commands = (Greet, Grep, Run)
+    commands = (Greet, Grep, Run, Sh)
 
 
 HELLO = PluginCandidate(distribution="untaped-hello", name="hello", target=Hello)
@@ -408,6 +419,8 @@ def test_a_declared_command_line_to_run_keeps_its_root_option_spellings() -> Non
 
     assert result.exit_code == 0, result.output
     assert result.stdout.strip() == "ls -v -q"
+    clustered = CliInvoker().invoke(root.meta, ["hello", "run", "ls", "-la"])
+    assert clustered.stdout.strip() == "ls -la", clustered.output
 
 
 def _outcome(
@@ -443,6 +456,15 @@ def _outcome(
             "Ada verbose=True deprecated=True",
         ),
         (["hello", "run", "ls", "-v"], "ls -v"),
+        # a short cluster reaches an argument taking a leading `-` whole
+        (["hello", "run", "ls", "-la"], "ls -la"),
+        (["hello", "run", "-xv"], "-xv"),
+        (["hello", "run", "ls", "-la", "--", "-x"], "ls -la -x"),
+        (["hello", "sh", "-xv"], "-xv None times=1"),
+        (["hello", "sh", "here", "-vq", "--times", "2"], "here -vq times=2"),
+        # a cluster of root letters only, on a command with a `-f`
+        (["hello", "greet", "--names", "Ada", "-vv"], "Ada verbose=True deprecated=False"),
+        (["hello", "greet", "-vq"], None),
         (["hello", "greet", "--help", "--deprecated"], None),
         (["hello", "grep", "-p"], None),
         # the conflict comes first, whether the leading run was applied apart or not
@@ -464,17 +486,29 @@ def test_a_line_means_the_same_with_or_without_a_kept_declaration(
 
 
 @pytest.mark.usefixtures("fresh_composition", "_isolated_config")
+def test_an_argument_too_many_beside_a_cluster_is_the_one_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    argv = ["hello", "sh", "ws", "-la", "--times", "2", "extra"]
+
+    code, _, err = _outcome(argv, kept=True, monkeypatch=monkeypatch, capsys=capsys)
+
+    assert code == 2
+    assert "'extra'" in err, err
+
+
+@pytest.mark.usefixtures("fresh_composition", "_isolated_config")
 @pytest.mark.parametrize("kept", [True, False], ids=["kept", "cold"])
 def test_a_value_taking_short_ending_a_cluster_reads_the_next_token_as_cyclopts_does(
     kept: bool, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # -y, then -c reading `-v`: cyclopts refuses it as a value, so the line fails
+    # -y, then -c reading `-v` (a column to drop), so `name` is one argument too many
     argv = ["doctor", "fix", "-yc", "-v", "name"]
 
     code, _, err = _outcome(argv, kept=kept, monkeypatch=monkeypatch, capsys=capsys)
 
     assert code == 2
-    assert "-c requires an argument" in err
+    assert "unexpected argument: 'name'" in err
 
 
 @pytest.mark.usefixtures("fresh_composition", "_isolated_config")

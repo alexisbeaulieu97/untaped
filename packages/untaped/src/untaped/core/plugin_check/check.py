@@ -50,7 +50,9 @@ def check_plugins(
     """
     from untaped.runtime.bootstrap import kept_composition  # noqa: PLC0415 - bootstrap is the root
 
-    installed = sorted({candidate.name for candidate in candidates})
+    installed = sorted(
+        {candidate.name for candidate in candidates} | {each.name for each in result.plugins}
+    )
     if name is not None and name not in installed:
         raise UsageError(not_found("plugin", name, known=installed))
     rows: list[PluginCheck] = []

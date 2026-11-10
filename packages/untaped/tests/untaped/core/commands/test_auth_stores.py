@@ -138,8 +138,17 @@ def test_login_prefers_the_first_usable_store(
 
 def test_login_with_a_forced_store_that_is_unusable_fails(stores: FakeStores) -> None:
     result = _login("--store", "security", input="tok")
-    assert result.exit_code == 5
+    assert result.exit_code == 4, "the machine needs fixing: retrying won't help"
     assert "security is not usable on this machine" in result.stderr
+    assert stored_rows() == []
+
+
+def test_login_with_no_usable_store_needs_the_machine_fixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_fake_stores(tmp_path, monkeypatch)
+    result = _login(input="tok")
+    assert result.exit_code == 4, result.output
     assert stored_rows() == []
 
 
@@ -257,7 +266,7 @@ def test_an_explicit_pass_on_an_uninitialised_store_says_so(
 ) -> None:
     (tmp_path / "password-store" / ".gpg-id").unlink()
     result = _login("--store", "pass", input="tok")
-    assert result.exit_code == 5
+    assert result.exit_code == 4
     assert "pass: the password store is not initialised" in result.stderr
 
 
@@ -408,8 +417,9 @@ def test_gpg_that_cannot_run_is_reported_with_no_entry_left(
     stores: FakeStores, tmp_path: Path
 ) -> None:
     (tmp_path / "fake-bin" / "gpg").chmod(0o644)
-    with pytest.raises(ConfigError, match="gpg could not run"):
+    with pytest.raises(ConfigError, match="gpg could not run") as raised:
         token_store.TokenStore("pass").preflight()
+    assert raised.value.exit_code == 4, "a tool that can't run won't on a retry"
     assert stores.entries() == {}
 
 

@@ -236,7 +236,7 @@ def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
     ``status``) joins the record's own marks; a record marking none of its
     own fields shows every field, so the base's marks alone are no default.
     """
-    from untaped.sdk.diagnostic import WireModel, _field_order, dumped_names  # noqa: PLC0415
+    from untaped.sdk.diagnostic import dumped_names, written_fields  # noqa: PLC0415
     from untaped.sdk.records import (  # noqa: PLC0415 - records import fields
         CheckRecord,
         OutcomeRecord,
@@ -253,8 +253,7 @@ def default_columns(model: type[BaseModel]) -> tuple[str, ...]:
         return ()
     keys = dumped_names(model)
     shown = {keys[name] for name in marked}
-    order = _field_order(model) if issubclass(model, WireModel) else tuple(keys.values())
-    return tuple(key for key in order if key in shown)
+    return tuple(key for key in written_fields(model) if key in shown)
 
 
 def column_fields(model: type[BaseModel]) -> tuple[str, ...]:

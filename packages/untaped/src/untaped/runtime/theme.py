@@ -11,7 +11,7 @@ from collections.abc import Callable, Mapping
 from types import MappingProxyType
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from untaped.sdk._schema import Choices, field_choices
 from untaped.sdk._theme import (
@@ -154,6 +154,8 @@ class UiSettings(BaseModel):
     ``format`` replaces the ``table`` default of the shared ``--format``
     option (``UNTAPED_FORMAT`` wins over it; an explicit flag wins over both).
     """
+
+    model_config = ConfigDict(frozen=True)
 
     theme: Annotated[str, THEME_CHOICES] = Field(default="default", description="Built-in theme.")
     format: OutputFormat | None = Field(

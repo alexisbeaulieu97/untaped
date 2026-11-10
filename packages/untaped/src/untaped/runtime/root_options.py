@@ -284,6 +284,7 @@ def _read_line(
     read, command = walk.command(declaration)
     if read:
         walk.options(command)
+        walk.arguments_last()
     walk.keep(len(tokens) - walk.index)  # data past a `--`, or the rest of a line not read
     return walk, read
 
@@ -305,6 +306,10 @@ class _LineWalk:
     #: give (the last one).
     selected: CommandDecl | None = None
     format: str | None = None
+    #: Where in ``left`` the command's arguments sit, and whether one of them
+    #: looks like an option (an argument that takes a leading ``-``).
+    arguments: list[int] = field(default_factory=list)
+    hyphened: bool = False
 
     def __post_init__(self) -> None:
         self.end = _separator_index(self.tokens)
@@ -428,14 +433,39 @@ class _LineWalk:
             if not width:
                 if not value and self.take():
                     continue
-                if argument is not None and not argument.token.startswith("list["):
-                    # the next token fills the next argument
-                    slot += token not in _HELP_OR_VERSION
+                if token not in _HELP_OR_VERSION:
+                    # an argument, or one too many, which moves with the rest so the error names it
+                    self.arguments.append(len(self.left))
+                    self.hyphened = self.hyphened or (value and _is_cluster(token))
+                    if argument is not None and not argument.token.startswith("list["):
+                        slot += 1  # the next token fills the next argument
                 width = 1
             else:
                 taken = self.tokens[self.index : min(self.index + width, self.end)]
                 self.note_format(taken if cluster is None else cluster, spellings)
             self.keep(min(width, self.end - self.index))
+
+    def arguments_last(self) -> None:
+        """Move the command's arguments after a ``--`` when one of them is a short cluster.
+
+        Cyclopts reads a token such as ``-la`` as a short cluster before it
+        binds arguments, even for an argument that takes a leading ``-``, and
+        splits it into letters it doesn't know. After a ``--`` every token is
+        an argument, so ``-la`` reaches the argument whole, in its place: the
+        arguments keep their order, ahead of any data the line already gave
+        after a ``--``.
+        """
+        if not self.hyphened:
+            return
+        moved = set(self.arguments)
+        arguments = [self.left[at] for at in self.arguments]
+        self.left = [
+            *(token for at, token in enumerate(self.left) if at not in moved),
+            "--",
+            *arguments,
+        ]
+        if self.index < len(self.tokens) and self.tokens[self.index] == "--":
+            self.index += 1  # the line's own `--`: the arguments already follow one
 
     def note_format(self, given: _Cluster | Sequence[str], spellings: tuple[str, ...]) -> None:
         """Note the value ``--format`` gives, when the option at the index is ``--format``.
@@ -445,7 +475,7 @@ class _LineWalk:
         value: the rest of the token, or the tokens after it.
         """
         if isinstance(given, _Cluster):
-            if len(spellings) < 2:  # no short to spell in a cluster
+            if len(spellings) < 2 or not given.kept:  # no short to spell, or root letters only
                 return
             short, last = spellings[1], given.kept[-1]
             if given.kept[-2:-1] == [short]:
@@ -653,6 +683,11 @@ def _read_cluster(
             unknown = True
         kept.append(short)
     return _Cluster(kept, roots, own, helps, unknown, 0)
+
+
+def _is_cluster(token: str) -> bool:
+    """Whether cyclopts reads ``token`` as a short cluster (``-la``), not a number or one letter."""
+    return len(token) > 2 and token[1] != "-" and is_option_like(token, allow_numbers=False)
 
 
 def _takes_hyphen(option: OptionDecl) -> bool:

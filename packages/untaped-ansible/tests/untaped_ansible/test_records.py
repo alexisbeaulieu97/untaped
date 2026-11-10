@@ -210,7 +210,7 @@ def test_an_unknown_column_on_an_outcome_is_refused_before_the_change() -> None:
     result = run("source-alias", "set", "common", "acme/common", "--columns", "alias,bogus")
 
     assert result.exit_code == 2
-    assert "unknown column 'bogus'; valid columns: action, error, alias, repo" in result.stderr
+    assert "unknown column 'bogus'; valid columns: alias, action, repo, error" in result.stderr
     assert read_state()["aliases"]["common"] == "acme/c"
 
 

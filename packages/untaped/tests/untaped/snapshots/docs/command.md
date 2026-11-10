@@ -17,7 +17,7 @@ Read first: `untaped docs acme guides finish`.
 
 ### Output
 - `--format`, `-f`: The output format. One of `table`, `json`, `yaml`, `pipe`, `raw`.
-- `--columns`, `-c`: Table columns: a list, or +NAME to add.
+- `--columns`, `-c`: Table columns, comma-separated or repeated; +NAME adds to and -NAME drops from the default columns ('?' lists them).
 
 ### Confirmation
 - `--yes`, `-y`: Go ahead without asking.

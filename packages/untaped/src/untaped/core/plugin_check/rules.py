@@ -89,12 +89,7 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
     candidates = list(discover_candidates()) if candidates is None else candidates
     root = build_root_app(candidates=candidates)
     checked = next(
-        (
-            plugin
-            for plugin in composition().plugins
-            # the root plugin is untaped itself, not one installed into it
-            if plugin.name == name and not plugin.root
-        ),
+        (plugin for plugin in composition().plugins if plugin.name == name),
         None,
     )
     if checked is None:
@@ -105,6 +100,9 @@ def _checked(name: str, candidates: Sequence[PluginCandidate] | None) -> _Checke
         # (a broken settings-key declaration, say) is its one violation.
         return [f"{name}::quarantined::{record.reason}: {record.detail}"]
     own = next((candidate for candidate in candidates if candidate.name == name), None)
+    if own is None and checked.root:  # untaped itself: composed without an entry point
+        ref = checked.plugin_ref
+        own = PluginCandidate(ref.distribution, name, checked.decl.target, ref.distribution_version)
     if own is None:  # a composed plugin is one of the candidates
         raise LookupError(f"no candidate named {name!r}")
     package, source_dir = package_of(checked)
@@ -119,7 +117,7 @@ def _core_lines(checked: _Checked) -> list[str]:
     plugin, name = checked.plugin, checked.name
     commands = [name] if plugin.has_commands else []  # its mounted subtree
     return [
-        *_name_violations(name, checked.package, checked.own),
+        *_name_violations(name, checked.package, checked.own, root=plugin.root),
         *_floor_violations(plugin, checked.own, checked.candidates),
         *help_tree_violations(checked.root, commands),
         *guide_violations(checked.root, composition(), plugin),
@@ -141,22 +139,24 @@ def _sdk_deprecations(package: str) -> list[str]:
     ]
 
 
-def _name_violations(name: str, package: str, candidate: PluginCandidate | None) -> list[str]:
+def _name_violations(
+    name: str, package: str, candidate: PluginCandidate | None, *, root: bool = False
+) -> list[str]:
     """Where the plugin's distribution or import package is not named after it.
 
     One name runs through a plugin: ``untaped-<name>`` on PyPI,
     ``untaped_<name>`` to import, ``<name>`` as entry point, config section
     and command group. Composition already holds the entry point to the
-    plugin's name.
+    plugin's name. The root plugin, untaped itself, is ``untaped`` for both.
     """
     violations: list[str] = []
-    expected_package = "untaped_" + name.replace("-", "_")
+    expected_package = name if root else "untaped_" + name.replace("-", "_")
     top = package.partition(".")[0]
     if top != expected_package:
         violations.append(
             f"{name}::plugin-name::import package {top!r} is not {expected_package!r}"
         )
-    expected_distribution = f"untaped-{name}"
+    expected_distribution = name if root else f"untaped-{name}"
     if candidate is not None and canonicalize_name(candidate.distribution) != expected_distribution:
         violations.append(
             f"{name}::plugin-name::distribution {candidate.distribution!r} "

@@ -291,6 +291,16 @@ def test_check_columns_passes_known_names_and_what_emit_does_not_check(
     assert capsys.readouterr().err == ""
 
 
+def test_check_columns_lists_an_outcome_rows_fields_in_the_order_it_is_written(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Own fields first, then the inherited ``action`` and ``error``, as the row dumps them."""
+    with pytest.raises(SystemExit):
+        check_columns(_Created, columns=["nope"], fmt="table")
+    assert "valid columns: id, action, error\n" in capsys.readouterr().err
+    assert list(_Created(id="a", action="created").model_dump()) == ["id", "action"]
+
+
 def test_check_columns_refuses_names_mixed_with_edits(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
