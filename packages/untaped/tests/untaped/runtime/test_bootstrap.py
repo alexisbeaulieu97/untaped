@@ -82,6 +82,18 @@ def test_composition_is_the_last_composed_result() -> None:
     assert bootstrap.composition() is composed
 
 
+class _OtherProfile(BaseModel):
+    other: int = 1
+
+
+def test_a_composition_registers_only_its_own_settings_sections() -> None:
+    """A plugin of a name an earlier composition used, with other settings, is no duplicate."""
+    bootstrap.compose_root(candidates=[plugin_candidate(_plugin("shop"))])
+    other = make_plugin("shop", settings=_OtherProfile)
+    composed = bootstrap.compose_root(candidates=[plugin_candidate(other)])
+    assert [plugin.name for plugin in composed.plugins] == ["untaped", "shop"]
+
+
 def test_root_command_resolves_a_word_in_the_root_built_last() -> None:
     with pytest.raises(RuntimeError):
         bootstrap.root_command("doctor")

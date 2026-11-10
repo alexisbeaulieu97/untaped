@@ -96,11 +96,13 @@ _STARTED: ContextVar[tuple[Run, RootLine] | None] = ContextVar("untaped_started_
 
 
 def _register_sections(result: CompositionResult) -> None:
-    """Register every composed plugin's settings sections, core's included.
+    """Register every composed plugin's settings sections, core's included, and only theirs.
 
     Runs after validation succeeds, so a plugin that fails any check
     registers nothing, and again whenever the registry is rebuilt for the
-    remembered composition (:func:`_reregister`). Each plugin's distribution
+    remembered composition (:func:`_reregister`). The sections an earlier
+    composition registered go first, so a plugin of the same name with
+    other settings never meets them. Each plugin's distribution
     is bound as the owner its deprecations name (the root's none: its
     removals name untaped's own major), and its listed behaviours as its own
     (read only when one of them first warns). The root's behaviours are the
@@ -108,6 +110,7 @@ def _register_sections(result: CompositionResult) -> None:
     lists as core's), so asking who lists one never imports core's class. The
     setting each ``Dir(at=...)`` names is marked home-only in its section.
     """
+    reset_config_registry()
     bind_owners(
         {
             plugin.name: plugin.plugin_ref.distribution
@@ -266,10 +269,10 @@ def composed_with(candidates: Sequence[PluginCandidate]) -> Iterator[Composition
 
 
 def _reregister() -> None:
-    reset_config_registry()
     if _COMPOSED_RESULT is not None:
         _register_sections(_COMPOSED_RESULT)
     else:
+        reset_config_registry()
         bind_owners({})
         bind_behaviours({})
         bind_credentials({})
