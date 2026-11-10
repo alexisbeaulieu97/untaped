@@ -618,7 +618,8 @@ def index_errors(
 
 
 def release_notes(changelog: Path, version: str) -> str:
-    """The stripped body of ``changelog``'s ``## <version>`` section, links pinned to its tag.
+    """The stripped body of ``changelog``'s ``## <version>`` section, links pinned to its tag,
+    cut to fit a GitHub release (:func:`_fitted`).
 
     The GitHub release page outlives ``main`` as a PyPI page does, so its
     ``blob/main`` links go through ``pin_links`` too.
@@ -641,9 +642,11 @@ NOTES_LIMIT = 125_000
 
 
 def _fitted(body: str, version: str) -> str:
-    """``body``, or as many of its leading ``###`` subsections as fit under
-    :data:`NOTES_LIMIT`, followed by a link to the whole section at the tag."""
-    if len(body) <= NOTES_LIMIT:
+    """``body``, or, when it is too long for GitHub, the ``###`` subsections that
+    fit in order (one too long is left out, the next still tried), followed by
+    a link to the whole section at the tag. One character stays free for the
+    newline ``notes`` prints."""
+    if len(body) < NOTES_LIMIT:
         return body
     anchor = version.replace(".", "")
     link = (
@@ -653,9 +656,8 @@ def _fitted(body: str, version: str) -> str:
     parts = re.split(r"(?m)^(?=### )", body)
     kept = ""
     for part in parts:
-        if len(kept) + len(part) + len(link) + 2 > NOTES_LIMIT:
-            break
-        kept += part
+        if len(kept) + len(part) + len(link) + 2 < NOTES_LIMIT:
+            kept += part
     return f"{kept.rstrip()}\n\n{link}".lstrip()
 
 
