@@ -17,9 +17,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from prompt_toolkit.application.current import set_app
 from prompt_toolkit.data_structures import Size
 from prompt_toolkit.formatted_text import ANSI
 from prompt_toolkit.input import PipeInput, create_pipe_input
+from prompt_toolkit.key_binding.key_processor import KeyPress as PtkKeyPress
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.output import ColorDepth, DummyOutput, Output
 from prompt_toolkit.output.vt100 import Vt100_Output
 
@@ -33,7 +36,6 @@ from untaped.sdk.process import ProcessResult, run_process
 THEME = BUILTIN_THEMES["default"]
 ENTER = "\r"
 ESC = "\x1b"
-REACTION_LIMIT = 0.4  # a held-back key takes half a second or more; a normal reaction ~0.06
 F1 = "\x1bOP"  # an escape sequence no screen binds
 ALT_SCREEN_ON = "\x1b[?1049h"
 ALT_SCREEN_OFF = "\x1b[?1049l"
@@ -224,32 +226,20 @@ def test_the_escape_timeout_is_short() -> None:
     assert application.ttimeoutlen <= 0.1  # prompt_toolkit's default of 0.5 s feels like lag
 
 
-def _reaction_time(typing: Typing, keys: str) -> tuple[float, list[object]]:
-    """Seconds from sending ``keys`` (no closing) to the screen seeing the key, and how it ended.
-
-    The time stops when the key reaches the screen's update, so a slow teardown on a
-    loaded machine never counts: only a key held back waiting for a sequence does.
-    """
+def _with_input_open(typing: Typing, keys: str) -> list[object]:
+    """How ``typing`` ended after ``keys``, sent once its first frame is up, the input left open."""
     recorder = Recorder()
     with _threaded(typing, recorder.output) as (pipe, thread, outcome):
         _wait_for(lambda: "typed:" in recorder.text(), what="the first frame")
-        started = time.monotonic()
         pipe.send_text(keys)
         thread.join(timeout=5)
-    pressed = [
-        at
-        for message, at in zip(typing.seen, typing.seen_at, strict=True)
-        if isinstance(message, KeyPress) and at >= started
-    ]
-    assert pressed, "the key never reached the screen"
-    return pressed[0] - started, outcome
+    return outcome
 
 
-def test_an_unhandled_escape_cancels_at_once() -> None:
-    # The pipe stays open: only the escape timeout tells a lone escape from a sequence.
-    elapsed, outcome = _reaction_time(Typing(), ESC)
-    assert outcome == [Cancel()]
-    assert elapsed < REACTION_LIMIT
+def test_an_unhandled_escape_cancels_with_the_input_still_open() -> None:
+    # Only the escape timeout tells a lone escape from a sequence; it is short (see
+    # test_the_escape_timeout_is_short), and no binding holds the key back for longer.
+    assert _with_input_open(Typing(), ESC) == [Cancel()]
 
 
 def test_an_unhandled_ctrl_c_key_cancels_as_an_interrupt() -> None:
@@ -325,12 +315,31 @@ def test_an_external_signal_at_a_screen_reaches_child_processes(
 
 
 def test_a_named_key_is_not_held_back_waiting_for_a_longer_sequence() -> None:
-    # No binding of the application extends a named key (prompt_toolkit's emacs chords
-    # like ctrl-c ">" are inactive without a focused buffer), so none waits out the
-    # one-second key timeout: a chord added later must not make esc or ctrl-c lag.
-    elapsed, outcome = _reaction_time(Typing(), "\x03")
-    assert outcome == [Cancel(interrupted=True)]
-    assert elapsed < REACTION_LIMIT
+    # prompt_toolkit holds a key back for its one-second key timeout while an active
+    # binding starts with it and goes on. None may (its emacs chords like ctrl-c ">" are
+    # inactive without a focused buffer): a chord added later must not make esc or ctrl-c
+    # lag. Asked of prompt_toolkit's own rule rather than timed, so a loaded machine can't fail it.
+    with create_pipe_input() as pipe:
+        application, _host, _runtime = build_application(
+            Typing().screen, input=pipe, output=DummyOutput(), theme=THEME
+        )
+    named = {
+        binding.keys[0]
+        for binding in application.key_bindings.bindings
+        if len(binding.keys) == 1 and binding.keys[0] is not Keys.Any
+    }
+    assert Keys.ControlC in named and Keys.Escape in named
+    with set_app(application):
+        held = [
+            key
+            for key in named
+            if application.key_processor._is_prefix_of_longer_match([PtkKeyPress(key)])
+        ]
+    assert held == []
+
+
+def test_ctrl_c_with_the_input_still_open_cancels_as_an_interrupt() -> None:
+    assert _with_input_open(Typing(), "\x03") == [Cancel(interrupted=True)]
 
 
 def test_closed_input_raises_eof() -> None:

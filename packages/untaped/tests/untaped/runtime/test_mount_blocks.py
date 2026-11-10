@@ -126,12 +126,18 @@ def test_an_unknown_kind_suggests_the_declaration_s_kinds() -> None:
 
 
 def test_every_owned_block_core_ships_is_read_through_a_member() -> None:
-    import untaped.sdk as sdk
+    import importlib
+
     from untaped.runtime.composed import _MEMBERS
     from untaped.sdk._block import OwnedBlock
+    from untaped.sdk._modules import SDK_MODULES
 
-    for name in sdk.__all__:  # load the blocks the SDK exports lazily (Lock)
-        getattr(sdk, name)
+    # Load every block the SDK's modules export, lazily too (Lock, ServerApi): the
+    # subclasses below are only those imported, whatever ran before in this process.
+    for name in SDK_MODULES:
+        module = importlib.import_module(name)
+        for each in module.__all__:
+            getattr(module, each)
 
     def subclasses(cls: type) -> set[type]:
         return {sub for each in cls.__subclasses__() for sub in (each, *subclasses(each))}

@@ -244,12 +244,12 @@ def spawn(
         closing = _S.closing
         if not main and closing is not None:  # started before the signal: give it the signal too
             soft_signal(process.pid, closing[0] or signal.SIGTERM)
+        _exit_net_registered()  # a call: an interrupt can land in it, so inside the try
     except BaseException:
         if process is not None:
             stop(process)
             close_pipes(process)
         raise
-    _exit_net_registered()
     return process
 
 

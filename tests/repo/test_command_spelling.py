@@ -8,7 +8,7 @@ from cyclopts import App
 
 from untaped.runtime.bootstrap import build_root_app
 from untaped.runtime.registry import PluginCandidate
-from untaped.runtime.root_options import canonical_command_tokens
+from untaped.runtime.root_options import canonical_command
 from untaped.runtime.stability_marks import deprecated_alias
 from untaped.sdk.testing import invoke_cli
 
@@ -59,7 +59,7 @@ def test_deprecated_command_alias_is_rewritten_with_a_warning(
 ) -> None:
     root, _ = _toy_root()
 
-    assert canonical_command_tokens(root, ["jira", "me"]) == ["jira", "whoami"]
+    assert canonical_command(root, ["jira", "me"])[0] == ["jira", "whoami"]
     assert (
         "warning: `untaped jira me` is deprecated and will be removed in a future major release; "
         "use `untaped jira whoami`"
