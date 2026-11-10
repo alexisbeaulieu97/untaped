@@ -160,6 +160,8 @@ class Sink(Protocol):
     def relay(self, text: str, *, end: str = "\n") -> None:
         """Print another tool's output line as is: never parsed, never counted, never muted.
 
+        Colour sequences stay; any other control character shows escaped.
+
         Under JSON diagnostics it is an ``info`` line, whatever prefix it has
         (a hook that prints ``error: …`` and succeeds is not a failure).
         """
@@ -264,7 +266,8 @@ class RunSink:
                 self._out(text + end)
             return
         message = Message(level="info", message=redact_url_password(text).strip())
-        self._emit(message, text, unmuted=True, end=end)
+        # Its colours stay; any other control sequence shows escaped.
+        self._emit(message, printable(text, colors=True), unmuted=True, end=end)
 
     def passthrough(self, text: str) -> None:
         self._out(text)

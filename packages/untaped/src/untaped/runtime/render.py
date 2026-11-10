@@ -26,7 +26,7 @@ from rich.console import Console
 from rich.errors import StyleSyntaxError
 from rich.style import Style
 from rich.table import Table
-from rich.text import Text
+from rich.text import Span, Text
 
 from untaped.runtime.theme import STATUS_COLORS, OutputFormat
 from untaped.sdk._pipe import PIPE_ENVELOPE_VERSION, PIPE_MARKER_KEY
@@ -239,7 +239,10 @@ def _format_table(rows: Sequence[Row], theme: ThemeSpec, *, colorize: bool) -> s
         # line; an explanation (why a row failed) wraps instead, to be read whole.
         wrap = col in _WRAPPED_COLUMNS
         table.add_column(
-            Text(col), width=width, no_wrap=not wrap, overflow="fold" if wrap else "ellipsis"
+            Text(printable(col)),
+            width=width,
+            no_wrap=not wrap,
+            overflow="fold" if wrap else "ellipsis",
         )
     value_style = _role_style(theme, "value", colorize=colorize)
     for row, texts in zip(rows, cells, strict=True):
@@ -340,7 +343,7 @@ def _format_record_line(key: str, value: object, *, theme: ThemeSpec, colorize: 
     )
     rendered_value = _flat(value)
     if key_style is None and value_style is None:
-        return f"{key}: {rendered_value}"
+        return f"{printable(key)}: {rendered_value}"
     line = Text()
     line.append(key, style=key_style)
     line.append(": ")
@@ -393,7 +396,7 @@ def _table_cell(value: Any) -> str:
     """
     if isinstance(value, float):
         return f"{value:.2f}".rstrip("0").rstrip(".")
-    text = " ".join(_flat(value).split())
+    text = printable(" ".join(_flat_text(value).split()))
     return Roled(text, value.role) if isinstance(value, Roled) else text
 
 
@@ -480,7 +483,7 @@ def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -
     newline.
     """
     return _render_rich(
-        text if isinstance(text, Text) else Text(printable(text)),
+        printable_text(text) if isinstance(text, Text) else Text(printable(text)),
         colorize=colorize,
         truncate=truncate,
     )
@@ -488,16 +491,41 @@ def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -
 
 #: C0 controls but tab and newline, DEL and C1 controls: what can drive a terminal.
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+#: The same, but a colour or text-style sequence (SGR) is kept whole.
+_CONTROL_BUT_SGR_RE = re.compile(r"(\x1b\[[0-9;:]*m)|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
-def printable(text: str) -> str:
+def printable(text: str, *, colors: bool = False) -> str:
     """``text`` with every control character but tab and newline shown escaped (``\\x1b``).
 
     Human output (tables, list views, messages) passes server and repository
     text through it, so an escape sequence in a value is shown, never run by
-    the terminal. Structured and raw output keep values verbatim.
+    the terminal. Structured and raw output keep values verbatim. ``colors``
+    keeps colour and text-style sequences, for a relayed log that has them.
     """
-    return _CONTROL_RE.sub(lambda match: f"\\x{ord(match[0]):02x}", text.replace("\r\n", "\n"))
+    text = text.replace("\r\n", "\n")
+    if not colors:
+        return _CONTROL_RE.sub(_escaped, text)
+    return _CONTROL_BUT_SGR_RE.sub(lambda match: match[1] or _escaped(match), text)
+
+
+def _escaped(match: re.Match[str]) -> str:
+    return f"\\x{ord(match[0]):02x}"
+
+
+def printable_text(text: Text) -> Text:
+    """A Rich ``text`` with :func:`printable`'s escaping, every span's style kept."""
+    if not _CONTROL_RE.search(text.plain):
+        return text
+    cuts = sorted({span.start for span in text.spans} | {span.end for span in text.spans})
+    escaped = text.blank_copy()
+    for part in text.divide(cuts):
+        # Cut at every span edge, each part's spans cover it whole.
+        piece = printable(part.plain)
+        escaped.append_text(
+            Text(piece, style=part.style, spans=[Span(0, len(piece), s.style) for s in part.spans])
+        )
+    return escaped
 
 
 def _styled_text(value: str, style: str | None) -> Text:

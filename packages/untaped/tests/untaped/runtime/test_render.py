@@ -504,3 +504,27 @@ def test_screen_tokens_do_not_change_tables(name: str, tty: bool, view: str) -> 
         return collection(ui, records, fmt="table"), detail(ui, records[0], fmt="table")
 
     assert render(full) == render(bare)
+
+
+def test_a_styled_text_shows_control_characters_escaped_and_keeps_its_styles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from rich.text import Text
+
+    from untaped.runtime.render import render_styled
+
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    text = Text.assemble(("ok ", "green"), ("a\x1b]52;c;eA==\x1b\\b", "red"), " end")
+    out = render_styled(text, colorize=True)
+    assert "\x1b]" not in out and "\x1b\\" not in out
+    assert "\x1b[32mok \x1b[0m\x1b[31ma\\x1b]52;c;eA==\\x1b\\b\x1b[0m end" in out
+
+
+def test_headers_and_list_keys_show_control_characters_escaped() -> None:
+    row = {"k\x1b]0;x\x07": 1}
+    assert "\x1b" not in _table([row])
+    assert "k\\x1b]0;x\\x07: 1" in detail(Ui(), row, fmt="table")
+
+
+def test_a_table_cell_still_collapses_whitespace_controls_to_a_space() -> None:
+    assert "a b c" in _table([{"body": "a\rb\x0cc"}])

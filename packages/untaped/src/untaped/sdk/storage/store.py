@@ -554,12 +554,15 @@ class _SqliteInUse:
         if self._held:
             return
         for _attempt in range(_RETRIES):
+            before = None
             try:
                 lock = self._lock()
                 self._path.touch()  # there before the stat (an empty file is a database to SQLite)
                 before = _inode(self._path)
                 lock.acquire_read(timeout=_WAIT)
             except (TimeoutError, OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+                if isinstance(exc, OSError) and before is not None and _inode(self._path) != before:
+                    continue  # filelock refuses a database a pruner moved aside while this waited
                 # A filesystem or damaged .inuse that refuses the lock: the layout runs unprotected.
                 _LOG.debug("could not hold the in-use lock %s: %s", self._path, exc)
                 return

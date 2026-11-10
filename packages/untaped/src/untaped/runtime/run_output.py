@@ -463,7 +463,7 @@ class Diagnostics:
         if isinstance(text, Sequence):  # records: a Text is no sequence
             self._records(cast("Sequence[BaseModel]", text), hint=hint, unmuted=unmuted)
             return
-        tail = "" if hint is None else f"\n{HINT_PREFIX}{hint}"
+        tail = "" if hint is None else f"\n{HINT_PREFIX}{printable(hint)}"
 
         def styled(color: bool) -> str:
             return render_styled(text, colorize=color) + tail
@@ -478,7 +478,7 @@ class Diagnostics:
 
         if not records:
             return
-        tail = "" if hint is None else f"\n{HINT_PREFIX}{hint}"
+        tail = "" if hint is None else f"\n{HINT_PREFIX}{printable(hint)}"
         plain = stderr_table(records, colorize=False, plain=True)  # what JSON diagnostics carry
         self._sink().emit(
             Message(level="info", message=plain, hint=hint),
