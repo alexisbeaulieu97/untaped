@@ -23,6 +23,9 @@ single record. `pipe` and `raw` print one line per record. Only a live
 stream (`--follow`) prints json as one object per line (NDJSON).
 `--format tree`, where a command offers it, draws the same records for a
 person; scripts read json, yaml or pipe.
+Text for a person (tables, list and detail views, stderr messages) shows
+control characters escaped (`\x1b`) so a value can't drive the terminal;
+json, yaml, raw and pipe keep every value verbatim.
 
 ### Envelope format
 
