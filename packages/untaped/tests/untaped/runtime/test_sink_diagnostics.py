@@ -103,6 +103,17 @@ def test_table_format_keeps_text(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_an_error_shows_control_characters_escaped(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("UNTAPED_FORMAT", raising=False)
+
+    def _hostile() -> None:
+        raise ConfigError("server said: \x1b]0;title\x07done", category="failed")
+
+    result = _run(_hostile, ["--format", "table"])
+
+    assert result.stderr == "error: server said: \\x1b]0;title\\x07done\n"
+
+
 def test_a_command_s_own_structured_default_keeps_text(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("UNTAPED_FORMAT", raising=False)
 
