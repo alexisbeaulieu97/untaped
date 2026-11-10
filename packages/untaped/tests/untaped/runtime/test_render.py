@@ -331,6 +331,30 @@ def test_wide_table_cells_end_in_an_ellipsis_instead_of_wrapping(
     assert "…" in out
 
 
+#: An OSC title change, a colour and a C1 CSI: a value someone else wrote.
+_ESCAPES = "a\x1b]0;title\x07\x1b[31mred\x9b2J"
+
+
+@pytest.mark.parametrize("view", ["table", "list"])
+def test_human_views_show_control_characters_escaped(view: str) -> None:
+    theme = BUILTIN_THEMES["default"].model_copy(update={"collection_view": view})
+    out = collection(Ui(theme=theme), [{"name": _ESCAPES}], fmt="table")
+    assert "\x1b" not in out and "\x07" not in out and "\x9b" not in out
+    assert "a\\x1b]0;title\\x07\\x1b[31mred\\x9b2J" in out
+
+
+def test_detail_view_shows_control_characters_escaped() -> None:
+    out = detail(Ui(), {"summary": _ESCAPES, "body": "line\r\nnext"}, fmt="table")
+    assert "\x1b" not in out and "\r" not in out
+    assert "summary: a\\x1b]0;" in out
+
+
+def test_structured_and_raw_formats_keep_control_characters() -> None:
+    rows = [{"name": _ESCAPES}]
+    assert json.loads(_render(rows, fmt="json")) == rows
+    assert _render(rows, fmt="raw") == _ESCAPES
+
+
 def test_table_header_is_not_rich_markup() -> None:
     out = _table([{"[bold]x": 1}])
     assert "[bold]x" in out

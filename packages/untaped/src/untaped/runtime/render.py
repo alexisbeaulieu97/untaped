@@ -116,7 +116,7 @@ def render_message(
     symbol = theme.symbols.get(kind, DEFAULT_SYMBOLS[kind])
     prefix = f"{symbol} " if symbol else ""
     label = f"{kind}: " if kind in {"warning", "error"} else ""
-    rendered = f"{prefix}{label}{text}"
+    rendered = f"{prefix}{label}{printable(text)}"
     style = _role_style(theme, kind, colorize=colorize)
     if style is None:
         return rendered
@@ -402,7 +402,15 @@ _UTC_FRACTION_RE = re.compile(r"([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0
 
 
 def _flat(value: Any) -> str:
-    """A value as table or list-view text: flat, with timestamps to the second."""
+    """A value as table or list-view text: flat, with timestamps to the second.
+
+    Control characters show escaped (:func:`printable`): a value someone else
+    wrote, such as a ticket summary, never drives the terminal.
+    """
+    return printable(_flat_text(value))
+
+
+def _flat_text(value: Any) -> str:
     if isinstance(value, datetime):
         value = _utc(value)
     if isinstance(value, str) and (match := _UTC_FRACTION_RE.fullmatch(value)):
@@ -411,7 +419,7 @@ def _flat(value: Any) -> str:
         return ", ".join(f"{key}={text}" for key, text in _flat_pairs(value, prefix=""))
     if isinstance(value, list | tuple):
         separator = "; " if any(isinstance(item, Mapping) for item in value) else ", "
-        return separator.join(text for item in value if (text := _flat(item)))
+        return separator.join(text for item in value if (text := _flat_text(item)))
     return _render_cell(value)
 
 
@@ -419,7 +427,7 @@ def _flat_pairs(mapping: Mapping[str, Any], *, prefix: str) -> Iterator[tuple[st
     for key, value in mapping.items():
         if isinstance(value, Mapping):
             yield from _flat_pairs(value, prefix=f"{prefix}{key}.")
-        elif text := _flat(value):
+        elif text := _flat_text(value):
             yield f"{prefix}{key}", text
 
 
@@ -472,8 +480,24 @@ def render_styled(text: Text | str, *, colorize: bool, truncate: bool = False) -
     newline.
     """
     return _render_rich(
-        text if isinstance(text, Text) else Text(text), colorize=colorize, truncate=truncate
+        text if isinstance(text, Text) else Text(printable(text)),
+        colorize=colorize,
+        truncate=truncate,
     )
+
+
+#: C0 controls but tab and newline, DEL and C1 controls: what can drive a terminal.
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def printable(text: str) -> str:
+    """``text`` with every control character but tab and newline shown escaped (``\\x1b``).
+
+    Human output (tables, list views, messages) passes server and repository
+    text through it, so an escape sequence in a value is shown, never run by
+    the terminal. Structured and raw output keep values verbatim.
+    """
+    return _CONTROL_RE.sub(lambda match: f"\\x{ord(match[0]):02x}", text.replace("\r\n", "\n"))
 
 
 def _styled_text(value: str, style: str | None) -> Text:

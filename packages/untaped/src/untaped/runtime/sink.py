@@ -46,7 +46,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 
 from untaped.runtime.progress_stack import Mode, hold_screen, open_task, release_screen, write
 from untaped.runtime.redaction import redact_url_password
-from untaped.runtime.render import MessageKind, render_message, should_colorize
+from untaped.runtime.render import MessageKind, printable, render_message, should_colorize
 from untaped.runtime.theme import BUILTIN_THEMES
 from untaped.sdk._run import OutputPolicy, recorder
 from untaped.sdk._streams import stream_is_tty
@@ -87,11 +87,13 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
     An ``info``, ``success`` or ``warning`` message and a deprecation render
     through the theme (``theme``: the policy's, else the default); its
     ``hint:`` line, a failure, a debug line and a stale-data line do not.
+    Control characters in any of them show escaped (:func:`printable`).
     """
     level = _level(diagnostic)
     if isinstance(diagnostic, Debug):
-        return f"DEBUG {diagnostic.logger}: {diagnostic.message}"
+        return printable(f"DEBUG {diagnostic.logger}: {diagnostic.message}")
     message = diagnostic.message
+    hint = None if diagnostic.hint is None else printable(diagnostic.hint)
     themed = _themed_level(diagnostic)
     if themed is not None:
         line = render_message(
@@ -100,12 +102,13 @@ def _text(diagnostic: Diagnostic, *, theme: ThemeSpec | None, color: bool) -> st
             theme=theme or BUILTIN_THEMES["default"],
             colorize=color,
         )
-        return line if diagnostic.hint is None else f"{line}\n{HINT_PREFIX}{diagnostic.hint}"
+        return line if hint is None else f"{line}\n{HINT_PREFIX}{hint}"
     if isinstance(diagnostic, Failure) and diagnostic.item is not None:
         message = f"{diagnostic.item}: {message}"
+    message = printable(message)
     line = f"{level}: {message}" if level in ("error", "warning", "hint") else message
-    if diagnostic.hint is not None:
-        line += f"\n{HINT_PREFIX}{diagnostic.hint}"
+    if hint is not None:
+        line += f"\n{HINT_PREFIX}{hint}"
     return line
 
 

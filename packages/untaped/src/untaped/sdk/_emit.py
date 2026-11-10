@@ -45,7 +45,9 @@ def report_declined(exc: OperationCancelledError) -> None:
     It counts toward the exit code like any failure.
     """
     # A declined confirmation is the user's choice, not an error: no prefix.
-    current_sink().emit(Failure.from_exception(exc), rendered=str(exc))
+    from untaped.runtime.render import printable  # noqa: PLC0415 - rendering is heavy
+
+    current_sink().emit(Failure.from_exception(exc), rendered=printable(str(exc)))
 
 
 @overload
