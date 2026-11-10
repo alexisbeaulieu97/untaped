@@ -99,10 +99,18 @@ def _hermetic_environment(tmp_path_factory: pytest.TempPathFactory) -> Iterator[
 
 @pytest.fixture(autouse=True)
 def _isolate_config_registry_for_tests() -> Iterator[None]:
-    """Reset the registered config sections, and any loaded contract providers, around each test."""
-    reset_config_registry()
-    _forget_contract_providers()
-    yield
+    """Reset the registered config sections, and any loaded contract providers, around each test.
+
+    The composition a test leaves is put back as it found it too: a later
+    ``kept_composition`` block re-registers the remembered composition, so a
+    test's plugins would come back in another test's registry.
+    """
+    from untaped.runtime import bootstrap  # noqa: PLC0415 - the root is heavy; pay only on use
+
+    with bootstrap.kept_composition():
+        reset_config_registry()
+        _forget_contract_providers()
+        yield
     reset_config_registry()
     _forget_contract_providers()
 
