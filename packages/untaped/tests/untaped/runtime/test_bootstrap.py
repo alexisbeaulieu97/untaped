@@ -125,6 +125,34 @@ def test_version_resolves_unified_distribution_lazily(
     assert looked_up == ["untaped"]
 
 
+class Shelf(Group):
+    """Hold the ``who`` command one level down."""
+
+    commands = (Who,)
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        ["config", "edit"],  # a core leaf, declared
+        ["config"],  # a core group
+        ["ext"],  # a plugin
+        ["ext", "who"],  # a plugin's leaf
+        ["ext", "shelf"],  # a plugin's group
+        ["ext", "shelf", "who"],  # a leaf in a plugin's group
+    ],
+)
+def test_every_command_prints_untapeds_version(
+    monkeypatch: pytest.MonkeyPatch, words: list[str]
+) -> None:
+    monkeypatch.setattr(metadata, "version", lambda distribution: f"{distribution} 9.8.7")
+    plugin = make_plugin("ext", settings=_ExtProfile, commands=(Who, Shelf))
+    root = bootstrap.build_root_app(candidates=[plugin_candidate(plugin)])
+    result = CliInvoker().invoke(root.meta, [*words, "--version"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "untaped 9.8.7\n"
+
+
 def test_missing_version_metadata_is_config_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def missing(distribution: str) -> str:
         raise metadata.PackageNotFoundError(distribution)

@@ -338,6 +338,7 @@ def build_root_app(
     _mount_disabled(root, result)
     docs_footer(root, "untaped docs")
     root.version = _resolve_version
+    _carry_version(root)
     root.config = (apply_default_format,)
     skills = composed_skills(result)
     _install_root_callback(
@@ -411,6 +412,7 @@ class _LazyPluginCommand(CommandSpec):
         built = build_plugin_app(self._plugin)
         app = _unbuildable_app(built) if isinstance(built, QuarantineRecord) else built
         _apply_parent_defaults_to_app(app, self._mount_parent)
+        _carry_version(app)
         for flag in chain(app.help_flags, app.version_flags):
             app[flag].show = False
         if app._name_transform is None:
@@ -421,6 +423,27 @@ class _LazyPluginCommand(CommandSpec):
         _docs_footers(app, self._plugin.name)
         self._resolved = app
         return app
+
+
+def _carry_version(app: App) -> None:
+    """Give every command under ``app`` that names no version of its own ``app``'s.
+
+    Cyclopts copies a parent's version only onto a sub-app mounted after it
+    is set, and a command without one prints the version of the package that
+    built it (cyclopts' own, for a mounted declaration). Unresolved lazy
+    commands are skipped; each carries the version on when it resolves.
+    """
+    seen: set[int] = set()
+    todo = [app]
+    while todo:
+        each = todo.pop()
+        if id(each) in seen:
+            continue
+        seen.add(id(each))
+        for _, sub in children(each, resolve=False):
+            if sub.version is None:
+                sub.version = each.version
+            todo.append(sub)
 
 
 def _docs_footers(app: App, name: str) -> None:
