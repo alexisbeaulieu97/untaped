@@ -52,7 +52,7 @@ How untaped is.
 - (4gh) When an [asker] asks for one and several [plugin]s fill the [contract], a [choice] decides which answers.
 - (7mq) When an [asker] asks for one, several [plugin]s fill the [contract] and no [choice] decides, untaped tells the [asker] that several could answer.
 - (hhp) When no [plugin] fills the [contract], untaped tells the [asker] that nothing could answer.
-- (6d9) Every ask is answered by an [instance].
+- (6d9) Every ask is answered by an [instance], or by untaped for a [contract] about untaped itself.
 - (sfh) Either side of an ask can leave it at any time.
 - (68t) untaped tells the other side of an ask when one side has left.
 - (h8c) While untaped runs, an [instance] decides when it stops running.
@@ -99,11 +99,10 @@ How untaped is.
 - (fkw) A [plugin] has at most one [staying] [instance] at a time.
 - (g7j) A [plugin] fills each [contract] its folder says it can be started for.
 - (drf) A [staying] [instance] can state that it answers a [contract] now.
-- (46q) A [staying] [instance] can take that statement back.
-- (kgd) What a [staying] [instance] states lasts until it takes it back or stops running.
+- (46q) A [staying] [instance] takes that statement back by leaving that ask.
 - (5dp) A [plugin] fills each [contract] its [staying] [instance] states it answers.
 - (b4m) untaped reads the [plugin]s' folders when it starts.
-- (wzx) The [host] can tell untaped to read them again.
+- (wzx) An [instance] can ask untaped to read the [plugin]s' folders again.
 - (r82) untaped refuses a [staying] [instance]'s statement for a [contract] that its [plugin]'s folder marks as [per-ask].
 - (sxq) The [host] is the [staying] [instance] of its [plugin].
 - (5ct) untaped gives the [answerer] of an ask a name for that ask.
@@ -111,3 +110,6 @@ How untaped is.
 - (xck) untaped refuses an ask that says neither which ask it is made for nor that it is made for none.
 - (9th) The [chain] of an ask made for another ask is that ask's [chain], followed by that ask.
 - (9c8) The [chain] of an ask made for none is empty.
+- (6rp) untaped fills the [contract]s that are about untaped itself.
+- (44h) An [instance] can ask untaped which [plugin]s are installed and what each fills.
+- (qxb) A [staying] [instance] states that it answers a [contract] by making an ask to untaped and keeping it open.
