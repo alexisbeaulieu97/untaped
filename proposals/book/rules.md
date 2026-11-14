@@ -115,3 +115,6 @@ How untaped is.
 - (qxb) A [staying] [instance] states that it answers a [contract] by making an ask to untaped and keeping it open.
 - (9wv) Two copies of a [contract] match when they are exactly the same.
   - fine: Two plugins share the same copy of the [contract] for getting a secret and differ on another [contract]; one asks the other for a secret and is answered, and only an ask for the other [contract] is left without an answerer.
+- (jxk) A [contract] describes the one thing that is asked for.
+- (99t) A [contract] describes each kind of thing that can come back.
+- (ct6) A [contract] describes the ways its [answerer] can fail.
