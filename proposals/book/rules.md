@@ -77,6 +77,7 @@ How untaped is.
 - (xr9) When untaped cannot start the [instance] an ask needs, it tells the [asker].
 - (9wz) untaped tells an [instance] of each ask it is to answer, when the ask is made.
 - (vp7) An [instance] takes an ask when it chooses.
+  - fine: A plugin's library takes sixteen asks at a time and leaves the rest waiting; a thousand asks at once are all answered, and two plugins that ask each other for ever by mistake stop at a few dozen open asks.
 - (9vg) An ask that has not been taken waits.
 - (v67) A [plugin] does not say what it will ask for.
 - (zmw) A [plugin] is installed when it is present in a place the [host] names.
@@ -105,3 +106,8 @@ How untaped is.
 - (wzx) The [host] can tell untaped to read them again.
 - (r82) untaped refuses a [staying] [instance]'s statement for a [contract] that its [plugin]'s folder marks as [per-ask].
 - (sxq) The [host] is the [staying] [instance] of its [plugin].
+- (5ct) untaped gives the [answerer] of an ask a name for that ask.
+- (mdx) An ask says which ask it is made for, by the name untaped gave that ask, or says that it is made for none.
+- (xck) untaped refuses an ask that says neither which ask it is made for nor that it is made for none.
+- (9th) The [chain] of an ask made for another ask is that ask's [chain], followed by that ask.
+- (9c8) The [chain] of an ask made for none is empty.
