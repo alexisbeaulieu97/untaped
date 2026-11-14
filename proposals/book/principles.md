@@ -1,70 +1,82 @@
-# Principles: how we design. One entry per line; "against:" and "fine:" lines under an entry are its examples. A violation must be visible; an exception can be justified.
+# Principles
 
-A plugin refers to other plugins only through their public interfaces.
-A capability that two plugins we maintain both need has one owner.
-Code that plugins share is a plain library only when it does nothing but compute a result from its arguments.
-against: github and gitlab both import `http_session()` from `untaped_common`, a plain package that opens their network connections.
-against: github and gitlab both import `cached()` from a plain package that keeps answers in a file between runs.
-against: github and gitlab both import `page_size()` from a plain package that reads it from the user's configuration.
-fine: github and gitlab both import `plural()` from a plain package to word their messages.
-A plugin's public interface is made only of [term]s and [contract]s.
-A public interface asks for and returns only what every implementation of it could supply.
-against: git's credential contract takes `helper: GitCredentialHelper`, so a credential provider must speak git's helper protocol to answer.
-against: git's `RepoSource` contract returns a required `gh_node_id` for each repo, which only GitHub has.
-fine: git's credential contract takes `host: str` and returns a `Secret` term, which a keychain, a vault or git's own helper can all supply.
-A plugin uses a capability only through what every implementation of it shares.
-against: The `sync` operation takes github's own `GitHubRepo` term, which adds `fork_parent` to git's `Repo`.
-fine: The github plugin's own `gh-stats` operation takes github's `GitHubRepo` term.
-A part of untaped depends on a [contract], never on which plugin fills it.
-against: The CLI host refuses to start unless the `untaped-pydantic` plugin is installed, even when another plugin fills the parse contract.
-fine: The CLI host asks for whatever plugin fills the parse contract; pydantic's or msgspec's both serve.
-Plugins refer to each other's interfaces by type, never by name.
-No part of a [term] or of a [contract] is left untyped.
-A plugin acts only on what it is given.
-against: The `clone` operation prompts for a missing token only when `sys.stdin.isatty()` is true, and fails otherwise.
-against: The GitHub provider returns fewer fields when `current_host() == "mcp"`, to keep agents' context small.
-fine: The `audit` operation shows a repo's visibility only to callers allowed to see it; the caller's rights come in as an input, `caller: Rights`.
-A plugin declares nothing about anything but itself and what it depends on.
-against: The GitHub provider declares `used_by = (Sync, Report)`, naming the operations that call it.
-fine: Add a field `archived: bool | None` to git's `Repo` term: whether the repository is archived on its forge, None when it is on none.
-A [term] holds only facts about the thing it describes.
-against: Add a field `fetched_at: UtcTimestamp` to git's `Repo` term: when the provider fetched it.
-fine: Add a field `stars: int | None` to git's `Repo` term: how many stars the repository has on its forge, None when it is on none.
-A field of a [term] is optional only when the thing it describes can lack it.
-against: Make every field of git's `Repo` term optional, so providers that know less can still return one.
-fine: Make `remote_url` on git's `Repo` term `GitUrl | None`, since a repository that exists only on disk has no remote.
-[term]s and [contract]s say nothing about what is shown, how it is shown, or how a value is entered.
-against: The `List` operation marks its `board_id` input with `Short("-b")` from the CLI's terms.
-against: Mark the `url` field of git's `Repo` term with `Column(width=40)`, so the CLI's table shows it at a readable width.
-against: The `clone` operation marks its `token` input with `PromptIfMissing`, so a terminal asks for it when it is not given.
-fine: The `List` operation's docstring says which repositories it lists.
-What an [operation]'s [contract] says about it states facts, never what someone should do about them.
-against: The `delete` operation's contract marks it with `Confirm`, so whoever runs it is asked for consent first.
-against: The `deploy` operation's contract marks it `HumanOnly`, so agents do not run it.
-fine: The `delete` operation's contract marks it `Irreversible`: what it removes cannot be restored.
-fine: git's `RepoSource.repos()` is declared read-only: it changes nothing.
-fine: The agent plugin's settings let a user keep agents away from operations marked `Irreversible`.
-[term]s and [contract]s never depend on code that does the work.
-against: git's credential contract returns the token as a `pydantic.SecretStr`.
-against: git's `Repo` term types `name` as `Annotated[str, annotated_types.Predicate(is_valid_slug)]`.
-fine: git's `Repo` term types `stars` as `Annotated[int, annotated_types.Ge(0)]`.
-fine: Add a field `pushed_at: datetime | None` to git's `Repo` term: when the repository was last pushed to, None when never.
-untaped gives a plugin we maintain nothing that another plugin could not have.
-against: The kernel skips the signature check for plugins whose manifest sets `first_party = true`.
-against: When two plugins fill the same slot, the resolver prefers the one from the untaped repository.
-against: Installing the package that provides untaped's kernel also installs our github plugin.
-fine: A bundle of our plugins, installed only when someone asks for it, published like any other bundle.
-The kernel holds only what it needs to load plugins, route calls between them, and let plugins act on both.
-against: The kernel defines a `GitUrl` term so that the git, github and gitlab plugins all share one.
-against: The kernel provides `retry()` for plugins to wrap their network calls in.
-fine: The kernel finds the plugin that fills the slot an operation asks for and passes the call to it.
-fine: The kernel tells every plugin that handles `CallFinished` when a call it routed has finished.
-The kernel decides nothing that a plugin could decide.
-against: When two plugins fill the same slot, the kernel picks the one installed first.
-fine: When two plugins fill the same slot, the kernel reports `Ambiguous` and asks the plugins that fill its resolver extension.
-Only the [user] limits what a way of driving untaped reaches.
-against: The MCP host exposes only the operations listed in its own `EXPOSED = (List, Clone)`.
-against: Only the CLI can filter `list` by owner; the MCP host returns everything.
-fine: The agent plugin's settings let a user keep agents away from operations marked `Irreversible`.
-fine: The CLI shows the result of `list` as a table, and the MCP host returns it as JSON.
-fine: The user installs a schema plugin, and from then on every host refuses calls whose inputs break their terms' constraints.
+How we design.
+
+- (fms) Nothing but a [choice] depends on a particular [plugin].
+  - against: The review-times plugin's declaration says that it needs the github plugin.
+  - against: The [contract] for getting a credential says that the keychain plugin fills it.
+  - fine: An org's plugin ships the [choice] that the git-cli plugin stores cloned repositories.
+  - fine: When two installed plugins can each store cloned repositories and no [choice] says which, the [kernel]'s report names both.
+  - fine: The settings of whoever runs untaped hold the [choice] that the git-cli plugin stores cloned repositories.
+- (qd6) Which [plugin] answers an ask that several could answer, where one is wanted, is decided only by a [choice].
+  - against: Each plugin's declaration gives it a priority, and where several could be used the one with the highest priority is.
+  - against: A plugin that asks for the one store of cloned repositories is given every candidate and uses the first whose name it recognises.
+  - fine: With two plugins installed that can list repositories, a plugin asks both and uses both answers.
+  - fine: Two installed plugins are both called "github" for short, and a [choice] says which of them the short name means.
+  - fine: An org's plugin ships a [choice], and whoever runs untaped has another [choice] in their settings for a different need.
+  - fine: Two versions of a keychain plugin are installed and the asker's copy of the [contract] matches only one; that one answers, and the [kernel]'s table shows which of the two matches and which does not.
+- (s4f) No [choice] outranks another.
+  - against: Where a person's settings and an org's plugin each hold a [choice] for the same need and they differ, the person's is used.
+  - against: Where two installed plugins each ship a [choice] for the same need and they differ, the one from the plugin installed last is used.
+  - fine: Where a person's settings and an org's plugin each hold a [choice] for the same need and they differ, untaped names both, says where each comes from, and stops.
+  - fine: A person's settings and an org's plugin each hold a [choice] for the same need, both name the git-cli plugin, and it is used.
+- (tgc) The [kernel] gives no [plugin] anything that another [plugin] could not have.
+  - against: The [kernel] skips its check of a plugin's declaration when the plugin is signed by untaped's authors.
+  - against: The command-line plugin reads the [kernel]'s table of who fills what through a door that is closed to other plugins.
+  - fine: A bundle installs the [kernel] together with a set of plugins, and anyone can publish another bundle the same way.
+  - fine: Any plugin can ask the [kernel] which plugins are installed and what each fills.
+- (j4p) The [kernel] only keeps the table of which [plugin] fills which [contract], starts and stops [plugin]s, carries what they ask and answer, reports what it did not carry, and answers what is asked about its own table and open asks.
+  - against: The [kernel] listens on a network port so that programs on other machines can ask through it.
+  - against: The [kernel] tries a failed ask three more times before reporting the failure.
+  - against: The [kernel] refuses a failure that a plugin sends because its name is not on a list the protocol fixes.
+  - against: Before carrying an ask, the [kernel] asks certain plugins whether it may carry it, and refuses the ask when one of them says no.
+  - against: The [kernel] sends a plugin that asks for it a running account of every ask as it opens and ends.
+  - against: The [kernel] keeps a token it carried so that later asks need not fetch it again.
+  - fine: The [kernel] keeps the table of which plugin fills which [contract].
+  - fine: The [kernel] starts a plugin when something asks for a [contract] its folder says it can be started for.
+  - fine: When its [host] stops running, the [kernel] ends every [instance] it started.
+  - fine: A door plugin listens for other programs, on this machine or another, and passes their asks to the [kernel].
+- (6sh) What a [plugin] fills can change while it runs.
+  - against: What each plugin fills is read from its declaration file when the [kernel] starts, and a running plugin can add nothing to it.
+  - against: After a web page disconnects, the door plugin has no way to tell the [kernel] that it has ceased to fill the [contract] for giving approvals.
+  - fine: A door plugin begins to fill the [contract] for giving approvals when a web page connects to it, and ceases when the page disconnects.
+  - fine: A plugin's folder says what it can be started for, and while it runs its [staying] [instance] adds to that.
+- (298) No two [plugin]s and no two [contract]s that different people coined have the same full name.
+  - against: A contract's whole name is "repos.list", so two authors who each invent a contract for listing repositories give theirs the same name.
+  - fine: Every full name starts with an address of whoever coined it, and an org's bitbucket plugin fills a [contract] whose name starts with another person's address.
+- (3bg) A [plugin] acts only on what it is given.
+  - against: The clone command prompts for a missing token only when it finds that a terminal is attached, and fails otherwise.
+  - against: The github plugin reads the address of the network proxy from an environment variable.
+  - fine: The audit command shows a repository's visibility only to callers allowed to see it, and the caller's rights come in with the request.
+- (r9z) A [contract] asks for and returns only what every [plugin] that fills it could supply.
+  - against: The [contract] for listing repositories requires a GitHub node id for each repository.
+  - against: The [contract] for getting a credential takes a handle to git's credential helper, so whatever fills it must speak that helper's protocol.
+- (9sv) What a [contract] describes holds only facts about the thing described.
+  - against: The repository described by the [contract] for listing repositories gains a field for when the plugin fetched it.
+  - fine: The repository described by the [contract] for listing repositories gains an optional field for the name of its default branch, absent for a repository that has none.
+- (fnb) A field in a [contract] is optional only when the thing it describes can lack it.
+  - against: Every field of the repository in the [contract] for listing repositories is made optional, so that plugins that know less can still answer.
+  - fine: The remote address of the repository in the [contract] for listing repositories is optional, since a repository that exists only on disk has none.
+- (dzh) A [contract] says nothing about what is shown, how it is shown, or how a value is entered.
+  - against: The [contract] for listing repositories marks its owner input with the short flag "-o".
+  - against: The [contract] for listing repositories gives the address field a column width of 40.
+  - against: The [contract] for cloning marks its token input "prompt if missing".
+  - fine: The description in the [contract] for listing repositories says which repositories it lists.
+- (9sm) What a [contract] says about what it does states facts, never what someone should do about them.
+  - against: The [contract] for deleting a repository is marked "confirm first".
+  - against: The [contract] for deploying is marked "humans only".
+  - fine: The [contract] for deleting a repository is marked "cannot be undone".
+  - fine: The [contract] for listing repositories is marked as changing nothing.
+  - fine: A front end asks every plugin that fills a policy [contract] before it runs a command, and does not run it when one of them refuses.
+  - fine: The settings of an agent's front end let a person keep agents away from anything marked "cannot be undone".
+- (w6c) The [kernel] catches only a [plugin]'s honest mistakes that nothing else could notice, and has nothing whose purpose is to withstand a [plugin] that means harm.
+  - against: The [kernel] refuses a plugin's ask once that plugin has a thousand asks open, so that one plugin cannot exhaust it.
+  - against: The [kernel] refuses a message longer than a set size, so that a plugin cannot fill its memory.
+  - against: The [kernel] starts only plugins whose files carry a signature it accepts.
+  - fine: Two plugins ask each other in a loop by mistake; only the [kernel] sees the whole chain, and it refuses the ask that closes the loop.
+- (637) The [kernel] uses nothing of the place it runs in but what the [host] gives it.
+  - against: The [kernel] reads a settings file from the home folder of whoever runs it.
+  - against: The [kernel] reads an environment variable to find the network proxy.
+  - against: The [kernel] finds the plugins to start by looking in the home folder of whoever runs it, without being told to.
+  - fine: The [host] names the folders to look in for plugins.
+  - fine: A keychain plugin fills the [contract] for getting a secret, and the [kernel] carries the answer like any other.

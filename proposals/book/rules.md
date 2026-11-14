@@ -1,0 +1,107 @@
+# Rules
+
+How untaped is.
+
+- (cm4) untaped ends when the [host] stops running.
+  - against: The [kernel] stays running after the command that started it has finished, so that the next command starts faster.
+  - against: The [kernel] comes with a serve command of its own that keeps it running after its [host] has stopped.
+  - fine: A program that serves a web page starts the [kernel], which ends when that program ends.
+  - fine: A single command starts the [kernel], which ends when the command has finished.
+- (s2v) untaped refuses an ask that would have a [plugin] answer a [contract] it is already answering in the same [chain].
+  - against: The first plugin asks the second for a list, the second asks the first for the same list in order to answer, and the [kernel] carries each ask until the machine can start no more work.
+  - fine: A front end asks for a list of repositories, the github plugin asks for a token in order to answer, and the keychain plugin asks that same front end to put a question to the person.
+  - fine: The first plugin asks the second for a list, the second asks the first for the same list in order to answer, and the [kernel] refuses the second ask and names both plugins in the order they asked.
+- (h32) untaped gives the [answerer] of an ask the [chain] of that ask.
+  - against: The plugin asked to give an approval receives the request to approve and nothing about what asked for it.
+  - against: A plugin that fills the [contract] for making a [choice] is told which plugins could be used, and not which asks led to the need.
+  - fine: The plugin asked to give an approval receives, with the request, that an agent's front end asked for a delete and that the delete asked for this approval.
+- (qfd) untaped looks for [plugin]s only in the places that the [host] names.
+  - against: The [kernel] searches every folder on the system's program path for programs whose names begin with "untaped-".
+  - against: The [kernel] reads Python's list of installed packages to find plugins.
+  - against: When the [host] names no place, the [kernel] looks in a folder under the person's home folder.
+  - fine: A command-line front end starts the [kernel] and names two places: the person's own plugin folder and a folder their org shares.
+  - fine: A test starts the [kernel] and names a temporary folder that holds two plugins.
+- (gh6) untaped learns what a [plugin] fills only from its folder and from what its [staying] [instance] states.
+  - against: untaped starts every installed plugin when it starts, to ask each what it fills.
+  - against: untaped keeps its own record of what a plugin filled the last time it ran, and uses it without reading the folder.
+  - fine: The keychain's folder says it can be started for the [contract] for getting a secret, and untaped starts it for the first ask without having run it before.
+  - fine: A plugin's library writes the folder's list of [contract]s from the plugin's own code when the plugin is built.
+- (78d) [kernel] leaves out, for one ask, every [plugin] whose copy of the [contract] does not match the asker's copy.
+  - against: Two versions of a keychain plugin are installed and only the older one's copy matches the github plugin's; the [kernel] counts both and reports that nothing says which to use.
+  - fine: Two versions of a keychain plugin are installed and only the older one's copy matches the github plugin's; so only the older one can answer the github plugin, and it does, with no [choice] needed.
+  - fine: Two installed plugins fill a [contract] and neither one's copy matches the asker's; the [kernel] tells the asker so, with what differs in each.
+- (39m) [kernel] reads what a [plugin] sends with its own code only, never with an outside package.
+  - against: The [kernel] takes in a well-known outside package for reading JSON, and reads every plugin's messages with it.
+  - fine: The [kernel] uses the Rust project's own package of system-call declarations, of which it keeps a copy, to start and stop plugin processes.
+  - fine: The [kernel]'s unit tests compare its own reading of JSON with that of an outside package kept as a copy, and that package is not in the program that ships.
+- (n5n) [kernel] keeps a copy of every outside package it uses in its own repository.
+  - against: Each time the [kernel] is built, its outside packages are downloaded at whatever version is newest.
+  - against: A change to the [kernel] adds an outside package, and the change is merged without the maintainer having decided on that package.
+  - fine: The maintainer agrees to a newer version of the signal package, and its copy in the repository is replaced in a change that shows what differs.
+- (54q) [kernel] never waits on one side of an ask before serving another ask.
+- (cqx) [kernel] has no limit of its own: when the system it runs on refuses it something, whoever asked is told at once and everything already open carries on.
+- (4ck) [kernel] keeps no time limit on an ask; an asker that will wait no longer leaves.
+- (t4m) [kernel] keeps no log and prints nothing once it runs: what it has to say about an ask goes to the sides of that ask, and the rest is in its table.
+- (qfs) [kernel] has no notion of a version: it only compares copies of a [contract], and two versions of a [plugin] are two [plugin]s.
+- (tz7) A [plugin] fills any number of [contract]s, including none.
+- (7s8) Any number of [plugin]s can fill the same [contract].
+- (cz5) An [asker] can ask for one [answerer].
+- (7zs) An [asker] can ask every [plugin] that fills a [contract].
+- (phb) Asking every [plugin] is one ask to each of them.
+- (snp) When an [asker] asks for one and exactly one [plugin] fills the [contract], that [plugin] answers.
+- (4gh) When an [asker] asks for one and several [plugin]s fill the [contract], a [choice] decides which answers.
+- (7mq) When an [asker] asks for one, several [plugin]s fill the [contract] and no [choice] decides, untaped tells the [asker] that several could answer.
+- (hhp) When no [plugin] fills the [contract], untaped tells the [asker] that nothing could answer.
+- (6d9) Every ask is answered by an [instance].
+- (sfh) Either side of an ask can leave it at any time.
+- (68t) untaped tells the other side of an ask when one side has left.
+- (h8c) While untaped runs, an [instance] decides when it stops running.
+- (mv6) When an [instance] stops running, it has left every ask it was part of.
+- (jjr) When untaped ends, every [instance] it started ends.
+- (6k7) An ask is over when its [asker] leaves it.
+- (ggx) An ask is over when its [answerer] leaves it.
+- (c3j) The [host] is an [instance].
+- (zsg) untaped does not start the [host].
+- (9st) Everything said of an [instance] holds for the [host].
+- (wmg) An [instance] that is answering an ask can make asks of its own.
+- (476) untaped tells the [asker] of an ask it refuses for leading back the [chain] of that ask.
+- (hbq) An ask carries, from its [asker] to its [answerer], what its [contract] says is asked for.
+- (fgz) An ask carries, from its [answerer] to its [asker], what its [contract] says comes back.
+- (shw) What an [asker] sends in an ask is one thing.
+- (qbt) What an [answerer] sends in an ask is any number of things.
+- (829) An [answerer] says when it has sent the last thing of an ask.
+- (b38) untaped does not check [content] against the [contract].
+- (tzd) untaped sets no limit on the size of [content].
+- (qf7) An [answerer] that cannot answer an ask says that it failed.
+- (pmp) What untaped tells an [asker] whose [answerer] left differs from anything an [answerer] can say.
+- (xr9) When untaped cannot start the [instance] an ask needs, it tells the [asker].
+- (9wz) untaped tells an [instance] of each ask it is to answer, when the ask is made.
+- (vp7) An [instance] takes an ask when it chooses.
+- (9vg) An ask that has not been taken waits.
+- (v67) A [plugin] does not say what it will ask for.
+- (zmw) A [plugin] is installed when it is present in a place the [host] names.
+- (7w4) A [plugin] is uninstalled when it is no longer present there.
+- (fmz) untaped does nothing to install or uninstall a [plugin].
+- (vd7) A [plugin] is a folder.
+- (cvp) The folder holds how to start the [plugin].
+- (5xn) The folder holds which [contract]s the [plugin] can be started for, and the kind of each.
+- (c24) The folder holds the [plugin]'s copy of each of those [contract]s.
+- (989) The folder holds whatever the [plugin] needs to run.
+- (pkd) Whoever publishes a [plugin] makes its folder.
+- (k2m) untaped never writes in a [plugin]'s folder.
+- (5f3) An [instance] that states it answers a [contract] gives its copy of that [contract].
+- (z75) An [asker] gives its copy of the [contract] with its ask.
+- (czw) An ask for a [per-ask] [contract] starts a new [instance] of the [plugin].
+- (6pj) An [instance] started for a [per-ask] [contract] answers that ask only.
+- (5nf) An ask for a [staying] [contract] goes to the [plugin]'s [staying] [instance].
+- (3gf) When a [plugin] has no [staying] [instance], an ask for a [staying] [contract] starts one.
+- (fkw) A [plugin] has at most one [staying] [instance] at a time.
+- (g7j) A [plugin] fills each [contract] its folder says it can be started for.
+- (drf) A [staying] [instance] can state that it answers a [contract] now.
+- (46q) A [staying] [instance] can take that statement back.
+- (kgd) What a [staying] [instance] states lasts until it takes it back or stops running.
+- (5dp) A [plugin] fills each [contract] its [staying] [instance] states it answers.
+- (b4m) untaped reads the [plugin]s' folders when it starts.
+- (wzx) The [host] can tell untaped to read them again.
+- (r82) untaped refuses a [staying] [instance]'s statement for a [contract] that its [plugin]'s folder marks as [per-ask].
+- (sxq) The [host] is the [staying] [instance] of its [plugin].

@@ -1,9 +1,41 @@
-# Goals: why untaped exists. One entry per line; "against:" and "fine:" lines under an entry are its examples.
+# Goals
 
-Anyone can install any plugin or write their own, including a replacement for a first-party one.
-Replacing a plugin with another that has the same public interface needs no change to what was built on it.
-against: The `sync` operation imports `GitHubRepos` from the github plugin and calls it directly.
-fine: Add a field `archived: bool | None` to git's `Repo` term: whether the repository is archived on its forge, None when it is on none.
-No way of driving untaped is privileged over another.
-Everything untaped does can run unattended: whatever an [operation] asks can be answered in advance, or another [operation] does the job without asking.
-Nothing in the kernel ties it to untaped's own plugins, so a separate project can build on it.
+Why untaped exists.
+
+- (rww) Apart from the [kernel], anything untaped does is added by installing a [plugin] and removed by uninstalling it, changing nothing else but [choice]s.
+  - against: After the proxy plugin is installed, each plugin that reaches the network must be given the proxy's address in its own settings.
+  - against: Before the jira plugin can describe issues, "issue" is added to the [kernel]'s list of kinds.
+  - fine: An org uninstalls its bitbucket plugin and installs its github plugin, and the workspace plugin lists the repositories on GitHub.
+  - fine: After a second plugin that can store cloned repositories is installed, whoever runs untaped sets which of the two is used.
+  - fine: The jira plugin publishes its own description of what an issue is.
+- (8ds) Whether a [plugin] can be installed never depends on which other [plugin]s are installed.
+  - against: Installing the jira plugin is refused because it needs a newer version of a library than the installed github plugin accepts.
+  - against: A new release of the jira plugin cannot be installed until the github plugin has a release built for the same version of a package they both load.
+  - against: Installing a second plugin that can store cloned repositories is refused until whoever runs untaped says which of the two is used.
+  - fine: The github plugin and the jira plugin each bring their own copy of the same library, in different versions.
+  - fine: The first plugin asks for something the second fills and the second asks for something the first fills; each installs without the other, and neither is started until something asks for what it fills.
+- (4pr) Replacing a [plugin] with another that fills the same [contract]s requires changing nothing but the [choice]s that name it.
+  - against: The workspace plugin lists repositories by calling the github plugin by name.
+  - fine: With the github and bitbucket plugins installed, the workspace plugin asks for every plugin that can list repositories, and lists the repositories of both.
+  - fine: An org replaces the plugin that stores cloned repositories with another, and edits the [choice] its own plugin ships so that it names the new one.
+  - fine: The review-times plugin asks for pull-request review times through a [contract] that only the github plugin fills today.
+- (h84) Nothing untaped does depends on a decision that nobody made.
+  - against: When two installed plugins can each store cloned repositories, the one installed first is used.
+  - against: When two installed plugins can each store cloned repositories, the one that was installed before the other keeps being used.
+  - fine: When something asks for the plugin that stores cloned repositories, two are installed and nothing says which is used, untaped names both and stops.
+  - fine: A second plugin that can store cloned repositories is installed without a word about the first, and the two are named when something next asks for the one that stores them.
+- (fbk) When no installed [plugin] can do what is asked, the [kernel] says so to whoever asked and does nothing in its place.
+  - against: When a plugin asks for everyone who can list repositories and none is installed, the [kernel] answers with an empty list, as it would if sources were installed and had no repositories.
+  - against: With no plugin installed that provides credentials, the [kernel] reads the token from an environment variable itself.
+  - fine: With no plugin installed that provides credentials, the github plugin's commands fail and say that nothing provides credentials.
+  - fine: With no plugin installed that can list repositories, the workspace plugin is told so, and goes on to make an empty workspace because its author chose that.
+  - fine: With no plugin installed that states an org's rules, a plugin that asks whether any rule objects is told that nothing can answer, and proceeds.
+- (7kj) A [plugin] can be written in any programming language.
+  - against: A plugin is a Python package that the [kernel] imports.
+  - fine: An org writes its awx plugin in Python and its proxy plugin in Go.
+  - fine: A library for Python makes writing a plugin in Python shorter, and each plugin that uses it brings its own copy.
+- (f7x) Whatever a [plugin] asks of a person can be answered by a [plugin] instead.
+  - against: The clone command opens a prompt for a missing token, and nothing but typing into that prompt can supply it.
+  - against: Deleting a repository asks "are you sure?" on the terminal, and nothing can give the answer beforehand.
+  - fine: A plugin asks for a token, and a vault plugin answers in place of a prompt.
+  - fine: The delete command asks for an approval; with nothing installed that gives approvals it fails and says that nothing answered, and installing a plugin that gives them lets it run.
