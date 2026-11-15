@@ -125,3 +125,9 @@ How untaped is.
   - fine: A shell author writes the contract for getting a secret in seven lines, from one example.
 - (zp7) A given [contract] can be written in exactly one way.
 - (dwp) An author can write a [contract] as types in their own language and have the file generated.
+- (g7x) A [choice] says, for one [contract], which [plugin] answers an ask for one.
+- (nqm) untaped takes [choice]s only from the [host].
+- (rgv) The [host] states a [choice] by making an ask to untaped and keeping it open.
+- (hwn) untaped never combines, ranks or computes [choice]s.
+- (f55) When the [plugin] a [choice] names cannot answer an ask, untaped tells the [asker] and does not fall back to another [plugin].
+- (ktt) Where a [host]'s [choice]s come from, and which source wins when they differ, is that [host]'s own design.

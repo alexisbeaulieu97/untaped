@@ -5,21 +5,16 @@ How we design.
 - (fms) Nothing but a [choice] depends on a particular [plugin].
   - against: The review-times plugin's declaration says that it needs the github plugin.
   - against: The [contract] for getting a credential says that the keychain plugin fills it.
-  - fine: An org's plugin ships the [choice] that the git-cli plugin stores cloned repositories.
+  - fine: An org's plugin offers the [choice] that the git-cli plugin stores cloned repositories, and the [host] states it.
   - fine: When two installed plugins can each store cloned repositories and no [choice] says which, the [kernel]'s report names both.
-  - fine: The settings of whoever runs untaped hold the [choice] that the git-cli plugin stores cloned repositories.
+  - fine: A settings plugin holds the [choice] that the git-cli plugin stores cloned repositories, and the [host] asks for it and states it.
 - (qd6) Which [plugin] answers an ask that several could answer, where one is wanted, is decided only by a [choice].
   - against: Each plugin's declaration gives it a priority, and where several could be used the one with the highest priority is.
   - against: A plugin that asks for the one store of cloned repositories is given every candidate and uses the first whose name it recognises.
   - fine: With two plugins installed that can list repositories, a plugin asks both and uses both answers.
   - fine: Two installed plugins are both called "github" for short, and a [choice] says which of them the short name means.
-  - fine: An org's plugin ships a [choice], and whoever runs untaped has another [choice] in their settings for a different need.
+  - fine: An org's plugin offers a [choice], a person's settings hold another for a different need, and the [host] states both.
   - fine: Two versions of a keychain plugin are installed and the asker's copy of the [contract] matches only one; that one answers, and the [kernel]'s table shows which of the two matches and which does not.
-- (s4f) No [choice] outranks another.
-  - against: Where a person's settings and an org's plugin each hold a [choice] for the same need and they differ, the person's is used.
-  - against: Where two installed plugins each ship a [choice] for the same need and they differ, the one from the plugin installed last is used.
-  - fine: Where a person's settings and an org's plugin each hold a [choice] for the same need and they differ, untaped names both, says where each comes from, and stops.
-  - fine: A person's settings and an org's plugin each hold a [choice] for the same need, both name the git-cli plugin, and it is used.
 - (tgc) The [kernel] gives no [plugin] anything that another [plugin] could not have.
   - against: The [kernel] skips its check of a plugin's declaration when the plugin is signed by untaped's authors.
   - against: The command-line plugin reads the [kernel]'s table of who fills what through a door that is closed to other plugins.
