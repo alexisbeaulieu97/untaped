@@ -131,3 +131,10 @@ How untaped is.
 - (hwn) untaped never combines, ranks or computes [choice]s.
 - (f55) When the [plugin] a [choice] names cannot answer an ask, untaped tells the [asker] and does not fall back to another [plugin].
 - (ktt) Where a [host]'s [choice]s come from, and which source wins when they differ, is that [host]'s own design.
+- (wf5) A [plugin]'s program is started by untaped, or run directly by something outside untaped.
+- (cx3) A program that was run directly can start untaped.
+- (4bq) untaped never starts by itself.
+- (fcv) untaped is not a [plugin].
+- (pb3) A running program that untaped did not start can ask untaped to take it on as the [staying] [instance] of a [plugin] it names.
+- (mh2) untaped takes on such a program when that [plugin] has no [staying] [instance].
+- (w4h) The [host] is taken on this way when it starts untaped.
