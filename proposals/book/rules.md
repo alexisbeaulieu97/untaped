@@ -118,3 +118,10 @@ How untaped is.
 - (jxk) A [contract] describes the one thing that is asked for.
 - (99t) A [contract] describes each kind of thing that can come back.
 - (ct6) A [contract] describes the ways its [answerer] can fail.
+- (s3m) A [contract] is a file.
+- (649) A [contract] is written in a small text language of untaped's own.
+  - why: in the trial a contract took 7 to 14 lines in it against 51 to 94 in a JSON Schema subset, and both gave identical files from four languages and replies that crossed between all of them. It rests on contracts being read and written by hand, and on about 1,600 lines of generators and a formatter being acceptable to own, 400 more than the JSON Schema subset. It would be reopened if those tools drift apart between languages, or if nobody writes contracts by hand.
+  - against: A plugin carries its contract as 78 lines of JSON Schema that only a tool can write correctly.
+  - fine: A shell author writes the contract for getting a secret in seven lines, from one example.
+- (zp7) A given [contract] can be written in exactly one way.
+- (dwp) An author can write a [contract] as types in their own language and have the file generated.
