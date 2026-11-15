@@ -12,3 +12,4 @@
 - [content]: What the two sides of an ask send each other, as the ask's [contract] describes it.
 - [per-ask]: Said of a [contract] in a [plugin]'s folder when a new [instance] answers each ask for it.
 - [staying]: Said of a [contract] in a [plugin]'s folder when one [instance] answers every ask for it; also said of that [instance].
+- [adopt, adopts, adopted]: untaped adopts a running program it did not start when it counts that program as an [instance] and routes asks to it.

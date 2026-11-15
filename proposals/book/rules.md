@@ -135,6 +135,8 @@ How untaped is.
 - (cx3) A program that was run directly can start untaped.
 - (4bq) untaped never starts by itself.
 - (fcv) untaped is not a [plugin].
-- (pb3) A running program that untaped did not start can ask untaped to take it on as the [staying] [instance] of a [plugin] it names.
-- (mh2) untaped takes on such a program when that [plugin] has no [staying] [instance].
-- (w4h) The [host] is taken on this way when it starts untaped.
+- (pb3) A running program that untaped did not start can ask untaped to [adopt] it as the [staying] [instance] of a [plugin] it names.
+- (mh2) untaped [adopts] such a program when that [plugin] has no [staying] [instance].
+- (w4h) The [host] is [adopted] when it starts untaped.
+- (kqb) An [instance] can be [adopted] by more than one untaped at a time.
+- (jf7) When untaped ends, an [instance] it [adopted] carries on.
