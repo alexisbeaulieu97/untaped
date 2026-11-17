@@ -235,3 +235,33 @@ How untaped is.
   - fine: A plugin gains a new way to fail; an older asker that does not know it is told of a failure, as for any other.
 - (5wb) A copy with a line that untaped cannot read as a field, a kind of thing or a way to fail matches no copy.
   - why: in the trial a hand-written copy with a misspelt word was let through by a rule that was lenient about lines it did not know.
+- (g8n) A [plugin] keeps files only in a place it was given in answer to an ask.
+  - why: in the trials the settings plugin and the keychain asked the front end for a folder of their own, and a test gave each a temporary one; a plugin that works out a place from the home folder or the environment acts on what it was not given.
+  - against: The github plugin keeps its cache in a folder under the person's home folder, which it works out from its own name.
+  - against: A plugin keeps what it has learnt in its own folder, and loses it when a newer version of the folder replaces the old one.
+  - fine: A test starts untaped with a front end that gives every plugin a temporary folder, and nothing of the person's own files is touched.
+  - fine: A plugin that gives places answers for the command line and for the full-screen front end alike, and a plugin finds the same files under both.
+- (tc5) An ask for a place to keep files says what kind of place is wanted.
+  - fine: The github plugin asks for a place whose files can be thrown away, for what it fetched, and for a place whose files are kept, for what it must not lose.
+- (ggq) The folder holds the [plugin]'s full name.
+  - why: the builds named a plugin by its folder's name, so a newer version installed beside the old one under another folder name started with empty settings and no files, and a renamed folder lost everything.
+  - against: A person renames a plugin's folder, and the plugin no longer finds its settings.
+  - fine: Two versions of the jira plugin are installed side by side as two folders that hold one full name, and both find the same settings and the same files.
+- (gst) untaped tells the [answerer] of an ask the full name of the [plugin] that asks.
+  - against: A settings plugin gives a plugin the settings kept under the name that the plugin wrote in its ask.
+  - fine: A settings plugin gives a plugin the settings kept under the name untaped says is asking.
+- (w39) A [plugin] that needs a token gets it by asking for it.
+  - why: today core gives jira, github and awx one shared mechanic for signing in; in the trial it moved into the jira plugin, and each of the others would have written it again.
+  - against: The jira plugin has a login command of its own that asks the person for a token and stores it.
+  - fine: The jira, github and awx plugins each ask for the token of their service; one plugin looks for a stored one, asks the person when there is none, and stores the answer.
+- (bwm) A secret is stored and fetched only by asking a [plugin] that keeps secrets.
+  - against: The github plugin reads a token from an environment variable.
+  - fine: On a person's machine a plugin that keeps secrets answers from the system keychain; under an agent another answers from the environment variables its front end handed it; a [choice] says which.
+- (z3s) Whatever a [plugin] needs from the person, or from where the person is, it gets by asking for it.
+  - why: plugins today read a file the person names, open the person's editor, show a list to pick from and read the folder the person is in; a plugin that is a separate program has no screen and no keyboard of its own.
+  - against: The awx plugin opens the person's editor itself to have a description written.
+  - against: The workspace plugin reads the current folder of its own process to find which repository the person is in.
+  - fine: The workspace plugin asks for a pick from a list of repositories; a command line shows a numbered list, a full-screen front end shows a picker, and under an agent the answer comes from a flag.
+- (9g3) A front end that nobody is at answers what a [plugin] asks of the person from what that front end was given, or answers that it failed and what was needed.
+  - against: A command run by a script waits for ever for a yes that nobody will type.
+  - fine: A command run by a script is asked for a yes, and its front end answers from the flag it was started with; started without that flag, it answers that it failed and that a yes was needed.

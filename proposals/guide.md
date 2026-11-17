@@ -4,6 +4,19 @@ For someone writing a plugin or a front end against the design in [book/](book/)
 
 This is a draft beside the prototypes. A practice is added only once a build or a decision by the maintainer has shown it; the build is named after each. It becomes `docs/reference/conventions.md` when the code moves. The exact lines a plugin reads and writes are in the latest prototype's `PROTOCOL.md` (`prototype/book4/`), not here.
 
+## What becomes a plugin
+
+Reuse goes through plugins, not through code that plugins share. Something several plugins need becomes a plugin they ask when it does any of these:
+
+- keeps something between asks (a sign-in, a cache, a store of repositories);
+- decides something that should be decided once for everyone (where files go, which secret store);
+- touches the person or the world outside (the terminal, the network, the disk);
+- should be replaceable.
+
+Otherwise it is plain code that each plugin carries, such as turning a date into text. The one piece every plugin carries is the helper that talks to untaped.
+
+Decided so far, each in the book: a plugin asks for the place to keep its files (g8n), for its token (w39) and for any secret (bwm). (`front`, `book5`)
+
 ## Choosing a kind for each contract
 
 A folder gives each contract one kind (jw3).
