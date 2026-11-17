@@ -15,12 +15,12 @@ How we design.
   - fine: Two installed plugins are both called "github" for short, and a [choice] says which of them the short name means.
   - fine: An org's plugin offers a [choice], a person's settings hold another for a different need, and the [host] states both.
   - fine: Two versions of a keychain plugin are installed and the asker's copy of the [contract] matches only one; that one answers, and the [kernel]'s table shows which of the two matches and which does not.
-- (tgc) The [kernel] gives no [plugin] anything that another [plugin] could not have.
+- (tgc) What the [kernel] gives an [instance] depends on how that [instance] came to run, never on which [plugin] it is.
   - against: The [kernel] skips its check of a plugin's declaration when the plugin is signed by untaped's authors.
   - against: The command-line plugin reads the [kernel]'s table of who fills what through a door that is closed to other plugins.
   - fine: A bundle installs the [kernel] together with a set of plugins, and anyone can publish another bundle the same way.
   - fine: Any plugin can ask the [kernel] which plugins are installed and what each fills.
-- (j4p) The [kernel] only keeps the table of which [plugin] fills which [contract], starts and stops [plugin]s, carries what they ask and answer, reports what it did not carry, and answers what is asked about its own table and open asks.
+- (j4p) The [kernel] does only what an entry of this book says it does.
   - against: The [kernel] listens on a network port so that programs on other machines can ask through it.
   - against: The [kernel] tries a failed ask three more times before reporting the failure.
   - against: The [kernel] refuses a failure that a plugin sends because its name is not on a list the protocol fixes.

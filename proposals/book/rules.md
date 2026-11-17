@@ -10,7 +10,7 @@ How untaped is.
 - (s2v) untaped refuses an ask that would have a [plugin] answer a [contract] it is already answering in the same [chain].
   - against: The first plugin asks the second for a list, the second asks the first for the same list in order to answer, and the [kernel] carries each ask until the machine can start no more work.
   - fine: A front end asks for a list of repositories, the github plugin asks for a token in order to answer, and the keychain plugin asks that same front end to put a question to the person.
-  - fine: The first plugin asks the second for a list, the second asks the first for the same list in order to answer, and the [kernel] refuses the second ask and names both plugins in the order they asked.
+  - fine: A front end asks the first plugin for a list, the first asks the second for the same list in order to answer, the second asks the first for it again, and the [kernel] refuses that ask and names both plugins in the order they asked.
 - (h32) untaped gives the [answerer] of an ask the [chain] of that ask.
   - against: The plugin asked to give an approval receives the request to approve and nothing about what asked for it.
   - against: A plugin that fills the [contract] for making a [choice] is told which plugins could be used, and not which asks led to the need.
@@ -26,7 +26,7 @@ How untaped is.
   - against: untaped keeps its own record of what a plugin filled the last time it ran, and uses it without reading the folder.
   - fine: The keychain's folder says it can be started for the [contract] for getting a secret, and untaped starts it for the first ask without having run it before.
   - fine: A plugin's library writes the folder's list of [contract]s from the plugin's own code when the plugin is built.
-- (78d) [kernel] leaves out, for one ask, every [plugin] whose copy of the [contract] does not match the asker's copy.
+- (78d) [kernel] leaves out, for one ask, every [plugin] whose copy of the [contract] does not match the [asker]'s copy.
   - against: Two versions of a keychain plugin are installed and only the older one's copy matches the github plugin's; the [kernel] counts both and reports that nothing says which to use.
   - fine: Two versions of a keychain plugin are installed and only the older one's copy matches the github plugin's; so only the older one can answer the github plugin, and it does, with no [choice] needed.
   - fine: Two installed plugins fill a [contract] and neither one's copy matches the asker's; the [kernel] tells the asker so, with what differs in each.
@@ -40,7 +40,7 @@ How untaped is.
   - fine: The maintainer agrees to a newer version of the signal package, and its copy in the repository is replaced in a change that shows what differs.
 - (54q) [kernel] never waits on one side of an ask before serving another ask.
 - (cqx) [kernel] has no limit of its own: when the system it runs on refuses it something, whoever asked is told at once and everything already open carries on.
-- (4ck) [kernel] keeps no time limit on an ask; an asker that will wait no longer leaves.
+- (4ck) [kernel] keeps no time limit on an ask; an [asker] that will wait no longer leaves.
 - (t4m) [kernel] keeps no log and prints nothing once it runs: what it has to say about an ask goes to the sides of that ask, and the rest is in its table.
 - (qfs) [kernel] has no notion of a version: it only compares copies of a [contract], and two versions of a [plugin] are two [plugin]s.
 - (tz7) A [plugin] fills any number of [contract]s, including none.
@@ -48,7 +48,7 @@ How untaped is.
 - (cz5) An [asker] can ask for one [answerer].
 - (7zs) An [asker] can ask every [plugin] that fills a [contract].
 - (phb) Asking every [plugin] is one ask to each of them.
-- (snp) When an [asker] asks for one and exactly one [plugin] fills the [contract], that [plugin] answers.
+- (snp) When an [asker] asks for one, exactly one [plugin] fills the [contract] and no [choice] names another, that [plugin] answers.
 - (4gh) When an [asker] asks for one and several [plugin]s fill the [contract], a [choice] decides which answers.
 - (7mq) When an [asker] asks for one, several [plugin]s fill the [contract] and no [choice] decides, untaped tells the [asker] that several could answer.
 - (hhp) When no [plugin] fills the [contract], untaped tells the [asker] that nothing could answer.
@@ -78,7 +78,7 @@ How untaped is.
 - (9wz) untaped tells an [instance] of each ask it is to answer, when the ask is made.
 - (vp7) An [instance] takes an ask when it chooses.
   - fine: A plugin's library takes sixteen asks at a time and leaves the rest waiting; a thousand asks at once are all answered, and two plugins that ask each other for ever by mistake stop at a few dozen open asks.
-- (9vg) An ask that has not been taken waits.
+- (9vg) An ask that has not been taken waits until it is taken or is over.
 - (v67) A [plugin] does not say what it will ask for.
 - (zmw) A [plugin] is installed when it is present in a place the [host] names.
 - (7w4) A [plugin] is uninstalled when it is no longer present there.
@@ -97,17 +97,17 @@ How untaped is.
 - (5nf) An ask for a [staying] [contract] goes to the [plugin]'s [staying] [instance].
 - (3gf) When a [plugin] has no [staying] [instance], an ask for a [staying] [contract] starts one.
 - (fkw) A [plugin] has at most one [staying] [instance] at a time.
-- (g7j) A [plugin] fills each [contract] its folder says it can be started for.
-- (drf) A [staying] [instance] can state that it answers a [contract] now.
+- (g7j) A [plugin] fills each [contract] that its folder says it can be started for and gives one kind.
+- (drf) A [staying] [instance] can state that it answers, now, a [contract] that its [plugin]'s folder does not list.
 - (46q) A [staying] [instance] takes that statement back by leaving that ask.
 - (5dp) A [plugin] fills each [contract] its [staying] [instance] states it answers.
 - (b4m) untaped reads the [plugin]s' folders when it starts.
 - (wzx) An [instance] can ask untaped to read the [plugin]s' folders again.
-- (r82) untaped refuses a [staying] [instance]'s statement for a [contract] that its [plugin]'s folder marks as [per-ask].
+- (r82) untaped refuses a [staying] [instance]'s statement for a [contract] that its [plugin]'s folder already lists.
 - (sxq) The [host] is the [staying] [instance] of its [plugin].
 - (5ct) untaped gives the [answerer] of an ask a name for that ask.
-- (mdx) An ask says which ask it is made for, by the name untaped gave that ask, or says that it is made for none.
-- (xck) untaped refuses an ask that says neither which ask it is made for nor that it is made for none.
+- (mdx) An ask made by a [staying] [instance] says which ask it is made for, by the name untaped gave that ask, or says that it is made for none.
+- (xck) untaped refuses an ask made by a [staying] [instance] that says neither which ask it is made for nor that it is made for none.
 - (9th) The [chain] of an ask made for another ask is that ask's [chain], followed by that ask.
 - (9c8) The [chain] of an ask made for none is empty.
 - (6rp) untaped fills the [contract]s that are about untaped itself.
@@ -137,3 +137,75 @@ How untaped is.
 - (fcv) untaped is not a [plugin].
 - (w4h) The [host] is [adopted] when it starts untaped.
 - (s3j) untaped is reached only by its [host] and by the [instance]s it starts.
+- (9ng) An ask that an [instance] is to answer can be made for none only by the [host].
+- (4dd) A [staying] [instance] can make for none an ask that untaped answers itself.
+- (h5t) An ask made by an [instance] started for a [per-ask] [contract] is made for the ask that [instance] was started for.
+- (jjt) untaped refuses an ask made for an ask its [asker] is not answering.
+- (dzp) An [instance] can make asks for an ask until it leaves that ask.
+- (dsg) untaped gives each [instance] it starts its own way to reach untaped.
+  - why: the builds told who was asking from the system's process groups, which is a guess: a program the host ran counted as the host, and a helper that an instance ran in a session of its own was refused.
+  - against: Every plugin's program connects to one address they all know, and untaped works out which program is at the other end from the system's process groups.
+  - fine: untaped starts the github plugin and gives it a way to reach untaped that no other instance was given.
+- (nmn) The [host] has its own way to reach untaped, from having started it.
+- (3rh) untaped takes an ask as made by the [instance] whose way to reach untaped it arrives by.
+  - against: A helper program that the command-line host ran makes an ask, and untaped takes it as the host's because the helper is in the host's process group.
+  - fine: The github plugin lets a helper it ran use its way to reach untaped, and the helper's ask for a token is taken as the github plugin's.
+- (28n) When untaped reads the folders again and finds a [plugin] no longer installed, untaped leaves each ask in which that [plugin]'s [staying] [instance] states what it answers.
+- (c26) untaped sends no new ask to an [instance] of a [plugin] that is no longer installed.
+- (5tq) An ask starts an [instance] at most once.
+  - why: in the builds a [staying] program that died as it started was started again for the same waiting ask 109 to 131 times a second, and a one-ask shell program marked [staying] 12,500 times in two seconds.
+  - against: A plugin's program crashes as it starts, its one waiting ask starts it again, and this repeats until the asker gives up.
+  - fine: A plugin's program crashes as it starts, and the asker of the ask that started it is told that its answerer left.
+  - fine: A sign-in holder that has answered asks stops just as a new ask arrives, and a new instance is started for that ask.
+  - fine: A plugin's program always crashes as it starts while thirty asks wait for it; it is started thirty times, once for each ask, and each asker is told that its answerer left.
+- (32k) untaped tells the [asker] of an ask which [plugin] answers it.
+  - why: in the build a host that asked every plugin that gives choices could not tell whose answer was whose, and had to ask each one separately.
+  - against: The workspace plugin asks every plugin that lists repositories and receives two sets of replies with nothing that says which came from where.
+  - fine: The workspace plugin asks every plugin that lists repositories and shows each repository with the name of the plugin that gave it.
+- (77c) An [instance] that stops without having taken the ask it was started for has left that ask.
+- (82r) untaped tells the [asker] of an ask whose [answerer] left whether the ask had been taken.
+  - why: in the build an asker could not tell a program that crashed as it started, where nothing was done, from one that left while answering, where something may be half done.
+  - against: A plugin asks for a repository to be deleted, is told only that its answerer left, and cannot know whether asking again would delete twice.
+  - fine: A plugin asks for a repository to be deleted, is told that its answerer left without having taken the ask, and asks again.
+- (824) While an ask about which [plugin]s are installed stays open, untaped sends its [asker] what changed each time untaped reads the folders again.
+  - why: in the build an uninstalled plugin's instance that had stated nothing learned nothing and kept running, and a host that states its choices from what is installed has to learn when that changes.
+  - against: untaped sends every running instance a notice, which none of them asked for, each time a plugin is installed or removed.
+  - fine: A plugin's library keeps that ask open, sees that its own plugin is no longer installed, finishes the ask it is answering, and stops.
+  - fine: A host keeps that ask open and states a different choice when the plugin it had chosen is removed.
+- (tk6) Once an [instance] runs, untaped tells it something only within an ask of which that [instance] is the [asker] or the [answerer].
+  - against: untaped sends every running instance a notice when its [host] states a new [choice].
+  - fine: A shell plugin started for one ask reads that ask, answers it, and is never sent anything else.
+  - fine: An instance keeps open an ask about which plugins are installed, and is sent what changed.
+  - fine: The plugin asked to give an approval receives, within that ask, the asks that led to it.
+  - fine: untaped gives an instance its way to reach untaped when it starts it.
+- (std) An [instance] can ask untaped which [instance]s run and which asks are open.
+  - against: untaped sends an instance that asked for it a running account of every ask as it opens and ends.
+  - fine: A person whose command seems stuck has the front end ask untaped which asks are open, and sees which plugin has not answered.
+- (t3d) The [host] changes its [choice] for a [contract] by stating another [choice] for that [contract].
+  - why: in the build a second choice was refused, so a host had to leave the first before stating the next, and an ask arriving in between was told that several plugins could answer.
+  - against: A front end that runs all day changes which keychain answers, and an ask for a secret that arrives at that moment is told that several could answer.
+  - fine: The [host] states that the system keychain answers secrets while its choice of the vault stands; untaped leaves the ask that stated the vault, and every ask for a secret goes to one or the other.
+- (jw3) A [plugin]'s folder gives each [contract] one kind.
+  - against: A folder lists the contract for getting a secret as both [per-ask] and [staying], and untaped starts a new instance for some asks and sends others to the one that stays.
+  - fine: A folder lists the contract for getting a secret as both [per-ask] and [staying]; the plugin's other contracts are answered, and what untaped reports is installed says why that one is not.
+- (2q3) An [instance] has stopped when its own program has ended, whatever that program left running.
+  - against: A plugin's program starts a helper and exits, and untaped waits for the helper before it counts the instance as stopped.
+  - fine: A plugin's program starts a helper and exits; the instance has stopped, and it has left every ask it was part of.
+- (22p) When an [instance] that untaped started has stopped, untaped ends what its program left running.
+  - against: A plugin started for each ask leaves a helper running each time, and the helpers pile up until untaped ends.
+  - fine: A helper that detached itself from the program that started it carries on after the instance has stopped.
+- (dc6) When an [instance] has stopped, nothing can reach untaped by that [instance]'s way any more.
+  - against: A helper that outlived its plugin's program goes on making asks, and untaped takes them as made by an instance that has stopped.
+  - fine: A helper that outlived its plugin's program tries to make an ask and finds that it cannot reach untaped.
+- (vh6) What untaped reports is installed says what untaped could not read in a [plugin]'s folder.
+  - fine: A person whose keychain is never used asks what is installed, and sees that one of its files names no contract.
+- (9c3) When an ask is over, untaped ends each open ask that was made for it.
+  - why: in the trial a plugin that ignored that its asker had left kept a question to the person on screen for nobody, and a lock held by a hand-written plugin was released after 1,292 ms against 1.8 ms; telling every plugin below made a person be asked twice when one of them stopped on it.
+  - against: A person gives up on a command, the plugin in the middle does not notice, and the question it had put to the person stays on screen.
+  - fine: A person gives up on a command, and the asks below it are over within a millisecond, whatever the plugins in between do.
+  - fine: A plugin whose asker has left makes one more ask to release a lock, and that ask is answered.
+- (hnp) An [asker] can mark an ask, when making it, to carry on after the ask it was made for is over.
+  - fine: A sign-in holder puts one question to the person for three askers and marks it to carry on; the first asker gives up, and the other two still get the token.
+- (k6f) untaped does not end an ask that its [asker] marked to carry on.
+- (6fp) untaped tells both sides of an ask it ends that the ask is over, and which ask's end caused it.
+  - fine: A staying plugin names the wrong one of its asks, and when that ask is over its author is told which ask ended theirs.
