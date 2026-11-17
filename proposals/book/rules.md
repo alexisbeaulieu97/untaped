@@ -113,7 +113,7 @@ How untaped is.
 - (6rp) untaped fills the [contract]s that are about untaped itself.
 - (44h) An [instance] can ask untaped which [plugin]s are installed and what each fills.
 - (qxb) A [staying] [instance] states that it answers a [contract] by making an ask to untaped and keeping it open.
-- (9wv) Two copies of a [contract] match when they are exactly the same.
+- (9wv) An [asker]'s copy of a [contract] matches a [plugin]'s copy when the [plugin]'s copy offers everything the [asker]'s copy uses.
   - fine: Two plugins share the same copy of the [contract] for getting a secret and differ on another [contract]; one asks the other for a secret and is answered, and only an ask for the other [contract] is left without an answerer.
 - (jxk) A [contract] describes the one thing that is asked for.
 - (99t) A [contract] describes each kind of thing that can come back.
@@ -123,7 +123,7 @@ How untaped is.
   - why: in the trial a contract took 7 to 14 lines in it against 51 to 94 in a JSON Schema subset, and both gave identical files from four languages and replies that crossed between all of them. It rests on contracts being read and written by hand, and on about 1,600 lines of generators and a formatter being acceptable to own, 400 more than the JSON Schema subset. It would be reopened if those tools drift apart between languages, or if nobody writes contracts by hand.
   - against: A plugin carries its contract as 78 lines of JSON Schema that only a tool can write correctly.
   - fine: A shell author writes the contract for getting a secret in seven lines, from one example.
-- (zp7) A given [contract] can be written in exactly one way.
+- (zp7) Apart from its [description], a given [contract] can be written in exactly one way.
 - (dwp) An author can write a [contract] as types in their own language and have the file generated.
 - (g7x) A [choice] says, for one [contract], which [plugin] answers an ask for one.
 - (nqm) untaped takes [choice]s only from the [host].
@@ -210,8 +210,28 @@ How untaped is.
 - (k6f) untaped does not end an ask that its [asker] marked to carry on.
 - (6fp) untaped tells both sides of an ask it ends that the ask is over, and which ask's end caused it.
   - fine: A staying plugin names the wrong one of its asks, and when that ask is over its author is told which ask ended theirs.
-- (9v3) A [contract] can say, for a kind of thing that comes back, which of its fields sum it up, in order.
-  - why: in the trial a front end that knew nothing of the plugin showed every field of an issue in alphabetical order; a file for each kind of front end fixed it for one front end only and was checked against nothing, and this one line served four.
+- (9v3) A [contract] gives the fields of what is asked for, and of each kind of thing that comes back, in the order their author wrote them.
+  - why: in the trials a front end that knew nothing of the plugin showed every field of an issue in alphabetical order, and took a comment's text before the issue's key; a file for each kind of front end fixed it for one front end only and was checked against nothing. Sorting had come from wanting one way to write a contract, which the part that is compared still has.
   - against: The contract for searching issues gives the summary field a column width of 40.
   - against: A plugin's author writes one file of columns for the command line, another for the web page and another for each further kind of front end.
-  - fine: The contract for searching issues says that an issue is summed up by its key, type, status, priority, assignee, summary and date of last change; a command line shows those as columns, and a web page shows them in a list and the rest when an issue is opened.
+  - against: The contract for searching issues names seven of an issue's nine fields as the ones to show.
+  - fine: The contract for searching issues lists an issue's key, type and status first; a narrow terminal shows the first four fields as columns, a wide one more, and a web page shows the first few in a list and the rest when an issue is opened.
+  - fine: The contract for commenting on an issue asks for the issue's key and then the text, and a command line takes them as arguments in that order.
+- (nc2) An [asker]'s copy of a [contract] holds what its ask uses: the fields it sends, and the fields and kinds of thing it reads in what comes back.
+  - fine: A plugin asks for a secret without naming a vault, and the copy it gives with that ask does not hold the vault field.
+  - fine: A plugin written with no library gives the whole contract as its copy with every ask.
+- (j3q) A [plugin]'s copy of a [contract] holds every field the [plugin] accepts and everything it can send back.
+- (rpk) Two copies do not match when the [asker]'s sends a field that the [plugin]'s does not accept with the same type.
+  - why: in the trials a plugin written with no library ignored a field it did not know, asked only to show what it would do, and did the real thing; here untaped refuses before that plugin is started.
+  - fine: A plugin asks an older keychain for a secret and names a vault; the keychain's copy has no vault field, and the asker is told that the keychain lacks it.
+- (w8x) Two copies do not match when the [plugin]'s requires a field that the [asker]'s does not send.
+- (9v6) Two copies do not match when the [asker]'s reads a field that the [plugin]'s cannot send back with the same type.
+  - fine: A plugin renames a field of its answers; an asker that reads the old name is refused, and nothing is lost without a word.
+- (xhv) Two copies do not match when the [asker]'s needs in every answer a field that the [plugin]'s does not always send back.
+- (qtt) A [contract] says of each kind of thing that comes back whether the answer is complete without it.
+  - fine: The contract for cloning says that the answer is complete without the things that tell how far the clone has got.
+- (t33) Two copies do not match when the [plugin]'s can send back a kind of thing without which the answer is not complete and that the [asker]'s does not read.
+- (36k) Two copies can match whatever ways to fail each of them holds.
+  - fine: A plugin gains a new way to fail; an older asker that does not know it is told of a failure, as for any other.
+- (5wb) A copy with a line that untaped cannot read as a field, a kind of thing or a way to fail matches no copy.
+  - why: in the trial a hand-written copy with a misspelt word was let through by a rule that was lenient about lines it did not know.

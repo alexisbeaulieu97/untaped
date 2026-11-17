@@ -34,9 +34,12 @@ Choose staying when the plugin holds something (a sign-in, a cache, a lock) or i
 
 ## Contracts
 
-- **Write a contract with the generator or the formatter, never by hand alone.** A given contract has one way to be written (zp7), and copies are compared exactly (9wv): one extra space matches nobody, and the asker is told which lines differ. (`notation-v3`, `book2`)
-- **A plugin has one copy of each contract** (c24, r82). A new version of a plugin that changes a contract is another folder (qfs): each asker is answered by the version whose copy matches its own.
-- **Two versions installed side by side need a choice for each contract they both hold unchanged**, and none for the ones that differ. (`book4`)
+- **Write a contract as types in your own language and have the file generated** (dwp). For jira, 642 lines of contract files became 312 lines of Python, with a list of failures written once. A file written by hand with a mistake in it matches nothing (5wb). (`front2`, `match2`)
+- **List fields in the order that matters, the most telling first** (9v3). A front end shows as many as it has room for and takes required inputs as arguments in that order. Say nothing that holds for one kind of front end only (dzh): no short flags, no widths. (`front2`, `match`)
+- **Your copy as an asker holds what your ask uses** (nc2); the library works out the fields you send. It cannot see which fields of the answer your code reads and assumes all of them, so say which you read when an older plugin refuses you for a field you do not need. (`match2`)
+- **To change a contract without breaking older askers, add what is optional** (9wv): an optional input, an optional field in an answer, a new way to fail. Renaming or removing a field refuses the askers that use it (9v6). (`match2`)
+- **Pass on why an ask of yours was refused.** untaped tells you which field the other side lacks; a person shown only "the keychain could not give the token" cannot act on it. (`match2`)
+- **A plugin has one copy of each contract** (c24, r82), and a version of a plugin that must sit beside an older one is another folder (qfs). Two versions side by side need a choice for each contract both can answer. (`book4`)
 
 ## Helpers
 

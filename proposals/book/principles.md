@@ -52,7 +52,7 @@ How we design.
 - (fnb) A field in a [contract] is optional only when the thing it describes can lack it.
   - against: Every field of the repository in the [contract] for listing repositories is made optional, so that plugins that know less can still answer.
   - fine: The remote address of the repository in the [contract] for listing repositories is optional, since a repository that exists only on disk has none.
-- (dzh) A [contract] says nothing about how a thing is shown or how a value is entered.
+- (dzh) A [contract] says nothing that holds for one kind of front end only.
   - against: The [contract] for listing repositories marks its owner input with the short flag "-o".
   - against: The [contract] for listing repositories gives the address field a column width of 40.
   - against: The [contract] for cloning marks its token input "prompt if missing".
