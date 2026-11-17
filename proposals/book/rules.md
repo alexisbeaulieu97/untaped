@@ -210,3 +210,8 @@ How untaped is.
 - (k6f) untaped does not end an ask that its [asker] marked to carry on.
 - (6fp) untaped tells both sides of an ask it ends that the ask is over, and which ask's end caused it.
   - fine: A staying plugin names the wrong one of its asks, and when that ask is over its author is told which ask ended theirs.
+- (9v3) A [contract] can say, for a kind of thing that comes back, which of its fields sum it up, in order.
+  - why: in the trial a front end that knew nothing of the plugin showed every field of an issue in alphabetical order; a file for each kind of front end fixed it for one front end only and was checked against nothing, and this one line served four.
+  - against: The contract for searching issues gives the summary field a column width of 40.
+  - against: A plugin's author writes one file of columns for the command line, another for the web page and another for each further kind of front end.
+  - fine: The contract for searching issues says that an issue is summed up by its key, type, status, priority, assignee, summary and date of last change; a command line shows those as columns, and a web page shows them in a list and the rest when an issue is opened.
