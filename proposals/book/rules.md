@@ -166,7 +166,8 @@ How untaped is.
 - (82r) untaped tells the [asker] of an ask whose [answerer] left whether the ask had been taken.
   - why: in the build an asker could not tell a program that crashed as it started, where nothing was done, from one that left while answering, where something may be half done.
   - against: A plugin asks for a repository to be deleted, is told only that its answerer left, and cannot know whether asking again would delete twice.
-  - fine: A plugin asks for a repository to be deleted, is told that its answerer left without having taken the ask, and asks again.
+  - fine: A plugin asks a sign-in holder that stays running for a token, is told that its answerer left without having taken the ask, and asks again.
+  - fine: A plugin started for one ask dies as it starts, and its asker is told that the ask had been taken: it was handed to that program, and untaped cannot see whether the program read it.
 - (824) While an ask about which [plugin]s are installed stays open, untaped sends its [asker] what changed each time untaped reads the folders again.
   - why: in the build an uninstalled plugin's instance that had stated nothing learned nothing and kept running, and a host that states its choices from what is installed has to learn when that changes.
   - against: untaped sends every running instance a notice, which none of them asked for, each time a plugin is installed or removed.
